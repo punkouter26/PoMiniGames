@@ -36,6 +36,8 @@ const WAVE_TRIANGLE = 1;
 const WAVE_SAW = 2;
 const WAVE_SQUARE = 3;
 const WAVE_NOISE = 4;
+const WAVE_PLUCK = 5;
+const WAVE_MODAL = 6;
 
 const WAVES = {
     sine: WAVE_SINE,
@@ -44,6 +46,8 @@ const WAVES = {
     sawtooth: WAVE_SAW,
     square: WAVE_SQUARE,
     noise: WAVE_NOISE,
+    pluck: WAVE_PLUCK,
+    modal: WAVE_MODAL,
 };
 
 /**
@@ -98,6 +102,21 @@ class Voice {
         this.lfoRate = 0;
         this.lfoDepth = 0;
         this.lfoPhase = 0;
+
+        // Karplus-Strong pluck state.
+        this.pluckBuf = new Float32Array(2048);
+        this.pluckLen = 0;
+        this.pluckIdx = 0;
+        this.pluckPrev = 0;
+        this.pluckDamp = 0.985;
+
+        // Modal synthesis state (4 resonant modes).
+        this.modalModes = [
+            { r: 1.0, d: 12.0, a: 1.0, phase: 0 },
+            { r: 2.1, d: 20.0, a: 0.6, phase: 0 },
+            { r: 3.4, d: 32.0, a: 0.35, phase: 0 },
+            { r: 5.2, d: 48.0, a: 0.15, phase: 0 }
+        ];
     }
 }
 
@@ -108,6 +127,14 @@ class PoVoicesProcessor extends AudioWorkletProcessor {
         for (let i = 0; i < MAX_VOICES; i++) this.voices.push(new Voice());
         this.nextVoice = 0;
         this.masterGain = 1;
+
+        // Shepard-Risset continuous tension engine
+        this.shepardActive = false;
+        this.shepardRate = 0.06; // rising speed (cycles per second)
+        this.shepardPhase = 0;
+        this.shepardGain = 0;
+        this.shepardOscPhases = new Float32Array(8);
+
         this.port.onmessage = (e) => this.onMessage(e.data);
     }
 
@@ -118,9 +145,17 @@ class PoVoicesProcessor extends AudioWorkletProcessor {
             for (const n of m.items) this.allocate(n);
             return;
         }
+        if (m.type === 'shepard') {
+            this.shepardActive = !!m.active;
+            if (m.rate != null) this.shepardRate = Math.max(0.01, Math.min(0.5, m.rate));
+            this.shepardGain = this.shepardActive ? Math.max(0, Math.min(1, m.gain != null ? m.gain : 0.15)) : 0;
+            return;
+        }
         if (m.type === 'gain') { this.masterGain = Math.max(0, Math.min(2, m.value)); return; }
         if (m.type === 'stopAll') {
             for (const v of this.voices) v.active = false;
+            this.shepardActive = false;
+            this.shepardGain = 0;
         }
     }
 
@@ -141,6 +176,42 @@ class PoVoicesProcessor extends AudioWorkletProcessor {
         v.freq = Math.max(1, n.freq || 440);
         v.freqEnd = Math.max(1, n.freqEnd || n.freq || 440);
         v.sweep = Math.max(0, n.sweep || 0);
+
+        if (v.wave === WAVE_PLUCK) {
+            const sr = sampleRate || 48000;
+            v.pluckLen = Math.max(2, Math.min(2047, Math.round(sr / v.freq)));
+            v.pluckIdx = 0;
+            v.pluckPrev = 0;
+            v.pluckDamp = Math.max(0.85, Math.min(0.999, n.damping || 0.985));
+            for (let i = 0; i < v.pluckLen; i++) {
+                v.pluckBuf[i] = Math.random() * 2 - 1;
+            }
+        } else if (v.wave === WAVE_MODAL) {
+            const mat = n.material || 'ceramic';
+            let ratios = [1.0, 1.95, 3.12, 4.88];
+            let decays = [8.0, 14.0, 22.0, 35.0];
+            let amps = [1.0, 0.75, 0.45, 0.25];
+            if (mat === 'wood') {
+                ratios = [1.0, 2.57, 4.64, 7.02];
+                decays = [18.0, 28.0, 42.0, 60.0];
+                amps = [1.0, 0.5, 0.25, 0.1];
+            } else if (mat === 'metal' || mat === 'bell') {
+                ratios = [1.0, 2.0, 2.76, 5.40];
+                decays = [2.5, 4.0, 6.0, 9.0];
+                amps = [1.0, 0.8, 0.6, 0.4];
+            } else if (mat === 'glass') {
+                ratios = [1.0, 2.32, 4.15, 6.45];
+                decays = [1.5, 2.8, 4.5, 7.5];
+                amps = [1.0, 0.85, 0.7, 0.45];
+            }
+            const dMul = Math.max(0.2, Math.min(5.0, n.damping ? 1 / n.damping : 1.0));
+            for (let m = 0; m < 4; m++) {
+                v.modalModes[m].r = ratios[m];
+                v.modalModes[m].d = decays[m] * dMul;
+                v.modalModes[m].a = amps[m];
+                v.modalModes[m].phase = Math.random();
+            }
+        }
         v.gain = Math.max(0, Math.min(1, n.gain == null ? 0.2 : n.gain));
         v.attack = Math.max(0.0005, n.attack == null ? 0.005 : n.attack);
         v.decay = Math.max(0.001, n.decay == null ? 0.15 : n.decay);
@@ -255,11 +326,35 @@ class PoVoicesProcessor extends AudioWorkletProcessor {
                         s -= polyBlep(t2, dt);
                         break;
                     }
+                    case WAVE_PLUCK: {
+                        // Karplus-Strong string synthesis: read, lowpass average, write back
+                        const idx = v.pluckIdx;
+                        const curr = v.pluckBuf[idx];
+                        const val = (curr + v.pluckPrev) * 0.5 * v.pluckDamp;
+                        v.pluckPrev = curr;
+                        v.pluckBuf[idx] = val;
+                        v.pluckIdx = (idx + 1) % v.pluckLen;
+                        s = curr;
+                        break;
+                    }
+                    case WAVE_MODAL: {
+                        // Modal physical resonance: bank of 4 damped sinusoids
+                        s = 0;
+                        for (let m = 0; m < 4; m++) {
+                            const mm = v.modalModes[m];
+                            const mEnv = Math.exp(-mm.d * age);
+                            s += mm.a * mEnv * Math.sin(mm.phase * TWO_PI);
+                            mm.phase += (f * mm.r) * invSr;
+                            if (mm.phase >= 1) mm.phase -= Math.floor(mm.phase);
+                        }
+                        s *= 0.5; // normalise sum
+                        break;
+                    }
                     default:
                         s = Math.random() * 2 - 1;
                         break;
                 }
-                if (v.wave !== WAVE_NOISE) {
+                if (v.wave !== WAVE_NOISE && v.wave !== WAVE_PLUCK && v.wave !== WAVE_MODAL) {
                     v.phase += dt;
                     if (v.phase >= 1) v.phase -= 1;
                 }
@@ -298,6 +393,33 @@ class PoVoicesProcessor extends AudioWorkletProcessor {
                 const o = s * amp * this.masterGain;
                 left[i] += o * v.panL;
                 if (right !== left) right[i] += o * v.panR;
+            }
+        }
+
+        // ── Shepard-Risset Continuous Climax Engine ────────────────────────
+        if (this.shepardGain > 0.001) {
+            const fMin = 65.41; // C2
+            const fMax = 2093.0; // C7 (5 octaves)
+            const octaves = 6;
+            for (let i = 0; i < n; i++) {
+                this.shepardPhase += (this.shepardRate * invSr);
+                if (this.shepardPhase >= 1) this.shepardPhase -= 1;
+
+                let shepSample = 0;
+                for (let k = 0; k < octaves; k++) {
+                    const pos = (this.shepardPhase + (k / octaves)) % 1;
+                    const f = fMin * Math.pow(fMax / fMin, pos);
+                    const dt = f * invSr;
+                    this.shepardOscPhases[k] += dt;
+                    if (this.shepardOscPhases[k] >= 1) this.shepardOscPhases[k] -= 1;
+
+                    // Raised cosine spectral envelope: 0 at bounds, 1 at center
+                    const weight = 0.5 - 0.5 * Math.cos(pos * TWO_PI);
+                    shepSample += Math.sin(this.shepardOscPhases[k] * TWO_PI) * weight;
+                }
+                const outVal = shepSample * 0.18 * this.shepardGain * this.masterGain;
+                left[i] += outVal;
+                if (right !== left) right[i] += outVal;
             }
         }
 

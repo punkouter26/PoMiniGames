@@ -164,12 +164,15 @@ public static class GameCatalog
             new(GameMode.Demo, "/posports/demo"),
         ]) { ChipPrimary = true },
 
+        // ChipPrimary: 1P is the card head, so the dedup-by-URL filter would hide
+        // the 1P chip and leave the row reading "Online Demo" — same fix as the
+        // other solo-capable games (Connect Five, Brawl, Sports, Marble Race, etc.).
         new(GameKeys.PoRacer, "Racer", "🏎️",
         [
             new(GameMode.OnePlayer, "/poracer/1player"),
             new(GameMode.Multiplayer, "/poracer/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/poracer/demo"),
-        ]),
+        ]) { ChipPrimary = true },
 
         // ChipPrimary: 1P is the card head, so the chip row would otherwise show a lone
         // "Demo" and the game reads as unplayable. It is very much playable — you steer

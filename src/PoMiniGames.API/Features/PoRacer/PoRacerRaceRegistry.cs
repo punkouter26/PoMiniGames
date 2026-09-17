@@ -1,78 +1,131 @@
-using System.Collections.Concurrent;
+using Microsoft.AspNetCore.SignalR;
+using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoRacer;
 
-/// <summary>
-/// Process-local registry of running PoRacer races. In single-lobby mode
-/// there is at most one race at a time, but the registry keeps the
-/// abstraction in case we ever support multiple rooms again.
-/// </summary>
+/// <summary>Owns races, broadcast subscriptions, connection bindings and expiry.</summary>
 public sealed class PoRacerRaceRegistry : IAsyncDisposable
 {
+    private readonly Dictionary<string, PoRacerRaceService> _races = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _connections = new(StringComparer.Ordinal);
+    private readonly object _gate = new();
     private readonly PoRacerLobbyService _lobby;
-    private readonly ILoggerFactory _loggerFactory;
-    private PoRacerRaceService? _currentRace;
-    private readonly ConcurrentDictionary<string, string> _connectionToCode = new();
-    private readonly object _createLock = new();
+    private readonly IHubContext<PoRacerRaceHub> _hub;
+    private readonly ILoggerFactory _logs;
+    private readonly CancellationTokenSource _shutdown = new();
+    private readonly Task _expiry;
 
-    public PoRacerRaceRegistry(PoRacerLobbyService lobby, ILoggerFactory loggerFactory)
+    public PoRacerRaceRegistry(PoRacerLobbyService lobby, IHubContext<PoRacerRaceHub> hub, ILoggerFactory logs)
     {
         _lobby = lobby;
-        _loggerFactory = loggerFactory;
+        _hub = hub;
+        _logs = logs;
+        _expiry = ExpireAsync();
     }
 
-    public async Task<PoRacerRaceService> GetOrCreateAsync(string code, string? trackId = null)
+    public PoRacerRaceService StartMultiplayer() => GetOrCreate(_lobby.CreateRaceCode(), _lobby.Players.DistinctBy(p => p.UserId).ToArray(), null);
+
+    public PoRacerRaceService Join(string code, bool asPlayer, PoRacerLobbyPlayer player, string? trackId)
     {
-        lock (_createLock)
-        {
-            if (_currentRace is { } existing && existing.GameCode == code) return existing;
-        }
-        var players = _lobby.Players.ToList();
-        var log = _loggerFactory.CreateLogger<PoRacerRaceService>();
-        var race = new PoRacerRaceService(code, players, _lobby, log, trackId);
-        lock (_createLock) { _currentRace = race; }
-        return race;
+        if (code.StartsWith("multi-", StringComparison.Ordinal))
+            return GetByCode(code) ?? throw new HubException("The race has ended. Return to the lobby.");
+        if (!asPlayer) return GetOrCreate("DEMO", [], trackId);
+        if (!code.StartsWith("solo-", StringComparison.Ordinal) || code.Length > 48)
+            throw new HubException("Invalid race code.");
+        return GetOrCreate(code, [player], trackId);
     }
 
-    /// <summary>
-    /// Create (or return, if the code already matches) a solo race seeded with a
-    /// single human player and 7 AI bots — bypassing the shared lobby entirely.
-    /// The player's car is owned by <paramref name="soloPlayer"/>.ConnectionId,
-    /// which is the caller's race-hub connection id, so its streamed input maps
-    /// straight onto the car (no lobby→race connection-id mismatch). 1-player
-    /// mode uses a unique code per session so this always spins up fresh.
-    /// </summary>
-    public PoRacerRaceService GetOrCreateSolo(string code, PoMiniGames.Shared.Games.PoRacerLobbyPlayer soloPlayer, string? trackId = null)
+    private PoRacerRaceService GetOrCreate(string code, IReadOnlyList<PoRacerLobbyPlayer> players, string? trackId)
     {
-        lock (_createLock)
+        lock (_gate)
         {
-            if (_currentRace is { } existing && existing.GameCode == code) return existing;
-            var log = _loggerFactory.CreateLogger<PoRacerRaceService>();
-            var race = new PoRacerRaceService(code, new[] { soloPlayer }, _lobby, log, trackId);
-            _currentRace = race;
+            ObjectDisposedException.ThrowIf(_shutdown.IsCancellationRequested, this);
+            if (_races.TryGetValue(code, out var existing)) return existing;
+            if (_races.Count >= 64) throw new HubException("The race grid is busy. Try again shortly.");
+            var race = new PoRacerRaceService(code, players, _logs.CreateLogger<PoRacerRaceService>(), trackId);
+            race.SnapshotReady += snapshot => BroadcastAsync(code, "raceSnapshot", snapshot);
+            race.Finished += result => BroadcastAsync(code, "raceFinished", result);
+            _races.Add(code, race);
+            race.Start();
             return race;
         }
     }
 
-    public PoRacerRaceService? GetByCode(string code) =>
-        _currentRace is { } r && string.Equals(r.GameCode, code, StringComparison.OrdinalIgnoreCase) ? r : null;
-
-    public void RegisterConnection(string code, string connectionId) => _connectionToCode[connectionId] = code;
-
-    public void RemoveConnection(string connectionId) => _connectionToCode.TryRemove(connectionId, out _);
-
-    public void RemoveInput(string connectionId)
+    private async Task BroadcastAsync<T>(string code, string method, T message)
     {
-        _currentRace?.RemoveInput(connectionId);
+        try { await _hub.Clients.Group(RaceGroup(code)).SendAsync(method, message, _shutdown.Token); }
+        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { }
+        catch (Exception ex) { _logs.CreateLogger<PoRacerRaceRegistry>().LogWarning(ex, "Race broadcast failed: {Code}", code); }
     }
 
-    public string? CodeFor(string connectionId) =>
-        _connectionToCode.TryGetValue(connectionId, out var c) ? c : null;
+    public PoRacerRaceService? GetByCode(string code)
+    {
+        lock (_gate) return _races.GetValueOrDefault(code);
+    }
+
+    public void RegisterConnection(string code, string connectionId)
+    {
+        lock (_gate)
+        {
+            if (_connections.TryGetValue(connectionId, out var oldCode) &&
+                !string.Equals(oldCode, code, StringComparison.OrdinalIgnoreCase) && _races.TryGetValue(oldCode, out var old))
+                old.RemoveConnection(connectionId);
+            _connections[connectionId] = code;
+            _races[code].AddConnection(connectionId);
+        }
+    }
+
+    public void RemoveConnection(string connectionId)
+    {
+        lock (_gate)
+            if (_connections.Remove(connectionId, out var code) && _races.TryGetValue(code, out var race))
+                race.RemoveConnection(connectionId);
+    }
+
+    public string? CodeFor(string connectionId)
+    {
+        lock (_gate) return _connections.GetValueOrDefault(connectionId);
+    }
+
+    public static string RaceGroup(string code) => "poracer-race-" + code.ToUpperInvariant();
+
+    private async Task ExpireAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_shutdown.Token))
+            {
+                List<PoRacerRaceService> expired;
+                lock (_gate)
+                {
+                    expired = _races.Values.Where(r => r.HasExpired(DateTimeOffset.UtcNow)).ToList();
+                    foreach (var race in expired)
+                    {
+                        _races.Remove(race.GameCode);
+                        foreach (var connection in _connections.Where(c => string.Equals(c.Value, race.GameCode, StringComparison.OrdinalIgnoreCase)).Select(c => c.Key).ToArray())
+                            _connections.Remove(connection);
+                        if (race.GameCode == _lobby.GameCode) _lobby.End();
+                    }
+                }
+                foreach (var race in expired) await race.DisposeAsync();
+            }
+        }
+        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { }
+    }
 
     public async ValueTask DisposeAsync()
     {
-        if (_currentRace is not null) await _currentRace.DisposeAsync();
-        _currentRace = null;
-        _connectionToCode.Clear();
+        await _shutdown.CancelAsync();
+        await _expiry;
+        List<PoRacerRaceService> races;
+        lock (_gate)
+        {
+            races = _races.Values.ToList();
+            _races.Clear();
+            _connections.Clear();
+        }
+        foreach (var race in races) await race.DisposeAsync();
+        _shutdown.Dispose();
     }
 }

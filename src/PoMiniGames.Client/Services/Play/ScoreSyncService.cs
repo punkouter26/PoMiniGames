@@ -12,45 +12,6 @@ using PoMiniGamesClient.Services.Ui;
 
 namespace PoMiniGamesClient.Services.Play;
 
-/// <summary>The kind of server board a queued score targets — drives which submit path the flusher uses.</summary>
-public enum PendingScoreKind
-{
-    MarbleRace,
-    PoBrawl,
-    /// <summary>A PlayerStats PUT (adaptive-ELO games mirror their rating into it).</summary>
-    PlayerStats,
-    PoSports,
-    PoVoxelStrike
-}
-
-/// <summary>
-/// One score that could not reach the server and is parked in localStorage until connectivity returns.
-/// The payload is stored as JSON so a single queue can hold every board's wire shape.
-/// </summary>
-public sealed class PendingScore
-{
-    public string Id { get; set; } = Guid.NewGuid().ToString("N");
-    public PendingScoreKind Kind { get; set; }
-    public string PayloadJson { get; set; } = "";
-    public string EnqueuedAt { get; set; } = "";
-    public int Attempts { get; set; }
-}
-
-/// <summary>
-/// localStorage-backed durable queue of unsynced scores. Pure persistence — no network. Kept separate
-/// from <see cref="ScoreSyncService"/> so the "where it lives" concern is isolated from "when it flushes".
-/// </summary>
-public sealed class PendingScoreStore
-{
-    private const string StorageKey = "pomini_pending_scores";
-
-    public List<PendingScore> Load() =>
-        LocalStorageService.GetItem<List<PendingScore>>(StorageKey) ?? [];
-
-    public void Save(List<PendingScore> items) =>
-        LocalStorageService.SetItem(StorageKey, items);
-}
-
 /// <summary>
 /// Makes the on-screen "scores will sync later" promise true. When a board submit fails, the score is
 /// enqueued durably; on app start and whenever the API is reachable again, the queue is flushed in order.
@@ -99,6 +60,9 @@ public sealed class ScoreSyncService
     public void EnqueuePoVoxelStrike(PoVoxelStrikeRunRequest entry) =>
         Enqueue(PendingScoreKind.PoVoxelStrike, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoVoxelStrikeRunRequest));
 
+    public void EnqueuePoRacer(PoMiniGames.Shared.Games.PoRacerScoreDto entry) =>
+        Enqueue(PendingScoreKind.PoRacer, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoRacerScoreDto));
+
     public void EnqueuePlayerStats(PendingPlayerStats entry) =>
         Enqueue(PendingScoreKind.PlayerStats, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PendingPlayerStats));
 
@@ -135,12 +99,11 @@ public sealed class ScoreSyncService
         if (items.Count == 0) return 0;
 
         // Don't hammer the network per-item when the backend is plainly down.
-        if (!await _api.IsAvailableAsync()) return 0;
-
         _flushing = true;
         var synced = 0;
         try
         {
+            if (!await _api.IsAvailableAsync()) return 0;
             var remaining = new List<PendingScore>(items.Count);
             foreach (var item in items)
             {
@@ -168,6 +131,9 @@ public sealed class ScoreSyncService
                 }
             }
 
+            // A game can enqueue another score while an HTTP submit is awaiting a response.
+            var processedIds = items.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
+            remaining.AddRange(_store.Load().Where(i => !processedIds.Contains(i.Id)));
             _store.Save(remaining);
         }
         finally
@@ -188,6 +154,7 @@ public sealed class ScoreSyncService
 
     private async Task<Disposition> SubmitAsync(PendingScore item) => item.Kind switch
     {
+        PendingScoreKind.PoRacer => await SubmitPoRacerAsync(item.PayloadJson),
         PendingScoreKind.MarbleRace => await SubmitMarbleRaceAsync(item.PayloadJson),
         PendingScoreKind.PoBrawl =>
             await _api.SubmitPoBrawlHighScoreAsync(
@@ -198,6 +165,14 @@ public sealed class ScoreSyncService
         PendingScoreKind.PoVoxelStrike => await SubmitPoVoxelStrikeAsync(item.PayloadJson),
         _ => Disposition.Drop, // unknown kind: drop rather than wedge the queue forever
     };
+
+    private async Task<Disposition> SubmitPoRacerAsync(string payloadJson)
+    {
+        var entry = JsonSerializer.Deserialize(payloadJson, ApiJsonContext.Default.PoRacerScoreDto);
+        if (entry is null) return Disposition.Drop;
+        var result = await _api.SubmitPoRacerScoreAsync(entry);
+        return result.IsSaved ? Disposition.Synced : result.ShouldRetry ? Disposition.Retry : Disposition.Drop;
+    }
 
     private async Task<Disposition> SubmitPoVoxelStrikeAsync(string payloadJson)
     {

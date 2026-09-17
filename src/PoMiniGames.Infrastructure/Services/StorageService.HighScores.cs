@@ -240,7 +240,7 @@ public partial class StorageService
     public Task<PoRacerHighScore> SavePoRacerHighScoreAsync(PoRacerHighScore entry)
     {
         var partition = PoRacerTrackPartition(entry.TrackId);
-        return SaveHighScoreAsync(PoRacerScores, entry, partition: partition);
+        return SaveHighScoreAsync(PoRacerScores, entry, partition: partition, requirePersistence: true);
     }
 
     // ── PoSports High Scores ──────────────────────────────────────────────
@@ -338,7 +338,7 @@ public partial class StorageService
     // HTTP request or a retry-after-timeout collapses onto the same row instead of
     // inflating the leaderboard with a second identical entry. Ranking is done in
     // memory (see GetHighScoresAsync), so RowKey ordering is irrelevant to correctness.
-    private async Task<T> SaveHighScoreAsync<T>(HighScoreDescriptor<T> descriptor, T entry, string? partition = null)
+    private async Task<T> SaveHighScoreAsync<T>(HighScoreDescriptor<T> descriptor, T entry, string? partition = null, bool requirePersistence = false)
     {
         // Always sanitize first so the caller still gets a normalised entry back even when
         // storage is down — the endpoint's 201 Created response shape stays unchanged.
@@ -347,7 +347,11 @@ public partial class StorageService
         // Storage is down: the write does not land. The sanitized entry still goes back so
         // the endpoint's response shape is unchanged, and the client's PendingScoreStore
         // holds the score in localStorage until ScoreSyncService can flush it for real.
-        if (!IsStorageAvailable()) return sanitized;
+        if (!IsStorageAvailable())
+        {
+            if (requirePersistence) throw new IOException("Score storage is unavailable.");
+            return sanitized;
+        }
 
         var fields = descriptor.ToFields(sanitized);
 
@@ -390,6 +394,7 @@ public partial class StorageService
         catch (Exception ex)
         {
             MarkUnavailable(ex);
+            if (requirePersistence) throw new IOException("Score storage is unavailable.", ex);
             // Returning the sanitized entry keeps the response shape stable so the client
             // doesn't have to special-case "Azurite down" — the write did not land, and the
             // client's PendingScoreStore is what holds the score until it does.

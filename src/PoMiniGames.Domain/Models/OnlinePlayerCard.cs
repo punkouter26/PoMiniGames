@@ -1,12 +1,10 @@
 using System.Globalization;
-using System.Text.Json.Serialization;
 
 namespace PoMiniGames.Domain.Models;
 
 /// <summary>
 /// Competitive skill tier for online multiplayer games.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<OnlineRankTier>))]
 public enum OnlineRankTier
 {
     Bronze = 0,
@@ -143,3 +141,4 @@ public static class OnlineMmrCalculator
         _ => "🎮"
     };
 }
+

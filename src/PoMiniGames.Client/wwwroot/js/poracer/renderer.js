@@ -1,159 +1,4 @@
-// =============================================================
-//  PoRacer — JS Interop Shim
-//  Handles canvas sizing and input forwarding. Rendering is snapshot-driven:
-//  .NET calls PoRacerRender.drawSnapshot (~50ms), which re-runs resize() via
-//  getSize() each time — so there is no client-side rAF loop.
-//  Game logic lives entirely in C#; this file is the "thin glue".
-// =============================================================
-
-const PoRacer = (() => {
-    /** @type {HTMLCanvasElement|null} */
-    let canvas = null;
-    /** @type {CanvasRenderingContext2D|null} */
-    let ctx = null;
-    /** @type {DotNetObjectReference|null} */
-    let dotnetRef = null;
-    let lastSize = { w: 0, h: 0 };
-
-    const input = {
-        up: false, down: false, left: false, right: false,
-        space: false
-    };
-
-    function setKey(e, down) {
-        switch (e.key.toLowerCase()) {
-            case 'arrowup': case 'w': input.up = down; e.preventDefault(); break;
-            case 'arrowdown': case 's': input.down = down; e.preventDefault(); break;
-            case 'arrowleft': case 'a': input.left = down; e.preventDefault(); break;
-            case 'arrowright': case 'd': input.right = down; e.preventDefault(); break;
-            case ' ': input.space = down; e.preventDefault(); break;
-        }
-    }
-
-    // NOTE: the window keydown/keyup/blur listeners are registered further down
-    // as the emit-capable `setKeyWithEmit` wrappers. They used to ALSO be
-    // registered here as bare `setKey` handlers — but that early pair fired
-    // first and mutated `input` BEFORE setKeyWithEmit snapshotted its `before`
-    // state, so the wrapper saw "no change" and never called emitInput(). The
-    // result: keyboard presses updated `input` but never reached C#, so the
-    // car sat frozen at the grid. Registering only the emit wrappers fixes it.
-
-    // ----- Touch / pointer controls (mobile) -----
-    // Buttons carry data-po-input="up|down|left|right|space". Event delegation
-    // keeps the bindings alive across Blazor re-renders. Pointer capture means
-    // sliding a finger off a button still releases it on pointerup.
-    const TOUCH_KEYS = ['up', 'down', 'left', 'right', 'space'];
-    function touchTarget(e) {
-        const el = e.target instanceof Element ? e.target.closest('[data-po-input]') : null;
-        const key = el?.getAttribute('data-po-input');
-        return TOUCH_KEYS.includes(key) ? { el, key } : null;
-    }
-    document.addEventListener('pointerdown', (e) => {
-        const t = touchTarget(e);
-        if (!t) return;
-        e.preventDefault();
-        try { t.el.setPointerCapture(e.pointerId); } catch { }
-        input[t.key] = true;
-        t.el.classList.add('is-pressed');
-        // §7 Light haptic tick on control press (mute-aware, mobile only).
-        // Bug fix (2026-08-07): skip on kiosk/demo routes — the attract reel
-        // has no user gesture so the browser blocks every vibrate call.
-        try {
-            const onKiosk = (location.search || '').indexOf('kiosk=') >= 0
-                || /\/demo(\b|\/|$)/i.test(location.pathname || '');
-            if (!onKiosk && (localStorage.getItem('pomini_muted') || '').indexOf('1') === -1 && navigator.vibrate) {
-                navigator.vibrate(t.key === 'space' ? 14 : 8);
-            }
-        } catch { }
-    }, { passive: false });
-    function releaseTouch(e) {
-        const t = touchTarget(e);
-        if (!t) return;
-        input[t.key] = false;
-        t.el.classList.remove('is-pressed');
-    }
-    document.addEventListener('pointerup', releaseTouch);
-    document.addEventListener('pointercancel', releaseTouch);
-
-    // 2026-08-08: MAX_CSS_W/H used to be 1600x900 and were applied as a hard clamp on the
-    // DRAWING size while the canvas kept its full CSS box. On a window taller than 900 css px
-    // that meant a 900-tall image stretched over (say) 950 css px — non-square pixels, so the
-    // whole frame was both softened and vertically squashed, and every circle in it became an
-    // ellipse. A resolution cap has to preserve aspect or it is a distortion, not a cap.
-    //
-    // The cap is now expressed as a PIXEL BUDGET and applied through `dpr`, which scales both
-    // axes together. Above the budget the backing store shrinks uniformly and the browser
-    // scales it back up — still a softer image on very large windows, but a correctly
-    // proportioned one, and it stays sharp at every ordinary size.
-    // audit #8: the pixel-budget reasoning above is right and now lives in
-    // js/canvasDpr.js, shared with every other canvas game. The local
-    // MAX_DPR = 1.25 that used to sit here was the outlier — it rendered PoRacer
-    // at 1.25x on a 3x phone while the board games rendered at 2x, so the racer
-    // was the one visibly soft screen in the app. The budget alone is what keeps
-    // large desktop windows in check; the ceiling is now the shared 2.
-    function resize() {
-        if (!canvas) return;
-        const w = canvas.clientWidth;
-        const h = canvas.clientHeight;
-        const dpr = window.PoCanvasDpr.resolve(w, h);
-        lastSize = { w, h };
-        const bw = Math.max(1, Math.floor(w * dpr));
-        const bh = Math.max(1, Math.floor(h * dpr));
-        if (canvas.width !== bw || canvas.height !== bh) {
-            canvas.width = bw; canvas.height = bh;
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            PoRacerRender.invalidateBitmaps();
-        }
-    }
-    window.addEventListener('resize', resize);
-
-    // Track last input snapshot so we only call back to .NET on real changes.
-    let _lastInputSig = '';
-    function emitInput() {
-        if (!dotnetRef) return;
-        const sig = `${+input.up}|${+input.down}|${+input.left}|${+input.right}|${+input.space}`;
-        if (sig === _lastInputSig) return;
-        _lastInputSig = sig;
-        try { dotnetRef.invokeMethodAsync('OnInputChange', input.up, input.down, input.left, input.right, input.space); }
-        catch (e) { /* dotnetRef disposed mid-frame is fine */ }
-    }
-
-    // Wrap the original setKey so each transition fires emitInput. These are the
-    // ONLY window key listeners (the bare setKey pair above was removed — see the
-    // note there). Because `input` is untouched before this runs, the before/after
-    // diff correctly detects the transition and emits to C#.
-    function setKeyWithEmit(e, down) {
-        const before = JSON.stringify(input);
-        setKey(e, down);
-        if (JSON.stringify(input) !== before) emitInput();
-    }
-    window.addEventListener('keydown', (e) => setKeyWithEmit(e, true));
-    window.addEventListener('keyup', (e) => setKeyWithEmit(e, false));
-    window.addEventListener('blur', () => { for (const k in input) input[k] = false; emitInput(); });
-
-    return {
-        start(canvasId, dotnetObj) {
-            canvas = document.getElementById(canvasId);
-            if (!canvas) { console.error('Canvas not found:', canvasId); return; }
-            ctx = canvas.getContext('2d');
-            dotnetRef = dotnetObj; resize();
-        },
-        stop() { dotnetRef = null; },
-        getSize() { resize(); return lastSize; },
-        // Test/debug helper: lets tests poke the keyboard state directly.
-        __setInput(up, down, left, right, space) {
-            input.up = !!up; input.down = !!down; input.left = !!left; input.right = !!right; input.space = !!space;
-            emitInput();
-        }
-    };
-})();
-
-window.PoRacer = PoRacer;
-
-
-// =============================================================
-//  PoRacerRender — Enhanced 2D renderer with all 10 visual FX
-// =============================================================
+// Canvas scene renderer. Lifecycle is owned by index.js.
 (function () {
     /** @type {Float32Array|null} */ let centerXY = null;
     /** @type {Float32Array|null} */ let wallsXY = null;
@@ -902,9 +747,6 @@ window.PoRacer = PoRacer;
         // Feature 1: Soft shadow
         g.save(); g.translate(4, 6); g.fillStyle = 'rgba(0,0,0,0.35)'; g.beginPath(); g.ellipse(0, 0, 20, 12, 0, 0, Math.PI * 2); g.fill(); g.restore();
 
-        // Boost glow
-        if (boost > 0.05) { g.shadowColor = '#7fd4ff'; g.shadowBlur = 30 * boost; }
-
         // Car body — flat fill + dark overlay (no createLinearGradient)
         g.fillStyle = color; g.beginPath(); g.roundRect(-16, -9, 32, 18, 5); g.fill();
         g.fillStyle = colorDark; g.globalAlpha = 0.4; g.beginPath(); g.roundRect(0, -9, 16, 18, [0, 5, 5, 0]); g.fill(); g.globalAlpha = 1;
@@ -967,9 +809,6 @@ window.PoRacer = PoRacer;
             g.fillStyle = 'rgba(255,220,100,' + fs * 0.2 + ')'; g.beginPath(); g.moveTo(-16, -1.5); g.lineTo(-16 - fs * 0.6, 0); g.lineTo(-16, 1.5); g.closePath(); g.fill();
         }
 
-        // Player ring
-        if (isPlayer) { g.strokeStyle = 'rgba(255,255,255,0.6)'; g.lineWidth = 1.2; g.setLineDash([3, 3]); g.beginPath(); g.arc(0, 0, 22, 0, Math.PI * 2); g.stroke(); g.setLineDash([]); }
-
         g.restore();
     }
 
@@ -988,6 +827,16 @@ window.PoRacer = PoRacer;
 
     // --- Public API ---
     window.PoRacerRender = {
+        dispose() {
+            centerXY = wallsXY = null;
+            mainCanvasEl = miniCanvasEl = mainCtx_ = null;
+            mainCanvasId_ = miniCanvasId_ = null;
+            trackTex = minimapTex = grassTex = parallaxFar = parallaxMid = null;
+            _specCamX = _specCamY = null;
+            bloomTex = bloomCtx = vignetteTex = fogTex = null;
+            _colorCache.clear();
+            sparkCount = 0;
+        },
         setStatic(center, width, walls, boostPads, surfaceZones, theme) {
             centerXY = new Float32Array(center); centerN = centerXY.length / 2;
             wallsXY = new Float32Array(walls); wallsM = wallsXY.length / 4;
@@ -1028,7 +877,7 @@ window.PoRacer = PoRacer;
             if (!mainCtx_) mainCtx_ = mainCanvas.getContext('2d');
             const g = mainCtx_;
             if (!g || !cars || cars.length === 0) return;
-            if (miniCanvasId !== miniCanvasId_) { miniCanvasId_ = miniCanvasId; miniCanvasEl = miniCanvasId ? document.getElementById(miniCanvasId) : null; }
+            if (miniCanvasId !== miniCanvasId_ || !miniCanvasEl) { miniCanvasId_ = miniCanvasId; miniCanvasEl = miniCanvasId ? document.getElementById(miniCanvasId) : null; }
             const miniCanvas = miniCanvasEl;
             const miniCtx = miniCanvas ? miniCanvas.getContext('2d') : null;
 
@@ -1044,35 +893,11 @@ window.PoRacer = PoRacer;
             const player = cars.find(c => c.isPlayer);
             let camX, camY, scale;
             if (!player && centerXY && centerN > 0) {
-                // Spectator / demo view: no local player. Follow the race LEADER
-                // (position 1) zoomed in 100% (2x the whole-track fit) so the
-                // graphics scroll with the action instead of showing the entire
-                // course at once. The camera is lerped toward the leader so
-                // leadership changes and marshal rescues pan smoothly rather than
-                // snapping (the reason the old fit-whole-track view existed).
-                let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
-                for (let i = 0; i < centerN; i++) {
-                    const x = centerXY[i * 2], y = centerXY[i * 2 + 1];
-                    if (x < minX) minX = x; if (x > maxX) maxX = x;
-                    if (y < minY) minY = y; if (y > maxY) maxY = y;
-                }
-                const pad = (trackWidth || 240) * 1.1;
-                minX -= pad; maxX += pad; minY -= pad; maxY += pad;
-                const fitScale = Math.min(w / (maxX - minX), h / (maxY - minY));
-                scale = fitScale * 2; // zoom in 100%
+                // Spectator / demo view: follow target car or leader
+                const targetCar = cars.reduce((leader, car) => car.position < leader.position ? car : leader, cars[0]);
+                let targetX = targetCar.x + Math.cos(targetCar.h) * 80;
+                let targetY = targetCar.y + Math.sin(targetCar.h) * 80;
 
-                // Pick the current leader (lowest valid position; positions are
-                // 1..N, or 0 before the race settles). Fall back to cars[0].
-                let leader = cars[0];
-                for (let i = 1; i < cars.length; i++) {
-                    const p = cars[i].position;
-                    if (p > 0 && (!(leader.position > 0) || p < leader.position)) leader = cars[i];
-                }
-                const targetX = leader.x + Math.cos(leader.h) * 80;
-                const targetY = leader.y + Math.sin(leader.h) * 80;
-
-                // Smooth pan toward the leader; snap on huge jumps (race start /
-                // teleport) so we don't slowly drift across the whole map.
                 if (_specCamX === null || Math.hypot(targetX - _specCamX, targetY - _specCamY) > 3000) {
                     _specCamX = targetX; _specCamY = targetY;
                 } else {
@@ -1080,6 +905,9 @@ window.PoRacer = PoRacer;
                     _specCamY += (targetY - _specCamY) * 0.18;
                 }
                 camX = _specCamX; camY = _specCamY;
+
+                const baseScale = Math.min(w, h) / 900;
+                scale = Math.max(0.35, Math.min(1.2, baseScale * 1.1));
             } else {
                 // Follow-cam on the local player: zoom in so their car and the cars
                 // around them (for collisions) are clearly visible.
@@ -1140,7 +968,7 @@ window.PoRacer = PoRacer;
             if (!mainCtx_) mainCtx_ = mainCanvas.getContext('2d'); // cache 2D context
             const g = mainCtx_;
             if (!g) return;
-            if (miniCanvasId !== miniCanvasId_) { miniCanvasId_ = miniCanvasId; miniCanvasEl = miniCanvasId ? document.getElementById(miniCanvasId) : null; }
+            if (miniCanvasId !== miniCanvasId_ || !miniCanvasEl) { miniCanvasId_ = miniCanvasId; miniCanvasEl = miniCanvasId ? document.getElementById(miniCanvasId) : null; }
             const miniCanvas = miniCanvasEl;
             const miniCtx = miniCanvas ? miniCanvas.getContext('2d') : null;
 
@@ -1258,20 +1086,7 @@ window.PoRacer = PoRacer;
 
             if (shakeX || shakeY) g.restore();
 
-            // Minimap
-            if (miniCtx) {
-                if (!minimapTex) buildMinimapBitmap();
-                miniCtx.clearRect(0, 0, miniCanvas.width, miniCanvas.height); miniCtx.drawImage(minimapTex, 0, 0, 180, 180);
-                if (minimapBbox) { const { minX, minY, s, ox, oy } = minimapBbox; const toX = (x) => ox + (x - minX) * s, toY = (y) => oy + (y - minY) * s; for (let i = 0; i < carCount; i++) { const o = i * 6; const col = cachedColor(carCols[i]); miniCtx.fillStyle = col; miniCtx.shadowColor = col; miniCtx.shadowBlur = 6; miniCtx.beginPath(); miniCtx.arc(toX(carBuf[o]), toY(carBuf[o + 1]), carBuf[o + 4] !== 0 ? 4 : 3, 0, Math.PI * 2); miniCtx.fill(); } miniCtx.shadowBlur = 0; }
-            }
         }
     };
 
-    // Polyfill
-    if (CanvasRenderingContext2D.prototype.roundRect == null) {
-        CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
-            if (typeof r === 'number') r = [r, r, r, r];
-            this.beginPath(); this.moveTo(x + r[0], y); this.lineTo(x + w - r[1], y); this.quadraticCurveTo(x + w, y, x + w, y + r[1]); this.lineTo(x + w, y + h - r[2]); this.quadraticCurveTo(x + w, y + h, x + w - r[2], y + h); this.lineTo(x + r[3], y + h); this.quadraticCurveTo(x, y + h, x, y + h - r[3]); this.lineTo(x, y + r[0]); this.quadraticCurveTo(x, y, x + r[0], y); this.closePath(); return this;
-        };
-    }
 })();

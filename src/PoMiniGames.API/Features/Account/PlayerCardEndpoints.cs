@@ -75,3 +75,4 @@ public static class PlayerCardEndpoints
         .RequireRateLimiting("leaderboard-read");
     }
 }
+

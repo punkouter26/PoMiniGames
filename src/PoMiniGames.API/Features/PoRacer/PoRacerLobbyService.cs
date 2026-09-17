@@ -17,9 +17,11 @@ public sealed class PoRacerLobbyService : LobbyRoom<PoRacerLobbyPlayer>
     {
     }
 
-    public (LobbyState<PoRacerLobbyPlayer> state, string message) Open(string connectionId, string displayName, bool isGuest) =>
+    public (LobbyState<PoRacerLobbyPlayer> state, string message) Open(string connectionId, string displayName, bool isGuest, string userId) =>
         OpenCore(connectionId, displayName, isGuest,
-            (name, _, _) => new PoRacerLobbyPlayer(connectionId, name, isGuest, false));
+            (name, _, _) => new PoRacerLobbyPlayer(connectionId, name, isGuest, false, userId));
+
+    public string CreateRaceCode() => WithLock(_ => GameCode = "multi-" + Guid.NewGuid().ToString("N"));
 
     protected override PoRacerLobbyPlayer WithReady(PoRacerLobbyPlayer player, bool ready) =>
         player with { IsReady = ready };

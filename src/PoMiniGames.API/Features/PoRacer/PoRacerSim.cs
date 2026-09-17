@@ -11,7 +11,7 @@ namespace PoMiniGames.Features.PoRacer;
 /// </summary>
 internal sealed class PoRacerSim
 {
-    private const int TotalLaps = 3;
+    private const int TotalLaps = PoRacerCatalog.TotalLaps;
     private const double CarRadius = 18;
     private const double StopAfterMs = 90_000; // 90s safety cap so a stuck client can't hang the room
     // Once the winner crosses the line (finishes lap 3), the pack gets this much
@@ -30,7 +30,7 @@ internal sealed class PoRacerSim
 
     // Cars + input map
     private readonly List<SimCar> _cars = new();
-    private readonly Dictionary<string, SimCar> _byConnectionId = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SimCar> _byOwnerId = new(StringComparer.Ordinal);
 
     private readonly Stopwatch _wallClock = Stopwatch.StartNew();
     private long _startElapsedMs;
@@ -123,7 +123,7 @@ internal sealed class PoRacerSim
         var slots = new List<(string connectionId, string name, bool isPlayer)>();
         foreach (var p in players)
         {
-            slots.Add((p.ConnectionId, p.DisplayName, true));
+            slots.Add((string.IsNullOrEmpty(p.UserId) ? p.ConnectionId : p.UserId, p.DisplayName, true));
         }
         int humanCount = slots.Count;
         for (int i = humanCount; i < 8; i++)
@@ -148,7 +148,7 @@ internal sealed class PoRacerSim
             var car = new SimCar
             {
                 Id = i,
-                ConnectionId = s.connectionId,
+                OwnerId = s.connectionId,
                 Name = s.name,
                 IsPlayer = s.isPlayer,
                 Personality = personality,
@@ -166,23 +166,13 @@ internal sealed class PoRacerSim
                 DistanceAlongTrack = 0,
             };
             _cars.Add(car);
-            if (s.isPlayer) _byConnectionId[s.connectionId] = car;
+            if (s.isPlayer) _byOwnerId[s.connectionId] = car;
         }
 
         _startElapsedMs = _wallClock.ElapsedMilliseconds;
     }
 
-    public bool OwnedBy(string connectionId) => _byConnectionId.ContainsKey(connectionId);
-
-    /// <summary>Called when the countdown reaches GO. Rebases the race clock so elapsed
-    /// and finish times start from zero — the sim isn't ticked during the countdown.</summary>
-    public void StartRacing()
-    {
-        _startElapsedMs = _wallClock.ElapsedMilliseconds;
-        // Rebase every car's lap timer to the freshly-zeroed race clock so lap 1
-        // isn't credited with the countdown time.
-        foreach (var c in _cars) c.LapStartElapsed = 0;
-    }
+    public int? CarIdForOwner(string ownerId) => _byOwnerId.TryGetValue(ownerId, out var car) ? car.Id : null;
 
     public void Tick(double dt, IReadOnlyDictionary<string, PoRacerInput> inputs)
     {
@@ -193,10 +183,10 @@ internal sealed class PoRacerSim
         }
 
         // Apply player input.
-        foreach (var (cid, car) in _byConnectionId)
+        foreach (var (cid, car) in _byOwnerId)
         {
-            if (!inputs.TryGetValue(cid, out var inp)) continue;
-            ApplyControl(car, dt, inp.Up, inp.Down, inp.Left, inp.Right, inp.Space);
+            inputs.TryGetValue(cid, out var inp);
+            ApplyControl(car, dt, inp?.Up ?? false, inp?.Down ?? false, inp?.Left ?? false, inp?.Right ?? false, inp?.Space ?? false);
         }
         // AI.
         foreach (var c in _cars)
@@ -616,7 +606,7 @@ internal sealed class PoRacerSim
             .Select((c, idx) => new PoRacerFinalEntry(
                 idx + 1,
                 c.Name,
-                c.IsPlayer ? c.ConnectionId : "",
+                c.Id,
                 !c.IsPlayer, // ai or guest by sign-up
                 c.FinishTime,
                 c.Lap > TotalLaps && c.FinishTime >= 0 && !double.IsInfinity(c.FinishTime),
@@ -625,7 +615,7 @@ internal sealed class PoRacerSim
         return new PoRacerFinalResult(code, standings, DateTimeOffset.UtcNow);
     }
 
-    public PoRacerRaceSnapshot Snapshot(string code, int countdownMs)
+    public PoRacerRaceSnapshot Snapshot(string code)
     {
         var cars = _cars.Select(c => new PoRacerCarState
         {
@@ -656,46 +646,12 @@ internal sealed class PoRacerSim
             ServerTimeMs = _wallClock.ElapsedMilliseconds,
             Cars = cars,
             ElapsedRaceTime = elapsed,
-            CountdownMs = countdownMs,
-            Started = countdownMs == 0,
+            Started = true,
             Finished = AllFinishedOrStopped(),
         };
     }
 
     // ── Math helpers (mirror the client's Catmull-Rom track) ─────────────
-
-    private static List<Vec2> ResampleClosedSpline(List<Vec2> pts, int subdivisions)
-    {
-        var result = new List<Vec2>(pts.Count * subdivisions);
-        int n = pts.Count;
-        for (int i = 0; i < n; i++)
-        {
-            var p0 = pts[(i - 1 + n) % n];
-            var p1 = pts[i];
-            var p2 = pts[(i + 1) % n];
-            var p3 = pts[(i + 2) % n];
-            for (int s = 0; s < subdivisions; s++)
-            {
-                double t = s / (double)subdivisions;
-                result.Add(CatmullRom(p0, p1, p2, p3, t));
-            }
-        }
-        return result;
-    }
-
-    private static Vec2 CatmullRom(Vec2 p0, Vec2 p1, Vec2 p2, Vec2 p3, double t)
-    {
-        double t2 = t * t, t3 = t2 * t;
-        double x = 0.5 * ((2 * p1.X) +
-                          (-p0.X + p2.X) * t +
-                          (2 * p0.X - 5 * p1.X + 4 * p2.X - p3.X) * t2 +
-                          (-p0.X + 3 * p1.X - 3 * p2.X + p3.X) * t3);
-        double y = 0.5 * ((2 * p1.Y) +
-                          (-p0.Y + p2.Y) * t +
-                          (2 * p0.Y - 5 * p1.Y + 4 * p2.Y - p3.Y) * t2 +
-                          (-p0.Y + 3 * p1.Y - 3 * p2.Y + p3.Y) * t3);
-        return new Vec2(x, y);
-    }
 
     private static Vec2 Normal(Vec2 a, Vec2 b)
     {
@@ -771,7 +727,7 @@ internal sealed class PoRacerSim
     private sealed class SimCar
     {
         public int Id;
-        public string ConnectionId = "";
+        public string OwnerId = "";
         public string Name = "";
         public string Color = "#ffffff";
         public string ColorDark = "#222";

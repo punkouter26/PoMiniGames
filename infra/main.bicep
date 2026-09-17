@@ -9,6 +9,9 @@ param resourceGroupName string = 'PoMiniGames'
 @description('The name of the existing shared resource group')
 param sharedResourceGroupName string = 'PoShared'
 
+@description('Existing shared Key Vault name')
+param sharedKeyVaultName string = 'kv-poshared'
+
 // ── Microsoft (Entra ID) OAuth configuration ─────────────────────────────
 // Wire the SPA client ID + API audience as Bicep parameters so the App Service
 // App Settings surface the real production values. Microsoft "client IDs" are
@@ -45,6 +48,7 @@ module resources './resources.bicep' = {
     location: location
     tags: tags
     sharedResourceGroupName: sharedResourceGroupName
+    sharedKeyVaultName: sharedKeyVaultName
     microsoftAuthClientId: microsoftAuthClientId
     microsoftAuthApiClientId: microsoftAuthApiClientId
     microsoftAuthTenantId: microsoftAuthTenantId
@@ -55,7 +59,7 @@ module kvAccess './kv-access.bicep' = {
   name: 'kv-access'
   scope: resourceGroup(sharedResourceGroupName)
   params: {
-    keyVaultName: 'kv-poshared'
+    keyVaultName: sharedKeyVaultName
     principalId: resources.outputs.WEB_APP_PRINCIPAL_ID
   }
 }
@@ -81,7 +85,7 @@ module kvSecrets './kv-secrets.bicep' = {
   name: 'kv-secrets'
   scope: resourceGroup(sharedResourceGroupName)
   params: {
-    keyVaultName: 'kv-poshared'
+    keyVaultName: sharedKeyVaultName
     storageAccountName: resources.outputs.STORAGE_ACCOUNT_NAME
     aiFoundryEndpoint: resources.outputs.AI_FOUNDRY_ENDPOINT
   }
@@ -92,3 +96,5 @@ output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
 output WEB_APP_NAME string = resources.outputs.WEB_APP_NAME
 output AI_FOUNDRY_ENDPOINT string = resources.outputs.AI_FOUNDRY_ENDPOINT
+
+output AZURE_RESOURCE_GROUP string = rg.name

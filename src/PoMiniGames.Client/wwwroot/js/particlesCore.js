@@ -42,6 +42,7 @@ precision highp float;
 uniform vec2  uResolution;
 uniform float uTime;        // seconds since start
 uniform vec2  uMouse;       // 0..1, origin bottom-left
+uniform vec2  uMouseVel;    // velocity, normalized/smoothed
 uniform int   uSteps;       // march resolution, set from the quality tier
 uniform vec3  uBands;       // bass, mid, treble — each 0..1, pre-smoothed
 uniform vec3  uHueA;        // near/low colour  (linear-ish sRGB)
@@ -157,10 +158,14 @@ void main() {
         }
     }
 
-    // Soft pointer bloom, additive and very low amplitude. It exists to make
-    // the surface feel responsive to touch, not to be noticed on its own.
-    float md = distance(gl_FragCoord.xy / uResolution, uMouse);
-    col += uHueA * exp(-md * 7.0) * 0.05;
+    // Soft pointer bloom + interactive fluid curl wake & dye swirl
+    vec2 mNorm = gl_FragCoord.xy / uResolution;
+    float md = distance(mNorm, uMouse);
+    float speed = length(uMouseVel);
+    float swirl = sin(atan(mNorm.y - uMouse.y, mNorm.x - uMouse.x) * 3.0 - uTime * 3.5 + md * 14.0);
+    float wake = exp(-md * 5.5) * (0.05 + speed * 0.45);
+    vec3 dye = mix(uHueA, uHueB, clamp(0.5 + 0.5 * swirl, 0.0, 1.0));
+    col += dye * wake;
 
     float alpha = clamp(1.0 - trans, 0.0, 1.0);
     // Canvas is created with premultipliedAlpha:true and \`col\` was accumulated
@@ -223,6 +228,7 @@ export function initGl(gl) {
         uRes: gl.getUniformLocation(program, 'uResolution'),
         uTime: gl.getUniformLocation(program, 'uTime'),
         uMouse: gl.getUniformLocation(program, 'uMouse'),
+        uMouseVel: gl.getUniformLocation(program, 'uMouseVel'),
         uSteps: gl.getUniformLocation(program, 'uSteps'),
         uBands: gl.getUniformLocation(program, 'uBands'),
         uHueA: gl.getUniformLocation(program, 'uHueA'),
@@ -243,7 +249,7 @@ export const DEFAULT_HUE_B = [0.62, 0.32, 0.90];
  * @param {number} elapsedMs
  * @param {number} mouseX   0..1
  * @param {number} mouseY   0..1
- * @param {object} s        {quality, bass, mid, treble, hueA, hueB}
+ * @param {object} s        {quality, bass, mid, treble, hueA, hueB, mouseVx, mouseVy}
  */
 export function drawFrame(gl, u, w, h, elapsedMs, mouseX, mouseY, s) {
     const q = s && Number.isFinite(s.quality) ? Math.max(0, Math.min(1, s.quality)) : 1;
@@ -266,6 +272,7 @@ export function drawFrame(gl, u, w, h, elapsedMs, mouseX, mouseY, s) {
     gl.uniform2f(u.uRes, w, h);
     gl.uniform1f(u.uTime, elapsedMs / 1000);
     gl.uniform2f(u.uMouse, mouseX, mouseY);
+    if (u.uMouseVel) gl.uniform2f(u.uMouseVel, (s && s.mouseVx) || 0, (s && s.mouseVy) || 0);
     gl.uniform1i(u.uSteps, steps);
     gl.uniform3f(u.uBands, (s && s.bass) || 0, (s && s.mid) || 0, (s && s.treble) || 0);
     const a = (s && s.hueA) || DEFAULT_HUE_A;

@@ -1,0 +1,41 @@
+@using PoMiniGames.Shared.Games
+<div class="race-results">
+    @if (Result is not null)
+    {
+        var mine = Result.Standings.FirstOrDefault(s => s.CarId == PlayerId);
+        <p class="result-headline">@(mine?.Finished == true ? $"Finished {mine.Position} of {Result.Standings.Count}" : "Race complete")</p>
+        <p>Best lap <strong>@PoRacerFormatting.Time(mine?.BestLapSeconds ?? 0)</strong></p>
+        <table>
+            <caption>Final standings</caption>
+            <thead><tr><th scope="col">Pos.</th><th scope="col">Driver</th><th scope="col">Race time</th><th scope="col">Best lap</th></tr></thead>
+            <tbody>
+                @foreach (var entry in Result.Standings)
+                {
+                    <tr class="@(entry.CarId == PlayerId ? "local-driver" : "")">
+                        <td>@entry.Position</td><td>@entry.Name</td>
+                        <td>@(entry.Finished ? PoRacerFormatting.Time(entry.TotalTimeSeconds) : "DNF")</td>
+                        <td>@PoRacerFormatting.Time(entry.BestLapSeconds)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    <p role="status">
+        @(SubmitStatus switch
+        {
+            "Saving" => "Saving best lap…",
+            "Saved" => "Best lap saved to the leaderboard.",
+            "Queued" => "Best lap saved on this device. Sync will retry when the server is available.",
+            "Rejected" => "This lap could not be accepted.",
+            _ => ""
+        })
+    </p>
+    @if (SubmitStatus == "Rejected") { <button type="button" @onclick="Retry">Retry save</button> }
+    <a href="/leaderboards">View leaderboard</a>
+</div>
+@code {
+    [Parameter] public PoRacerFinalResult? Result { get; set; }
+    [Parameter] public int? PlayerId { get; set; }
+    [Parameter] public string? SubmitStatus { get; set; }
+    [Parameter] public EventCallback Retry { get; set; }
+}

@@ -259,8 +259,19 @@ function playNodes(ctx, dest, v, when) {
  */
 export async function playPluck(freq, dur = 0.8, gain = 0.25, damp = 0.7, busName = 'ui') {
     const f = Math.max(40, freq || 440);
+    if (_moduleOk) {
+        return play({
+            wave: 'pluck',
+            freq: f,
+            dur: dur,
+            gain: gain,
+            damping: Math.max(0.85, Math.min(0.995, 0.99 - damp * 0.08)),
+            attack: 0.001,
+            decay: dur * 0.9,
+        }, busName);
+    }
     const voices = [
-        // Fundamental body
+        // Fallback fundamental body
         { wave: 'triangle', freq: f, dur: dur, gain: gain * 0.7, attack: 0.002, decay: dur * 0.85 },
         // High harmonic pluck transient with rapid filter sweep
         { wave: 'saw', freq: f * 2, dur: Math.min(dur * 0.4, 0.25), gain: gain * 0.45, attack: 0.001, decay: 0.12 * (1 - damp * 0.5), cutoff: 4800, cutoffEnd: f * 1.5, q: 2 },
@@ -268,6 +279,34 @@ export async function playPluck(freq, dur = 0.8, gain = 0.25, damp = 0.7, busNam
         { wave: 'sine', freq: f * 3, dur: Math.min(dur * 0.3, 0.18), gain: gain * 0.25, attack: 0.001, decay: 0.08 },
     ];
     return playAll(voices, busName);
+}
+
+/**
+ * Modal physical resonance synthesizer (wood, ceramic, bell, glass, metal).
+ * Zero audio samples — evaluates resonant eigenvalue modes in real-time.
+ * @param {number} [freq=440] Fundamental frequency in Hz
+ * @param {'ceramic'|'wood'|'metal'|'bell'|'glass'} [material='ceramic']
+ * @param {number} [dur=0.6] Ring-out duration in seconds
+ * @param {number} [gain=0.25] Amplitude 0..1
+ * @param {number} [damp=1.0] Damping factor multiplier
+ * @param {'music'|'sfx'|'ui'} [busName='sfx']
+ */
+export async function playModal(freq = 440, material = 'ceramic', dur = 0.6, gain = 0.25, damp = 1.0, busName = 'sfx') {
+    const f = Math.max(40, freq);
+    if (_moduleOk) {
+        return play({
+            wave: 'modal',
+            freq: f,
+            material: material,
+            dur: dur,
+            gain: gain,
+            damping: damp,
+            attack: 0.002,
+            decay: dur * 0.9,
+        }, busName);
+    }
+    // Node-fallback: multi-oscillator approximation
+    return playGong(f, dur, gain, busName);
 }
 
 /**
@@ -344,6 +383,25 @@ export async function playChirp(freqStart, freqEnd, dur = 0.05, gain = 0.15, bus
     }, busName);
 }
 
+/**
+ * Control the continuous Shepard-Risset rising tension engine.
+ * @param {boolean} active
+ * @param {number} [rate=0.06]
+ * @param {number} [gain=0.15]
+ * @param {'music'|'sfx'|'ui'} [busName='music']
+ */
+export async function setShepard(active, rate = 0.06, gain = 0.15, busName = 'music') {
+    const node = await nodeFor(busName);
+    if (node) {
+        node.port.postMessage({
+            type: 'shepard',
+            active: !!active,
+            rate: rate,
+            gain: gain
+        });
+    }
+}
+
 if (typeof window !== 'undefined') {
     window.PoDsp = {
         play,
@@ -352,8 +410,10 @@ if (typeof window !== 'undefined') {
         ready,
         isWorkletActive,
         playPluck,
+        playModal,
         playGong,
         playGranular,
-        playChirp
+        playChirp,
+        setShepard
     };
 }

@@ -1,14 +1,7 @@
 name: Deploy to Azure
 
-# CI/CD policy (2026-07-04):
-#   - Unit tests (tests/PoMiniGames.Unit) DO run here — they have zero infra
-#     dependencies (no Azurite, no Playwright) so they are a cheap regression gate
-#     on the one branch that auto-deploys. Deploy needs both `build` and `test`.
-#   - Integration + E2E (API/UI) tests remain out-of-band: they require Azurite
-#     (Testcontainers) and Playwright Chromium and run locally via scripts/test-all.ps1.
-#   - master is the only branch that triggers deploy. Local + remote feature
-#     branches are merged into master via PRs. Branch-hygiene invariant:
-#     scripts/branch-hygiene.ps1.
+# Build and unit tests gate deployment. All four test ceilings run without infrastructure.
+# Provision resources with azd; this workflow deploys application code only.
 on:
   push:
     branches: [ master ]
@@ -25,10 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Pinned to match global.json (10.0.203) so CI builds on the same SDK as local.
-  # A floating '10.0.x' let CI drift onto a newer patch than the lockfile allows.
-  DOTNET_VERSION: '10.0.203'
-  AZURE_LOCATION: 'westus2'
+  AZURE_RESOURCE_GROUP: 'PoMiniGames'
 
 jobs:
   build:
@@ -56,7 +46,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          global-json-file: global.json
 
       - name: Cache NuGet packages
         uses: actions/cache@v4
@@ -128,9 +118,15 @@ jobs:
             exit 1
           fi
 
-      - name: Verify formatting (non-blocking)
-        run: dotnet format PoMiniGames.slnx --verify-no-changes --verbosity minimal
-        continue-on-error: true
+      - name: Verify PoRacer formatting
+        run: dotnet format PoMiniGames.slnx --verify-no-changes --no-restore --verbosity minimal --include src/PoMiniGames.API/Features/PoRacer src/PoMiniGames.Client/Games/PoRacer src/PoMiniGames.Shared/Games/PoRacerShared.cs src/PoMiniGames.Shared/Games/PoRacerCatalog.cs
+
+      - name: Validate infrastructure
+        run: az bicep build --file infra/main.bicep --stdout > /dev/null
+
+      - name: Enforce all four test ceilings
+        shell: pwsh
+        run: ./scripts/test-ceilings.ps1 -Configuration ${{ github.event_name == 'pull_request' && 'Debug' || 'Release' }} -NoBuild
 
       - name: Publish (push-to-master only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
@@ -153,7 +149,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          global-json-file: global.json
       - name: Cache NuGet packages
         uses: actions/cache@v4
         with:
@@ -177,18 +173,10 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    env:
-      # Override at job scope in case the workflow env is overridden by a
-      # caller (workflow_dispatch with custom inputs).
-      AZURE_LOCATION: 'westus2'
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Required for Bicep what-if: the deploy job otherwise only has the
-          # api-publish artifact and `infra/main.bicep` doesn't exist on the
-          # runner (run 28288927457 failed with ENOENT on it).
           fetch-depth: 0
 
       - name: Download publish artifact
@@ -210,8 +198,8 @@ jobs:
           # Self-healing target resolution: discover the API web app from its
           # resource group instead of hard-coding a name. A future resource
           # rename can no longer silently 404 the deploy (the original failure mode).
-          APP_NAME=$(az webapp list --resource-group PoMiniGames --query "[0].name" -o tsv)
-          if [ -z "$APP_NAME" ]; then echo "::error::No web app found in resource group PoMiniGames"; exit 1; fi
+          APP_NAME=$(az webapp list --resource-group "$AZURE_RESOURCE_GROUP" --query "[0].name" -o tsv)
+          if [ -z "$APP_NAME" ]; then echo "::error::No web app found in the configured resource group"; exit 1; fi
           echo "Resolved App Service: $APP_NAME"
           echo "APP_NAME=$APP_NAME" >> "$GITHUB_ENV"
           # Zip the publish *contents* (not the parent folder) so the host finds
@@ -220,7 +208,7 @@ jobs:
           # zip is mounted atomically — no file-copy step on the host.
           ( cd publish && zip -qr ../app-deploy.zip . )
           az webapp deploy \
-            --resource-group PoMiniGames \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
             --name "$APP_NAME" \
             --src-path app-deploy.zip \
             --type zip \

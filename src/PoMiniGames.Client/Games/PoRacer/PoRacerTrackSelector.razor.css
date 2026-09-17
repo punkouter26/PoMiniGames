@@ -1,0 +1,9 @@
+.track-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 0; border: 0; margin: 20px 0; }
+legend { margin-bottom: 10px; font-weight: 700; }
+.track-card { display: flex; align-items: start; gap: 10px; padding: 16px 12px; border: 1px solid #637c9466; border-radius: 12px; cursor: pointer; background: #07142080; }
+.track-card.selected { border-color: #91e4ff; background: #19405a; }
+.track-card input { margin-top: 4px; accent-color: #91e4ff; }
+.track-card strong { display: block; color: #f1faff; }
+.track-card small { display: block; margin-top: 8px; color: #c4d6e8; line-height: 1.5; }
+.track-card:focus-within { outline: 2px solid white; outline-offset: 3px; }
+@media (max-width: 600px) { .track-picker { grid-template-columns: 1fr; } .track-card { padding: 12px; } .track-card small { margin-top: 4px; } }

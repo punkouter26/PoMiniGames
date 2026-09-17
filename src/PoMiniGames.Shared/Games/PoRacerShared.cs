@@ -10,7 +10,9 @@ public sealed class PoRacerScoreDto
     /// <summary>Server-populated from auth cookie. Empty/zero on submit → server fills.</summary>
     public string UserId { get; set; } = "";
     public string TrackId { get; set; } = "circuit";
-    public double TotalTimeSeconds { get; set; }
+    // Keep the existing JSON field so queued scores and older clients remain readable.
+    [System.Text.Json.Serialization.JsonPropertyName("totalTimeSeconds")]
+    public double BestLapSeconds { get; set; }
     public int FinalPosition { get; set; }
     public DateTimeOffset AchievedAtUtc { get; set; }
     public bool IsGuest { get; set; }
@@ -18,13 +20,6 @@ public sealed class PoRacerScoreDto
 }
 
 // ──────────────────────────────  Enums & Customization  ──────────────────────────────
-
-public enum TrackKind
-{
-    Circuit = 0,
-    NeonSkyline = 1,
-    DesertDustway = 2
-}
 
 public enum SurfaceKind
 {
@@ -64,7 +59,8 @@ public sealed record PoRacerLobbyPlayer(
     string ConnectionId,
     string DisplayName,
     bool IsGuest,
-    bool IsReady) : ILobbyPlayer;
+    bool IsReady,
+    [property: System.Text.Json.Serialization.JsonIgnore] string UserId = "") : ILobbyPlayer;
 
 // ──────────────────────────────  Race  ──────────────────────────────
 
@@ -105,7 +101,8 @@ public sealed class PoRacerRaceSnapshot
     public double ServerTimeMs { get; set; }
     public IReadOnlyList<PoRacerCarState> Cars { get; set; } = new List<PoRacerCarState>();
     public double ElapsedRaceTime { get; set; }
-    public int CountdownMs { get; set; }
+    public int? LocalCarId { get; set; }
+    public PoRacerFinalResult? Result { get; set; }
     public bool Started { get; set; }
     public bool Finished { get; set; }
     public PoRacerStaticWorld? Static { get; set; }
@@ -137,7 +134,6 @@ public sealed class PoRacerInput
     public bool Left { get; set; }
     public bool Right { get; set; }
     public bool Space { get; set; }
-    public long ClientTs { get; set; }
 }
 
 public sealed record PoRacerFinalResult(
@@ -148,7 +144,7 @@ public sealed record PoRacerFinalResult(
 public sealed record PoRacerFinalEntry(
     int Position,
     string Name,
-    string UserId,
+    int CarId,
     bool IsGuest,
     double TotalTimeSeconds,
     bool Finished,

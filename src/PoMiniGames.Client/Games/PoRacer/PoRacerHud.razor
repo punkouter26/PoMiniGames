@@ -1,0 +1,43 @@
+@using PoMiniGames.Shared.Games
+<div class="race-hud">
+    <div class="race-metrics">
+        @if (IsDemo) { <strong>Spectating</strong> }
+        else
+        {
+            <span>Position <strong>@(Player?.Position ?? 0) / @Cars.Count</strong></span>
+            <span>Lap <strong>@Math.Min(Player?.Lap ?? 1, TotalLaps) / @TotalLaps</strong></span>
+            <span><strong>@((int)Math.Abs((Player?.Speed ?? 0) * 1.2))</strong> km/h</span>
+        }
+        <span>@PoRacerFormatting.Time(ElapsedSeconds)</span>
+    </div>
+    <ol class="race-standings" aria-label="Race standings">
+        @foreach (var car in Cars.OrderBy(c => c.Position))
+        {
+            <li class="@(car.Id == PlayerId ? "local-driver" : "")">
+                <span>@car.Position. @car.Name</span><span>@(car.Finished ? "FIN" : $"L{car.Lap}")</span>
+            </li>
+        }
+    </ol>
+</div>
+@if (!IsDemo)
+{
+    <div class="race-touch" aria-label="Driving controls">
+        <div>
+            <button type="button" data-po-input="left" aria-label="Steer left">◀</button>
+            <button type="button" data-po-input="right" aria-label="Steer right">▶</button>
+        </div>
+        <div>
+            <button type="button" data-po-input="space">Drift</button>
+            <button type="button" data-po-input="down">Brake</button>
+            <button type="button" data-po-input="up">Gas</button>
+        </div>
+    </div>
+}
+@code {
+    [Parameter] public IReadOnlyList<PoRacerCarState> Cars { get; set; } = [];
+    [Parameter] public int? PlayerId { get; set; }
+    [Parameter] public int TotalLaps { get; set; }
+    [Parameter] public double ElapsedSeconds { get; set; }
+    [Parameter] public bool IsDemo { get; set; }
+    private PoRacerCarState? Player => Cars.FirstOrDefault(c => c.Id == PlayerId);
+}

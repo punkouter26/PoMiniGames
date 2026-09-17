@@ -11,17 +11,6 @@
 <PageTitle>Racer — Lobby · PoMiniGames</PageTitle>
 
 <GameShell Title="@TitleContent" BackTo="/">
-@if (!_introDone)
-{
-    <GameIntro CueScope="poracer"
-               Title="@TitleContent"
-               Objective="Race online against up to 8 players — first across the line after 3 laps wins."
-               Controls="@HowToPlayContent"
-               Mode="GameIntro.IntroMode.OnePlayer"
-               OnStart="OnIntroStartAsync" />
-}
-else
-{
     <LobbyPanel TPlayer="PoRacerLobbyPlayer"
                 State="@_lobby.State"
                 LocalConnectionId="@_lobby.ConnectionId"
@@ -31,40 +20,26 @@ else
                 OnReady="_lobby.ToggleReadyAsync"
                 OnStart="_lobby.StartGameAsync"
                 OnLeave="LeaveAsync" />
-}
 </GameShell>
 
 @code {
     private LobbyClient<PoRacerLobbyPlayer> _lobby = null!;
-    private bool _introDone;
 
     protected override void OnInitialized() => _lobby = new LobbyClient<PoRacerLobbyPlayer>(Endpoints, "poracer/lobby-hub");
 
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🏎️</span> Racer · Multiplayer</span>;
-    private RenderFragment HowToPlayContent => @<div>
-        <p>Race online against up to 8 players. Ready up in the lobby, then the host starts the race.</p>
-        <ul>
-            <li><kbd>↑</kbd>/<kbd>W</kbd> accelerate · <kbd>↓</kbd>/<kbd>S</kbd> brake</li>
-            <li><kbd>←</kbd>/<kbd>→</kbd> (or <kbd>A</kbd>/<kbd>D</kbd>) steer · <kbd>Space</kbd> drift</li>
-            <li>Three laps — first across the line wins</li>
-        </ul>
-    </div>;
-
-    // Connect + Join only after the intro is dismissed, so the player appears to others
-    // only once they are actually ready to play.
-    private async Task OnIntroStartAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        _introDone = true;
-        StateHasChanged();
+        if (!firstRender) return;
         if (!await Api.IsAvailableAsync())
         {
-            ToastService.Show("Server unavailable. Try Single Player mode.", ToastType.Error);
+            ToastService.Show("Server unavailable. Please try again shortly.", ToastType.Error);
             return;
         }
         _lobby.StateChanged += _ => InvokeAsync(StateHasChanged);
         _lobby.ConnectionChanged += _ => InvokeAsync(StateHasChanged);
         _lobby.EventReceived += ev => ToastService.Show(ev.Message, ev.Kind == "left" ? ToastType.Warning : ToastType.Info);
-        _lobby.GameStarted += _ => Nav.NavigateTo("/poracer");
+        _lobby.GameStarted += code => Nav.NavigateTo($"/poracer?code={Uri.EscapeDataString(code)}");
         await _lobby.ConnectAndJoinAsync(AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated);
     }
 

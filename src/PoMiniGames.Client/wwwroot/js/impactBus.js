@@ -117,6 +117,70 @@ function noise(t, freq) {
     return Math.sin(t * freq) * 0.62 + Math.sin(t * freq * 2.37 + 1.7) * 0.38;
 }
 
+function ensureShockwaveLayer() {
+    if (_shockwaveCanvas || typeof document === 'undefined' || !document.body) return _shockwaveCanvas;
+    const c = document.createElement('canvas');
+    c.className = 'po-impact-shockwave';
+    c.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:9988;opacity:0;';
+    c.setAttribute('aria-hidden', 'true');
+    c.width = window.innerWidth || 800;
+    c.height = window.innerHeight || 600;
+    document.body.appendChild(c);
+    _shockwaveCanvas = c;
+    return c;
+}
+
+/**
+ * Screen-space radial shockwave refraction ring.
+ * @param {number} [x] Center X in px
+ * @param {number} [y] Center Y in px
+ * @param {number} [strength=1.0] Amplitude scale
+ */
+export function shockwave(x, y, strength = 1.0) {
+    if (motionReduced() || tierScale() < 0.5) return;
+    const cx = x != null ? x : (typeof window !== 'undefined' ? window.innerWidth / 2 : 300);
+    const cy = y != null ? y : (typeof window !== 'undefined' ? window.innerHeight / 2 : 300);
+    const maxR = Math.min(window.innerWidth, window.innerHeight) * (0.35 + strength * 0.25);
+    _shockwaves.push({
+        x: cx,
+        y: cy,
+        maxR: maxR,
+        start: performance.now(),
+        dur: 460,
+        strength: Math.min(2.0, strength)
+    });
+    ensureRunning();
+}
+
+/**
+ * Damped harmonic spring physics animation on DOM elements.
+ * @param {HTMLElement} el
+ * @param {number} [targetScale=1.35] Peak overshoot scale
+ * @param {number} [stiffness=240]
+ * @param {number} [damping=16]
+ */
+export function spring(el, targetScale = 1.35, stiffness = 240, damping = 16) {
+    if (!el || motionReduced()) return;
+    let pos = 1.0;
+    let vel = (targetScale - 1.0) * 14.0;
+    const target = 1.0;
+    let lastT = performance.now();
+    function springStep(now) {
+        const dt = Math.min(0.032, (now - lastT) * 0.001);
+        lastT = now;
+        const f = -stiffness * (pos - target) - damping * vel;
+        vel += f * dt;
+        pos += vel * dt;
+        el.style.scale = pos.toFixed(3);
+        if (Math.abs(pos - target) > 0.002 || Math.abs(vel) > 0.02) {
+            requestAnimationFrame(springStep);
+        } else {
+            el.style.scale = '';
+        }
+    }
+    requestAnimationFrame(springStep);
+}
+
 function ensureFlashLayer() {
     if (_flashEl || typeof document === 'undefined' || !document.body) return _flashEl;
     const el = document.createElement('div');
@@ -155,18 +219,63 @@ function step(now) {
 
     if (_flashEl) _flashEl.style.opacity = _flash.toFixed(3);
 
+    // Radial shockwaves rendering
+    if (_shockwaves.length > 0) {
+        const c = ensureShockwaveLayer();
+        if (c) {
+            c.style.opacity = '1';
+            const ctx = c.getContext('2d');
+            if (c.width !== window.innerWidth || c.height !== window.innerHeight) {
+                c.width = window.innerWidth;
+                c.height = window.innerHeight;
+            }
+            ctx.clearRect(0, 0, c.width, c.height);
+
+            for (let i = _shockwaves.length - 1; i >= 0; i--) {
+                const sw = _shockwaves[i];
+                const p = (now - sw.start) / sw.dur;
+                if (p >= 1.0) {
+                    _shockwaves.splice(i, 1);
+                    continue;
+                }
+                const rad = sw.maxR * Math.sqrt(p);
+                const alpha = (1.0 - p) * sw.strength * 0.7;
+
+                // Outer cyan refraction wave
+                ctx.strokeStyle = `rgba(34, 211, 238, ${(alpha * 0.75).toFixed(3)})`;
+                ctx.lineWidth = 4.5 * (1.0 - p);
+                ctx.beginPath();
+                ctx.arc(sw.x, sw.y, rad, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Inner magenta chromatic split wave
+                ctx.strokeStyle = `rgba(244, 63, 94, ${(alpha * 0.55).toFixed(3)})`;
+                ctx.lineWidth = 3.0 * (1.0 - p);
+                ctx.beginPath();
+                ctx.arc(sw.x, sw.y, Math.max(0, rad - 3.5), 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            if (_shockwaves.length === 0) {
+                ctx.clearRect(0, 0, c.width, c.height);
+                c.style.opacity = '0';
+            }
+        }
+    }
+
     if (_root) {
         _root.style.setProperty('--po-punch', _punch.toFixed(3));
         _root.style.setProperty('--po-shake', shake.toFixed(3));
     }
 
-    if (_trauma > 0.001 || _punch > 0.001 || _flash > 0.001 || _timeScale !== 1) {
+    if (_trauma > 0.001 || _punch > 0.001 || _flash > 0.001 || _timeScale !== 1 || _shockwaves.length > 0) {
         _rafId = requestAnimationFrame(step);
     } else {
         // Settle exactly on zero. Leaving a 0.0004px translate behind pins a
         // compositor layer on every registered stage for the rest of the session.
         for (const el of _stages) { el.style.translate = ''; el.style.rotate = ''; }
         if (_flashEl) _flashEl.style.opacity = '0';
+        if (_shockwaveCanvas) _shockwaveCanvas.style.opacity = '0';
         if (_root) {
             _root.style.setProperty('--po-punch', '0');
             _root.style.setProperty('--po-shake', '0');
@@ -224,6 +333,10 @@ export function impact(kind, scale) {
     if (p.stopMs > 0 && !reduced) {
         const until = (typeof performance !== 'undefined' ? performance.now() : 0) + p.stopMs * Math.min(s, 1.5);
         if (until > _stopUntil) _stopUntil = until;
+    }
+
+    if ((kind === 'heavy' || kind === 'win' || kind === 'lose') && !reduced) {
+        shockwave(typeof window !== 'undefined' ? window.innerWidth / 2 : 300, typeof window !== 'undefined' ? window.innerHeight / 2 : 300, s);
     }
 
     if (p.haptic) vibrate(p.haptic);
@@ -376,7 +489,7 @@ if (typeof window !== 'undefined') {
     // (racingInterop.js, pojoker-*) and for Blazor JS interop,
     // which cannot import an ES module without a dynamic import per call.
     window.PoImpact = {
-        impact, addTrauma, hitstop, getPunch, getShake, getTimeScale,
+        impact, shockwave, spring, addTrauma, hitstop, getPunch, getShake, getTimeScale,
         registerStage, unregisterStage, vibrate, pop, popSelector, reset,
     };
 

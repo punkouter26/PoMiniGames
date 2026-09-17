@@ -1,67 +1,6 @@
-// poracerGl.js — PoRacer's frame-rate and image quality layer (§GFX-1).
-//
-// THE PROBLEM
-// PoRacer is a thin client: the server pushes a snapshot roughly every 50 ms and
-// racingInterop.js drew one frame per snapshot. That is a hard 20 fps ceiling
-// with no amount of GPU able to help, because no frame existed to draw between
-// snapshots. On a 120 Hz phone the game was showing one frame in six. It also
-// meant every car's motion was quantised to the network tick, which is what made
-// the driving feel like it was on rails rather than under the player's hand.
-//
-// TWO FIXES, IN ORDER OF HOW MUCH THEY MATTER:
-//
-// 1. INTERPOLATION. Snapshots are buffered instead of drawn. A rAF loop renders
-//    at display rate, reading the world at (now − RENDER_DELAY) and lerping
-//    between the two snapshots that bracket that instant. This is the standard
-//    client-side interpolation used by every networked game, and the delay is
-//    the price: rendering slightly in the past is what guarantees there are two
-//    real samples to interpolate between, rather than extrapolating into a
-//    future that has not arrived.
-//
-//    RENDER_DELAY is ~1.6 snapshot intervals. Less and a single late packet
-//    leaves nothing to interpolate toward, so the cars stutter — which is worse
-//    than the extra 30 ms of latency, since PoRacer's input already round-trips
-//    to the server anyway.
-//
-//    2026-08-10 — THE BUFFER MUST BE DEEPER THAN THE DELAY. This held exactly two
-//    snapshots (`prev`/`cur`) while rendering 80 ms in the past, i.e. it kept 50 ms
-//    of history to serve a 80 ms lookback. On roughly 60% of frames `renderAt` fell
-//    BEFORE the older of the two and the code fell through to "draw the newest
-//    snapshot as-is" — which is 80 ms in the *future* of where the frame should be.
-//    A car at constant speed rendered 50,50,50,50 → 0,5,10,15 → 100,100,100 →
-//    50,55,60: a full-interval jump forward followed by a two-interval snap back,
-//    twenty times a second. That was the "cars shake back and forth" report, and it
-//    was the interpolator causing it, not the network.
-//
-//    The buffer is now a time-indexed ring and the lookback is clamped to the
-//    history it actually holds, so the bracketing pair always exists.
-//
-// 1b. SERVER-CLOCK TIMELINE. Snapshots used to be stamped with their ARRIVAL time,
-//    so playback speed tracked packet spacing: a pair delivered 30 ms apart replayed
-//    50 ms of motion in 30 ms, the next pair at 70 ms replayed it slow. Every
-//    delivery hiccup became a visible speed wobble. Each snapshot already carries
-//    the sim's own monotonic clock (PoRacerRaceSnapshot.ServerTimeMs), so we
-//    interpolate on THAT and keep a smoothed local→server offset. Positions and
-//    their timestamps then come from the same clock, and arrival jitter is absorbed
-//    by the offset filter instead of being rendered.
-//
-// 2. WEBGL2 COMPOSITE. The 2D scene is uploaded as a texture and passed through
-//    a fragment shader for chromatic aberration, heat shimmer, speed lines, a
-//    bright-pass bloom and a speed vignette — all scaled by actual speed, plus
-//    the shared impact envelope on collisions.
-//    (The radial motion blur this list used to lead with was removed 2026-08-08
-//    at the user's request — see the note in the shader.)
-//
-//    KEEPING THE 2D DRAWING WAS DELIBERATE. Reimplementing racingInterop.js's
-//    ~1,400 lines of track, weather, smoke, skid and car rendering in WebGL
-//    would be a rewrite with a large surface for regressions, to arrive at an
-//    image the player would find *equivalent*. Compositing instead costs one
-//    texture upload per frame and buys effects that are impossible in Canvas2D
-//    at any price. The upload is the honest cost of this design and it is why
-//    the GL layer switches itself off on the low tier.
-
-import * as Impact from './impactBus.js';
-import * as Cue from './gameCues.js';
+import { sampleAt } from './interpolation.js';
+import * as Impact from '../impactBus.js';
+import * as Cue from '../gameCues.js';
 
 const RENDER_DELAY_MS = 80;
 // Snapshots older than this are dropped: a tab that was backgrounded comes back
@@ -212,77 +151,6 @@ function tierTaps() {
     }
 }
 
-/** Shortest-arc angle interpolation. Plain lerp spins a car the long way round
- *  whenever its heading crosses ±π, which is once per lap on most corners. */
-function lerpAngle(a, b, t) {
-    let d = b - a;
-    while (d > Math.PI) d -= Math.PI * 2;
-    while (d < -Math.PI) d += Math.PI * 2;
-    return a + d * t;
-}
-
-/**
- * Build the car array for a point in time between two snapshots.
- * Identity is by array index rather than by name: the server sends a stable
- * ordering, and matching on a string per car per frame would allocate.
- */
-function interpolate(a, b, t) {
-    const out = new Array(b.cars.length);
-    for (let i = 0; i < b.cars.length; i++) {
-        const cb = b.cars[i];
-        const ca = a && a.cars[i] && a.cars[i].name === cb.name ? a.cars[i] : cb;
-        out[i] = {
-            ...cb,
-            x: ca.x + (cb.x - ca.x) * t,
-            y: ca.y + (cb.y - ca.y) * t,
-            h: lerpAngle(ca.h, cb.h, t),
-            v: ca.v + (cb.v - ca.v) * t,
-            // boost and skid are 0..1 intensities that drive particle spawns and
-            // glow; interpolating them keeps those effects smooth too.
-            boost: (ca.boost || 0) + ((cb.boost || 0) - (ca.boost || 0)) * t,
-            skid: (ca.skid || 0) + ((cb.skid || 0) - (ca.skid || 0)) * t,
-        };
-    }
-    return out;
-}
-
-/**
- * Car positions at server-clock instant `ts`.
- *
- * Every branch returns a value that is CONTINUOUS with its neighbours: clamped
- * to the oldest sample when we are behind the buffer, interpolated inside it,
- * and briefly extrapolated past the newest. The bug this replaced broke exactly
- * that property — its "behind the buffer" branch returned the NEWEST sample, so
- * falling off the back of the buffer teleported every car forward.
- */
-function sampleAt(ts) {
-    const n = buf.length;
-    if (n === 0) return null;
-    if (n === 1) return buf[0].cars;
-
-    if (ts <= buf[0].st) return buf[0].cars;
-
-    const last = buf[n - 1];
-    if (ts >= last.st) {
-        // Past the newest snapshot — a packet is late. Extrapolate along the last
-        // known trajectory, but only briefly: beyond about one interval the guess
-        // diverges badly on corners, and a car that visibly drives through a wall
-        // and snaps back is worse than one that pauses.
-        const before = buf[n - 2];
-        const span = last.st - before.st;
-        if (span <= 0) return last.cars;
-        return interpolate(before, last, 1 + Math.min(ts - last.st, 60) / span);
-    }
-
-    for (let i = n - 1; i > 0; i--) {
-        const a = buf[i - 1], b = buf[i];
-        if (ts >= a.st) return interpolate(a, b, (ts - a.st) / (b.st - a.st));
-    }
-    return buf[0].cars;
-}
-
-// ── GL composite ───────────────────────────────────────────────────────────
-
 function compileShader(type, src) {
     const s = gl.createShader(type);
     gl.shaderSource(s, src);
@@ -297,6 +165,7 @@ function ensureGl(canvas2d) {
 
     glCanvas = document.createElement('canvas');
     glCanvas.className = 'racer-gl';
+    Object.assign(glCanvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none' });
     glCanvas.setAttribute('aria-hidden', 'true');
     canvas2d.parentNode?.insertBefore(glCanvas, canvas2d.nextSibling);
 
@@ -421,7 +290,7 @@ function frame() {
     // very stutter this is here to remove. sampleAt() clamps to the oldest sample
     // if the lookback outruns the history, which holds the frame for a moment
     // rather than jumping.
-    const cars = sampleAt(now + clockOffset - RENDER_DELAY_MS);
+    const cars = sampleAt(buf, now + clockOffset - RENDER_DELAY_MS);
     if (!cars) return;
 
     const player = cars.find((c) => c.isPlayer) || cars[0];
@@ -513,12 +382,3 @@ export function uninstall() {
     installed = false;
 }
 
-if (typeof window !== 'undefined') {
-    // racingInterop.js is a classic script and has already run by the time any
-    // module evaluates, so PoRacerRender exists. Installing here rather than
-    // from the page means the patch is in place before the first snapshot
-    // arrives — a page-driven install would race the hub's initial push.
-    install();
-    window.addEventListener('pagehide', uninstall);
-    window.PoRacerGl = { install, uninstall };
-}

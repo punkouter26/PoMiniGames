@@ -1,0 +1,9 @@
+.racer-paintshop { display: flex; gap: 24px; flex-wrap: wrap; padding-top: 14px; }
+.paintshop-preview-wrap { min-width: 140px; }
+.paintshop-active-badge { font-size: 13px; margin-top: 10px; }
+.paintshop-controls { flex: 1; min-width: 200px; }
+fieldset { border: 0; padding: 0; margin: 0 0 14px; }
+legend { font-weight: 700; margin-bottom: 8px; }
+label { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; margin-right: 12px; cursor: pointer; }
+.swatch-dot { width: 18px; height: 18px; display: inline-block; border-radius: 50%; border: 1px solid white; }
+input { accent-color: #91e4ff; } label:focus-within { outline: 2px solid #fff; outline-offset: 2px; }

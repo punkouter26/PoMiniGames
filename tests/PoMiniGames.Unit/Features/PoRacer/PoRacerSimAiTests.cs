@@ -27,7 +27,7 @@ public class PoRacerSimAiTests
         const int maxTicks = 12_000;         // 240 sim-seconds hard budget
 
         var finishSec = new Dictionary<int, double>();
-        int carCount = sim.Snapshot("t", 0).Cars.Count;
+        int carCount = sim.Snapshot("t").Cars.Count;
 
         bool anyCarBoosted = false;
         bool anyCarHitSand = false;
@@ -36,7 +36,7 @@ public class PoRacerSimAiTests
         for (; tick < maxTicks; tick++)
         {
             sim.Tick(dt, noInput);
-            var snap = sim.Snapshot("t", 0);
+            var snap = sim.Snapshot("t");
             foreach (var car in snap.Cars)
             {
                 if (car.BoostTimer > 0) anyCarBoosted = true;
@@ -47,7 +47,7 @@ public class PoRacerSimAiTests
             if (finishSec.Count == carCount) break;
         }
 
-        var final = sim.Snapshot("t", 0);
+        var final = sim.Snapshot("t");
         int finished = final.Cars.Count(c => c.Finished);
         double raceSeconds = (tick + 1) * dt;
 

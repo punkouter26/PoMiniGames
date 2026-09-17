@@ -14,7 +14,7 @@
     'use strict';
 
     let _canvas = null, _ctx = null, _raf = 0;
-    let _type = 'clear', _intensity = 1, _drops = [], _wind = 0;
+    let _type = 'clear', _intensity = 1, _drops = [], _beads = [], _wind = 0;
     let _audio = null;   // { src, gain, filter, ctx }
 
     function hash(str) {
@@ -43,6 +43,15 @@
         };
     }
 
+    function spawnBead(w, h, initial) {
+        return {
+            x: Math.random() * w,
+            y: initial ? Math.random() * h : -8,
+            r: 2 + Math.random() * 2.8,
+            spd: 0.25 + Math.random() * 0.65
+        };
+    }
+
     function tick() {
         _raf = requestAnimationFrame(tick);
         if (!_ctx || _type === 'clear' || _type === 'fog') return;
@@ -62,6 +71,26 @@
             } else {
                 _ctx.globalAlpha = d.o;
                 _ctx.beginPath(); _ctx.moveTo(d.x, d.y); _ctx.lineTo(d.x + _wind * 2, d.y + d.len); _ctx.stroke();
+            }
+        }
+
+        // Rain-on-glass condensation beads
+        if (!snow && _beads.length > 0) {
+            for (const b of _beads) {
+                b.y += b.spd;
+                if (b.y > h + 10) Object.assign(b, spawnBead(w, h, false));
+                _ctx.globalAlpha = 0.45;
+                _ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+                _ctx.beginPath();
+                _ctx.ellipse(b.x, b.y, b.r * 0.8, b.r * 1.3, 0, 0, Math.PI * 2);
+                _ctx.fill();
+                _ctx.globalAlpha = 0.15;
+                _ctx.strokeStyle = 'rgba(200, 230, 255, 0.22)';
+                _ctx.lineWidth = b.r * 0.6;
+                _ctx.beginPath();
+                _ctx.moveTo(b.x, b.y - b.r * 2);
+                _ctx.lineTo(b.x, b.y);
+                _ctx.stroke();
             }
         }
         _ctx.globalAlpha = 1;
@@ -129,7 +158,12 @@
 
         const count = type === 'fog' ? 0 : Math.round((type === 'snow' ? 90 : 140) * _intensity * (Math.min(_canvas.width, 900) / 900 + 0.3));
         _drops = [];
+        _beads = [];
         for (let i = 0; i < count; i++) _drops.push(spawnDrop(_canvas.width, _canvas.height, true));
+        if (type === 'rain') {
+            const beadCount = Math.round(20 * _intensity);
+            for (let i = 0; i < beadCount; i++) _beads.push(spawnBead(_canvas.width, _canvas.height, true));
+        }
         _wind = type === 'rain' ? 0.6 : 0.25;
 
         // Fog: no particles — a slow-banding translucent gradient overlay.

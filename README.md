@@ -6,8 +6,7 @@ multiplayer, Azure Table Storage for persistence, and Azure AI Foundry behind th
 AI-powered games.
 
 > This file is the short tour. **`CLAUDE.md` is the authoritative engineering
-> reference** (commands, gates, architecture contracts); `docs/PRD_Master.md` and
-> `docs/PoVoxelStrike-PRD.md` hold the product specs.
+> reference** (commands, gates, architecture contracts); `SPEC.md` holds the product specification.
 
 ## Games (`src/PoMiniGames.Client/Games/`)
 
@@ -20,14 +19,14 @@ AI-powered games.
 | PoFunQuiz | AI-generated multiplayer quiz lobby |
 | PoJoker | AI joke judge with a grandma audience |
 | PoMarbleRace | Physics marble race on baked GLB tracks; online 2-player via host-streamed physics |
-| PoRacer | 3D racer with multiplayer lobby |
+| PoRacer | Canvas racer with WebGL effects, solo races, and a multiplayer lobby |
 | PoSports | Sprite-based sports mini-game |
 | PoVoxelStrike | Third-person survival shooter with fully destructible voxel structures |
 
 ## Quick start
 
 ```powershell
-# prerequisites: .NET SDK 10.0.203 (global.json), Docker
+# prerequisites: .NET SDK 10.0.400 (global.json), Docker
 docker compose up -d azurite                                  # local table storage
 dotnet run --project src/PoMiniGames.API/PoMiniGames.API.csproj
 # → http://localhost:5080  (API + client, one origin)
@@ -42,7 +41,6 @@ src/
 ├── PoMiniGames.API/            Host + vertical feature slices (Features/<Slice>)
 ├── PoMiniGames.Client/         Blazor WASM client (assembly: PoMiniGamesClient)
 ├── PoMiniGames.Infrastructure/ Table Storage, HighScoreDescriptor<T> leaderboards
-├── PoMiniGames.Application/    Storage interfaces + application DTOs
 ├── PoMiniGames.Domain/         Domain primitives (EloCalculator, GameKey, ...)
 └── PoMiniGames.Shared/         DTOs shared between client and server
 tests/
@@ -62,3 +60,9 @@ scripts/                        Working scripts only — see scripts/README.md
 - UI is native Blazor + plain CSS by design — no heavy component libraries.
 - Offline-friendly PWA: finished scores park locally and sync on reconnect/sign-in.
 - Deploy: `azd up` (App Service F1, resource group `PoMiniGames`).
+
+PoRacer ranks **best completed laps**, separately from final race times. Its legacy JSON
+field and Azure Table column `totalTimeSeconds` / `TotalTimeSeconds` retain their names
+for stored-score compatibility; existing rows are preserved without inferred conversion.
+Run `pwsh scripts/test-ceilings.ps1` to check all four test-method budgets without Docker.
+CI validates Bicep and deploys application code; use `azd up` for resource provisioning.

@@ -126,24 +126,39 @@ const CUES = {
             ],
             feel: null, jitter: 0.2,
         },
+        holoShimmer: {
+            voices: [
+                v('modal', 1760, 0.22, 0.08, { material: 'glass', damping: 0.8 }),
+                v('sine', 2640, 0.16, 0.05, { decay: 0.14, delay: 0.025 }),
+                v('sine', 3520, 0.12, 0.04, { decay: 0.10, delay: 0.05 }),
+            ],
+            feel: null, jitter: 0.3, bus: 'ui',
+        },
+        vortexImplosion: {
+            voices: [
+                v('noise', 0, 0.35, 0.18, { cutoff: 6500, cutoffEnd: 60, q: 3.5, sweep: 0.35, decay: 0.35 }),
+                v('sine', 160, 0.32, 0.22, { freqEnd: 42, sweep: 0.32, decay: 0.32, delay: 0.05 }),
+            ],
+            feel: 'heavy', scale: 0.9, bus: 'ui',
+        },
     },
 
     // ── TicTacToe — struck wood & neon laser ───────────────────────────
     tictactoe: {
         placeX: {
-            // Marimba: a pitched body with a hard noise transient on top.
+            // Hand-struck solid maple wood peg modal resonance
             voices: [
-                v('triangle', 523, 0.20, 0.16, { decay: 0.18, cutoff: 2400, q: 1.4 }),
-                v('sine', 1046, 0.09, 0.06, { decay: 0.08 }),
-                v('noise', 0, 0.02, 0.05, { decay: 0.015, cutoff: 5200, q: 1.5 }),
+                v('modal', 480, 0.18, 0.22, { material: 'wood', damping: 1.2 }),
+                v('pluck', 523, 0.14, 0.14, { damping: 0.95 }),
+                v('noise', 0, 0.015, 0.08, { decay: 0.012, cutoff: 4200, q: 1.5 }),
             ],
             feel: 'light', fx: { preset: 'dust', scale: 0.6 },
         },
         placeO: {
             voices: [
-                v('triangle', 440, 0.22, 0.16, { decay: 0.20, cutoff: 2200, q: 1.4 }),
-                v('sine', 880, 0.10, 0.06, { decay: 0.09 }),
-                v('noise', 0, 0.02, 0.05, { decay: 0.015, cutoff: 4600, q: 1.5 }),
+                v('modal', 400, 0.20, 0.22, { material: 'wood', damping: 1.1 }),
+                v('pluck', 440, 0.16, 0.14, { damping: 0.94 }),
+                v('noise', 0, 0.015, 0.08, { decay: 0.012, cutoff: 3800, q: 1.5 }),
             ],
             feel: 'light', fx: { preset: 'dust', scale: 0.6 },
         },
@@ -180,9 +195,12 @@ const CUES = {
             feel: null,
         },
         land: {
+            // Hollow ceramic chip clatter: resonant modal body + multi-bounce click
             voices: [
-                v('sine', 150, 0.12, 0.22, { freqEnd: 110, sweep: 0.1, decay: 0.11 }),
-                v('noise', 0, 0.05, 0.10, { decay: 0.04, cutoff: 3000, q: 0.9 }),
+                v('modal', 520, 0.18, 0.24, { material: 'ceramic', damping: 1.3 }),
+                v('sine', 160, 0.12, 0.20, { freqEnd: 110, sweep: 0.1, decay: 0.11 }),
+                v('modal', 780, 0.08, 0.12, { material: 'ceramic', damping: 2.0, delay: 0.015 }),
+                v('noise', 0, 0.03, 0.08, { decay: 0.025, cutoff: 4200, q: 1.8 }),
             ],
             feel: 'light', scale: 0.8, fx: { preset: 'dust', scale: 0.5 },
         },
@@ -252,10 +270,11 @@ const CUES = {
             feel: null, jitter: 1.6,
         },
         collide: {
+            // Tempered steel ball-bearing impact: ringing modal metal modes
             voices: [
-                v('sine', 1650, 0.14, 0.13, { decay: 0.13 }),
-                v('sine', 2810, 0.10, 0.07, { decay: 0.09, delay: 0.003 }),
-                v('noise', 0, 0.02, 0.06, { decay: 0.015, cutoff: 7000, q: 2 }),
+                v('modal', 1650, 0.16, 0.18, { material: 'metal', damping: 0.85 }),
+                v('modal', 3300, 0.10, 0.09, { material: 'metal', damping: 1.2, delay: 0.002 }),
+                v('noise', 0, 0.02, 0.08, { decay: 0.015, cutoff: 8000, q: 2.5 }),
             ],
             feel: 'tick', jitter: 2.2, fx: { preset: 'sparks', scale: 0.4 },
         },

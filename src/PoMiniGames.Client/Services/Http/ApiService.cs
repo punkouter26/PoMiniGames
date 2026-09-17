@@ -412,6 +412,27 @@ public class ApiService
         }
     }
 
+    public async Task<ScoreSubmitResult<PoMiniGames.Shared.Games.PoRacerScoreDto>> SubmitPoRacerScoreAsync(
+        PoMiniGames.Shared.Games.PoRacerScoreDto entry, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var response = await _http.PostAsJsonAsync("/api/poracer/scores", entry, ApiJsonContext.Default.PoRacerScoreDto, cancellationToken);
+            if (response.IsSuccessStatusCode)
+                return ScoreSubmitResult<PoMiniGames.Shared.Games.PoRacerScoreDto>.Saved(entry);
+            if (response.StatusCode is System.Net.HttpStatusCode.RequestTimeout or System.Net.HttpStatusCode.TooManyRequests or System.Net.HttpStatusCode.Unauthorized)
+                return ScoreSubmitResult<PoMiniGames.Shared.Games.PoRacerScoreDto>.Unavailable(response.StatusCode);
+            if ((int)response.StatusCode is >= 400 and < 500)
+                return ScoreSubmitResult<PoMiniGames.Shared.Games.PoRacerScoreDto>.Rejected(response.StatusCode);
+            return ScoreSubmitResult<PoMiniGames.Shared.Games.PoRacerScoreDto>.Unavailable(response.StatusCode);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
+        {
+            return ScoreSubmitResult<PoMiniGames.Shared.Games.PoRacerScoreDto>.Unavailable(null);
+        }
+    }
+
     public async Task<ScoreSubmitResult<PoSportsHighScore>> SubmitPoSportsHighScoreAsync(PoSportsHighScore entry)
     {
         try

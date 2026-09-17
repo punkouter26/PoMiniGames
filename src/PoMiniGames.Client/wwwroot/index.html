@@ -154,7 +154,7 @@
     <link rel="stylesheet" href="css/glass.css" />
 
     <!-- Shared canvas resolution policy (audit #8). Not deferred and listed
-         first among the game scripts: racingInterop.js and the engine modules
+         first among the game scripts: the racing renderer and the engine modules
          read window.PoCanvasDpr during their own setup. -->
     <script src="js/canvasDpr.js"></script>
     <!-- Kiosk reel polish: filter the harmless "AudioContext closed" warnings
@@ -210,10 +210,8 @@
          its window.PoBrawl / window.PoMarbleRace / … global, and pages still call
          through it; the page just awaits `loadEngine('<name>')` first.
 
-         racingInterop.js is a CLASSIC script that poracerGl.js patches, so the
-         loader injects it before importing the module — the ordering dependency
-         that used to be expressed by these tags' positions is now expressed in
-         engineLoader.js's CLASSIC_DEPS. -->
+         PoRacer's input, renderer, interpolation and compositor are imported
+         explicitly by js/poracer/index.js. -->
     <script type="module" src="js/engineLoader.js"></script>
 
     <!-- §GFX/SOUND platform runtime (2026-07-29).

@@ -483,6 +483,69 @@ export function burstAt(target, opts) {
 }
 
 /**
+ * Gravitational particle vortex implosion towards a target center.
+ * @param {object} [opts]
+ * @param {number} [opts.x] Viewport CSS px
+ * @param {number} [opts.y] Viewport CSS px
+ * @param {number} [opts.radius=160] Initial ring radius
+ * @param {number[]} [opts.color] Explicit RGB
+ */
+export function vortex(opts) {
+    if (!init()) return;
+    const o = opts || {};
+    const cx = o.x != null ? o.x : window.innerWidth / 2;
+    const cy = o.y != null ? o.y : window.innerHeight / 2;
+    const count = Math.min(180, Math.round(75 * qualityScale()));
+    const t0 = (performance.now() - startTime) / 1000;
+    const col = o.color || pickColor('accent');
+    const radius = o.radius || 180;
+
+    let n = 0;
+    for (let i = 0; i < count; i++) {
+        const slot = writeIndex;
+        writeIndex = (writeIndex + 1) % MAX_PARTICLES;
+
+        const theta = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+        const r = radius * (0.6 + Math.random() * 0.6);
+        const p0x = cx + Math.cos(theta) * r;
+        const p0y = cy + Math.sin(theta) * r;
+
+        // Inward velocity towards center + tangential spiral
+        const speed = r / 0.55;
+        const tangent = theta + Math.PI / 2;
+        const vx = -Math.cos(theta) * speed + Math.cos(tangent) * (speed * 0.7);
+        const vy = -Math.sin(theta) * speed + Math.sin(tangent) * (speed * 0.7);
+
+        const base = slot * FLOATS_PER_PARTICLE;
+        staging[base + 0] = p0x;
+        staging[base + 1] = p0y;
+        staging[base + 2] = vx;
+        staging[base + 3] = vy;
+        staging[base + 4] = col[0];
+        staging[base + 5] = col[1];
+        staging[base + 6] = col[2];
+        staging[base + 7] = 8.5 * (0.8 + Math.random() * 0.6);
+        staging[base + 8] = 0.55;
+        staging[base + 9] = t0;
+        staging[base + 10] = Math.random();
+        staging[base + 11] = 0; // zero gravity
+        staging[base + 12] = 1.8; // drag
+        staging[base + 13] = 1.0; // additive glow
+
+        if (writeIndex === 0) {
+            uploadRange(slot - n, n + 1);
+            n = 0;
+        } else {
+            n++;
+        }
+    }
+    if (n > 0) uploadRange(writeIndex - n, n);
+
+    liveUntil = Math.max(liveUntil, performance.now() + 650);
+    ensureFrame();
+}
+
+/**
  * Confetti across the top of the viewport — the win celebration. Emitted from
  * a line rather than a point so it rains rather than explodes.
  * @param {number} [scale=1]
@@ -525,5 +588,5 @@ export function clear() {
 if (typeof window !== 'undefined') {
     window.addEventListener('pagehide', clear);
     // Non-module access for the plain-script engines and Blazor JS interop.
-    window.PoFx = { burst, burstAt, celebrate, clear, invalidateTint };
+    window.PoFx = { burst, burstAt, vortex, celebrate, clear, invalidateTint };
 }

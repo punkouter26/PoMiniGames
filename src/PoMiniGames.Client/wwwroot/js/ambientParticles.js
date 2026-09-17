@@ -114,11 +114,26 @@ function attachDomObservers(canvas, onResize, onPointer, onVisible, onViewport, 
     });
     resizeObs.observe(canvas);
 
+    let lastPx = 0.5, lastPy = 0.5, lastPt = performance.now();
+    let lastWhooshTime = 0;
     onPointerMove = (e) => {
         const rect = canvas.getBoundingClientRect();
-        onPointer(
-            ((e.clientX - rect.left) / rect.width) || 0,
-            1 - ((e.clientY - rect.top) / rect.height) || 0);
+        const px = ((e.clientX - rect.left) / rect.width) || 0;
+        const py = 1 - ((e.clientY - rect.top) / rect.height) || 0;
+        const now = performance.now();
+        const dt = Math.max(8, now - lastPt);
+        const vx = (px - lastPx) / (dt * 0.001);
+        const vy = (py - lastPy) / (dt * 0.001);
+        const speed = Math.hypot(vx, vy);
+        lastPx = px; lastPy = py; lastPt = now;
+        onPointer(px, py, vx, vy);
+
+        if (speed > 4.5 && now - lastWhooshTime > 1200) {
+            lastWhooshTime = now;
+            if (window.PoCues && window.PoCues.play) {
+                window.PoCues.play('ui.fluidRipple');
+            }
+        }
     };
     canvas.addEventListener('pointermove', onPointerMove, { passive: true });
 
@@ -189,7 +204,7 @@ export function start(canvas) {
             attachDomObservers(
                 canvas,
                 (w, h) => worker && worker.postMessage({ type: 'resize', width: w, height: h }),
-                (x, y) => worker && worker.postMessage({ type: 'pointer', x, y }),
+                (x, y, vx, vy) => worker && worker.postMessage({ type: 'pointer', x, y, vx, vy }),
                 () => worker && worker.postMessage({ type: 'visibility', visible: !document.hidden }),
                 (iv) => worker && worker.postMessage({ type: 'viewport', inViewport: iv }),
                 (scale) => worker && worker.postMessage({ type: 'quality', scale }));
@@ -213,6 +228,7 @@ export function start(canvas) {
     uniforms = initGl(gl);
     if (!uniforms) { gl = null; return false; }
 
+    let lastVx = 0, lastVy = 0;
     attachDomObservers(
         canvas,
         (w, h) => {
@@ -221,13 +237,13 @@ export function start(canvas) {
                 canvas.height = h;
             }
         },
-        (x, y) => { lastX = x; lastY = y; },
+        (x, y, vx, vy) => { lastX = x; lastY = y; lastVx = vx || 0; lastVy = vy || 0; },
         () => { visible = !document.hidden; },
         (iv) => { inViewport = iv; },
         () => { /* quality is read straight off the module-level `quality` */ });
 
     // Reused across frames — see the same note in particlesWorker.js.
-    const state = { quality: 1, bass: 0, mid: 0, treble: 0, hueA, hueB };
+    const state = { quality: 1, bass: 0, mid: 0, treble: 0, hueA, hueB, mouseVx: 0, mouseVy: 0 };
     const startTime = performance.now();
     function tick(now) {
         if (!gl) return;
@@ -242,6 +258,10 @@ export function start(canvas) {
             state.treble = l.treble;
             state.hueA = hueA;
             state.hueB = hueB;
+            state.mouseVx = lastVx;
+            state.mouseVy = lastVy;
+            lastVx *= 0.9;
+            lastVy *= 0.9;
             drawFrame(gl, uniforms, canvas.width, canvas.height, now - startTime, lastX, lastY, state);
         }
         raf = requestAnimationFrame(tick);

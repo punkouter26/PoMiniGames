@@ -165,7 +165,8 @@
                                            fires from, so it needs a class for the highlight and an
                                            addressable attribute for the FX pass. *@
                                         <div role="row"
-                                             class="lb-row @(e.Rank <= 3 && e.Name != PlaceholderName ? $"lb-row--top lb-row--{e.Rank}" : null) @(IsMe(e.Name) ? "lb-row--me" : null)"
+                                             class="lb-row @(e.Rank <= 3 && e.Name != PlaceholderName ? $"lb-row--top lb-row--{e.Rank} fx-holo-card" : null) @(IsMe(e.Name) ? "lb-row--me" : null)"
+                                             data-fx-holo="@(e.Rank <= 3 && e.Name != PlaceholderName ? "6" : null)"
                                              data-lb-me="@(IsMe(e.Name) ? board.GameKey : null)">
                                             <span role="cell" class="lb-rank" aria-label="@($"Rank {e.Rank}")">@e.Rank</span>
                                             @* title only when the row carries long-form text it

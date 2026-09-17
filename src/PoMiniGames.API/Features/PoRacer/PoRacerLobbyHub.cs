@@ -20,14 +20,15 @@ public sealed class PoRacerLobbyHub : LobbyHub<PoRacerLobbyPlayer, PoRacerLobbyS
 
     protected override string StartingMessage => "Race starting…";
 
-    protected override (LobbyState<PoRacerLobbyPlayer> state, string message) OpenSeat(string displayName, bool isGuest) =>
-        Lobby.Open(Context.ConnectionId, displayName, isGuest);
-
-    protected override Task OnStartingAsync() => _races.GetOrCreateAsync(PoRacerLobbyService.GlobalCode);
-
-    protected override Task OnDisconnectedCoreAsync()
+    protected override (LobbyState<PoRacerLobbyPlayer> state, string message) OpenSeat(string displayName, bool isGuest)
     {
-        _races.RemoveInput(Context.ConnectionId);
+        var identity = PoMiniGames.Features.Auth.RequestIdentity.Resolve(Context.User);
+        return Lobby.Open(Context.ConnectionId, identity.DisplayName, identity.IsGuest, identity.UserId);
+    }
+
+    protected override Task OnStartingAsync()
+    {
+        _races.StartMultiplayer();
         return Task.CompletedTask;
     }
 }

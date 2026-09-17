@@ -36,9 +36,14 @@ const bands = { bass: 0, mid: 0, treble: 0 };
 const target = { bass: 0, mid: 0, treble: 0 };
 const BAND_CHASE = 0.12;
 
+let targetVx = 0;
+let targetVy = 0;
+let currentVx = 0;
+let currentVy = 0;
+
 // Passed to drawFrame every tick. Allocated once: a fresh object literal per
 // frame is exactly the kind of garbage this worker exists to avoid.
-const state = { quality: 1, bass: 0, mid: 0, treble: 0, hueA, hueB };
+const state = { quality: 1, bass: 0, mid: 0, treble: 0, hueA, hueB, mouseVx: 0, mouseVy: 0 };
 
 function tick(now) {
     if (!gl) return;
@@ -47,12 +52,19 @@ function tick(now) {
         bands.mid += (target.mid - bands.mid) * BAND_CHASE;
         bands.treble += (target.treble - bands.treble) * BAND_CHASE;
 
+        currentVx += ((targetVx - currentVx) * 0.20);
+        currentVy += ((targetVy - currentVy) * 0.20);
+        targetVx *= 0.90;
+        targetVy *= 0.90;
+
         state.quality = quality;
         state.bass = bands.bass;
         state.mid = bands.mid;
         state.treble = bands.treble;
         state.hueA = hueA;
         state.hueB = hueB;
+        state.mouseVx = currentVx;
+        state.mouseVy = currentVy;
 
         drawFrame(gl, u, canvas.width, canvas.height, now - startTime, mouseX, mouseY, state);
     }
@@ -87,6 +99,8 @@ self.onmessage = (e) => {
         case 'pointer':
             mouseX = m.x;
             mouseY = m.y;
+            targetVx = m.vx || 0;
+            targetVy = m.vy || 0;
             break;
         case 'visibility':
             visible = m.visible;

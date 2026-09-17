@@ -307,7 +307,7 @@ public static class UnifiedLeaderboardEndpoints
         return new GameLeaderboardDto("pomarblerace", "Marble Race", "Score", HigherIsBetter: true, entries);
     }
 
-    /// <summary>Best race time per player (lower is better) from the PoRacer score table.</summary>
+    /// <summary>Best lap per player (lower is better) from the PoRacer score table.</summary>
     private static async Task<GameLeaderboardDto> BuildPoRacerAsync(IStorageService storage, int limit)
     {
         var scores = await storage.GetPoRacerHighScoresAsync(50);
@@ -322,7 +322,7 @@ public static class UnifiedLeaderboardEndpoints
                 x.Best.ToString("0.0", CultureInfo.InvariantCulture) + "s"))
             .ToList();
         PadWithPlaceholders(entries, limit, "—");
-        return new GameLeaderboardDto("poracer", "Racer", "Best time", HigherIsBetter: false, entries);
+        return new GameLeaderboardDto("poracer", "Racer", "Best lap", HigherIsBetter: false, entries);
     }
 
     private static async Task<GameLeaderboardDto> BuildPoSportsAsync(IStorageService storage, int limit)

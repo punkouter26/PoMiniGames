@@ -22,6 +22,7 @@ namespace PoMiniGamesClient.Services.Http;
 /// <see cref="ApiService"/>, so any type not listed here still serializes correctly — this
 /// is an additive fast path, not a wire-format change.
 /// </summary>
+[JsonSerializable(typeof(List<PendingScore>))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     PropertyNameCaseInsensitive = true,

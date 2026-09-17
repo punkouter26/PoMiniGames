@@ -30,7 +30,7 @@ const REGISTRY = {
     pomarblerace: ['js/pomarblerace/index.js', 'PoMarbleRace'],
     pobrawl: ['js/pobrawl/index.js', 'PoBrawl'],
     posports: ['js/posports/index.js', 'PoSports'],
-    poracer: ['js/poracerGl.js', 'PoRacerRender'],
+    poracer: ['js/poracer/index.js', 'PoRacer'],
     povoxelstrike: ['js/povoxelstrike/index.js', 'PoVoxelStrike'],
     poecosystem: ['js/poecosystem/index.js', 'PoEcosystem'],
     // §CF-1 ConnectFive physics. matter.js drives the disc drop + chain-reaction
@@ -62,7 +62,6 @@ function resolve(path) {
 // as a side effect of executing, so they are injected as <script> and awaited on
 // load rather than imported.
 const CLASSIC_DEPS = {
-    poracer: ['js/racingInterop.js'],
     // §CF-1 matter.js (UMD, ~85 KB gz) is injected as a classic script so its
     // `window.Matter` global is what the connectfive module reads. Loading via
     // the importmap would require an ESM build; matter-js only ships UMD, and

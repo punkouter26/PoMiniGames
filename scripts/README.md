@@ -17,3 +17,5 @@ the 2026-08-18 cleanup (they referenced files that no longer exist and had no ca
 The one-off asset pipelines (PoMarbleRace track baking, PoSports sprite-sheet
 re-export) and the counting helper were removed on 2026-09-11 — their inputs,
 outputs, or docs no longer exist. Development is Windows/`pwsh`.
+
+`test-ceilings.ps1 [-NoBuild]` runs only the four method-budget guards, skips browser installation, and fails if any guard is absent or over budget.

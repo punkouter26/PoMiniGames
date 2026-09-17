@@ -165,3 +165,4 @@ public static class PlayerCardSvgGenerator
         return sb.ToString();
     }
 }
+

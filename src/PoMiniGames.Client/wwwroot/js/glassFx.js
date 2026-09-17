@@ -15,6 +15,7 @@
 
     const CAPTURE_W = 128;
     let _timers = new Map();   // panel -> intervalId
+    let _ripples = [];
 
     function allowed() {
         const q = window.PoQuality;
@@ -36,12 +37,19 @@
             g.drawImage(sourceCanvas, 0, 0, w, h);
             g.filter = 'none';
 
-            // High-tier Caustic Refraction Sheen
+            // High-tier Chromatic Dispersion & Caustic Refraction Sheen
             const q = window.PoQuality;
             if (q && q.tier() !== 'low') {
                 const t = performance.now() * 0.0012;
                 g.save();
                 g.globalCompositeOperation = 'screen';
+
+                // Prismatic chromatic dispersion on edges
+                g.filter = 'blur(3px)';
+                g.drawImage(sourceCanvas, -1.8, 0, w, h);
+                g.drawImage(sourceCanvas, 1.8, 0, w, h);
+                g.filter = 'none';
+
                 const grad = g.createLinearGradient(0, 0, w, h);
                 const wave1 = 0.5 + 0.5 * Math.sin(t * 1.6);
                 const wave2 = 0.5 + 0.5 * Math.cos(t * 1.3);
@@ -51,6 +59,22 @@
                 grad.addColorStop(1, 'rgba(170, 130, 255, 0.10)');
                 g.fillStyle = grad;
                 g.fillRect(0, 0, w, h);
+
+                // Concentric liquid ripple waves on glass tap
+                for (let ri = _ripples.length - 1; ri >= 0; ri--) {
+                    const rip = _ripples[ri];
+                    if (rip.panel !== panel) continue;
+                    const age = (performance.now() - rip.created) * 0.001;
+                    if (age > 0.75) { _ripples.splice(ri, 1); continue; }
+                    const r = rip.maxR * (age / 0.75);
+                    const alpha = (1.0 - (age / 0.75)) * 0.38;
+                    g.strokeStyle = `rgba(255, 255, 255, ${alpha.toFixed(3)})`;
+                    g.lineWidth = 2.5;
+                    g.beginPath();
+                    g.arc(rip.x, rip.y, r, 0, Math.PI * 2);
+                    g.stroke();
+                }
+
                 g.restore();
             }
 
@@ -172,6 +196,23 @@
     }
 
     const o_intervalMs = 220;
+
+    if (typeof document !== 'undefined') {
+        document.addEventListener('pointerdown', function (e) {
+            if (!allowed()) return;
+            const panel = e.target && e.target.closest ? e.target.closest('[data-glass]') : null;
+            if (!panel) return;
+            const r = panel.getBoundingClientRect();
+            if (!r.width || !r.height) return;
+            const px = (e.clientX - r.left) / r.width * CAPTURE_W;
+            const py = (e.clientY - r.top) / r.height * Math.max(24, Math.round(CAPTURE_W * r.height / r.width));
+            _ripples.push({ panel, x: px, y: py, maxR: CAPTURE_W * 0.7, created: performance.now() });
+            if (window.PoCues && window.PoCues.play) {
+                window.PoCues.play('ui.fluidRipple');
+            }
+        }, { passive: true });
+    }
+
     const glassFx = {
         attachPanel: attachPanel,
         attachHud: attachHud,

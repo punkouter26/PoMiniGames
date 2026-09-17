@@ -1,0 +1,8 @@
+.race-results { color: inherit; width: 100%; }
+.result-headline { font-size: 24px; font-weight: 700; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+caption { text-align: left; padding: 12px 0; font-weight: 700; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid #71859b55; }
+.local-driver { color: #91e4ff; font-weight: 700; }
+a { color: #91e4ff; } button { min-height: 44px; margin-right: 12px; }
+@media (max-width: 480px) { th, td { padding: 6px 3px; font-size: 12px; } }

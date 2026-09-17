@@ -34,6 +34,24 @@
         lose: ['#7f1d1d', '#4c1d95'],
     };
 
+    const BIOMES = {
+        dawn:      ['#fb923c', '#f472b6'], // golden sunrise
+        aurora:    ['#34d399', '#a855f7'], // northern lights
+        cyberpunk: ['#ec4899', '#06b6d4'], // neon rain
+        ember:     ['#ea580c', '#ef4444'], // volcanic dojo
+        midnight:  ['#3b82f6', '#8b5cf6'], // cosmic deep
+    };
+
+    let _activeBiome = null;
+
+    function circadianBiome() {
+        const h = new Date().getHours();
+        if (h >= 5 && h < 9) return 'dawn';
+        if (h >= 18 && h < 21) return 'aurora';
+        if (h >= 21 || h < 5) return 'cyberpunk';
+        return null;
+    }
+
     let _context = 'menu';
     let _game = null;
     let _pulseTimer = null;
@@ -61,6 +79,13 @@
     }
 
     function apply() {
+        if (!_game) {
+            const bio = _activeBiome || circadianBiome();
+            if (bio && BIOMES[bio]) {
+                writeVars(BIOMES[bio][0], BIOMES[bio][1]);
+                return;
+            }
+        }
         const palette = PALETTES[_game || 'menu'] || PALETTES.menu;
         writeVars(palette[0], palette[1]);
     }
@@ -92,6 +117,10 @@
         setGame: setGame,
         pulse: pulse,
         paletteFor: function (k) { return PALETTES[k] || null; },
-        context: function () { return _context; }
+        context: function () { return _context; },
+        setBiome: function (b) { _activeBiome = BIOMES[b] ? b : null; apply(); },
+        activeBiome: function () { return _activeBiome || circadianBiome(); },
+        BIOMES: BIOMES
     };
 })();
+

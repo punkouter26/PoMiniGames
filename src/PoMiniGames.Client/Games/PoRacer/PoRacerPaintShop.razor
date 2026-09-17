@@ -1,24 +1,23 @@
 @using PoMiniGames.Shared.Games
-@inject IJSRuntime JS
 
 <div class="racer-paintshop" role="region" aria-label="Car Customization Paint Shop">
     <div class="paintshop-preview-wrap">
-        <svg class="car-preview-svg" viewBox="-24 -16 48 32" width="120" height="80" aria-label="Car Preview">
+        <svg class="car-preview-svg" viewBox="-24 -16 48 32" width="120" height="76" aria-label="Car Preview: @CurrentColorName with @CurrentLiveryName">
             <!-- Shadow -->
-            <ellipse cx="2" cy="4" rx="18" ry="10" fill="rgba(0,0,0,0.35)" />
+            <ellipse cx="2" cy="4" rx="18" ry="10" fill="rgba(0,0,0,0.45)" />
             <!-- Car Body -->
-            <rect x="-16" y="-9" width="32" height="18" rx="5" fill="@Customization.ColorHex" stroke="rgba(0,0,0,0.5)" stroke-width="1.2" />
+            <rect x="-16" y="-9" width="32" height="18" rx="5" fill="@Customization.ColorHex" stroke="rgba(0,0,0,0.6)" stroke-width="1.2" />
             <!-- Livery Pattern -->
             @if (Customization.LiveryPattern == "dual")
             {
-                <rect x="-14" y="-4.5" width="28" height="1.8" fill="rgba(255,255,255,0.85)" />
-                <rect x="-14" y="2.7" width="28" height="1.8" fill="rgba(255,255,255,0.85)" />
+                <rect x="-14" y="-4.5" width="28" height="1.8" fill="rgba(255,255,255,0.9)" />
+                <rect x="-14" y="2.7" width="28" height="1.8" fill="rgba(255,255,255,0.9)" />
             }
             else if (Customization.LiveryPattern == "carbon")
             {
-                <rect x="-14" y="-7" width="10" height="14" fill="rgba(25,25,30,0.7)" />
-                <rect x="8" y="-8" width="6" height="16" fill="rgba(25,25,30,0.7)" />
-                <rect x="-14" y="-1" width="28" height="2" fill="rgba(255,255,255,0.6)" />
+                <rect x="-14" y="-7" width="10" height="14" fill="rgba(20,24,30,0.85)" />
+                <rect x="8" y="-8" width="6" height="16" fill="rgba(20,24,30,0.85)" />
+                <rect x="-14" y="-1" width="28" height="2" fill="rgba(255,255,255,0.65)" />
             }
             else if (Customization.LiveryPattern == "neon")
             {
@@ -27,136 +26,54 @@
             }
             else
             {
-                <rect x="-14" y="-1.2" width="28" height="2.4" fill="rgba(255,255,255,0.85)" />
+                <rect x="-14" y="-1.2" width="28" height="2.4" fill="rgba(255,255,255,0.9)" />
             }
             <!-- Windshield -->
-            <rect x="2" y="-7" width="8" height="14" rx="2" fill="rgba(20,30,45,0.85)" />
-            <!-- Headlights -->
+            <rect x="2" y="-7" width="8" height="14" rx="2" fill="rgba(15,23,42,0.9)" />
+            <!-- Headlights (glowing) -->
             <circle cx="14" cy="-5" r="1.8" fill="#fffbe0" />
             <circle cx="14" cy="5" r="1.8" fill="#fffbe0" />
             <!-- Taillights -->
             <circle cx="-15" cy="-5" r="1.6" fill="#ff3030" />
             <circle cx="-15" cy="5" r="1.6" fill="#ff3030" />
         </svg>
+
+        <div class="paintshop-active-badge" aria-live="polite">
+            <span class="active-color-dot" style="background: @Customization.ColorHex"></span>
+            <span class="active-spec-name">@CurrentColorName</span>
+        </div>
     </div>
 
     <div class="paintshop-controls">
-        <div class="control-group">
-            <span class="control-label">PAINT COLOR</span>
-            <div class="swatch-row" role="radiogroup" aria-label="Car Body Color">
-                @foreach (var c in Swatches)
-                {
-                    var isSelected = string.Equals(Customization.ColorHex, c.Hex, StringComparison.OrdinalIgnoreCase);
-                    <button type="button"
-                            class="swatch-btn @(isSelected ? "is-selected" : "")"
-                            style="--swatch-color: @c.Hex"
-                            title="@c.Name"
-                            role="radio"
-                            aria-checked="@isSelected"
-                            @onclick="() => SetColor(c.Hex)">
-                        <span class="swatch-dot"></span>
-                    </button>
-                }
-            </div>
-        </div>
-
-        <div class="control-group">
-            <span class="control-label">LIVERY STYLE</span>
-            <div class="livery-row" role="radiogroup" aria-label="Livery Pattern">
-                @foreach (var l in Liveries)
-                {
-                    var isSelected = string.Equals(Customization.LiveryPattern, l.Key, StringComparison.OrdinalIgnoreCase);
-                    <button type="button"
-                            class="livery-btn @(isSelected ? "is-selected" : "")"
-                            role="radio"
-                            aria-checked="@isSelected"
-                            @onclick="() => SetLivery(l.Key)">
-                        @l.Name
-                    </button>
-                }
-            </div>
-        </div>
+        <fieldset><legend>Body color</legend>
+            @foreach (var color in Swatches)
+            {
+                <label><input type="radio" name="poracer-color" checked="@(Customization.ColorHex == color.Hex)" @onchange="() => SetColor(color.Hex)" />
+                    <span class="swatch-dot" style="background:@color.Hex"></span>@color.Name</label>
+            }
+        </fieldset>
+        <fieldset><legend>Livery</legend>
+            @foreach (var livery in Liveries)
+            {
+                <label><input type="radio" name="poracer-livery" checked="@(Customization.LiveryPattern == livery.Key)" @onchange="() => SetLivery(livery.Key)" />@livery.Name</label>
+            }
+        </fieldset>
     </div>
 </div>
-
 @code {
-    private const string StorageKey = "PoRacer.Customization";
-
-    [Parameter]
-    public PoRacerCarCustomization Customization { get; set; } = PoRacerCarCustomization.Default;
-
-    [Parameter]
-    public EventCallback<PoRacerCarCustomization> CustomizationChanged { get; set; }
-
-    [Parameter]
-    public EventCallback<PoRacerCarCustomization> OnChanged { get; set; }
-
+    [Parameter] public PoRacerCarCustomization Customization { get; set; } = PoRacerCarCustomization.Default;
+    [Parameter] public EventCallback<PoRacerCarCustomization> CustomizationChanged { get; set; }
     private record Swatch(string Name, string Hex);
-    private static readonly IReadOnlyList<Swatch> Swatches = new[]
-    {
-        new Swatch("Cyan Pulse", "#00f0ff"),
-        new Swatch("Electric Pink", "#ff007f"),
-        new Swatch("Viper Green", "#00ff66"),
-        new Swatch("Solar Flare", "#ffaa00"),
-        new Swatch("Crimson Red", "#ff3333"),
-        new Swatch("Phantom Purple", "#aa00ff")
-    };
-
+    private static readonly Swatch[] Swatches = [new("Cyan", "#00f0ff"), new("Pink", "#ff007f"), new("Green", "#00ff66"), new("Gold", "#ffaa00"), new("Red", "#ff3333"), new("Purple", "#aa00ff")];
     private record LiveryOption(string Key, string Name);
-    private static readonly IReadOnlyList<LiveryOption> Liveries = new[]
+    private static readonly LiveryOption[] Liveries = [new("stripe", "Classic"), new("dual", "Twin GT"), new("carbon", "Carbon"), new("neon", "Neon")];
+    private string CurrentColorName => Swatches.FirstOrDefault(s => s.Hex == Customization.ColorHex)?.Name ?? "Custom";
+    private string CurrentLiveryName => Liveries.FirstOrDefault(l => l.Key == Customization.LiveryPattern)?.Name ?? "Classic";
+    private Task SetColor(string hex) => SaveAsync(Customization with { ColorHex = hex });
+    private Task SetLivery(string livery) => SaveAsync(Customization with { LiveryPattern = livery });
+    private Task SaveAsync(PoRacerCarCustomization customization)
     {
-        new LiveryOption("stripe", "Classic Stripe"),
-        new LiveryOption("dual", "Twin GT"),
-        new LiveryOption("carbon", "Carbon Aero"),
-        new LiveryOption("neon", "Cyber Neon")
-    };
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            try
-            {
-                var stored = await JS.InvokeAsync<string?>("localStorage.getItem", StorageKey);
-                if (!string.IsNullOrWhiteSpace(stored))
-                {
-                    var parts = stored.Split('|');
-                    if (parts.Length >= 2)
-                    {
-                        var loaded = new PoRacerCarCustomization(parts[0], parts[1]);
-                        Customization = loaded;
-                        await CustomizationChanged.InvokeAsync(loaded);
-                        await OnChanged.InvokeAsync(loaded);
-                        StateHasChanged();
-                    }
-                }
-            }
-            catch { }
-        }
-    }
-
-    private async Task SetColor(string hex)
-    {
-        if (Customization.ColorHex == hex) return;
-        Customization = Customization with { ColorHex = hex };
-        await PersistAndNotifyAsync();
-    }
-
-    private async Task SetLivery(string livery)
-    {
-        if (Customization.LiveryPattern == livery) return;
-        Customization = Customization with { LiveryPattern = livery };
-        await PersistAndNotifyAsync();
-    }
-
-    private async Task PersistAndNotifyAsync()
-    {
-        try
-        {
-            await JS.InvokeVoidAsync("localStorage.setItem", StorageKey, $"{Customization.ColorHex}|{Customization.LiveryPattern}");
-        }
-        catch { }
-        await CustomizationChanged.InvokeAsync(Customization);
-        await OnChanged.InvokeAsync(Customization);
+        PoRacerPreferences.SaveCustomization(customization);
+        return CustomizationChanged.InvokeAsync(customization);
     }
 }

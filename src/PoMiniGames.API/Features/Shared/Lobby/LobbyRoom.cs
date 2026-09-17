@@ -45,7 +45,7 @@ public abstract class LobbyRoom<TPlayer> where TPlayer : class, ILobbyPlayer
     }
 
     /// <summary>Fixed code surfaced in <see cref="LobbyState{TPlayer}.GameCode"/>; no codes are user-visible.</summary>
-    public string GameCode { get; }
+    public string GameCode { get; protected set; }
 
     public int MaxPlayers { get; }
 

@@ -139,7 +139,7 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
         }
         {
           name: 'PoMiniGames__MicrosoftAuth__Authority'
-          value: 'https://login.microsoftonline.com/${microsoftAuthTenantId}/v2.0'
+          value: '${environment().authentication.loginEndpoint}${microsoftAuthTenantId}/v2.0'
         }
       ]
     }

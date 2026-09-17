@@ -11,6 +11,7 @@ public sealed class PoRacerHighScore
     /// <summary>Server-populated from the auth cookie (sub/oid). Empty for anonymous cookies.</summary>
     public string UserId { get; set; } = string.Empty;
     public string TrackId { get; set; } = "circuit";
+    /// <summary>Best completed lap in seconds. Legacy storage column name is retained.</summary>
     public double TotalTimeSeconds { get; set; }
     public int FinalPosition { get; set; }
     public bool IsGuest { get; set; }

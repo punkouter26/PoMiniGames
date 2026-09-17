@@ -1,129 +1,127 @@
-using System.Collections.Concurrent;
-using System.Diagnostics;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoRacer;
 
-/// <summary>
-/// Server-authoritative PoRacer race. Holds a track, a list of cars, an
-/// input buffer per player, and a <see cref="System.Threading.Timer"/>
-/// running the simulation at 50 Hz. Pushes a 20 Hz snapshot to all
-/// connected clients in the race's SignalR group.
-/// </summary>
+/// <summary>A serialized 50 Hz simulation loop, broadcasting every 50 ms.</summary>
 public sealed class PoRacerRaceService : IAsyncDisposable
 {
-    /// <summary>50 Hz sim is smooth enough for collision resolution without runaway CPU.</summary>
-    private const int TickHz = 50;
-    /// <summary>20 Hz snapshot is plenty for the rendered framerate.</summary>
-    private const int SnapshotHz = 20;
-    /// <summary>Pre-race countdown so all clients hit GO simultaneously.
-    /// §2026-07-17: set to 0 — the 3-2-1 overlay was an extra click the
-    /// racer player never asked for. Race starts the instant they join.</summary>
-    private const int CountdownMs = 0;
-
-    private readonly string _gameCode;
-    private readonly PoRacerLobbyService _lobby;
-    private readonly ILogger<PoRacerRaceService> _log;
-    private readonly Timer _tick;
-    private readonly Timer _snap;
-
-    private readonly object _stateLock = new();
+    private readonly object _gate = new();
     private readonly PoRacerSim _sim;
+    private readonly ILogger<PoRacerRaceService> _log;
+    private readonly Dictionary<string, PoRacerInput> _inputs = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _owners = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _connections = new(StringComparer.Ordinal);
+    private readonly CancellationTokenSource _stop = new();
+    private Task _loop = Task.CompletedTask;
+    private DateTimeOffset _lastOccupied = DateTimeOffset.UtcNow;
+    private DateTimeOffset? _finishedAt;
+    private PoRacerFinalResult? _result;
 
-    private readonly ConcurrentDictionary<string, PoRacerInput> _inputs = new();
-
-    private int _countdownMs;
-    private bool _finishedBroadcast;
-
-    public string GameCode => _gameCode;
-    public event Action<PoRacerRaceSnapshot>? SnapshotReady;
-    public event Action<PoRacerFinalResult>? Finished;
-
-    public PoRacerRaceService(string gameCode, IReadOnlyList<PoRacerLobbyPlayer> players, PoRacerLobbyService lobby, ILogger<PoRacerRaceService> log, string? trackId = null)
+    public PoRacerRaceService(string code, IReadOnlyList<PoRacerLobbyPlayer> players, ILogger<PoRacerRaceService> log, string? trackId = null)
     {
-        _gameCode = gameCode;
-        _lobby = lobby;
-        _log = log;
+        GameCode = code;
         _sim = new PoRacerSim(players, trackId);
-        _countdownMs = CountdownMs;
-        _tick = new Timer(_ => TickSafe(), null, TimeSpan.FromMilliseconds(1000.0 / TickHz), TimeSpan.FromMilliseconds(1000.0 / TickHz));
-        _snap = new Timer(_ => SnapshotSafe(), null, TimeSpan.FromMilliseconds(1000.0 / SnapshotHz), TimeSpan.FromMilliseconds(1000.0 / SnapshotHz));
+        _log = log;
     }
 
+    public string GameCode { get; }
+    public event Func<PoRacerRaceSnapshot, Task>? SnapshotReady;
+    public event Func<PoRacerFinalResult, Task>? Finished;
     public PoRacerStaticWorld GetStaticWorld() => _sim.Static;
+    public void Start() => _loop = RunAsync();
+
+    public int? BindPlayer(string connectionId, string userId)
+    {
+        lock (_gate)
+        {
+            var carId = _sim.CarIdForOwner(userId);
+            if (carId is null) return null;
+            foreach (var old in _owners.Where(p => p.Value == userId).Select(p => p.Key).ToArray()) _owners.Remove(old);
+            _inputs.Remove(userId);
+            _owners[connectionId] = userId;
+            return carId;
+        }
+    }
+
+    public void AddConnection(string connectionId)
+    {
+        lock (_gate) { _connections.Add(connectionId); _lastOccupied = DateTimeOffset.UtcNow; }
+    }
+
+    public void RemoveConnection(string connectionId)
+    {
+        lock (_gate)
+        {
+            _connections.Remove(connectionId);
+            if (_owners.Remove(connectionId, out var owner)) _inputs.Remove(owner);
+            _lastOccupied = DateTimeOffset.UtcNow;
+        }
+    }
 
     public void SetInput(string connectionId, PoRacerInput input)
     {
-        if (!_sim.OwnedBy(connectionId)) return;
-        _inputs[connectionId] = input;
+        lock (_gate)
+            if (_finishedAt is null && _owners.TryGetValue(connectionId, out var owner)) _inputs[owner] = input;
     }
 
-    public void RemoveInput(string connectionId)
+    public PoRacerRaceSnapshot Snapshot()
     {
-        _inputs.TryRemove(connectionId, out _);
+        lock (_gate) return _sim.Snapshot(GameCode);
     }
 
-    private void TickSafe()
+    public PoRacerFinalResult? Result { get { lock (_gate) return _result; } }
+
+    public bool HasExpired(DateTimeOffset now)
     {
+        lock (_gate)
+            return _finishedAt is { } finished ? now - finished > TimeSpan.FromSeconds(30)
+                : _connections.Count == 0 && now - _lastOccupied > TimeSpan.FromSeconds(30);
+    }
+
+    private async Task RunAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(20));
+        var snapshotElapsed = 0;
         try
         {
-            bool finished;
-            PoRacerFinalResult? result = null;
-            lock (_stateLock)
+            while (await timer.WaitForNextTickAsync(_stop.Token))
             {
-                if (_countdownMs > 0)
+                PoRacerFinalResult? result;
+                PoRacerRaceSnapshot? snapshot = null;
+                lock (_gate)
                 {
-                    // Hold the grid until GO — the sim is NOT advanced during the
-                    // countdown, so bots no longer take off before "3·2·1".
-                    _countdownMs = Math.Max(0, _countdownMs - (int)(1000.0 / TickHz));
-                    if (_countdownMs == 0) _sim.StartRacing();  // rebase the race clock to 0 at GO
-                }
-                else
-                {
-                    // ConcurrentDictionary reads are lock-free and enumeration is snapshot-safe,
-                    // so the sim reads live inputs directly — no per-tick copy at 50Hz.
-                    _sim.Tick(1.0 / TickHz, _inputs);
-                    finished = !_finishedBroadcast && _sim.AllFinishedOrStopped();
-                    if (finished)
+                    _sim.Tick(0.02, _inputs);
+                    result = _sim.AllFinishedOrStopped() ? _sim.BuildFinalResult(GameCode) : null;
+                    snapshotElapsed += 20;
+                    if (snapshotElapsed >= 50 || result is not null)
                     {
-                        _finishedBroadcast = true;
-                        result = _sim.BuildFinalResult(_gameCode);
+                        snapshotElapsed %= 50;
+                        snapshot = _sim.Snapshot(GameCode);
                     }
+                    if (result is not null) { _result = result; _finishedAt = DateTimeOffset.UtcNow; }
+                }
+                if (snapshot is not null && SnapshotReady is { } onSnapshot) await onSnapshot(snapshot);
+                if (result is not null)
+                {
+                    if (Finished is { } onFinished) await onFinished(result);
+                    break;
                 }
             }
-            if (result is not null)
-            {
-                // Reset the lobby so the next race needs a fresh Ready round.
-                _lobby.End();
-                Finished?.Invoke(result);
-            }
         }
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            _log.LogError(ex, "PoRacer race tick failed");
-        }
-    }
-
-    private void SnapshotSafe()
-    {
-        try
-        {
-            PoRacerRaceSnapshot snap;
-            lock (_stateLock)
-            {
-                snap = _sim.Snapshot(_gameCode, _countdownMs);
-            }
-            SnapshotReady?.Invoke(snap);
-        }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "PoRacer race snapshot failed");
+            lock (_gate) _finishedAt = DateTimeOffset.UtcNow;
+            _log.LogError(ex, "Race {Code} stopped unexpectedly", GameCode);
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _tick.DisposeAsync();
-        await _snap.DisposeAsync();
+        await _stop.CancelAsync();
+        await _loop;
+        SnapshotReady = null;
+        Finished = null;
+        _stop.Dispose();
     }
 }

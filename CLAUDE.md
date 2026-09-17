@@ -8,9 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Build (TreatWarningsAsErrors is on; NuGet CVE audit fails the build)
 dotnet build PoMiniGames.slnx
 
-# Lint / format. CI runs this but the step is explicitly non-blocking
-# (`continue-on-error: true`) — a formatting drift will not fail master, so keep
-# the tree clean locally rather than relying on the gate.
+# CI blocks formatting drift within PoRacer; format locally before submitting changes.
 dotnet format PoMiniGames.slnx --verify-no-changes --verbosity minimal
 dotnet format PoMiniGames.slnx
 # Line endings are pinned to LF by .gitattributes (`* text=auto eol=lf`). That file is
@@ -41,7 +39,7 @@ dotnet run --project src/PoMiniGames.API/PoMiniGames.API.csproj
 azd up
 ```
 
-Requires .NET SDK 10.0.203 (global.json) and Docker (Azurite + Testcontainers).
+Requires .NET SDK 10.0.400 (global.json) and Docker (Azurite + Testcontainers).
 
 ### What CI actually gates (`.github/workflows/deploy.yml`)
 
@@ -50,13 +48,13 @@ Only the **Unit** tier runs in CI — Integration/E2E need Azurite and Playwrigh
 - **Trim audit**: the WASM client is published with `PublishTrimmed=true` + `EnableTrimAnalyzer`. Combined with `TreatWarningsAsErrors`, a single IL2xxx warning from new reflection-heavy code fails master. The host's own publish does not exercise this, so the analyzer only ever sees the client here. `src/PoMiniGames.Client/TrimmerRoots.xml` is the escape hatch.
 - **WASM bundle-size budget**: the trimmed `_framework` output must stay ≤ 25 MB. The baseline was ≈ 20 MB, most of it the PoSurvive simulation engine shipping client-side; that game was removed on 2026-09-12, so measure before assuming the old figure.
 
-The format check is non-blocking; a missing `v*` tag at HEAD is a warning, not a failure (MinVer just stamps a pre-release). Deploy targets the `PoMiniGames` resource group and **discovers** the App Service name from it rather than hardcoding it — a resource rename can no longer silently 404 the deploy. It runs on F1, which cannot enable AlwaysOn, hence the prewarm loop before the smoke tests; `WEBSITE_RUN_FROM_PACKAGE=1` means the zip is mounted atomically.
+The PoRacer format check is blocking; a missing `v*` tag at HEAD is a warning, not a failure (MinVer just stamps a pre-release). Deploy targets the `PoMiniGames` resource group and **discovers** the App Service name from it rather than hardcoding it — a resource rename can no longer silently 404 the deploy. It runs on F1, which cannot enable AlwaysOn, hence the prewarm loop before the smoke tests; `WEBSITE_RUN_FROM_PACKAGE=1` means the zip is mounted atomically.
 
 ## Test structure rules
 
 - **100/50/25/25 rule**: *every* tier has its own ceiling — Unit 100, Integration 50, E2E-API 25, E2E-UI 25 — enforced by one shared assertion, `TierCeilingGuard` in `tests/Shared/`. Each tier declares a sealed, empty subclass of it naming its own ceiling (`TestCountCeilingTests`, `IntegrationTestCountCeilingTests`, `E2EApiTestCountCeilingTests`, `E2EUiTestCountCeilingTests`); the same reflection used to be copy-pasted into all four. It counts `[Fact]`/`[Theory]` **methods**, not discovered cases (`TheoryAttribute` derives from `FactAttribute`, so one probe catches both). When one trips, consolidate two facts into one theory or relocate to a cheaper tier — never raise the cap.
 - Headroom is deliberately **not** recorded here. It rots on every commit, and the figure that used to sit in this line ("Unit 0 slots") was three audits stale and wrong in the alarming direction. Count it when you need it — `grep -rc "^\s*\[Fact\|^\s*\[Theory" tests/<tier> --include=*.cs`, minus one for that tier's own guard — or just run the guard test.
-- The two enforcement paths deliberately disagree: the guard tests **fail** the tier, while `test-all.ps1` reports overage as a loud non-fatal **WARN** so coverage is never deleted just to satisfy a counter.
+- All four ceilings are enforced by `scripts/test-ceilings.ps1` in CI without infrastructure. `test-all.ps1` reports discovered cases separately; TierCeilingGuard enforces method counts.
 - Tiers, and there are exactly four: `PoMiniGames.Unit` (hermetic, no I/O) → `PoMiniGames.Integration` (Testcontainers Azurite) → `PoMiniGames.E2EAPI` (WebApplicationFactory HTTP contract) → `PoMiniGames.E2EUI` (Playwright; host runs under the "Test" environment). A fifth project, `tests/Shared` (`PoMiniGames.TestUtilities`), is a library the other four reference, not a tier.
 - **There is no JavaScript test tier and no pre-commit hook.** This file used to describe a bUnit `PoMiniGames.Component` tier and a Vitest **SimJs** tier over `tests/PoEcosystem.Sim`, plus Husky.Net hooks running ESLint and Vitest on staged files. None of it exists — there is no `package.json`, no `vitest.config.js`, no `.husky/`, and no such test projects. The Component tier was retired 2026-09-11 (`scripts/test-all.ps1` still notes it) and the JS tooling went in b42fad4. Nothing runs on commit; run `dotnet format` yourself.
 - **Any test that POSTs/PUTs/DELETEs `/api/*` must call `client.ArmAntiforgeryAsync()`** (`tests/Shared/AntiforgeryTestExtensions.cs`) or it gets a 403, not the status it asserts. Re-arm after a sign-in — the token is bound to identity claims. Antiforgery is deliberately NOT disabled for the Test environment.
@@ -137,3 +135,11 @@ These apply on top of the conventions above. They are intentionally short and ab
 - **Treat warnings as errors.** Treat compile warnings as errors and make sure they are fixed.
 - **TL;DR on long replies.** Any response longer than 100 words ends with a `**TL;DR** …` line of roughly 20 words.
 
+
+### PoRacer cleanup contract
+
+- `js/poracer/index.js` explicitly owns input, Canvas rendering, interpolation and WebGL composition. Start/stop release listeners, animation frames, GPU resources and cached bitmaps.
+- `PoRacerRaceRegistry` owns separate solo, demo and multiplayer races. Multiplayer rounds get unique codes; claim-derived identities bind lobby seats to race connections. Snapshots identify the local car only in the join response.
+- Leaderboards rank best completed laps. `PoRacerScoreDto.BestLapSeconds` retains the JSON name `totalTimeSeconds`, and Azure retains its `TotalTimeSeconds` column. Existing values are preserved, not multiplied or divided to infer old race semantics.
+- Score writes use the shared highscore rate limiter; reads use `/api/leaderboards/poracer`. Retryable writes persist through `PendingScoreStore` using source-generated serialization metadata.
+- Test caps count methods, not theory rows. No fifth test tier is introduced.

@@ -16,7 +16,7 @@
   Then each tier runs in order, results roll up, and structural ceilings
   (the 100/50/25/25 Rule) are checked. Exit code is non-zero on any tier failure.
 .NOTES
-  Ceiling overage is reported as a loud WARN (non-fatal) so coverage is never deleted
+  Method ceilings fail through TierCeilingGuard; discovered cases are reported separately so coverage is never deleted
   to satisfy a counter; runaway growth still surfaces immediately in the summary.
 #>
 
@@ -125,15 +125,10 @@ foreach ($name in $tiers.Keys) {
     if ($tierFailed) { $anyFailed = $true; Write-Err "${name}: $failed failed / $total total" }
     else { Write-Ok "${name}: $passed passed / $total total" }
 
-    $ceilingNote = ''
-    if ($total -gt $ceiling) {
-        $ceilingNote = "OVER CEILING ($total/$ceiling)"
-        Write-Warn "$name exceeds the $ceiling-test ceiling ($total). Consolidate or relocate — do not raise the cap."
-    } else {
-        $ceilingNote = "$total/$ceiling"
-    }
+    # Discovered theory cases are runtime work, not the method ceiling.
+    # TierCeilingGuard fails the tier if its method budget is exceeded.
+    $summary += [pscustomobject]@{ Tier = $name; Passed = $passed; Failed = $failed; Cases = $total; MethodCap = $ceiling }
 
-    $summary += [pscustomobject]@{ Tier = $name; Passed = $passed; Failed = $failed; Total = $total; Ceiling = $ceilingNote }
 }
 
 # ── Roll-up ──────────────────────────────────────────────────────────────────

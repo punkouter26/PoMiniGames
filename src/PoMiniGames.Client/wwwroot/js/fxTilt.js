@@ -43,6 +43,7 @@ function tierAllows() {
 }
 
 let isMagnetic = false;
+let _lastShimmerTime = 0;
 
 function apply() {
     rafId = 0;
@@ -59,6 +60,25 @@ function apply() {
     }
     active.style.setProperty('--fx-mx', pendingX.toFixed(3));
     active.style.setProperty('--fx-my', pendingY.toFixed(3));
+
+    // Holographic foil properties
+    const angleDeg = (Math.atan2(pendingY, pendingX) * 180 / Math.PI + 180).toFixed(1);
+    active.style.setProperty('--holo-angle', `${angleDeg}deg`);
+    active.style.setProperty('--holo-glare', mag.toFixed(2));
+    active.style.setProperty('--holo-x', `${((pendingX + 1) * 50).toFixed(1)}%`);
+    active.style.setProperty('--holo-y', `${((pendingY + 1) * 50).toFixed(1)}%`);
+
+    const now = performance.now();
+    if (active.hasAttribute('data-fx-holo') || active.classList.contains('fx-holo-card') || active.classList.contains('player-card')) {
+        const dAngle = Math.abs(parseFloat(angleDeg) - (active._lastHoloAngle || parseFloat(angleDeg)));
+        active._lastHoloAngle = parseFloat(angleDeg);
+        if (dAngle > 40 && now - _lastShimmerTime > 1500) {
+            _lastShimmerTime = now;
+            if (window.PoCues && window.PoCues.play) {
+                window.PoCues.play('ui.holoShimmer');
+            }
+        }
+    }
 }
 
 function schedule() {
@@ -71,6 +91,10 @@ function release(el) {
     el.style.translate = '';
     el.style.removeProperty('--fx-mx');
     el.style.removeProperty('--fx-my');
+    el.style.removeProperty('--holo-angle');
+    el.style.removeProperty('--holo-glare');
+    el.style.removeProperty('--holo-x');
+    el.style.removeProperty('--holo-y');
 }
 
 function onMove(e) {
@@ -96,7 +120,7 @@ function detach() {
 
 function onOver(e) {
     const el = e.target && e.target.closest
-        ? e.target.closest('[data-fx-tilt], [data-magnetic], .poeco-btn, .poeco-pill, .poeco-tab')
+        ? e.target.closest('[data-fx-tilt], [data-fx-holo], [data-magnetic], .fx-holo-card, .player-card, .poeco-btn, .poeco-pill, .poeco-tab')
         : null;
     if (el === active) return;
     detach();
@@ -112,9 +136,28 @@ function onOver(e) {
                  el.classList.contains('poeco-pill') ||
                  el.classList.contains('poeco-tab');
 
-    const attr = parseFloat(el.getAttribute('data-fx-tilt'));
+    const attr = parseFloat(el.getAttribute('data-fx-tilt') || el.getAttribute('data-fx-holo'));
     maxDeg = Number.isFinite(attr) && attr > 0 ? Math.min(20, attr) : (isMagnetic ? 4 : DEFAULT_MAX_DEG);
     window.addEventListener('pointermove', onMove, { passive: true });
+}
+
+function onDeviceOrientation(e) {
+    if (motionReduced() || !tierAllows()) return;
+    if (e.gamma == null || e.beta == null) return;
+    const holoCards = document.querySelectorAll('[data-fx-holo], .fx-holo-card, .player-card');
+    if (!holoCards.length) return;
+    const gx = Math.max(-1, Math.min(1, e.gamma / 30));
+    const gy = Math.max(-1, Math.min(1, (e.beta - 45) / 30));
+    const mag = Math.min(1, Math.hypot(gx, gy));
+    const angleDeg = (Math.atan2(gy, gx) * 180 / Math.PI + 180).toFixed(1);
+    for (const card of holoCards) {
+        card.style.setProperty('--fx-mx', gx.toFixed(3));
+        card.style.setProperty('--fx-my', gy.toFixed(3));
+        card.style.setProperty('--holo-angle', `${angleDeg}deg`);
+        card.style.setProperty('--holo-glare', mag.toFixed(2));
+        card.style.setProperty('--holo-x', `${((gx + 1) * 50).toFixed(1)}%`);
+        card.style.setProperty('--holo-y', `${((gy + 1) * 50).toFixed(1)}%`);
+    }
 }
 
 if (typeof document !== 'undefined') {
@@ -143,6 +186,11 @@ if (typeof document !== 'undefined') {
     // pointerout, which would leave `active` pointing at a detached node and
     // the pointermove listener running forever.
     window.addEventListener('pagehide', detach);
+
+    // Mobile gyroscope tilt for holographic foils
+    if (window.DeviceOrientationEvent) {
+        window.addEventListener('deviceorientation', onDeviceOrientation, { passive: true });
+    }
 }
 
 if (typeof window !== 'undefined') {

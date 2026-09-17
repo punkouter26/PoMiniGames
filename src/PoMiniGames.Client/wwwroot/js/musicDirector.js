@@ -81,6 +81,26 @@
             const tempo = inVerdict ? cfg.tempo + 8 : Math.round(cfg.tempo + (_tension * 10));
             am.setTempo ? am.setTempo(tempo) : null;
         } catch { /* the soundtrack must never be the thing that breaks */ }
+
+        // Shepard tone climax engine
+        try {
+            if (window.PoDsp && window.PoDsp.setShepard) {
+                if (_tension > 0.45 && !inVerdict) {
+                    const gain = (_tension - 0.45) * 0.42;
+                    const rate = 0.04 + _tension * 0.08;
+                    window.PoDsp.setShepard(true, rate, gain, 'music');
+                } else {
+                    window.PoDsp.setShepard(false, 0.06, 0, 'music');
+                }
+            }
+        } catch { /* ignore */ }
+
+        // Publish tension tokens on <html> for CSS heartbeat animations
+        if (typeof document !== 'undefined' && document.documentElement) {
+            document.documentElement.style.setProperty('--fx-tension', _tension.toFixed(2));
+            const pulseRate = (1.0 + _tension * 1.5).toFixed(2);
+            document.documentElement.style.setProperty('--fx-pulse-rate', pulseRate);
+        }
     }
 
     function setState(s) {
@@ -88,7 +108,12 @@
         // Tension belongs to the situation that produced it. Carrying it across a
         // state change would leave the catalog humming at last-lap intensity after
         // the player quit the race.
-        if (s !== _state) _tension = 0;
+        if (s !== _state) {
+            _tension = 0;
+            if (window.PoDsp && window.PoDsp.setShepard) {
+                window.PoDsp.setShepard(false, 0.06, 0, 'music');
+            }
+        }
         _state = s;
         apply(false);
     }

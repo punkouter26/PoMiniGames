@@ -40,7 +40,7 @@ public sealed class PlayerCardEndpointsTests : IClassFixture<TestWebApplicationF
 
         var svg = await response.Content.ReadAsStringAsync();
         svg.Should().StartWith("<svg");
-        svg.TrimEnd().Should().EndWith("</svg>");
+        svg.Should().EndWith("</svg>\n");
         svg.Should().Contain("CyberRacer");
         svg.Should().Contain("COMPETITIVE LICENSE");
         svg.Should().Contain("MMR");

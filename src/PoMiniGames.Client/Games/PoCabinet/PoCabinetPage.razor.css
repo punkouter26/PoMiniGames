@@ -1,0 +1,318 @@
+/* PoCabinet UI — themed with the framework's design tokens (no per-component hex values).
+   See wwwroot/css/app.css :root for the token set; this file only references vars so
+   light/dark themes flow through automatically. */
+
+.pocabinet-root {
+    width: 100%;
+    height: 100%;
+    color: var(--color-text);
+}
+
+.pocabinet-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border, transparent);
+    border-radius: var(--radius-md, 8px);
+    padding: 1.5rem;
+    max-width: 720px;
+    margin: 2rem auto;
+    box-shadow: var(--shadow-card, none);
+}
+
+.pocabinet-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+}
+
+.pocabinet-primary {
+    background: var(--color-primary);
+    color: var(--color-on-primary, white);
+    border: none;
+    border-radius: var(--radius-md, 6px);
+    padding: 0.6rem 1.2rem;
+    cursor: pointer;
+    font: inherit;
+}
+
+.pocabinet-primary:focus-visible {
+    outline: 2px solid var(--color-focus, currentColor);
+    outline-offset: 2px;
+}
+
+/* ─── Track selector ─────────────────────────────────────────────────────── */
+
+.pocabinet-track-selector {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+.pocabinet-track {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: var(--radius-md, 6px);
+    background: var(--color-surface);
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+}
+
+.pocabinet-track--selected {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.pocabinet-track__swatch {
+    flex: 0 0 12px;
+    width: 12px;
+    height: 64px;
+    border-radius: 4px;
+    background: var(--accent);
+}
+
+.pocabinet-track__title {
+    display: block;
+    font-size: 1.05rem;
+}
+
+.pocabinet-track__meta {
+    display: block;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    margin: 0.15rem 0;
+}
+
+.pocabinet-track__description {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+}
+
+/* ─── Paint shop ─────────────────────────────────────────────────────────── */
+
+.pocabinet-paintshop {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.pocabinet-paintshop__title {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.pocabinet-paintshop__liveries,
+.pocabinet-paintshop__colors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.pocabinet-livery,
+.pocabinet-color {
+    border: 1px solid var(--color-border, transparent);
+    background: var(--color-surface);
+    border-radius: var(--radius-md, 6px);
+    padding: 0.4rem 0.6rem;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+}
+
+.pocabinet-livery--selected,
+.pocabinet-color--selected {
+    outline: 2px solid var(--color-primary);
+}
+
+.pocabinet-color__chip {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--swatch);
+    vertical-align: middle;
+}
+
+.pocabinet-paintshop__preview {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+}
+
+/* ─── Championship ───────────────────────────────────────────────────────── */
+
+.pocabinet-championship {
+    margin-top: 1.5rem;
+    padding: 0.75rem;
+    border: 1px dashed var(--color-border, transparent);
+    border-radius: var(--radius-md, 6px);
+}
+
+.pocabinet-championship__title {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+    letter-spacing: 0.08em;
+}
+
+.pocabinet-championship__stages {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.pocabinet-stage {
+    flex: 1 1 0;
+    min-width: 120px;
+    padding: 0.5rem;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: var(--radius-md, 6px);
+    text-align: center;
+    background: var(--color-surface);
+}
+
+.pocabinet-stage--done { opacity: 1; }
+.pocabinet-stage--active { outline: 2px solid var(--color-primary); }
+
+.pocabinet-championship__rewards {
+    margin-top: 0.75rem;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    font-size: 0.85rem;
+}
+
+.pocabinet-reward {
+    padding: 0.25rem 0.5rem;
+    border: 1px dashed var(--color-border, transparent);
+    border-radius: 999px;
+    color: var(--color-text-muted);
+}
+
+.pocabinet-reward--unlocked {
+    color: var(--color-text);
+    border-style: solid;
+}
+
+/* ─── Lobby ──────────────────────────────────────────────────────────────── */
+
+.pocabinet-lobby {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+}
+
+.pocabinet-lobby__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.pocabinet-lobby__code {
+    display: inline-flex;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: var(--radius-md, 6px);
+}
+
+.pocabinet-lobby__seats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.5rem;
+}
+
+.pocabinet-seat {
+    padding: 0.6rem;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: var(--radius-md, 6px);
+    text-align: center;
+    min-height: 48px;
+}
+
+.pocabinet-seat--filled { background: var(--color-surface); }
+.pocabinet-seat--empty { opacity: 0.6; border-style: dashed; }
+
+.pocabinet-seat__badge {
+    display: inline-block;
+    margin-left: 0.25rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    background: var(--color-primary);
+    color: var(--color-on-primary, white);
+    font-size: 0.7rem;
+}
+
+.pocabinet-lobby__controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.pocabinet-lobby__start,
+.pocabinet-lobby__ready {
+    background: var(--color-primary);
+    color: var(--color-on-primary, white);
+    border: none;
+    border-radius: var(--radius-md, 6px);
+    padding: 0.6rem 1rem;
+    cursor: pointer;
+    font: inherit;
+}
+
+.pocabinet-lobby__start:disabled {
+    background: var(--color-text-muted);
+    cursor: not-allowed;
+}
+
+.pocabinet-lobby__error {
+    color: var(--color-danger, #c0392b);
+}
+
+/* ─── Race HUD ───────────────────────────────────────────────────────────── */
+
+.pocabinet-race {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.pocabinet-canvas {
+    width: 100%;
+    height: 70vh;
+    background: #0f1a3a;
+    border-radius: var(--radius-md, 8px);
+    display: block;
+}
+
+.pocabinet-canvas:focus-visible {
+    outline: 2px solid var(--color-focus, currentColor);
+    outline-offset: 2px;
+}
+
+.pocabinet-hud {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 0.75rem;
+    border-radius: var(--radius-md, 6px);
+    background: var(--color-surface);
+    margin-top: 0.5rem;
+}
+
+.pocabinet-announcement {
+    margin-top: 0.5rem;
+    color: var(--color-text-muted);
+    font-style: italic;
+}

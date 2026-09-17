@@ -174,6 +174,19 @@ public static class GameCatalog
             new(GameMode.Demo, "/poracer/demo"),
         ]) { ChipPrimary = true },
 
+        // PoCabinet (2026-09-17): cockpit-view racing, four named officials, three
+        // themed tracks (Capitol Speedway / Mar-a-Lago GP / Press Briefing 500).
+        // All four modes are real: 1P championship, 2P hot-seat, multi SignalR lobby,
+        // demo AI showcase with Elo ladder. The lobby endpoint at /api/pocabinet is
+        // authed; the leaderboard reads are anonymous.
+        new(GameKeys.PoCabinet, "Cabinet", "🏛️",
+        [
+            new(GameMode.OnePlayer, "/pocabinet/1player"),
+            new(GameMode.TwoPlayer, "/pocabinet/2player"),
+            new(GameMode.Multiplayer, "/pocabinet/multi", RequiresNetwork: true),
+            new(GameMode.Demo, "/pocabinet/demo"),
+        ]) { ChipPrimary = true },
+
         // ChipPrimary: 1P is the card head, so the chip row would otherwise show a lone
         // "Demo" and the game reads as unplayable. It is very much playable — you steer
         // the red marble with the arrow keys.
@@ -286,6 +299,7 @@ public static class GameCatalog
         {
             GameKeys.TicTacToe, GameKeys.ConnectFive, GameKeys.PoRacer, GameKeys.PoMarbleRace,
             GameKeys.PoVoxelStrike, GameKeys.PoJoker, GameKeys.PoBrawl, GameKeys.PoSports,
+            GameKeys.PoCabinet,
         }
         .Select(key => All.First(g => g.Key == key))
         .Select(g =>

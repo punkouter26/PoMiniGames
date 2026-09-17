@@ -26,7 +26,7 @@ public sealed class PoCabinetCareerState
     public PoCabinetCareerState(ILocalStorageService storage) => _storage = storage;
 
     /// <summary>Current state (loaded from storage, or fresh state if none).</summary>
-    public PoCabinetCareerDto Current { get; private set; } = PoCabinetCareerDto.New();
+    public PoCabinetCareerDto Current { get; set; } = PoCabinetCareerDto.New();
 
     /// <summary>True if storage I/O is available — false means no persistence this session.</summary>
     public bool StorageAvailable { get; private set; }

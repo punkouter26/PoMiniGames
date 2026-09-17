@@ -1,0 +1,122 @@
+@*
+    PoCabinetPaintShop — 4 liveries × 4 colors = 16 swatches, persisted to
+    localStorage via Blazored.LocalStorage (the framework's preference per
+    Program.cs). Selection flows via two-way binding so the parent page can
+    submit the chosen livery alongside the race result.
+*@
+
+@using Blazored.LocalStorage
+@inject ILocalStorageService LocalStorage
+
+<div class="pocabinet-paintshop" aria-label="Customize your car">
+    <h3 class="pocabinet-paintshop__title">Pick a livery</h3>
+    <div class="pocabinet-paintshop__liveries" role="radiogroup" aria-label="Livery pattern">
+        @foreach (var livery in LIVERIES)
+        {
+            var isSelected = livery == _selectedLivery;
+            <button type="button"
+                    class="pocabinet-livery @(isSelected ? "pocabinet-livery--selected" : null)"
+                    role="radio"
+                    aria-checked="@isSelected"
+                    @onclick="() => SelectLivery(livery)">
+                <span class="pocabinet-livery__preview" data-livery="@livery" aria-hidden="true"></span>
+                <span class="pocabinet-livery__name">@livery</span>
+            </button>
+        }
+    </div>
+
+    <h3 class="pocabinet-paintshop__title">Pick a color</h3>
+    <div class="pocabinet-paintshop__colors" role="radiogroup" aria-label="Body color">
+        @foreach (var (name, hex) in COLORS)
+        {
+            var isSelected = name == _selectedColor;
+            <button type="button"
+                    class="pocabinet-color @(isSelected ? "pocabinet-color--selected" : null)"
+                    role="radio"
+                    aria-checked="@isSelected"
+                    style="--swatch: @hex;"
+                    aria-label="@name"
+                    @onclick="() => SelectColor(name)">
+                <span class="pocabinet-color__chip" aria-hidden="true"></span>
+            </button>
+        }
+    </div>
+
+    <div class="pocabinet-paintshop__preview" aria-live="polite">
+        Your car: <strong>@_selectedLivery</strong> in <strong>@_selectedColor</strong>.
+    </div>
+</div>
+
+@code {
+    private const string StorageKey = "pocabinet.paintshop.v1";
+
+    private static readonly string[] LIVERIES = { "Stripe", "Block", "Split", "Solid" };
+
+    private static readonly (string Name, string Hex)[] COLORS =
+    {
+        ("Indigo",   "#3470d8"),
+        ("Crimson",  "#c0392b"),
+        ("Forest",   "#2e7d4f"),
+        ("Gold",     "#d4af37"),
+    };
+
+    private string _selectedLivery = "Stripe";
+    private string _selectedColor = "Indigo";
+
+    /// <summary>The current selection, surfaced so the parent page can submit it with the result.</summary>
+    [Parameter] public string? SelectedLivery { get; set; }
+    [Parameter] public string? SelectedColor { get; set; }
+    [Parameter] public EventCallback<(string Livery, string Color)> SelectionChanged { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var saved = await LocalStorage.GetItemAsStringAsync(StorageKey);
+            if (!string.IsNullOrWhiteSpace(saved))
+            {
+                // Stored value is "<livery>|<color>".
+                var parts = saved.Split('|', 2);
+                if (parts.Length == 2)
+                {
+                    _selectedLivery = parts[0];
+                    _selectedColor = parts[1];
+                }
+            }
+        }
+        catch
+        {
+            // localStorage unavailable — fall back to defaults.
+        }
+        SelectedLivery = _selectedLivery;
+        SelectedColor = _selectedColor;
+    }
+
+    private async Task SelectLivery(string livery)
+    {
+        _selectedLivery = livery;
+        SelectedLivery = livery;
+        await PersistAsync();
+        await SelectionChanged.InvokeAsync((livery, _selectedColor));
+    }
+
+    private async Task SelectColor(string color)
+    {
+        _selectedColor = color;
+        SelectedColor = color;
+        await PersistAsync();
+        await SelectionChanged.InvokeAsync((_selectedLivery, color));
+    }
+
+    private async Task PersistAsync()
+    {
+        try
+        {
+            await LocalStorage.SetItemAsStringAsync(StorageKey, $"{_selectedLivery}|{_selectedColor}");
+        }
+        catch
+        {
+            // ignore — in-memory fallback for the rest of the session
+        }
+    }
+}

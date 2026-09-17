@@ -1,0 +1,132 @@
+@*
+    PoCabinetLobby — host creates a lobby and shares the 8-char join code, or
+    guests paste a code to join. Layout is the Concept 8 "Among Us" style: a
+    banner with the code, an 8-seat grid, a track picker, and Start when all
+    players are ready.
+
+    Real SignalR /pocabinet/lobby-hub wiring lands in the racing service (T7
+    service code). For v1 the lobby is a thin UI that captures the host's
+    intent and hands the join code to the racing service.
+*@
+
+@using PoMiniGames.Shared.Games
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<div class="pocabinet-lobby" aria-label="Multiplayer lobby">
+    <header class="pocabinet-lobby__header">
+        <h2>Lobby</h2>
+        @if (!string.IsNullOrEmpty(_joinCode))
+        {
+            <div class="pocabinet-lobby__code" aria-live="polite">
+                <span>Code: <strong id="lobby-code">@_joinCode</strong></span>
+                <button type="button" @onclick="CopyCodeAsync">Copy</button>
+            </div>
+        }
+    </header>
+
+    <section class="pocabinet-lobby__seats" aria-label="Lobby seats">
+        @for (var i = 0; i < PoCabinetCatalog.CarCount; i++)
+        {
+            var seatIndex = i;
+            <div class="pocabinet-seat @(IsSeatFilled(seatIndex) ? "pocabinet-seat--filled" : "pocabinet-seat--empty")">
+                @if (seatIndex < _players.Count)
+                {
+                    var p = _players[seatIndex];
+                    <strong>@p.DisplayName</strong>
+                    @if (p.IsHost) { <span class="pocabinet-seat__badge">Host</span> }
+                }
+                else
+                {
+                    <span aria-label="Empty seat">—</span>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="pocabinet-lobby__controls">
+        <PoCabinetTrackSelector SelectedTrackId="@_trackId" SelectedTrackIdChanged="OnTrackChanged" />
+        @if (_isHost)
+        {
+            <button class="pocabinet-lobby__start" disabled="@(!CanStart)" @onclick="StartAsync">
+                @(_players.Count < 2 ? "Waiting for players…" : "Start")
+            </button>
+        }
+        @if (!_isHost)
+        {
+            <button class="pocabinet-lobby__ready" @onclick="ToggleReadyAsync">
+                @(_isReady ? "Ready ✓" : "Ready up")
+            </button>
+        }
+    </section>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <p class="pocabinet-lobby__error" role="alert">@_error</p>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Mode { get; set; }
+    [Parameter] public string? InitialJoinCode { get; set; }
+
+    private sealed class PlayerRow
+    {
+        public string DisplayName { get; init; } = "";
+        public bool IsHost { get; init; }
+        public bool IsReady { get; set; }
+    }
+
+    private string _joinCode = "";
+    private string _trackId = PoCabinetCatalog.DefaultTrackId;
+    private bool _isHost;
+    private bool _isReady;
+    private string? _error = null;
+    private readonly List<PlayerRow> _players = new();
+
+    private bool CanStart => _players.Count >= 2 && _players.All(p => p.IsReady);
+
+    protected override void OnInitialized()
+    {
+        _isHost = string.IsNullOrWhiteSpace(InitialJoinCode);
+        if (_isHost)
+        {
+            _joinCode = GeneratePlaceholderCode();
+            _players.Add(new PlayerRow { DisplayName = "You", IsHost = true, IsReady = true });
+        }
+        else
+        {
+            _joinCode = InitialJoinCode!;
+            // Real seat hydration lands once the racing service is wired in T7's
+            // service code. Until then the page renders the empty 8-seat grid.
+        }
+    }
+
+    private bool IsSeatFilled(int seatIndex) => seatIndex < _players.Count;
+
+    private Task OnTrackChanged(string trackId)
+    {
+        _trackId = trackId;
+        return Task.CompletedTask;
+    }
+
+    private Task ToggleReadyAsync()
+    {
+        _isReady = !_isReady;
+        return Task.CompletedTask;
+    }
+
+    private Task StartAsync() => Task.CompletedTask; // race hub wiring lands in T7 service code
+
+    private async Task CopyCodeAsync()
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", _joinCode); } catch { /* ignore */ }
+    }
+
+    private string GeneratePlaceholderCode()
+    {
+        // Stub used until the racing service lands — generates a CAB-XXXXXXXX
+        // shape so the UI is testable in the meantime.
+        return "CAB-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+    }
+}

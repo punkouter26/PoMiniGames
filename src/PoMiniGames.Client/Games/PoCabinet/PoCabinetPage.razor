@@ -1,0 +1,134 @@
+@page "/pocabinet"
+@page "/pocabinet/1player"
+@page "/pocabinet/2player"
+@page "/pocabinet/multi"
+@page "/pocabinet/demo"
+
+@using PoMiniGames.Shared.Games
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject GameResultService GameResults
+@inject PoCabinetCareerState Career
+
+<PageTitle>Cabinet · PoMiniGames</PageTitle>
+
+<GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true"
+           GameKey="pocabinet">
+    <div class="pocabinet-root">
+        @if (_phase == Phase.Start)
+        {
+            <section class="pocabinet-start" aria-label="Cabinet start">
+                <div class="pocabinet-card">
+                    <h1>Cabinet</h1>
+                    <p>Three tracks. Four officials. One presidency. 3 laps per race.</p>
+                    <PoCabinetTrackSelector SelectedTrackId="@_trackId" SelectedTrackIdChanged="OnTrackChanged" />
+                    <details>
+                        <summary>Customize car</summary>
+                        <PoCabinetPaintShop SelectedLivery="@_livery" SelectedColor="@_color" SelectionChanged="OnPaintChanged" />
+                    </details>
+                    <div class="pocabinet-actions">
+                        <button class="pocabinet-primary" @onclick="StartRaceAsync">Start race</button>
+                        @if (Mode == GameMode.Multiplayer)
+                        {
+                            <a href="/pocabinet/multi">Multiplayer lobby</a>
+                        }
+                        <a href="/leaderboards?game=pocabinet">Leaderboard</a>
+                    </div>
+                    @if (Mode == GameMode.OnePlayer)
+                    {
+                        <PoCabinetChampionshipView />
+                    }
+                </div>
+            </section>
+        }
+        else if (_phase == Phase.Lobby)
+        {
+            <PoCabinetLobby Mode="@Mode.ToString()" InitialJoinCode="@_joinCode" />
+        }
+        else if (_phase == Phase.Racing)
+        {
+            <section class="pocabinet-race" aria-label="Race in progress">
+                <canvas id="pocabinetCanvas"
+                        class="pocabinet-canvas"
+                        role="img"
+                        tabindex="0"
+                        aria-label="Cabinet cockpit view. Drive with W A S D or arrow keys.">
+                </canvas>
+                <div class="pocabinet-hud" aria-live="polite">
+                    <span>Lap <strong>@_lap</strong>/@_totalLaps</span>
+                    <span>Pos <strong>@_position</strong>/@_totalCars</span>
+                    <span>Speed <strong>@($"{_speedKmh:0}")</strong> km/h</span>
+                    <span>Time <strong>@FormatLapTime(_lapSeconds)</strong></span>
+                </div>
+                @if (_announcement is not null)
+                {
+                    <p class="pocabinet-announcement" role="status">@_announcement</p>
+                }
+            </section>
+        }
+    </div>
+</GameShell>
+
+@code {
+    [Parameter] public string? ModeSegment { get; set; }
+
+    private enum Phase { Start, Lobby, Racing, Finished }
+
+    private GameMode Mode => GameModes.Parse(ModeSegment);
+
+    private string _playerName = "Player";
+    private Phase _phase = Phase.Start;
+    private string? _trackId = PoCabinetCatalog.DefaultTrackId;
+    private string? _livery = "Stripe";
+    private string? _color = "Indigo";
+    private string? _joinCode = null;
+
+    private int _lap = 1;
+    private int _position = 1;
+    private int _totalLaps = PoCabinetCatalog.TotalLaps;
+    private int _totalCars = 4;
+    private double _speedKmh = 0;
+    private double _lapSeconds = 0;
+    private string? _announcement = null;
+
+    private RenderFragment TitleContent => @<span>🏛️ Cabinet</span>;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Career.LoadAsync();
+    }
+
+    private Task OnTrackChanged(string trackId)
+    {
+        _trackId = trackId;
+        return Task.CompletedTask;
+    }
+
+    private Task OnPaintChanged((string Livery, string Color) sel)
+    {
+        _livery = sel.Livery;
+        _color = sel.Color;
+        return Task.CompletedTask;
+    }
+
+    private Task StartRaceAsync()
+    {
+        if (Mode == GameMode.Multiplayer)
+        {
+            _phase = Phase.Lobby;
+        }
+        else
+        {
+            _phase = Phase.Racing;
+        }
+        return Task.CompletedTask;
+    }
+
+    private static string FormatLapTime(double seconds)
+    {
+        if (double.IsNaN(seconds) || seconds < 0) return "0:00.0";
+        var minutes = (int)(seconds / 60);
+        var rest = seconds - minutes * 60;
+        return $"{minutes}:{rest:0.0}";
+    }
+}

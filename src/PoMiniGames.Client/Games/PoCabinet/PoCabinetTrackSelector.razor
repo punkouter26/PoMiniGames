@@ -1,0 +1,57 @@
+@*
+    PoCabinetTrackSelector — three themed tracks as a 1×3 card grid (Concept 8,
+    lighter version). Each card shows the track name, difficulty, length and a
+    swatch of the atmosphere accent. Keyboard navigation + screen reader labels.
+    Persists the selection via two-way binding; the parent decides where the
+    choice goes next.
+*@
+
+@using PoMiniGames.Shared.Games
+@inject IJSRuntime JS
+
+<div class="pocabinet-track-selector" role="radiogroup" aria-label="Choose a track">
+    @foreach (var track in PoCabinetCatalog.Tracks)
+    {
+        var accent = TrackAccent(track.Id);
+        var isSelected = track.Id == SelectedTrackId;
+        <button type="button"
+                class="pocabinet-track @(isSelected ? "pocabinet-track--selected" : null)"
+                role="radio"
+                aria-checked="@isSelected"
+                data-track-id="@track.Id"
+                @onclick="() => SelectTrack(track.Id)">
+            <span class="pocabinet-track__swatch" style="--accent: @accent;" aria-hidden="true"></span>
+            <span class="pocabinet-track__body">
+                <strong class="pocabinet-track__title">@track.Name</strong>
+                <span class="pocabinet-track__meta">@TrackMeta(track.Id)</span>
+                <span class="pocabinet-track__description">@track.Description</span>
+            </span>
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter] public string? SelectedTrackId { get; set; }
+    [Parameter] public EventCallback<string> SelectedTrackIdChanged { get; set; }
+
+    private static readonly Dictionary<string, (string Accent, int LengthKm, string Difficulty)> TrackInfo =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["capitol"] = ("#d4af37", 3, "Easy"),
+            ["maralago"] = ("#2e7d4f", 4, "Medium"),
+            ["pressbriefing"] = ("#c0392b", 3, "Hard"),
+        };
+
+    private static string TrackAccent(string id) =>
+        TrackInfo.TryGetValue(id, out var info) ? info.Accent : "#888";
+
+    private static string TrackMeta(string id) =>
+        TrackInfo.TryGetValue(id, out var info) ? $"{info.LengthKm} km · {info.Difficulty}" : "";
+
+    private Task SelectTrack(string id)
+    {
+        if (SelectedTrackId == id) return Task.CompletedTask;
+        SelectedTrackId = id;
+        return SelectedTrackIdChanged.InvokeAsync(id);
+    }
+}

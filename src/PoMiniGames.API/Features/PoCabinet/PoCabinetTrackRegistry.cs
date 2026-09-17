@@ -19,11 +19,17 @@ public static class PoCabinetTrackRegistry
     private static readonly Dictionary<string, PoCabinetTrackData> _tracks =
         new(StringComparer.OrdinalIgnoreCase);
 
+    private static List<PoCabinetTrackData>? _all;
+
     static PoCabinetTrackRegistry()
     {
         Register(BuildCapitolSpeedway());
         Register(BuildMarALagoGrandPrix());
         Register(BuildPressBriefing500());
+        // Build the snapshot list AFTER _tracks is populated — see the order-of-init
+        // bug that bit us on 2026-09-17: a property initializer that reads _tracks
+        // runs before the static constructor, so defer the snapshot to here.
+        _all = PoCabinetCatalog.Tracks.Select(t => _tracks[t.Id]).ToList();
     }
 
     private static void Register(PoCabinetTrackData track) => _tracks[track.Id] = track;
@@ -35,12 +41,16 @@ public static class PoCabinetTrackRegistry
         {
             return track;
         }
-        return _tracks[PoCabinetCatalog.DefaultTrackId];
+        if (_tracks.TryGetValue(PoCabinetCatalog.DefaultTrackId, out var fallback))
+        {
+            return fallback;
+        }
+        throw new InvalidOperationException(
+            $"PoCabinetTrackRegistry is missing the default track '{PoCabinetCatalog.DefaultTrackId}'.");
     }
 
     /// <summary>All registered tracks, in catalog order.</summary>
-    public static IReadOnlyList<PoCabinetTrackData> All { get; } =
-        PoCabinetCatalog.Tracks.Select(t => _tracks[t.Id]).ToList();
+    public static IReadOnlyList<PoCabinetTrackData> All => _all ?? (IReadOnlyList<PoCabinetTrackData>)Array.Empty<PoCabinetTrackData>();
 
     // ──────────────────────────────────────────────────────────────────────
     //  Track 1: Capitol Speedway

@@ -195,10 +195,8 @@ public sealed class PoCabinetSim
 
     private void ApplyAi(SimCar car, double dt)
     {
-        // Placeholder — T3 wires PoCabinetAiDriver's look-ahead steering here.
-        // For now AI just rolls forward at moderate speed so the sim can be smoke-tested.
         if (car.Personality is null) return;
-        car.Speed = Math.Min(car.MaxSpeed * 0.7, car.Speed + car.Acceleration * 0.6 * dt);
+        PoCabinetAiDriver.Step(_centerline, car, car.Personality, dt);
     }
 
     private void ResolveCarCollisions()
@@ -369,17 +367,20 @@ public sealed record PoCabinetPersonality(
     /// <summary>The four named officials for v1. T3 wires these into the AI driver.</summary>
     public static class Officials
     {
+        // Each official's parameters are spread far enough that their lines diverge by
+        // a measurable amount on every track — the E2E-API contract test (PoCabinetAiPersonalityTests)
+        // asserts ≥ 5° average heading delta between any two officials over a 200-tick sim.
         public static readonly PoCabinetPersonality SeanS = new(
-            LookaheadDistance: 45, LateralOffset: -0.2, BrakingAggression: 0.8,
+            LookaheadDistance: 25, LateralOffset: -0.95, BrakingAggression: 0.95,
             CollisionTolerance: 0.2, DraftingAffinity: 0.1);
         public static readonly PoCabinetPersonality SteveB = new(
-            LookaheadDistance: 55, LateralOffset: 0.6, BrakingAggression: 0.3,
+            LookaheadDistance: 45, LateralOffset: 0.85, BrakingAggression: 0.20,
             CollisionTolerance: 0.6, DraftingAffinity: 0.2);
         public static readonly PoCabinetPersonality BillB = new(
-            LookaheadDistance: 50, LateralOffset: 0.4, BrakingAggression: 0.4,
+            LookaheadDistance: 100, LateralOffset: 0.0, BrakingAggression: 0.50,
             CollisionTolerance: 0.9, DraftingAffinity: 0.0);
         public static readonly PoCabinetPersonality MikeP = new(
-            LookaheadDistance: 70, LateralOffset: 0.0, BrakingAggression: 0.5,
+            LookaheadDistance: 130, LateralOffset: -0.40, BrakingAggression: 0.40,
             CollisionTolerance: 0.3, DraftingAffinity: 0.95);
     }
 }

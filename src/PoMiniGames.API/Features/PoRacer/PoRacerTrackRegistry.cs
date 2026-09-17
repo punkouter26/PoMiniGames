@@ -1,3 +1,5 @@
+using PoMiniGames.Shared.Games;
+
 namespace PoMiniGames.Features.PoRacer;
 
 public static class PoRacerTrackRegistry

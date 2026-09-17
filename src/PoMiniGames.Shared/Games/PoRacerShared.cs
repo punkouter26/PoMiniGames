@@ -9,11 +9,51 @@ public sealed class PoRacerScoreDto
     public string PlayerDisplayName { get; set; } = "";
     /// <summary>Server-populated from auth cookie. Empty/zero on submit → server fills.</summary>
     public string UserId { get; set; } = "";
+    public string TrackId { get; set; } = "circuit";
     public double TotalTimeSeconds { get; set; }
     public int FinalPosition { get; set; }
     public DateTimeOffset AchievedAtUtc { get; set; }
     public bool IsGuest { get; set; }
     public string GameCode { get; set; } = "";
+}
+
+// ──────────────────────────────  Enums & Customization  ──────────────────────────────
+
+public enum TrackKind
+{
+    Circuit = 0,
+    NeonSkyline = 1,
+    DesertDustway = 2
+}
+
+public enum SurfaceKind
+{
+    Asphalt = 0,
+    Sand = 1,
+    Curbs = 2,
+    BoostPad = 3
+}
+
+public sealed record PoRacerCarCustomization(string ColorHex, string LiveryPattern)
+{
+    public static readonly PoRacerCarCustomization Default = new("#00f0ff", "stripe");
+}
+
+public sealed class PoRacerBoostPadWire
+{
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double Radius { get; set; } = 40.0;
+    public double DirectionAngle { get; set; }
+}
+
+public sealed class PoRacerSurfaceZoneWire
+{
+    public string Name { get; set; } = "";
+    public string SurfaceType { get; set; } = "asphalt";
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double Radius { get; set; }
 }
 
 // ──────────────────────────────  Lobby  ──────────────────────────────
@@ -50,6 +90,9 @@ public sealed class PoRacerCarState
     public int Position { get; set; }
     public double SkidIntensity { get; set; }
     public double BoostGlow { get; set; }
+    public double BoostTimer { get; set; }
+    public string Surface { get; set; } = "asphalt";
+    public string LiveryStyle { get; set; } = "default";
     public double Damage { get; set; }
 }
 
@@ -71,8 +114,13 @@ public sealed class PoRacerRaceSnapshot
 /// <summary>Track geometry — sent once per race on join so the client can render statically.</summary>
 public sealed class PoRacerStaticWorld
 {
+    public string TrackId { get; set; } = "circuit";
+    public string TrackName { get; set; } = "Grand Prix Circuit";
+    public string Theme { get; set; } = "circuit";
     public IReadOnlyList<double> CenterXY { get; set; } = new List<double>();
     public IReadOnlyList<double> WallsXY { get; set; } = new List<double>();
+    public IReadOnlyList<PoRacerBoostPadWire> BoostPads { get; set; } = new List<PoRacerBoostPadWire>();
+    public IReadOnlyList<PoRacerSurfaceZoneWire> SurfaceZones { get; set; } = new List<PoRacerSurfaceZoneWire>();
     public double TrackWidth { get; set; }
     public double MinX { get; set; }
     public double MinY { get; set; }

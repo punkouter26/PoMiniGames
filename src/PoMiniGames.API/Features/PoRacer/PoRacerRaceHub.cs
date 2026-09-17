@@ -39,7 +39,7 @@ public sealed class PoRacerRaceHub : Hub
     /// the static world + latest snapshot so a reconnecting player gets back
     /// in without a lobby round-trip.
     /// </summary>
-    public async Task<PoRacerRaceSnapshot?> JoinRace(string code, bool asPlayer = false, string? displayName = null, bool isGuest = true)
+    public async Task<PoRacerRaceSnapshot?> JoinRace(string code, bool asPlayer = false, string? displayName = null, bool isGuest = true, string? trackId = null)
     {
         if (string.IsNullOrWhiteSpace(code)) return null;
         // asPlayer (1-player mode): spin up a private solo race whose pole car is
@@ -51,11 +51,11 @@ public sealed class PoRacerRaceHub : Hub
         {
             var name = string.IsNullOrWhiteSpace(displayName) ? "Player" : displayName!;
             race = _registry.GetOrCreateSolo(code,
-                new PoRacerLobbyPlayer(Context.ConnectionId, name, isGuest, IsReady: true));
+                new PoRacerLobbyPlayer(Context.ConnectionId, name, isGuest, IsReady: true), trackId);
         }
         else
         {
-            race = await _registry.GetOrCreateAsync(code);
+            race = await _registry.GetOrCreateAsync(code, trackId);
         }
         _registry.RegisterConnection(code, Context.ConnectionId);
         await Groups.AddToGroupAsync(Context.ConnectionId, RaceGroup(code));

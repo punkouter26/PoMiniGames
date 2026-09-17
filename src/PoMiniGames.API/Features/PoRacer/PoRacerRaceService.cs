@@ -39,12 +39,12 @@ public sealed class PoRacerRaceService : IAsyncDisposable
     public event Action<PoRacerRaceSnapshot>? SnapshotReady;
     public event Action<PoRacerFinalResult>? Finished;
 
-    public PoRacerRaceService(string gameCode, IReadOnlyList<PoRacerLobbyPlayer> players, PoRacerLobbyService lobby, ILogger<PoRacerRaceService> log)
+    public PoRacerRaceService(string gameCode, IReadOnlyList<PoRacerLobbyPlayer> players, PoRacerLobbyService lobby, ILogger<PoRacerRaceService> log, string? trackId = null)
     {
         _gameCode = gameCode;
         _lobby = lobby;
         _log = log;
-        _sim = new PoRacerSim(players);
+        _sim = new PoRacerSim(players, trackId);
         _countdownMs = CountdownMs;
         _tick = new Timer(_ => TickSafe(), null, TimeSpan.FromMilliseconds(1000.0 / TickHz), TimeSpan.FromMilliseconds(1000.0 / TickHz));
         _snap = new Timer(_ => SnapshotSafe(), null, TimeSpan.FromMilliseconds(1000.0 / SnapshotHz), TimeSpan.FromMilliseconds(1000.0 / SnapshotHz));

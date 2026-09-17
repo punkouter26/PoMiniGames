@@ -1,3 +1,5 @@
+using PoMiniGames.Shared.Games;
+
 namespace PoMiniGames.Features.PoRacer;
 
 public readonly record struct Vec2(double X, double Y)
@@ -7,14 +9,6 @@ public readonly record struct Vec2(double X, double Y)
     public static Vec2 operator *(Vec2 a, double s) => new(a.X * s, a.Y * s);
     public double LengthSquared() => X * X + Y * Y;
     public double Length() => Math.Sqrt(LengthSquared());
-}
-
-public enum SurfaceKind
-{
-    Asphalt = 0,
-    Sand = 1,
-    Curbs = 2,
-    BoostPad = 3
 }
 
 public sealed class PoRacerBoostPadDefinition

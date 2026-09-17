@@ -34,44 +34,14 @@ internal sealed class PoRacerSim
     private readonly Stopwatch _wallClock = Stopwatch.StartNew();
     private long _startElapsedMs;
 
-    public PoRacerSim(IReadOnlyList<PoRacerLobbyPlayer> players)
+    public PoRacerSim(IReadOnlyList<PoRacerLobbyPlayer> players, string? trackId = null)
     {
-        // Track is identical to the existing in-browser track (same control points
-        // → same Catmull-Rom resampling). Keeping the constants in one place
-        // avoids drift between the server's collision math and the client visual.
-        var raw = new (double x, double y)[]
-        {
-            (0,    0),
-            (600,  -120),
-            (1200, -300),
-            (1700, -200),
-            (2050,  120),
-            (2050,  520),
-            (1700,  800),
-            (1100,  900),
-            (500,   820),
-            (-50,   700),
-            (-350,  400),
-            (-350,  100),
-            (-150, -150)
-        };
-        _trackWidth = 240;
+        var track = PoRacerTrackRegistry.GetTrack(trackId);
+        _trackWidth = track.TrackWidth;
         _centerline.Clear();
         _walls.Clear();
-        var pts = raw.Select(p => new Vec2(p.x, p.y)).ToList();
-        foreach (var p in ResampleClosedSpline(pts, 12))
-        {
-            _centerline.Add(p);
-        }
-        for (int i = 0; i < _centerline.Count; i++)
-        {
-            var a = _centerline[i];
-            var b = _centerline[(i + 1) % _centerline.Count];
-            var n = Normal(a, b);
-            var hw = _trackWidth * 0.5;
-            _walls.Add((new Vec2(a.X - n.X * hw, a.Y - n.Y * hw), new Vec2(b.X - n.X * hw, b.Y - n.Y * hw)));
-            _walls.Add((new Vec2(a.X + n.X * hw, a.Y + n.Y * hw), new Vec2(b.X + n.X * hw, b.Y + n.Y * hw)));
-        }
+        _centerline.AddRange(track.Centerline);
+        _walls.AddRange(track.Walls);
 
         // Build flat typed-array payloads for the wire format.
         var centerArr = new double[_centerline.Count * 2];
@@ -97,6 +67,9 @@ internal sealed class PoRacerSim
         var pad = _trackWidth;
         Static = new PoRacerStaticWorld
         {
+            TrackId = track.Id,
+            TrackName = track.DisplayName,
+            Theme = track.EnvironmentTheme,
             CenterXY = centerArr,
             WallsXY = wallsArr,
             TrackWidth = _trackWidth,
@@ -105,6 +78,21 @@ internal sealed class PoRacerSim
             MaxX = maxX + pad,
             MaxY = maxY + pad,
             TotalLaps = TotalLaps,
+            BoostPads = track.BoostPads.Select(b => new PoRacerBoostPadWire
+            {
+                X = b.Position.X,
+                Y = b.Position.Y,
+                Radius = b.Radius,
+                DirectionAngle = b.DirectionAngle
+            }).ToList(),
+            SurfaceZones = track.SurfaceZones.Select(s => new PoRacerSurfaceZoneWire
+            {
+                Name = s.Name,
+                SurfaceType = s.SurfaceType.ToString().ToLowerInvariant(),
+                X = s.Center.X,
+                Y = s.Center.Y,
+                Radius = s.Radius
+            }).ToList()
         };
 
         // Spawn grid: 2 cols × N rows along the first segment direction.
@@ -696,12 +684,6 @@ internal sealed class PoRacerSim
             return $"#{r:X2}{g:X2}{b:X2}";
         }
         return "#222";
-    }
-
-    private readonly struct Vec2
-    {
-        public readonly double X, Y;
-        public Vec2(double x, double y) { X = x; Y = y; }
     }
 
     private sealed class SimCar

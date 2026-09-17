@@ -21,7 +21,7 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
         _loggerFactory = loggerFactory;
     }
 
-    public async Task<PoRacerRaceService> GetOrCreateAsync(string code)
+    public async Task<PoRacerRaceService> GetOrCreateAsync(string code, string? trackId = null)
     {
         lock (_createLock)
         {
@@ -29,7 +29,7 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
         }
         var players = _lobby.Players.ToList();
         var log = _loggerFactory.CreateLogger<PoRacerRaceService>();
-        var race = new PoRacerRaceService(code, players, _lobby, log);
+        var race = new PoRacerRaceService(code, players, _lobby, log, trackId);
         lock (_createLock) { _currentRace = race; }
         return race;
     }
@@ -42,13 +42,13 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
     /// straight onto the car (no lobby→race connection-id mismatch). 1-player
     /// mode uses a unique code per session so this always spins up fresh.
     /// </summary>
-    public PoRacerRaceService GetOrCreateSolo(string code, PoMiniGames.Shared.Games.PoRacerLobbyPlayer soloPlayer)
+    public PoRacerRaceService GetOrCreateSolo(string code, PoMiniGames.Shared.Games.PoRacerLobbyPlayer soloPlayer, string? trackId = null)
     {
         lock (_createLock)
         {
             if (_currentRace is { } existing && existing.GameCode == code) return existing;
             var log = _loggerFactory.CreateLogger<PoRacerRaceService>();
-            var race = new PoRacerRaceService(code, new[] { soloPlayer }, _lobby, log);
+            var race = new PoRacerRaceService(code, new[] { soloPlayer }, _lobby, log, trackId);
             _currentRace = race;
             return race;
         }

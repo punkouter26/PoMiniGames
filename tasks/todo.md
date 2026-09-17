@@ -15,13 +15,14 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 2: Shared Contracts & Wire Protocol Extensions**
+- [x] **Task 2: Shared Contracts & Wire Protocol Extensions**
   - **Description**: Extend `PoRacerShared.cs` with `TrackKind`, `SurfaceKind`, `PoRacerBoostPad`, car customization livery DTOs, and track theme metadata in `PoRacerStaticWorld`. Update lobby/race hub signatures to accept `TrackKind`.
-  - **File Manifest** (&le; 5 files):
+  - **File Manifest** (≤ 5 files):
     1. `src/PoMiniGames.Shared/Games/PoRacerShared.cs`
     2. `src/PoMiniGames.API/Features/PoRacer/PoRacerRaceHub.cs`
     3. `src/PoMiniGames.API/Features/PoRacer/PoRacerRaceService.cs`
-    4. `src/PoMiniGames.Client/Games/PoRacer/PoRacerLobbyPage.razor`
+    4. `src/PoMiniGames.API/Features/PoRacer/PoRacerRaceRegistry.cs`
+    5. `src/PoMiniGames.API/Features/PoRacer/PoRacerSim.cs`
   - **Acceptance Criteria**: Serialization tests pass; race hub instantiates room with designated `TrackKind`; wire payload remains < 2 KB per tick.
   - **Verification**: `dotnet build PoMiniGames.slnx`
 

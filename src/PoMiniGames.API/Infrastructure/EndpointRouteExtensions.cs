@@ -123,6 +123,7 @@ internal static class EndpointRouteExtensions
         // PoCabinet (T4): career cross-device resume endpoint. T5 adds the score
         // endpoint; T6 adds the lobby + race SignalR hubs.
         gameApi.MapPoCabinetCareerEndpoints();
+        gameApi.MapPoCabinetScoreEndpoints();
         gameApi.MapPoSportsHighScoresEndpoints();
         gameApi.MapPoVoxelStrikeScoreEndpoints();
         // PoBrawl online (lobby + match hub) — match result ingest endpoint. Same

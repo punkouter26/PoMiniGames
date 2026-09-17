@@ -305,6 +305,80 @@ public partial class StorageService
     public Task<PoSportsHighScore> SavePoSportsHighScoreAsync(PoSportsHighScore entry) =>
         SaveHighScoreAsync(PoSportsScores, entry);
 
+    // ── PoCabinet High Scores (T5) ────────────────────────────────────────────
+    // TrackId partitions the leaderboard: Capitol best-lap never competes with
+    // Mar-a-Lago best-lap. Identity-keyed on (player + track) — one row per
+    // (player, track), ratcheted by ShouldOverwrite to only accept a faster lap.
+    private static readonly HighScoreDescriptor<PoCabinetHighScore> PoCabinetScores = new(
+        Table: PoCabinetTable,
+        Partition: PoCabinetPartition,
+        Sanitize: e => new PoCabinetHighScore
+        {
+            PlayerName = DisplayName24(e.PlayerName),
+            UserId = string.IsNullOrWhiteSpace(e.UserId) ? "" : e.UserId,
+            // T5 (2026-09-17): an unknown track id defaults to "capitol" per the spec —
+            // the OpenAPI contract pins this fallback. Future tracks added to the catalog
+            // will fall through to default as well until the descriptor is updated.
+            TrackId = string.IsNullOrWhiteSpace(e.TrackId) ? "capitol" : e.TrackId.Trim().ToLowerInvariant(),
+            BestLapSeconds = double.IsFinite(e.BestLapSeconds) ? Math.Clamp(e.BestLapSeconds, 0.001, 3600) : 0,
+            FinalPosition = e.FinalPosition is >= 1 and <= 9 ? e.FinalPosition : 1,
+            IsGuest = e.IsGuest,
+            Date = DefaultDate(e.Date),
+            GameCode = SanitizeName(e.GameCode),
+        },
+        ToFields: e => new Dictionary<string, object?>
+        {
+            ["PlayerName"] = e.PlayerName,
+            ["UserId"] = e.UserId,
+            ["TrackId"] = e.TrackId,
+            ["BestLapSeconds"] = e.BestLapSeconds,
+            ["FinalPosition"] = e.FinalPosition,
+            ["IsGuest"] = e.IsGuest,
+            ["Date"] = e.Date,
+            ["GameCode"] = e.GameCode,
+        },
+        FromEntity: e => new PoCabinetHighScore
+        {
+            PlayerName = e.GetString("PlayerName") ?? "",
+            UserId = e.GetString("UserId") ?? "",
+            TrackId = e.GetString("TrackId") ?? "capitol",
+            BestLapSeconds = e.GetDouble("BestLapSeconds") ?? 0d,
+            FinalPosition = e.GetInt32("FinalPosition") ?? 0,
+            IsGuest = e.GetBoolean("IsGuest") ?? false,
+            Date = e.GetString("Date") ?? "",
+            GameCode = e.GetString("GameCode") ?? "",
+        },
+        RowKeyFields: ["PlayerName", "UserId", "IsGuest", "TrackId"],
+        // Fastest lap wins, oldest first as the tiebreaker (so the first 1:23.45 stays on top
+        // when someone later matches it).
+        Rank: s => s.OrderBy(x => x.BestLapSeconds).ThenBy(x => x.Date))
+    {
+        // One row per (player, track): only a strictly faster lap may replace the stored PB.
+        ShouldOverwrite = (existing, incoming) =>
+            (incoming.TryGetValue("BestLapSeconds", out var v) ? v as double? ?? double.MaxValue : double.MaxValue)
+                < (existing.GetDouble("BestLapSeconds") ?? double.MaxValue),
+    };
+
+    public Task<List<PoCabinetHighScore>> GetPoCabinetHighScoresAsync(int limit = 10, string? trackId = null)
+    {
+        if (string.IsNullOrWhiteSpace(trackId))
+        {
+            return GetHighScoresAsync(PoCabinetScores, limit);
+        }
+        var partition = string.Equals(trackId, "capitol", StringComparison.OrdinalIgnoreCase)
+            ? PoCabinetPartition
+            : $"pocabinet_{trackId.Trim().ToLowerInvariant()}";
+        return GetHighScoresAsync(PoCabinetScores, limit, partition: partition);
+    }
+
+    public Task<PoCabinetHighScore> SavePoCabinetHighScoreAsync(PoCabinetHighScore entry)
+    {
+        var partition = string.Equals(entry.TrackId, "capitol", StringComparison.OrdinalIgnoreCase)
+            ? PoCabinetPartition
+            : $"pocabinet_{entry.TrackId.Trim().ToLowerInvariant()}";
+        return SaveHighScoreAsync(PoCabinetScores, entry, partition: partition, requirePersistence: true);
+    }
+
 
     // The one shared high-score read: scan the game's partition, rebuild entries, rank, take.
     private async Task<List<T>> GetHighScoresAsync<T>(HighScoreDescriptor<T> descriptor, int limit, string? partition = null, string? customFilter = null)

@@ -49,6 +49,10 @@ public sealed class PoSportsRaceServiceTests
         public Task<List<PoRacerHighScore>> GetPoRacerHighScoresAsync(int limit = 10, string? trackId = null) =>
             Task.FromResult(new List<PoRacerHighScore>());
         public Task<PoRacerHighScore> SavePoRacerHighScoreAsync(PoRacerHighScore entry) => Task.FromResult(entry);
+        // T5: PoCabinet surface — inert for PoSports tests.
+        public Task<List<PoCabinetHighScore>> GetPoCabinetHighScoresAsync(int limit = 10, string? trackId = null) =>
+            Task.FromResult(new List<PoCabinetHighScore>());
+        public Task<PoCabinetHighScore> SavePoCabinetHighScoreAsync(PoCabinetHighScore entry) => Task.FromResult(entry);
         public Task<List<PoBrawlLadderEntry>> GetPoBrawlLadderAsync(int limit = 10) =>
             Task.FromResult(new List<PoBrawlLadderEntry>());
         public Task<PoBrawlLadderEntry> SavePoBrawlLadderAsync(PoBrawlLadderEntry entry) => Task.FromResult(entry);

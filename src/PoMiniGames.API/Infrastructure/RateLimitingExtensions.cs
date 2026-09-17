@@ -128,6 +128,22 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
+            // PoCabinet (2026-09-17): the score-submission policy for the cockpit-view racing game.
+            // A racing session submits one best lap per finish, so 10/min mirrors "highscores"
+            // — the cap that worked for the rest of the games. Uses the same (IP + identity)
+            // partition so anonymous floods can't poison authed traffic.
+            opts.AddPolicy("pocabinet", ctx =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: BuildPartitionKey(ctx),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        Window = TimeSpan.FromMinutes(1),
+                        PermitLimit = 10,
+                        AutoReplenishment = true,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0,
+                    }));
+
             // Every policy here is a fixed window with QueueLimit = 0, so a rejected caller has
             // to guess how long to wait — and the client's own retry handler deliberately does
             // not replay a 429. Hand back the window's remaining time as Retry-After so the UI

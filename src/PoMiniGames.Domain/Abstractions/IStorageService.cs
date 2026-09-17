@@ -106,4 +106,8 @@ public interface IStorageService
     // PoVoxelStrike High Scores (highest run score wins, one ratcheted row per player)
     Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10);
     Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry);
+
+    // PoCabinet High Scores (lowest best-lap wins, partitioned by TrackId)
+    Task<List<PoCabinetHighScore>> GetPoCabinetHighScoresAsync(int limit = 10, string? trackId = null);
+    Task<PoCabinetHighScore> SavePoCabinetHighScoreAsync(PoCabinetHighScore entry);
 }

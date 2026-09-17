@@ -7,8 +7,8 @@ Each task is a vertical slice touching ≤ 5 files. All tasks follow strict TDD:
 | Tier | Cap | Pre-PoCabinet | PoCabinet Allocation | Final |
 |------|-----|---------------|-----------------------|-------|
 | Unit | 100 | 100 | **0** (relocated to higher tiers) | 100 |
-| Integration | 50 | 47 | +3 (T2 determinism + T5 storage + T5 elo) | 50 (at cap) |
-| E2E-API | 25 | 19 | +4 (T2 physics + T3 ai + T4 wire + T6 lobby) | 23 (2 slots free) |
+| Integration | 50 | 47 | +2 (T5 storage + T5 elo) | 49 (1 slot free) |
+| E2E-API | 25 | 19 | +4 (T3 ai + T4 wire + T5 score contract + T6 lobby) | 23 (2 slots free) |
 | E2E-UI | 25 | 17 | +3 (T1 track render + T4 career flow + T7 route renders) | 20 (5 slots free) |
 
 **Total PoCabinet tests: 10.** Per-task counts:
@@ -19,7 +19,7 @@ Each task is a vertical slice touching ≤ 5 files. All tasks follow strict TDD:
 | T2 Physics + Cockpit | 0 | 0 | 0 | 0 (deferred to T5/T7) |
 | T3 AI + Dialogue | 0 | 0 | 1 | 0 |
 | T4 Wire + Career | 0 | 0 | 1 | 0 (deferred to T7) |
-| T5 Leaderboards | 0 | 3 | 1 | 0 |
+| T5 Leaderboards | 0 | 2 | 1 | 0 |
 | T6 Multiplayer Lobby | 0 | 0 | 1 | 1 |
 | T7 Native Blazor UI | 0 | 0 | 0 | 2 |
 | T8 Trim/Bundle Verify | 0 | 0 | 0 | 0 |

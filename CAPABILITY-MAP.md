@@ -1,24 +1,17 @@
-# Capability Map — PoEcosystem Civilization & Multi-Tribe Evolution
+# Capability Map — PoRacer Overhaul (Multi-Track, AI Personalities & Physics)
 
-PoEcosystem expands into 10 cohesive, testable modules. Arrows denote build-order dependencies (a module is implemented only after its prerequisites exist and pass tests).
+PoRacer expands into 7 cohesive, testable modules. Arrows denote build-order dependencies (a module is implemented only after its prerequisites exist and pass tests).
 
 ```mermaid
 graph TD
-    M1[1. Sim Core & Data Contracts: Multi-Tribe Schemas, Enums & Config] --> M2[2. Tribal Territory & Settlement Engine: Borders, Totems, Resources]
-    M1 --> M3[3. Tech Ladder & Crafting: Technology Trees, Research, Tools]
-    M2 --> M4[4. Settlement Construction: Building Lifecycles, Huts, Granaries, Watchtowers]
+    M1[1. Track Geometry & Surface Engine: Splines, Bounds, Surfaces & Boost Pads] --> M2[2. Surface Physics & Vehicle Handling: Grip Multipliers, Drifting, Boost Bursts]
+    M1 --> M3[3. AI Bot Personalities: 7 Named Drivers, Trait Heuristics, Dynamic Racing Lines]
+    M2 --> M4[4. Shared Data Contracts & Protocol: TrackId, Bot Profiles, Extended Snapshot Wire]
     M3 --> M4
-    M2 --> M5[5. Inter-Tribe Diplomacy & Warfare: Relation Matrix, Raids, Peace Treaties]
-    M4 --> M5
-    M2 --> M6[6. 3D Settlement & Tribal Renderer: Structures, Tribal Colors, Campfires]
-    M4 --> M6
-    M5 --> M7[7. Overhead God-Camera & Director: Orbit/Pan/Zoom, Smart Tracking Presets]
+    M4 --> M5[5. 3D WebGL Multi-Track Visuals: Three-Theme Shaders, Boost Glowing Curbs, Particles]
+    M4 --> M6[6. Track-Partitioned Leaderboards & Persistence: Table Storage, REST API, Anti-Cheat]
+    M5 --> M7[7. Native Blazor UI, Customization & Audio: Track Selector, Paint Shop, HUD & Cues]
     M6 --> M7
-    M5 --> M8[8. Milestone Chronicle Engine: Procedural Templates & AI Summaries]
-    M5 --> M9[9. Snapshot Codec & Cloud Sync: Multi-Tribe Persistence & Migration]
-    M8 --> M10[10. Native Blazor Analytics Dashboard: Charts, Tribe Grids, Timeline, Gauges]
-    M7 --> M10
-    M9 --> M10
 ```
 
 ---
@@ -27,37 +20,30 @@ graph TD
 
 | # | Module | Location | Primary Responsibilities | Test Surface | Depends On |
 |---|--------|----------|--------------------------|--------------|------------|
-| **1** | **Multi-Tribe Data Contracts** | `wwwroot/js/poecosystem/sim/tribe/contracts.js`, `src/PoMiniGames.Shared/Games/PoEcosystemShared.cs` | Tribe identities (names, banners, hues), diplomacy enums (`Neutral`, `Allied`, `Rival`, `War`), tech tier definitions, and building type schemas. | Browser sim: schema validation, default tribe initialization, color-contrast checks; C# unit tests for DTO serialisation. | — |
-| **2** | **Territory & Resource Engine** | `wwwroot/js/poecosystem/sim/tribe/territory.js`, `sim/tribe/tribeStore.js` | Dynamic territory influence mapping, voronoi/radius boundaries, totem placements, resource claim zones (wood, stone, berries). | Browser sim: territory boundary math, overlapping claims resolution, totem placement validation on walkable terrain. | 1 |
-| **3** | **Tech Ladder & Crafting** | `wwwroot/js/poecosystem/sim/tribe/techLadder.js` | 4-tier technology tree (Primitive Foraging &rarr; Toolcraft &rarr; Agrarian &rarr; Fortification), research rate based on elder/population ratios, crafting unlocks. | Browser sim: tech requirement graph, research point accumulation, unlock triggers, bonus multipliers. | 1 |
-| **4** | **Settlement Construction** | `wwwroot/js/poecosystem/sim/tribe/construction.js` | Site selection heuristics, resource delivery (wood/stone), building construction states (Unbuilt &rarr; UnderConstruction &rarr; Complete &rarr; Damaged), building maintenance. | Browser sim: site selection avoids water/steep slopes, material cost deduction, build progress ticks, capacity calculations. | 2, 3 |
-| **5** | **Diplomacy & Combat State Machine** | `wwwroot/js/poecosystem/sim/tribe/diplomacy.js`, `sim/behavior/combat.js` | Inter-tribe relation matrix, friction triggers (border encroachment, scarcity, raids), skirmish squad formation, casualty thresholds, peace treaty conditions. | Browser sim: relation transitions, war declaration conditions, skirmish engagement distance, peace negotiation cooldowns. | 2, 4 |
-| **6** | **3D Settlement & Tribal Renderer** | `wwwroot/js/poecosystem/render/settlementMesh.js`, `render/creatureMeshes.js` | Procedural Three.js structures (thatched huts, stone granaries, palisades, campfires with point lights), distinct tribal banner accents on human meshes. | WebGL rendering (manual checklist + E2E-UI smoke); instanced geometry count verification. | 2, 4 |
-| **7** | **Overhead God-Camera & Director** | `wwwroot/js/poecosystem/render/camera.js`, `render/director.js` | Overhead orbit/pan/zoom controls, smooth interpolation (slerp/lerp), smart focus presets (Whole Island, Tech Leader Tribe, Active Conflict / Battle). | Browser sim: camera target interpolation bounds, focus target selection algorithm; UI interaction tests. | 5, 6 |
-| **8** | **Milestone Chronicle Engine** | `wwwroot/js/poecosystem/sim/tribe/chronicle.js`, `src/PoMiniGames.API/Features/PoEcosystem/EcosystemChronicleService.cs` | Formats historical chronicle entries for pivotal events (settlement founded, war outbreak, peace pact, tech breakthrough); template generator with optional AI Foundry backend relay. | Browser sim: event serialization, template fallback reliability; C# unit tests for chronicle DTO mapping within ceiling. | 5 |
-| **9** | **Snapshot Codec & Persistence** | `wwwroot/js/poecosystem/sim/persistence/codec.js`, `EcosystemWorldStore.cs` | Upgrades snapshot serialization schema (v2) to include tribes, building states, tech progress, and diplomatic relations; supports backward compatibility for v1 saves. | Browser sim: v1 &rarr; v2 snapshot migration, round-trip serialization determinism; C# API storage tests. | 5 |
-| **10** | **Native Blazor Analytics Dashboard** | `src/PoMiniGames.Client/Games/PoEcosystem/Components/{TribeComparisonGrid,PopulationChart,ChronicleTimeline,ResourceGauges}.razor` | Comprehensive native Blazor observer UI: responsive SVG population curves, tribal comparison data tables, chronological event stream, island resource gauges. | E2E-UI smoke test (`PoEcosystemUiTests`); C# component compile and trim safety audits. | 7, 8, 9 |
+| **1** | **Track Geometry & Surface Engine** | `src/PoMiniGames.API/Features/PoRacer/PoRacerTrackRegistry.cs`, `PoRacerTrackData.cs` | Mathematical definition of 3 closed Catmull-Rom tracks (Circuit, Neon Skyline, Desert Rally), centerline resampling, wall normal generation, surface zones (asphalt, sand/dirt), and boost pad bounding segments. | Hermetic C# unit tests: closed loop continuity, normal vector consistency, wall generation, bounding box checks. | — |
+| **2** | **Surface Physics & Vehicle Handling** | `src/PoMiniGames.API/Features/PoRacer/PoRacerSim.cs` | Server-authoritative car physics with surface friction coefficients (Tarmac = 1.0x, Sand/Off-road = 0.7x grip, slip angle calculation), boost pad trigger detection (+35% acceleration for 1.8s), drift mechanics. | Hermetic C# unit tests: speed clamping, surface grip degradation on sand, boost pad entry/exit timers, wall collision resolution. | 1 |
+| **3** | **AI Bot Personalities & Heuristics** | `src/PoMiniGames.API/Features/PoRacer/PoRacerAiDriver.cs`, `PoRacerSim.cs` | 7 distinct bot personalities (e.g. *Apex Predator*, *Draft Hunter*, *Aggressive Bumper*, *Ghost Line*, *Speed Demon*, *Cautious Cruiser*, *Slipstreamer*) with custom racing line offsets, aggression ratings, braking points, and overtake logic. | Hermetic C# unit tests: lap completion guarantee, personality steering variance, stuck marshal rescue. | 1 |
+| **4** | **Shared Data Contracts & Wire Protocol** | `src/PoMiniGames.Shared/Games/PoRacerShared.cs` | Track metadata DTOs (`TrackId`, surface properties, boost pads), car visual customization records (palette/livery IDs), extended `PoRacerRaceSnapshot` and `PoRacerStaticWorld` wire contracts. | Serialization unit tests: JSON wire size verification (< 2 KB per snapshot), enum string compatibility. | 2, 3 |
+| **5** | **3D WebGL Multi-Track Visuals** | `src/PoMiniGames.Client/wwwroot/js/poracerGl.js` | WebGL canvas rendering for 3 environmental themes: classic Grand Prix curbs, Neon Skyline glowing cyber barriers & asphalt reflections, and Desert Rally dust storms & dunes. Boost pad animated texture shaders and tire skid/dust particle emitters. | Visual audit in browser, manual checklist, zero GL state leak between track switches. | 4 |
+| **6** | **Track-Partitioned Leaderboards & Persistence** | `src/PoMiniGames.API/Features/PoRacer/PoRacerScoreEndpoints.cs`, `src/PoMiniGames.Infrastructure/Services/StorageService.cs` | Azure Table Storage partitioning per `TrackId` (`PoRacerScores_{TrackId}` or composite row keys), REST `/poracer/scores?track={trackId}` validation, rate limits, server-side auth identity enforcement. | Integration tests (Azurite Table Storage) & Unit tests for input validation within ceilings. | 4 |
+| **7** | **Native Blazor UI, Customization & Audio** | `src/PoMiniGames.Client/Games/PoRacer/{PoRacerPage.razor, PoRacerTrackSelector.razor, PoRacerPaintShop.razor}` | Track selection cards with preview stats, car paint shop (persisted in `localStorage`), enhanced HUD (boost meter, surface indicator, track minimap, split delta), procedural Web Audio cues for boost burst and surface transitions. | Component unit tests, accessibility compliance (WCAG AA, no CLS), bundle size verification (~1.2 MB limit). | 5, 6 |
 
 ---
 
 ## Build & Execution Sequence
 
 ```
-Module 1 (Data Contracts)
+Module 1 (Track Geometry & Surfaces)
    │
-   ├──► Module 2 (Territory & Resources)
-   └──► Module 3 (Tech Ladder & Crafting)
+   ├──► Module 2 (Surface Physics & Handling)
+   └──► Module 3 (AI Bot Personalities)
            │
-           └──► Module 4 (Settlement Construction)
+           └──► Module 4 (Shared Data Contracts & Protocol)
                    │
-                   ├──► Module 5 (Diplomacy & Combat)
-                   └──► Module 6 (3D Settlement & Tribal Rendering)
+                   ├──► Module 5 (3D WebGL Multi-Track Visuals)
+                   └──► Module 6 (Track-Partitioned Leaderboards)
                            │
-                           ├──► Module 7 (Overhead God-Camera & Director)
-                           ├──► Module 8 (Milestone Chronicle Engine)
-                           └──► Module 9 (Snapshot Codec & Persistence)
-                                   │
-                                   └──► Module 10 (Native Blazor Analytics Dashboard)
+                           └──► Module 7 (Native Blazor UI, Customization & Audio)
 ```
 
 ---
@@ -65,10 +51,10 @@ Module 1 (Data Contracts)
 ## Architectural Guardrails & Contracts
 
 1. **No External Component Library Overhead**:
-   Per [`CLAUDE.md#L113`](CLAUDE.md#L113), no `Radzen.Blazor` or heavy UI packages are imported. All dashboard grids, charts, and timelines are crafted with native Blazor (`<Virtualize>`, SVG, plain semantic CSS) leveraging existing design tokens in `wwwroot/css/app.css` and `poecosystem.css`.
-2. **Worker Sim Boundary**:
-   All simulation modules (1–5, 8, 9) execute inside the dedicated Web Worker. The main thread receives only lightweight binary render frames and structured JSON telemetry deltas for the Blazor UI.
-3. **Determinism & Ceiling Integrity**:
-   - Simulation state remains 100% deterministic given a PRNG seed (excluding external LLM nudges).
-   - Solution test ceilings (Unit &le; 100, Integration &le; 50, E2E-API &le; 25, E2E-UI &le; 25) are strictly maintained.
-
+   Per [`CLAUDE.md#L113`](CLAUDE.md#L113), no `Radzen.Blazor` or heavy UI dependencies are permitted. All track selection modals, car color pickers, and leaderboard tabs are crafted using native Blazor, CSS design tokens from `wwwroot/css/app.css`, and scoped CSS.
+2. **Server-Authoritative Simulation**:
+   All car positions, speed, wall collisions, surface friction, boost timers, lap counts, and race finishes are computed strictly on the server in `PoRacerSim.cs`. The client is a thin renderer receiving 20 Hz snapshots.
+3. **Deterministic AI & Zero AI Foundry Spend**:
+   Bot behaviors are implemented via CLR heuristics. No external LLMs, AI Foundry tokens, or third-party APIs are called during races, preserving 100% free offline-capable execution and zero latency.
+4. **Test Tier Ceilings**:
+   Solution test ceilings (Unit ≤ 100, Integration ≤ 50, E2E-API ≤ 25, E2E-UI ≤ 25) must not be exceeded. New unit tests will be tightly scoped to verify new track spline math, physics calculations, and leaderboard partition logic without test bloat.

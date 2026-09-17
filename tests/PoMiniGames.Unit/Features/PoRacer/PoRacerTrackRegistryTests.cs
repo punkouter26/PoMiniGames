@@ -1,0 +1,49 @@
+using FluentAssertions;
+using PoMiniGames.Features.PoRacer;
+using Xunit;
+
+namespace PoMiniGames.Unit.Features.PoRacer;
+
+public class PoRacerTrackRegistryTests
+{
+    [Theory]
+    [InlineData("circuit", 240.0, false)]
+    [InlineData("neonskyline", 220.0, false)]
+    [InlineData("desertdustway", 260.0, true)]
+    [InlineData("unknown_fallback", 240.0, false)]
+    public void TrackRegistry_ProvidesValidTrackGeometryAndFallbacks(string trackId, double expectedWidth, bool expectSand)
+    {
+        var track = PoRacerTrackRegistry.GetTrack(trackId);
+
+        track.Should().NotBeNull();
+        if (trackId == "unknown_fallback")
+        {
+            track.Id.Should().Be("circuit");
+        }
+        else
+        {
+            track.Id.Should().Be(trackId);
+        }
+
+        track.TrackWidth.Should().Be(expectedWidth);
+        track.Centerline.Should().NotBeEmpty();
+        track.Centerline.Count.Should().BeGreaterThan(50, "spline resampling should yield continuous nodes");
+
+        // Walls: inside and outside wall segments matching centerline count * 2
+        track.Walls.Should().HaveCount(track.Centerline.Count * 2);
+
+        // Boost pads
+        track.BoostPads.Should().NotBeEmpty("every track should feature strategic turbo boost pads");
+
+        // Sand zones check
+        track.HasSandZones.Should().Be(expectSand);
+
+        // Loop continuity: first and last centerline points should connect smoothly
+        var first = track.Centerline[0];
+        var last = track.Centerline[^1];
+        var dx = first.X - last.X;
+        var dy = first.Y - last.Y;
+        var dist = Math.Sqrt(dx * dx + dy * dy);
+        dist.Should().BeLessThan(expectedWidth * 0.75, "closed spline endpoints must connect seamlessly");
+    }
+}

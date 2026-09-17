@@ -1,42 +1,35 @@
-# Specification — PoEcosystem Civilization & Multi-Tribe Evolution
+# Specification — PoRacer Overhaul (Multi-Track, AI Personalities & Physics)
 
 ## 1. Objective
 
-Expand the existing **PoEcosystem** simulation inside `PoMiniGames` into an autonomous **Multi-Tribe Civilization & Ecosystem Evolution** experience. 
-
-The player participates strictly as an **overhead god-view observer**, watching multiple rival human tribes organically develop on a 3D procedural island. Tribes independently expand territory, research technologies through an evolutionary tech ladder, construct specialized settlement buildings, manage resource stockpiles, engage in diplomatic relations (peace, trade, rivalry, war), and interact with the natural flora and fauna.
-
-All observer telemetry is exposed through a comprehensive **Native Blazor Analytics Dashboard** featuring real-time population charts, tribal comparison grids, historical event timelines, and island resource gauges—crafted without heavy third-party UI packages to strictly uphold the repository's ~1.2 MB WASM bundle budget constraint ([`CLAUDE.md#L113`](CLAUDE.md#L113)).
+Overhaul the existing **PoRacer** 3D WebGL racing mini-game inside `PoMiniGames` into a feature-rich, high-performance arcade racer featuring:
+1. **Three Distinct Tracks**: Asphalt Grand Prix (Circuit), Neon Skyline (Night Cyber City), and Desert Rally (Dust & Dunes), each with unique splines, visual environments, surface friction characteristics, and boost pads.
+2. **Surface Physics & Boost Mechanics**: Dynamic surface grip calculations (Tarmac 1.0x, Sand/Dirt 0.7x with increased slip angle) and turbo boost pad triggers (+35% acceleration burst with visual glow and SFX).
+3. **Seven Named AI Bot Personalities**: A full 8-car racing grid powered by CLR heuristics with distinct driver traits (aggression, braking points, slipstream exploitation, and cornering lines).
+4. **Visual Vehicle Customization**: Player paint color selection and livery styling persisted in browser storage and rendered in 3D.
+5. **Track-Partitioned Leaderboards**: Dedicated Azure Table Storage records and REST endpoints per track, maintaining accurate best lap and overall race times.
+6. **Native Blazor UI**: Responsive track selection modal, paint customizer, enhanced HUD telemetry (boost gauge, surface indicator, minimap), and tabbed leaderboards—built without external component libraries (`No Radzen.Blazor`) to preserve the ~1.2 MB WASM bundle budget constraint ([`CLAUDE.md#L113`](CLAUDE.md#L113)).
 
 ---
 
 ## 2. User Journeys
 
-### Journey 1: The Overhead Island Observer
-1. **Entering the Island**: The player navigates to `/poecosystem` (or `/poecosystem/1player`). The WebGL2 engine mounts, generating a procedural island with biomes (coastal, forest, plains, volcanic peaks), flora (trees, berry bushes), fauna (rabbits, wolves), and multiple initial tribal settlements.
-2. **God-View Camera Steering**: The player freely orbits, pans, and zooms above the terrain.
-3. **Smart Director Presets**: Using camera quick-actions on the HUD, the player switches between:
-   - *Island Overview*: Frames the entire island at high altitude.
-   - *Focus Tribe*: Smoothly slerps the camera to focus on a specific tribe's settlement and chieftain.
-   - *Active Conflict*: Automatically tracks active raids or skirmishes between rival tribes.
-   - *Milestone Focus*: Smoothly zooms to active construction or major tech discovery sites.
+### Journey 1: Solo 1P Race & Track Selection
+1. **Entering PoRacer**: The player navigates to `/poracer` or `/poracer/1player`. The pre-race setup overlay presents track selection cards (Circuit, Neon Skyline, Desert Rally) with track difficulty, length, and preview graphics.
+2. **Car Paint Customization**: The player chooses their car's primary body color and livery accent. The selection updates live in a preview badge and saves to `localStorage`.
+3. **Starting the Grid**: The player clicks "Start Race". The server spins up a server-authoritative `PoRacerSim` for the chosen track, populating the remaining 7 grid slots with unique AI bot personalities.
+4. **The Race**: Synchronized 3-2-1-GO countdown fires. The player steers using Arrow keys, WASD, or on-screen mobile touch controls. Driving over boost pads triggers a speed surge with particle trails and audio cue. Cornering onto dirt/sand reduces traction, demanding counter-steering drifts.
+5. **Finish & Podium**: Crossing the finish line on Lap 3 triggers race summary stats (total time, best lap, final placement). If signed in or guest, the score automatically posts to the track's dedicated leaderboard.
 
-### Journey 2: Tribal Evolution & Territorial Warfare
-1. **Settlement Founding & Gathering**: Autonomous human tribes establish base camps around natural totems. Tribe members harvest trees for lumber, gather berry bushes for sustenance, and quarry rocks.
-2. **Construction**: As resource thresholds are met, tribes construct functional structures:
-   - *Thatch Huts*: Expand housing capacity and population ceiling.
-   - *Granaries*: Protect food stores against winter/spoilage.
-   - *Watchtowers*: Increase territory vision and provide defensive advantage against predators and enemy raiders.
-   - *War Totems*: Unlock weapon crafting and martial training.
-3. **Technology Breakthroughs**: As elders accrue collective experience, tribes advance through a 4-tier tech ladder (Primitive &rarr; Toolcraft &rarr; Agrarian &rarr; Fortification).
-4. **Diplomatic Friction & War**: When territory borders overlap or resources become scarce, inter-tribe friction sparks skirmishes. Combat ensues with procedural retreat thresholds and casualty morale checks. When exhaustion or peace conditions are reached, treaties are signed.
+### Journey 2: Competitive Time Trial & Track Leaderboards
+1. **Leaderboard Inspection**: Player views the High Scores tab on the game shell or post-race dialog, filtering by track (Circuit, Neon Skyline, Desert Rally).
+2. **Chasing the Record**: Player enters a solo race specifically aiming to beat the fastest lap record.
+3. **Ghost / Lap Delta HUD**: The HUD displays live delta times against their personal best lap for the selected track.
 
-### Journey 3: Deep Analytics & Chronicle Inspection
-1. **Opening the Analytics Dashboard**: The player toggles the bottom/side Analytics Dashboard overlay.
-2. **Real-Time Population & Resource Trends**: Interactive SVG area/line charts display species counts (rabbits, wolves, humans) and individual tribal populations over world years.
-3. **Tribe Comparison Grid**: A structured native Blazor data table ranks tribes by population, tech tier, territorial footprint, food stores, and military strength.
-4. **Historical Chronicle Timeline**: A chronological feed records monumental milestones ("Year 4, Day 82: Amber Tribe discovered Agrarian Cultivation", "Year 7, Day 14: Cobalt Tribe declared war on Verdant Tribe").
-5. **Entity & Building Inspector**: Clicking any creature or settlement building opens an inspector panel showing status, inventory, lineage, drives, and current goals.
+### Journey 3: Autonomous Exhibition Demo Mode
+1. **Entering Demo**: Player visits `/poracer/demo` or Kiosk mode rotates to PoRacer.
+2. **AI Championship Exhibition**: The simulation automatically selects a track, populates an 8-bot CPU race showcasing the distinct driving personalities, and cameras orbit smoothly.
+3. **Seamless Transition**: Upon race finish, the Kiosk coordinator immediately rotates to the next showcase or next track.
 
 ---
 
@@ -45,12 +38,12 @@ All observer telemetry is exposed through a comprehensive **Native Blazor Analyt
 - **Runtime & Framework**: .NET 10 (`net10.0`), C# 13, ASP.NET Core 10.0.10
 - **Client**: Blazor WebAssembly .NET 10 (`Microsoft.AspNetCore.Components.WebAssembly` `10.0.10`)
 - **Central Package Management**: Central package management via `Directory.Packages.props`
-- **3D Graphics & Physics**: Three.js (WebGL2, instanced meshes), `cannon-es` rigid-body physics
-- **Simulation Worker**: Pure vanilla ECMAScript Web Worker (zero DOM dependencies)
-- **Local Persistence**: Browser `IndexedDB` (world state snapshots) + `localStorage` (user preferences)
-- **Cloud Persistence**: Azure Table Storage (`Azure.Data.Tables` `12.11.0`) with Azurite emulator
+- **3D Graphics & Physics**: Custom WebGL2 shader pipeline (`poracerGl.js`, `racingInterop.js`), server-side CLR physics (`PoRacerSim.cs`)
+- **Real-Time Networking**: ASP.NET Core SignalR 10.0.10 (`/poracer/race-hub`, `/poracer/lobby-hub`)
+- **Persistence**: Azure Table Storage (`Azure.Data.Tables` `12.11.0`) with Azurite emulator + browser `localStorage`
 - **Testing**: xUnit `2.9.3`, FluentAssertions `8.8.0`, Playwright `1.50.0`
-- **UI & Component Architecture**: Native Blazor (`<Virtualize>`, SVG charts, CSS design tokens in `wwwroot/css/app.css` and `poecosystem.css`). **No `Radzen.Blazor`** per `CLAUDE.md#L113`.
+- **UI & Component Architecture**: Native Blazor (`<Virtualize>`, CSS design tokens in `wwwroot/css/app.css` and `PoRacerPage.razor.css`). **No `Radzen.Blazor`** per `CLAUDE.md#L113`.
+- **Audio**: Web Audio API procedural synthesis (`gameCues.js`)
 
 ---
 
@@ -63,17 +56,14 @@ dotnet build PoMiniGames.slnx
 # Run API Host and Blazor WASM Client (listens on http://localhost:5080)
 dotnet run --project src/PoMiniGames.API/PoMiniGames.API.csproj
 
-# Run Unit tests
-dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj
+# Run Unit tests for PoRacer only (never run full suite without explicit user request per CLAUDE.md#L111)
+dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj --filter "FullyQualifiedName~PoRacer"
 
-# Verify all 4 solution test tier ceilings (100/50/25/25 rule)
+# Verify solution test tier ceilings (Unit <= 100, Integration <= 50, E2E-API <= 25, E2E-UI <= 25)
 dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj --filter "FullyQualifiedName~TestCountCeilingTests"
 dotnet test tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj --filter "FullyQualifiedName~IntegrationTestCountCeilingTests"
 dotnet test tests/PoMiniGames.E2EAPI/PoMiniGames.E2EAPI.csproj --filter "FullyQualifiedName~E2EApiTestCountCeilingTests"
 dotnet test tests/PoMiniGames.E2EUI/PoMiniGames.E2EUI.csproj --filter "FullyQualifiedName~E2EUiTestCountCeilingTests"
-
-# Targeted feature unit tests
-dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj --filter "FullyQualifiedName~PoEcosystem"
 ```
 
 ---
@@ -83,146 +73,155 @@ dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj --filter "FullyQualif
 ```
 src/
 ├── PoMiniGames.Domain/
-│   └── Models/                        # Core records and primitives
+│   └── Models/
+│       └── PoRacerHighScore.cs                 # Score entity extended with TrackId
 ├── PoMiniGames.Shared/
 │   └── Games/
-│       └── PoEcosystemShared.cs       # DTOs, Enums (TribeDiplomacy, TechTier, BuildingKind)
+│       └── PoRacerShared.cs                    # TrackKind, SurfaceKind, BoostPad, Wire DTOs
+├── PoMiniGames.Infrastructure/
+│   └── Services/
+│       └── StorageService.cs                   # Azure Table Storage queries filtered by TrackId
 ├── PoMiniGames.API/
 │   └── Features/
-│       └── PoEcosystem/
-│           ├── EcosystemEndpoints.cs  # REST /api/ecosystem routes (cloud saves, chronicle)
-│           ├── EcosystemWorldStore.cs # Azure Table Storage persistence
-│           └── EcosystemChronicleService.cs # Milestone narrative relay
+│       └── PoRacer/
+│           ├── PoRacerTrackData.cs             # Splines, checkpoints, boost pads, surfaces
+│           ├── PoRacerTrackRegistry.cs         # Track lookup & procedural wall/mesh generation
+│           ├── PoRacerAiDriver.cs              # 7 bot driver personalities & heuristics
+│           ├── PoRacerSim.cs                   # Server-authoritative multi-track physics engine
+│           ├── PoRacerRaceHub.cs               # SignalR hub accepting trackId on room creation
+│           └── PoRacerScoreEndpoints.cs        # REST /poracer/scores?track={trackId}
 └── PoMiniGames.Client/
     ├── Games/
-    │   └── PoEcosystem/
-    │       ├── PoEcosystemPage.razor           # Main route container (/{game}/{mode})
-    │       ├── PoEcosystemViewer.razor         # Canvas, camera director, WebGL interop
-    │       ├── PoEcosystemViewer.razor.cs      # Interop lifecycle, key handling
-    │       ├── Components/
-    │       │   ├── DashboardOverlay.razor      # Collapsible analytics HUD overlay
-    │       │   ├── TribeComparisonGrid.razor   # Native Blazor virtualized tribe comparison
-    │       │   ├── PopulationChart.razor       # High-performance SVG population & resource trends
-    │       │   ├── ChronicleTimeline.razor     # Chronological historical feed
-    │       │   ├── ResourceGauges.razor        # Island biomass & ambient stats
-    │       │   ├── TribePanel.razor            # Detailed single-tribe dossier
-    │       │   └── CloudPanel.razor            # Cloud save/load management
-    │       └── Services/
-    │           ├── PoEcosystemApiClient.cs     # HTTP client for API saves & chronicle
-    │           └── Interop/
-    │               └── PoEcosystemInteropService.cs # JS <-> Blazor communication bridge
+    │   └── PoRacer/
+    │       ├── PoRacerPage.razor               # Core race page & HUD telemetry
+    │       ├── PoRacerPage.razor.css           # HUD, minimap, track selector styles
+    │       ├── PoRacerTrackSelector.razor      # Track selection modal component
+    │       ├── PoRacerPaintShop.razor          # Car livery & color customization modal
+    │       └── PoRacerScoreApiClient.cs        # Client HTTP client supporting track queries
     └── wwwroot/
-        ├── css/
-        │   └── poecosystem.css                 # Token-compliant responsive layout styling
         └── js/
-            └── poecosystem/
-                ├── index.js                    # Entry point & engine bootstrap
-                ├── sim/
-                │   ├── core/                   # Clock, PRNG streams, entity store
-                │   ├── terrain/                # Heightfield, biomes, pathing
-                │   ├── flora/                  # Trees, bushes, grass
-                │   ├── creatures/              # Species, drives, genetics, lifecycle
-                │   ├── behavior/               # Utility AI, steering, combat
-                │   ├── tribe/                  # Multi-tribe engine
-                │   │   ├── contracts.js        # Schemas, tiers, diplomatic states
-                │   │   ├── tribeStore.js       # Tribe registry & state management
-                │   │   ├── territory.js        # Voronoi/radius borders & claim zones
-                │   │   ├── techLadder.js       # 4-tier technology progression
-                │   │   ├── construction.js     # Building lifecycle & site selection
-                │   │   ├── diplomacy.js        # Inter-tribe relations & war state machine
-                │   │   └── chronicle.js        # Milestone event generator
-                │   └── persistence/            # IndexedDB codec (v2) & autosave
-                └── render/
-                    ├── camera.js               # Overhead orbit/pan/zoom god-camera
-                    ├── director.js             # Smart focus presets & tracking
-                    ├── settlementMesh.js       # Procedural 3D structures (huts, granaries, totems)
-                    └── creatureMeshes.js       # Tribal color accents & banners
+            ├── poracerGl.js                    # WebGL multi-track themes, shaders, particles
+            └── gameCues.js                     # Audio cues (rev, drift, boost, crash)
 ```
 
 ---
 
-## 6. Code Style & Architectural Conventions
+## 6. Code-Style Snippet & Conventions
 
-- **C# / Blazor**:
-  - Nullable reference types enabled (`<Nullable>enable</Nullable>`).
-  - File-scoped namespaces (`namespace PoMiniGames.Client.Games.PoEcosystem;`).
-  - Primary constructors on records and dependency-injected services.
-  - Razor markup uses semantic HTML; no hardcoded hex colors; all styling uses CSS custom properties defined in `app.css` (e.g., `var(--color-surface)`, `var(--color-primary)`).
-  - `style="..."` attributes are restricted strictly to dynamic runtime values passed to CSS custom properties (`style="--progress: @Percentage%"`).
-- **JavaScript**:
-  - ES2022 standard, strict mode (`'use strict';`), modular imports/exports.
-  - Pure functions and immutable updates within the simulation tick loop; zero allocation in tight hot loops where feasible.
-  - Pure JS simulation runs in Web Worker without DOM or window dependencies.
+```csharp
+// Example: Server-authoritative surface evaluation in PoRacerSim.cs
+public sealed class PoRacerSim
+{
+    public void ApplySurfacePhysics(SimCar car, double dt)
+    {
+        var surface = GetSurfaceAt(car.Pos);
+        double gripMultiplier = surface switch
+        {
+            SurfaceKind.Sand => 0.68,
+            SurfaceKind.OffRoad => 0.55,
+            SurfaceKind.Curbs => 0.90,
+            _ => 1.00 // Standard Asphalt
+        };
+
+        // Degrade lateral grip and accelerate drift angle on loose surfaces
+        car.EffectiveGrip = car.Handling * gripMultiplier;
+        if (car.BoostTimer > 0)
+        {
+            car.BoostTimer -= dt;
+            car.AccelerationModifier = 1.35;
+        }
+        else
+        {
+            car.AccelerationModifier = 1.00;
+        }
+    }
+}
+```
+
+### Conventions
+1. **Strict Nullability**: `<Nullable>enable</Nullable>` enforced across all projects. Zero compiler warnings.
+2. **Zero Radzen**: Use native Blazor markup with semantic CSS tokens (`--color-surface`, `--color-primary`, `--radius-md`).
+3. **Memory & Allocations**: The 20 Hz simulation tick uses pooled flat arrays and avoids per-tick heap allocations (`Vec2` struct, reusable snapshot buffers).
+4. **Contract Annotations**: All bug fixes or architectural decisions are annotated with concise rationale.
 
 ---
 
 ## 7. Testing Strategy
 
-| Level | Framework | Scope | Pass Criteria |
-|---|---|---|---|
-| **JS Simulation Runtime** | Browser / Web Worker | `sim/tribe/**` (territory, tech tree, construction, diplomacy) | 100% deterministic logic; runtime state matches invariants. |
-| **Unit (C#)** | xUnit, FluentAssertions | `PoMiniGames.Unit/Features/PoEcosystem/` (Chronicle, DTOs, score rules) | All tests pass; tier count remains strictly **&le; 100 methods**. |
-| **Integration (C#)** | xUnit, Testcontainers Azurite | `PoMiniGames.Integration` (Cloud save/load endpoints) | Storage persistence verified; tier count remains strictly **&le; 50 methods**. |
-| **E2E-UI** | Playwright | `PoMiniGames.E2EUI/PoEcosystemUiTests.cs` | Browser smoke test verifies multi-tribe rendering and dashboard metrics; tier count strictly **&le; 25 methods**. |
-| **Build & Trim** | `dotnet build` | Entire solution | Zero warnings (`TreatWarningsAsErrors=true`), trim analysis clean. |
+- **Test Framework**: xUnit 2.9.3, FluentAssertions 8.8.0.
+- **Unit Tests (`PoMiniGames.Unit`)**:
+  - `PoRacerTrackRegistryTests`: Validate that all 3 tracks form valid closed loops, have consistent wall normal orientations, and contain valid boost pads.
+  - `PoRacerPhysicsTests`: Verify that driving on sand reduces lateral grip, boost pads grant acceleration bursts, and car speeds never exceed safe clamping limits.
+  - `PoRacerAiPersonalityTests`: Verify that all 7 bot drivers navigate tracks without stalling and that marshal rescue activates if stuck.
+  - `PoRacerScoreEndpointTests`: Verify track query validation, rate limiting, and table row formatting.
+- **Test Ceilings**:
+  - Unit test additions must strictly respect the solution-wide ceiling of **≤ 100 unit tests** (currently ~65 tests; budget allows +10 targeted PoRacer tests).
+  - Integration ceiling: **≤ 50 tests**.
+- **Coverage Target**: >90% branch coverage on new math, physics, and endpoint code.
 
 ---
 
-## 8. Boundaries
+## 8. Boundaries (Always / Ask First / Never)
 
-- **Always**:
-  - Preserve solution-wide test tier ceilings (Unit &le; 100, Integration &le; 50, E2E-API &le; 25, E2E-UI &le; 25).
-  - Run filtered tests during development (`--filter "FullyQualifiedName~<Feature>"`), never the full 13-minute suite.
-  - Use native Blazor and semantic CSS tokens for all UI; maintain bundle economy.
-  - Maintain backward compatibility for existing IndexedDB/cloud saves where possible.
-- **Ask First**:
-  - Introducing new external NuGet or npm dependencies.
-  - Altering routes or global layout chrome (`MainLayout.razor`).
-- **Never**:
-  - Introduce `Radzen.Blazor` or any external heavy UI component library (`CLAUDE.md#L113`).
-  - Add direct player RTS micro-control (creatures must remain 100% autonomous).
-  - Allow uncapped token generation or blocking network calls in the simulation tick loop.
-  - Push to git remotes without explicit `git sync` command.
+### Always
+- Keep all physics calculations server-authoritative in CLR code.
+- Test changes with targeted unit tests (`--filter "FullyQualifiedName~PoRacer"`).
+- Rebuild and verify API host boots cleanly (`dotnet build`, `dotnet run`) before finishing.
+- Maintain responsive touch and keyboard controls.
 
----
+### Ask First
+- Adding any new external NuGet or npm dependency.
+- Modifying shared database table schemas that impact existing games.
+- Changing global SignalR hub routing or authentication filters.
 
-## 9. Out-of-Scope (v2 Expansion)
-
-- Direct RTS player control (drag-selecting units, point-and-click move/attack commands).
-- Complex skeletal animations or external rigged 3D models (retaining stylized procedural Three.js meshes).
-- Live SignalR multiplayer matchmaking rooms for the ecosystem.
-- Deep genetic phenotype morphology rendering (color and scale mutations only).
+### Never
+- Never add `Radzen.Blazor` or heavy UI packages.
+- Never run the full test suite (`scripts/test-all.ps1` or unrestricted `dotnet test`) per [`CLAUDE.md#L111`](CLAUDE.md#L111).
+- Never introduce Azure AI Foundry or LLM token spend into the racing loop.
+- Never exceed the 100/50/25/25 test tier ceilings.
 
 ---
 
-## 10. Edge Cases & Error Handling
+## 9. Out-of-Scope Items
 
-| Edge Case | Expected System Behavior |
+1. Mario Kart-style weapon power-ups (missiles, banana peels, shields).
+2. Complex 3D vehicle deformation or soft-body mesh physics.
+3. User track editor or custom UGC track builder.
+4. Voice chat or real-time microphone streaming in multiplayer lobbies.
+5. External generative AI race commentary.
+
+---
+
+## 10. Edge Cases & Error States
+
+| Edge Case / Error | Handling Strategy |
 |---|---|
-| **Island Overcrowding** | When population reaches island carrying capacity (400 entities), birth rates scale down logarithmically; hunger drive increases; tribes prioritize emigration or raiding over reproduction. |
-| **Complete Tribal Extinction** | If a tribe's population hits zero, remaining buildings decay over 60 seconds into ruins; territory dissolves back into neutral wilderness; chronicle logs the fall of the tribe. |
-| **Snapshot Version Mismatch** | When loading a legacy v1 snapshot lacking multi-tribe data, the migration codec synthesizes initial tribal alignments and default technology states without crashing. |
-| **Storage API Unreachable** | Cloud save/load operations degrade gracefully with a non-blocking toast warning; local IndexedDB autosaves continue uninterrupted. |
-| **Tab Minimization / Inactive State** | Simulation clock pauses while document is hidden (`visibilitychange`), preserving world state and battery without accumulating a giant physics catch-up spike. |
+| **Bot wedges against complex hairpin wall** | Marshal rescue timer: if track progress fails to advance for >2.0s, the bot is smoothly nudged 5 nodes ahead on the racing line facing forward. |
+| **High latency / dropped SignalR packets** | Client-side interpolation: `poracerGl.js` smoothly lerps car positions and headings between received 20 Hz snapshots. |
+| **Simultaneous multi-car finish** | Sub-millisecond finish timestamps computed by `Stopwatch` tick offset to resolve exact placement order without ties. |
+| **Guest player submits without auth cookie** | Accepted with `IsGuest = true` flag; leaderboard records guest name with sanitized string and rate-limit cooldown. |
+| **Invalid trackId query parameter in API** | REST API defaults to `circuit` with a 200 OK or returns 400 Bad Request with supported track list. |
+| **Canvas aspect ratio on ultra-wide / mobile portrait** | Viewport resize handler recalculates projection matrix, locking field of view and preventing distortion. |
 
 ---
 
 ## 11. Numbered Measurable Success Criteria
 
-1. **Clean Solution Build**: `dotnet build PoMiniGames.slnx` succeeds with **0 Warnings** and **0 Errors**.
-2. **Ceiling Compliance**: All 4 solution test tiers remain strictly below their ceilings (Unit &le; 100, Integration &le; 50, E2E-API &le; 25, E2E-UI &le; 25).
-3. **Multi-Tribe Spawning**: A fresh simulation run initializes at least 3 distinct human tribes with unique banners, territories, and starting chieftains.
-4. **Autonomous Territory & Construction**: Within 3 minutes of simulation time (at 1x speed), at least one tribe successfully gathers materials and completes a functional building (Hut, Granary, or Totem).
-5. **Tech Ladder Progression**: Tribes accumulate research points and unlock Tier 2 technology (Toolcraft) deterministically based on elder ratio and gathering efficiency.
-6. **Diplomatic State Transitions**: Tribes transition between diplomatic postures (Neutral &rarr; Skirmish/War &rarr; Peace) driven by border friction and resource availability.
-7. **Overhead God-Camera Smooth Tracking**: All 4 camera presets (Island Overview, Focus Tribe, Active Conflict, Milestone Focus) transition smoothly with zero camera jumps.
-8. **Native Blazor Dashboard Interactivity**: Opening the Analytics Dashboard renders real-time SVG population graphs, the tribal comparison grid, and the chronological event feed without dropping frame rate below 30 FPS on mid-tier hardware.
-9. **Persistence Determinism**: An exported world snapshot containing active multi-tribe structures and diplomacy matrices restores identically in IndexedDB with zero state corruption.
-10. **Zero Radzen Footprint**: Bundle audit verifies zero references to `Radzen.Blazor`, maintaining the lightweight WASM delivery profile.
+1. **3 Playable Tracks**: `circuit`, `neonskyline`, and `desertdustway` each load with valid splines, walls, unique visual themes, and boost pads.
+2. **Dynamic Physics & Boost**: Sand/dirt surfaces measurably reduce grip (drift angle > 25° at speed); boost pads trigger a +35% acceleration surge and boost glow for 1.8 seconds.
+3. **7 Distinct AI Bot Personalities**: Solo races run with 8 cars (1 player + 7 bots), with bots displaying distinct driving lines, overtaking behavior, and 100% race completion rate without perma-stucks.
+4. **Visual Customization**: Player can select from at least 6 car primary colors and 3 livery styles, persisting across browser page reloads.
+5. **Track-Specific Leaderboards**: REST `/poracer/scores?track=circuit`, `?track=neonskyline`, and `?track=desertdustway` independently record and return top scores.
+6. **Zero Performance & Bundle Regressions**:
+   - WebGL render loop maintains stable 60 FPS on standard hardware.
+   - WASM bundle size does not exceed the ~1.2 MB limit.
+7. **Test Ceiling & Build Integrity**:
+   - `dotnet build PoMiniGames.slnx` compiles with **0 warnings and 0 errors**.
+   - PoRacer unit tests pass 100%.
+   - Total solution unit tests remain strictly **≤ 100**.
 
 ---
 
 ## 12. Open Questions
 
-*(None — All core requirements, user journeys, interaction paradigms, and UI contracts were confirmed during the Phase 0 interview).*
-
+*(All initial interview clarifications resolved during Phase 0. No blocking open questions remain.)*

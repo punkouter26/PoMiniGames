@@ -1,0 +1,166 @@
+namespace PoMiniGames.Shared.Games;
+
+// ──────────────────────────────  Enums  ──────────────────────────────
+
+/// <summary>Camel-case string values for JSON wire compatibility.</summary>
+public enum PoCabinetTrackId
+{
+    Capitol = 0,
+    MarALago = 1,
+    PressBriefing = 2,
+}
+
+public enum PoCabinetOfficialId
+{
+    SeanS = 0,
+    SteveB = 1,
+    BillB = 2,
+    MikeP = 3,
+}
+
+public enum PoCabinetDialogueKind
+{
+    PreRace = 0,
+    PositionChange = 1,
+    LapFinish = 2,
+    RaceFinish = 3,
+}
+
+// ──────────────────────────────  Career state  ──────────────────────────────
+
+/// <summary>
+/// Player's championship progress. Persisted client-side via Blazored.LocalStorage
+/// (T7) and optionally synced to the server via <c>/api/pocabinet/career</c> (T4).
+/// </summary>
+public sealed class PoCabinetCareerDto
+{
+    public int CurrentStageIndex { get; set; }   // 0 = Capitol, 1 = Mar-a-Lago, 2 = Press Briefing
+    public bool TrophyUnlocked { get; set; }
+    public bool GoldLiveryUnlocked { get; set; }
+    public IReadOnlyList<int> CompletedStages { get; set; } = new List<int>();
+    public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+
+    public static PoCabinetCareerDto New() => new()
+    {
+        CurrentStageIndex = 0,
+        TrophyUnlocked = false,
+        GoldLiveryUnlocked = false,
+        CompletedStages = new List<int>(),
+        UpdatedAtUtc = DateTimeOffset.UtcNow,
+    };
+}
+
+// ──────────────────────────────  Atmosphere wire  ──────────────────────────────
+
+public sealed class PoCabinetAtmosphereWire
+{
+    public string SkyHex { get; set; } = "#0f1a3a";
+    public double FogStart { get; set; }
+    public double FogEnd { get; set; }
+    public string FogHex { get; set; } = "#0f1a3a";
+    public double AmbientIntensity { get; set; } = 0.5;
+    public string GroundHex { get; set; } = "#888";
+    public string AccentHex { get; set; } = "#888";
+}
+
+// ──────────────────────────────  Per-car state  ──────────────────────────────
+
+/// <summary>
+/// Wire shape for a single car in a snapshot. Trim-safe: every property is a
+/// value type or a string — no reflection-heavy serialization shapes.
+/// </summary>
+public sealed class PoCabinetCarState
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public string OfficialId { get; set; } = "";
+    public string Color { get; set; } = "#ffffff";
+    public string ColorDark { get; set; } = "#222222";
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double Heading { get; set; }
+    public double SpeedKmh { get; set; }
+    public int Lap { get; set; }
+    public double LapProgress { get; set; }
+    public int Position { get; set; }
+    public bool IsPlayer { get; set; }
+    public bool Finished { get; set; }
+}
+
+// ──────────────────────────────  Dialogue event  ──────────────────────────────
+
+public sealed class PoCabinetDialogueEvent
+{
+    public string OfficialId { get; set; } = "";
+    public string Kind { get; set; } = "PreRace";
+    public string Text { get; set; } = "";
+    public long RaceTick { get; set; }
+}
+
+// ──────────────────────────────  Race snapshot  ──────────────────────────────
+
+/// <summary>
+/// Hub → client broadcast at 30 Hz. Sized for ≤ 2 KB at 8 cars: the eight
+/// <see cref="PoCabinetCarState"/> rows are 11 doubles + 4 strings + 5 int/bool,
+/// which System.Text.Json serializes at roughly 200 bytes each — well under the
+/// budget. The contract test in <c>PoCabinetSharedContractTests</c> measures
+/// the actual byte count and fails the build if it slips.
+/// </summary>
+public sealed class PoCabinetRaceSnapshot
+{
+    public string GameCode { get; set; } = "";
+    public long ServerTimeMs { get; set; }
+    public double ElapsedRaceTime { get; set; }
+    public bool Started { get; set; }
+    public int CountdownSeconds { get; set; }
+    public bool Finished { get; set; }
+    public int? LocalCarId { get; set; }
+    public IReadOnlyList<PoCabinetCarState> Cars { get; set; } = new List<PoCabinetCarState>();
+    public PoCabinetDialogueEvent? LatestDialogue { get; set; }
+    public PoCabinetStaticWorld? Static { get; set; }
+}
+
+/// <summary>
+/// Static world payload — sent once on join. CenterXY + WallsXY are flat
+/// double arrays (PoRacer pattern) to keep the JSON shape predictable.
+/// </summary>
+public sealed class PoCabinetStaticWorld
+{
+    public string TrackId { get; set; } = "capitol";
+    public string TrackName { get; set; } = "";
+    public PoCabinetAtmosphereWire Atmosphere { get; set; } = new();
+    public IReadOnlyList<double> CenterXY { get; set; } = new List<double>();
+    public IReadOnlyList<double> WallsXY { get; set; } = new List<double>();
+    public double TrackWidth { get; set; }
+    public double MinX { get; set; }
+    public double MinY { get; set; }
+    public double MaxX { get; set; }
+    public double MaxY { get; set; }
+    public int TotalLaps { get; set; } = PoCabinetCatalog.TotalLaps;
+}
+
+// ──────────────────────────────  Player input  ──────────────────────────────
+
+public sealed class PoCabinetInput
+{
+    public bool Up { get; set; }
+    public bool Down { get; set; }
+    public bool Left { get; set; }
+    public bool Right { get; set; }
+}
+
+// ──────────────────────────────  Final result  ──────────────────────────────
+
+public sealed record PoCabinetFinalResult(
+    string GameCode,
+    IReadOnlyList<PoCabinetFinalEntry> Standings,
+    DateTimeOffset FinishedAtUtc);
+
+public sealed record PoCabinetFinalEntry(
+    int Position,
+    string Name,
+    string OfficialId,
+    bool IsPlayer,
+    bool Finished,
+    double TotalTimeSeconds,
+    double BestLapSeconds = -1);

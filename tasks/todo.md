@@ -18,10 +18,10 @@ Each task is a vertical slice touching ≤ 5 files. All tasks follow strict TDD:
 | T1 Track Geometry | 0 | 0 | 0 | 0 (deferred to T7) |
 | T2 Physics + Cockpit | 0 | 0 | 0 | 0 (deferred to T5/T7) |
 | T3 AI + Dialogue | 0 | 0 | 1 | 0 |
-| T4 Wire + Career | 0 | 0 | 1 | 1 |
+| T4 Wire + Career | 0 | 0 | 1 | 0 (deferred to T7) |
 | T5 Leaderboards | 0 | 3 | 1 | 0 |
 | T6 Multiplayer Lobby | 0 | 0 | 1 | 1 |
-| T7 Native Blazor UI | 0 | 0 | 0 | 1 |
+| T7 Native Blazor UI | 0 | 0 | 0 | 2 |
 | T8 Trim/Bundle Verify | 0 | 0 | 0 | 0 |
 | **Total** | **0** | **3** | **4** | **3** |
 

@@ -17,6 +17,7 @@ using PoMiniGames.Features.PoEcosystem;   // cloud world slots, gallery, chronic
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoRacer;
+using PoMiniGames.Features.PoCabinet; // T4: career cross-device resume endpoint
 using PoMiniGames.Features.PoVoxelStrike;
 
 namespace PoMiniGames.Infrastructure;
@@ -119,6 +120,9 @@ internal static class EndpointRouteExtensions
         gameApi.MapFunQuizEndpoints();
         gameApi.MapPoJokerEndpoints();
         gameApi.MapPoRacerScoreEndpoints();
+        // PoCabinet (T4): career cross-device resume endpoint. T5 adds the score
+        // endpoint; T6 adds the lobby + race SignalR hubs.
+        gameApi.MapPoCabinetCareerEndpoints();
         gameApi.MapPoSportsHighScoresEndpoints();
         gameApi.MapPoVoxelStrikeScoreEndpoints();
         // PoBrawl online (lobby + match hub) — match result ingest endpoint. Same

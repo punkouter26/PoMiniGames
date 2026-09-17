@@ -19,8 +19,8 @@
 <GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true"
            GameOver="@(_phase == RacePhase.Finished && !_isDemo)" GameKey="poracer"
            GameSummary="@SummaryContent" PlayAgain="RestartRaceAsync">
-    <div class="racer-root">
-        <canvas id="racerCanvas" class="racer-canvas" role="img" aria-label="Race track"></canvas>
+    <div class="racer-root" data-reduced-effects="true">
+        <canvas id="racerCanvas" class="racer-canvas" role="img" tabindex="0" aria-label="Race track. Your car is marked YOU. Arrow keys or W A S D drive; Space drifts."></canvas>
         @if (_phase == RacePhase.Start)
         {
             <section class="racer-start" aria-label="Start a race">
@@ -60,6 +60,13 @@
         @if (_phase == RacePhase.Racing)
         {
             <PoRacerHud Cars="_cars" PlayerId="_localCarId" TotalLaps="_totalLaps" ElapsedSeconds="_elapsed" IsDemo="_isDemo" />
+            @if (!_raceStarted || _elapsed < 0.9)
+            {
+                <div class="race-countdown" role="status" aria-live="assertive">
+                    <strong>@(_countdown > 0 ? _countdown.ToString() : "GO!")</strong>
+                    @if (!_isDemo) { <span>Hold W / ↑ to accelerate · A D / ← → steer · S / ↓ brake · Space drift</span> }
+                </div>
+            }
             <button class="racer-back" @onclick="RestartRaceAsync">Back to start</button>
         }
         @if (_connectionStatus is not null)

@@ -81,6 +81,9 @@ public sealed class PoRacerCarState
     public double FinishTime { get; set; } = -1;
     /// <summary>Fastest single lap so far, in seconds. -1 until the first lap completes.</summary>
     public double BestLapSeconds { get; set; } = -1;
+    public double CurrentLapSeconds { get; set; }
+    public double LastLapSeconds { get; set; } = -1;
+    public double LapProgress { get; set; }
     public bool IsPlayer { get; set; }
     public bool Finished { get; set; }
     public int Position { get; set; }
@@ -104,6 +107,7 @@ public sealed class PoRacerRaceSnapshot
     public int? LocalCarId { get; set; }
     public PoRacerFinalResult? Result { get; set; }
     public bool Started { get; set; }
+    public int CountdownSeconds { get; set; }
     public bool Finished { get; set; }
     public PoRacerStaticWorld? Static { get; set; }
 }

@@ -779,40 +779,28 @@
         // Windshield
         g.fillStyle = 'rgba(20,30,45,0.85)'; g.beginPath(); g.roundRect(2, -7, 8, 14, 2); g.fill();
 
-        // Feature 7: Headlight glow
-        g.fillStyle = '#fffbe0'; g.shadowColor = '#fff7a0'; g.shadowBlur = 10;
-        g.beginPath(); g.arc(14, -5, 1.8, 0, Math.PI * 2); g.arc(14, 5, 1.8, 0, Math.PI * 2); g.fill(); g.shadowBlur = 0;
-
-        // Feature 1+7: Headlight beam cone — simple globalAlpha triangle (no radial gradient)
-        if (speedRatio > 0.1) {
-            g.save();
-            g.globalAlpha = 0.13 * speedRatio;
-            g.fillStyle = 'rgb(255,255,220)';
-            g.beginPath(); g.moveTo(16, -4); g.lineTo(16 + 60 * speedRatio, -18); g.lineTo(16 + 60 * speedRatio, 18); g.lineTo(16, 4); g.closePath(); g.fill();
-            g.restore();
-        }
-
-        // Feature 7: Taillights
-        g.fillStyle = '#ff3030'; g.shadowColor = '#ff0000'; g.shadowBlur = 12;
-        g.beginPath(); g.arc(-15, -5, 1.6, 0, Math.PI * 2); g.arc(-15, 5, 1.6, 0, Math.PI * 2); g.fill(); g.shadowBlur = 0;
-
-        // Feature 7: Brake lights (brighter when skidding/slowing)
-        if (skidInt > 0.3) {
-            g.fillStyle = '#ff0000'; g.shadowColor = '#ff0000'; g.shadowBlur = 20;
-            g.beginPath(); g.arc(-15, -5, 2.5, 0, Math.PI * 2); g.arc(-15, 5, 2.5, 0, Math.PI * 2); g.fill(); g.shadowBlur = 0;
-        }
-
-        // Feature 7: Exhaust flame
-        if (speedRatio > 0.85) {
-            const fs = (speedRatio - 0.85) * 15;
-            g.fillStyle = 'rgba(255,150,50,' + fs * 0.3 + ')'; g.beginPath(); g.moveTo(-16, -3); g.lineTo(-16 - fs, 0); g.lineTo(-16, 3); g.closePath(); g.fill();
-            g.fillStyle = 'rgba(255,220,100,' + fs * 0.2 + ')'; g.beginPath(); g.moveTo(-16, -1.5); g.lineTo(-16 - fs * 0.6, 0); g.lineTo(-16, 1.5); g.closePath(); g.fill();
-        }
-
+        // Headlight/taillight glows, beam cones and exhaust flames removed
+        // 2026-09-17 (user request): the cars should read as flat shapes, not
+        // light sources. Skid marks still communicate drift and braking.
         g.restore();
     }
 
     // --- Feature 1: Ambient overlay ---
+    function drawPlayerMarker(g, c, camX, camY, scale, w, h) {
+        const [x, y] = project(c.x, c.y, camX, camY, scale, w, h);
+        g.save();
+        // Decorative ellipse ring removed 2026-09-17 (user request). The label
+        // stays: it is the only thing that identifies your car in a full grid.
+        g.fillStyle = '#06111f'; g.beginPath(); g.roundRect(x - 25, y - 53, 50, 24, 7); g.fill();
+        g.fillStyle = '#ffffff'; g.font = 'bold 13px system-ui'; g.textAlign = 'center';
+        g.fillText('YOU', x, y - 36);
+        g.beginPath(); g.moveTo(x - 5, y - 27); g.lineTo(x + 5, y - 27); g.lineTo(x, y - 22); g.fill();
+        g.restore();
+    }
+
+    // drawGhost removed 2026-09-17 (user request) along with the lapCoach that
+    // fed it — the best-lap ghost car is gone entirely.
+
     function drawAmbientOverlay(g, w, h, tod, weatherType) {
         const dayBrightness = Math.sin(tod * Math.PI);
         let dark = 0.35 * (1 - dayBrightness * 0.7);
@@ -981,7 +969,9 @@
             // so the two are NOT the same number on a large window.
             const layerDpr = dprOf(g, w);
 
-            if (shakeIntensity && shakeIntensity > 0.01) applyShake(shakeIntensity);
+            const reducedEffects = window.PoRacer?.effectsReduced();
+            if (reducedEffects) { shakeX = shakeY = 0; weatherType = 0; }
+            if (!reducedEffects && shakeIntensity && shakeIntensity > 0.01) applyShake(shakeIntensity);
             updateShake(); updateSparks();
 
             // Process emission events from C# and update JS-owned pools
@@ -1078,13 +1068,15 @@
             drawFog(g, w, h, fogDensity, layerDpr);
 
             // Feature 5: Speed lines
-            for (let i = 0; i < carCount; i++) { const o = i * 6; if (carBuf[o + 4] !== 0) { drawSpeedLines(g, w, h, Math.abs(carBuf[o + 3]) * 1.2, 340); break; } }
+            if (!reducedEffects) for (let i = 0; i < carCount; i++) { const o = i * 6; if (carBuf[o + 4] !== 0) { drawSpeedLines(g, w, h, Math.abs(carsList?.[i]?.v || 0) * 1.2, 340); break; } }
 
             // Feature 8: Post-processing
             drawVignette(g, w, h, layerDpr);
-            if (bloomEnabled) drawBloom(g, w, h, layerDpr);
+            if (bloomEnabled && !reducedEffects) drawBloom(g, w, h, layerDpr);
 
             if (shakeX || shakeY) g.restore();
+
+            for (const car of carsList || []) if (car.isPlayer) drawPlayerMarker(g, car, camX, camY, scale, w, h);
 
         }
     };

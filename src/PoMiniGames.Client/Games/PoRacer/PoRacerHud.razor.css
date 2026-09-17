@@ -2,7 +2,7 @@
 .race-metrics { display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; padding: 12px; background: #0b182ee6; border: 1px solid #607b9b88; border-radius: 12px; font-variant-numeric: tabular-nums; }
 .race-metrics strong { color: #96e7ff; } .race-metrics .boost { color: #ffda80; }
 .race-minimap { position: absolute; top: 76px; right: 0; width: 150px; height: 150px; border-radius: 10px; background: #0b182ecc; }
-.race-standings { position: absolute; top: 76px; left: 0; padding: 12px; margin: 0; list-style: none; width: 215px; background: #0b182ecc; border-radius: 10px; }
+.race-standings { position: absolute; top: 126px; left: 0; padding: 12px; margin: 0; list-style: none; width: 215px; background: #0b182ecc; border-radius: 10px; }
 .race-standings li { display: flex; justify-content: space-between; gap: 12px; padding: 4px; }
 .local-driver { color: #91e4ff; font-weight: 700; }
 .race-touch { display: none; position: absolute; bottom: 14px; inset-inline: 12px; justify-content: space-between; gap: 12px; }

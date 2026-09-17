@@ -61,7 +61,11 @@ export function startInput(canvasId, dotnetReference) {
     document.addEventListener('lostpointercapture', pointerUp, options);
     getSize();
 }
-export function setInputEnabled(value) { enabled = value; reset(); }
+export function setInputEnabled(value) {
+    enabled = value;
+    reset();
+    if (value) canvas?.focus({ preventScroll: true });
+}
 export function stopInput() {
     enabled = false;
     reset();

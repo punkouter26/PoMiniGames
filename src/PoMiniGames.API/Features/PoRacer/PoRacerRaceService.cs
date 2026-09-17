@@ -20,7 +20,7 @@ public sealed class PoRacerRaceService : IAsyncDisposable
     public PoRacerRaceService(string code, IReadOnlyList<PoRacerLobbyPlayer> players, ILogger<PoRacerRaceService> log, string? trackId = null)
     {
         GameCode = code;
-        _sim = new PoRacerSim(players, trackId);
+        _sim = new PoRacerSim(players, trackId, countdownSeconds: 3);
         _log = log;
     }
 

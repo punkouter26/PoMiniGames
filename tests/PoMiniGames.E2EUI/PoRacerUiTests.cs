@@ -5,6 +5,73 @@ namespace PoMiniGames.E2EUI;
 [Collection(KestrelServerCollection.Name)]
 public sealed class PoRacerUiTests(KestrelServerFixture fixture)
 {
+    [Theory]
+    [InlineData("circuit")]
+    [InlineData("neonskyline")]
+    [InlineData("desertdustway")]
+    public async Task SoloRace_CompletesSavesAndCanPlayAgain(string track)
+    {
+        using var playwright = await Playwright.CreateAsync();
+        var launch = BrowserLaunch.Options();
+        launch.SlowMo = 0; // Driving samples steering at 20 Hz; human-scale click delays cannot steer.
+        await using var browser = await playwright.Chromium.LaunchAsync(launch);
+        await using var context = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 1440, Height = 900 } });
+        var page = await context.NewPageAsync();
+        var errors = new List<string>();
+        page.PageError += (_, error) => errors.Add(error);
+        var driver = new PoRacerDriver(page);
+        await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player?autoGuest=1");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
+        await page.Locator($"input[name=poracer-track][value={track}]").CheckAsync();
+        var save = page.WaitForResponseAsync(r => r.Url.EndsWith("/api/poracer/scores", StringComparison.Ordinal) && r.Request.Method == "POST", new() { Timeout = 200000 });
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).ClickAsync();
+        await page.Locator(".race-countdown").WaitForAsync();
+        (await page.Locator("#racerCanvas").EvaluateAsync<bool>("e => e === document.activeElement")).Should().BeTrue();
+        await driver.DriveAsync(page, track);
+        driver.SawCountdown.Should().BeTrue();
+        driver.MovedDuringCountdown.Should().BeFalse();
+        var result = driver.Result!;
+        var mine = result.Standings.Single(s => s.CarId == driver.LocalId);
+        mine.Finished.Should().BeTrue("the keyboard-driven player must cross the line after three actual laps");
+        mine.BestLapSeconds.Should().BeGreaterThan(0);
+        result.Standings.Where(s => s.Finished).Select(s => s.TotalTimeSeconds).Should().BeInAscendingOrder();
+        (await save).Status.Should().Be(201);
+        await page.GetByText("Best lap saved to the leaderboard.", new() { Exact = true }).WaitForAsync();
+        (await page.Locator(".race-results .local-driver").InnerTextAsync()).Should().NotContain("DNF");
+        await page.ScreenshotAsync(new() { Path = $"artifacts/poracer-{track}-results.png" });
+        await page.GetByRole(AriaRole.Button, new() { Name = "Play again" }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).WaitForAsync();
+        (await page.Locator(".racer-gl").CountAsync()).Should().Be(0);
+        // Reduced effects are always on now (the toggle was removed), so the GL
+        // layer must stay absent across the restart too.
+        driver.Reset();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).ClickAsync();
+        await page.Locator(".race-metrics").WaitForAsync();
+        (await page.Locator(".racer-gl").CountAsync()).Should().Be(0);
+        await page.GetByRole(AriaRole.Button, new() { Name = "Back to start", Exact = true }).ClickAsync();
+        errors.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SoloRace_UnfinishedPlayerGetsDnfResultsAndCanRestart()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        var launch = BrowserLaunch.Options(); launch.SlowMo = 0;
+        await using var browser = await playwright.Chromium.LaunchAsync(launch);
+        var page = await browser.NewPageAsync();
+        var errors = new List<string>(); page.PageError += (_, error) => errors.Add(error);
+        var driver = new PoRacerDriver(page);
+        await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player?autoGuest=1");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).ClickAsync(new() { Timeout = 60000 });
+        await driver.DriveAsync(page, "dnf", drive: false);
+        driver.Result!.Standings.Single(s => s.CarId == driver.LocalId).Finished.Should().BeFalse();
+        await page.Locator(".race-results").WaitForAsync();
+        (await page.Locator(".race-results .local-driver").InnerTextAsync()).Should().Contain("DNF");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Play again" }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).WaitForAsync();
+        errors.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task Multiplayer_BindsBothPlayersAfterLeavingTheLobby()
     {
@@ -29,8 +96,8 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
             await page.Keyboard.UpAsync("ArrowUp");
             (await page.Locator(".race-standings .local-driver").CountAsync()).Should().Be(1);
         }
-        var hostDriver = await host.Locator(".race-standings .local-driver").InnerTextAsync();
-        var guestDriver = await guest.Locator(".race-standings .local-driver").InnerTextAsync();
+        var hostDriver = await host.Locator(".race-standings .local-driver").GetAttributeAsync("title");
+        var guestDriver = await guest.Locator(".race-standings .local-driver").GetAttributeAsync("title");
         hostDriver.Should().NotBe(guestDriver);
     }
 

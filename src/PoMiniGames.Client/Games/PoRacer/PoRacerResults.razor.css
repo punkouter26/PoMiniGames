@@ -3,6 +3,6 @@
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 caption { text-align: left; padding: 12px 0; font-weight: 700; }
 th, td { text-align: left; padding: 8px; border-bottom: 1px solid #71859b55; }
-.local-driver { color: #91e4ff; font-weight: 700; }
-a { color: #91e4ff; } button { min-height: 44px; margin-right: 12px; }
+.local-driver { color: var(--color-text-primary); background: var(--accent-soft); font-weight: 700; border-inline-start: 3px solid var(--accent-ink); }
+a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; } button { min-height: 44px; margin-right: 12px; }
 @media (max-width: 480px) { th, td { padding: 6px 3px; font-size: 12px; } }

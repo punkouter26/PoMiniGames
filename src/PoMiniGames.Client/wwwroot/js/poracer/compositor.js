@@ -144,6 +144,7 @@ let startTime = 0;
 const MAX_SPEED = 380;
 
 function tierTaps() {
+    if (window.PoRacer?.effectsReduced()) return 0;
     switch (document.documentElement.getAttribute('data-gfx')) {
         case 'low': return 0;      // 0 disables the GL layer entirely
         case 'medium': return 6;
@@ -186,6 +187,12 @@ function ensureGl(canvas2d) {
     vao = gl.createVertexArray();
     tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
+    // Canvas sources upload top-down, the GL framebuffer renders bottom-up.
+    // Without this flip the composite presents vertically mirrored — which
+    // reads as inverted steering (D turned the car left on screen) even though
+    // the sim and the raw 2D canvas agree. Must be set before the first
+    // texImage2D upload; it only affects canvas/image sources.
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     // LINEAR + CLAMP: the blur and aberration both sample off the exact texel
     // grid, and REPEAT would wrap the far edge of the track into the near one.
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);

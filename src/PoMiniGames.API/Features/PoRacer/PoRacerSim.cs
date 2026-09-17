@@ -13,10 +13,10 @@ internal sealed class PoRacerSim
 {
     private const int TotalLaps = PoRacerCatalog.TotalLaps;
     private const double CarRadius = 18;
-    private const double StopAfterMs = 90_000; // 90s safety cap so a stuck client can't hang the room
+    private const double StopAfterMs = 180_000; // Allows three real laps on the longer tracks; still bounds abandoned races.
     // Once the winner crosses the line (finishes lap 3), the pack gets this much
     // longer to finish; then the race ends and stragglers are DNF'd. Keeps the
-    // race from idling to the 90 s cap after it's effectively decided.
+    // race from idling to the safety cap after it's effectively decided.
     private const double FinishGraceMs = 5_000;
     private double _leaderFinishMs = -1;
 
@@ -35,7 +35,7 @@ internal sealed class PoRacerSim
     private readonly Stopwatch _wallClock = Stopwatch.StartNew();
     private long _startElapsedMs;
 
-    public PoRacerSim(IReadOnlyList<PoRacerLobbyPlayer> players, string? trackId = null)
+    public PoRacerSim(IReadOnlyList<PoRacerLobbyPlayer> players, string? trackId = null, int countdownSeconds = 0)
     {
         var track = PoRacerTrackRegistry.GetTrack(trackId);
         _track = track;
@@ -169,13 +169,17 @@ internal sealed class PoRacerSim
             if (s.isPlayer) _byOwnerId[s.connectionId] = car;
         }
 
-        _startElapsedMs = _wallClock.ElapsedMilliseconds;
+        _startElapsedMs = _wallClock.ElapsedMilliseconds + Math.Max(0, countdownSeconds) * 1000L;
+        foreach (var car in _cars) { Project(car); UpdateRaceProgress(car); }
+        Rank();
     }
 
     public int? CarIdForOwner(string ownerId) => _byOwnerId.TryGetValue(ownerId, out var car) ? car.Id : null;
 
     public void Tick(double dt, IReadOnlyDictionary<string, PoRacerInput> inputs)
     {
+        // Inputs may be held through the countdown, but no car moves before GO.
+        if (_wallClock.ElapsedMilliseconds < _startElapsedMs) return;
         // Update surface friction and boost pads for every car
         foreach (var c in _cars)
         {
@@ -185,6 +189,7 @@ internal sealed class PoRacerSim
         // Apply player input.
         foreach (var (cid, car) in _byOwnerId)
         {
+            if (car.Lap > TotalLaps) continue;
             inputs.TryGetValue(cid, out var inp);
             ApplyControl(car, dt, inp?.Up ?? false, inp?.Down ?? false, inp?.Left ?? false, inp?.Right ?? false, inp?.Space ?? false);
         }
@@ -220,7 +225,7 @@ internal sealed class PoRacerSim
         Rank();
 
         // Race-end: the winner has crossed the line → start the finish grace.
-        // When the grace expires (or the 90 s safety cap hits) declare any car
+        // When the grace expires (or the safety cap hits) declare any car
         // still running as DNF, so the race ends when the 3rd lap is won rather
         // than idling on until the cap.
         var elapsed = _wallClock.ElapsedMilliseconds - _startElapsedMs;
@@ -546,21 +551,28 @@ internal sealed class PoRacerSim
 
     private void UpdateRaceProgress(SimCar c)
     {
+        if (c.Lap > TotalLaps) return;
         if (c.LastCheckpoint >= 0)
         {
             int prev = c.LastCheckpoint;
             double prevT = c.CheckpointT;
             int n = _centerline.Count;
-            bool wrappedForward = prev > n - 3 && c.ProjIdx <= 1;
-            bool withinSegmentForward = c.ProjIdx == prev && c.ProjT + 0.5 < prevT;
-            if (wrappedForward || withinSegmentForward)
+            var advance = c.ProjIdx + c.ProjT - prev - prevT;
+            if (advance < -n / 2.0) advance += n;
+            if (advance > n / 2.0) advance -= n;
+            c.LapTravel += advance;
+            // Crossing the line counts only after traversing the circuit. Reversing
+            // over the line or sliding backwards within a segment cannot award a lap.
+            if (prev > n / 2 && c.ProjIdx < n / 2 && advance > 0 && c.LapTravel >= n * 0.75)
             {
                 c.Lap++;
+                c.LapTravel = 0;
                 // Fastest-lap timing: a lap just closed — measure it against the
                 // race clock and keep the best. LapStartElapsed rebases to now so
                 // the next lap times independently. This is the metric 1P scores on.
                 var nowSec = (_wallClock.ElapsedMilliseconds - _startElapsedMs) / 1000.0;
                 var lapTime = nowSec - c.LapStartElapsed;
+                c.LastLapTime = lapTime;
                 if (lapTime > 0 && (c.BestLapTime < 0 || lapTime < c.BestLapTime))
                 {
                     c.BestLapTime = lapTime;
@@ -574,19 +586,25 @@ internal sealed class PoRacerSim
         }
         c.LastCheckpoint = c.ProjIdx;
         c.CheckpointT = c.ProjT;
-        c.DistanceAlongTrack = c.Lap * 100000 + c.ProjIdx * 1000 + c.ProjT * 1000;
+        c.DistanceAlongTrack = (c.Lap - 1) * _centerline.Count + c.ProjIdx + c.ProjT;
     }
+
+    private IOrderedEnumerable<SimCar> OrderedCars() => _cars
+        .OrderBy(c => c.Lap > TotalLaps ? 0 : 1)
+        .ThenBy(c => c.Lap > TotalLaps ? c.FinishTime : 0)
+        .ThenByDescending(c => c.DistanceAlongTrack)
+        .ThenBy(c => c.Id);
 
     private void Rank()
     {
-        var sorted = _cars.OrderByDescending(c => c.DistanceAlongTrack).ToList();
+        var sorted = OrderedCars().ToList();
         for (int i = 0; i < sorted.Count; i++) sorted[i].Position = i + 1;
     }
 
     public bool AllFinishedOrStopped()
     {
         // Race is over when:
-        //   * the 90 s safety cap has elapsed, OR
+        //   * the safety cap has elapsed, OR
         //   * every car (player + AI) has crossed the line.
         // We deliberately check ALL cars (not just players) so a bot-only race
         // doesn't immediately finish via the vacuous-All-of-empty-set trap.
@@ -599,16 +617,13 @@ internal sealed class PoRacerSim
 
     public PoRacerFinalResult BuildFinalResult(string code)
     {
-        var elapsed = _wallClock.ElapsedMilliseconds - _startElapsedMs;
-        var standings = _cars
-            .OrderBy(c => c.Lap > TotalLaps ? c.Position : int.MaxValue)
-            .ThenByDescending(c => c.DistanceAlongTrack)
+        var standings = OrderedCars()
             .Select((c, idx) => new PoRacerFinalEntry(
                 idx + 1,
                 c.Name,
                 c.Id,
                 !c.IsPlayer, // ai or guest by sign-up
-                c.FinishTime,
+                double.IsFinite(c.FinishTime) ? c.FinishTime : -1,
                 c.Lap > TotalLaps && c.FinishTime >= 0 && !double.IsInfinity(c.FinishTime),
                 c.BestLapTime))
             .ToList();
@@ -628,8 +643,12 @@ internal sealed class PoRacerSim
             Heading = c.Heading,
             Speed = c.Speed,
             Lap = c.Lap,
-            FinishTime = c.FinishTime,
+            // DNF uses infinity internally; JSON/SignalR requires a finite wire value.
+            FinishTime = double.IsFinite(c.FinishTime) ? c.FinishTime : -1,
             BestLapSeconds = c.BestLapTime,
+            CurrentLapSeconds = c.Lap > TotalLaps ? c.LastLapTime : Math.Max(0, (_wallClock.ElapsedMilliseconds - _startElapsedMs) / 1000.0 - c.LapStartElapsed),
+            LastLapSeconds = c.LastLapTime,
+            LapProgress = (c.ProjIdx + c.ProjT) / _centerline.Count,
             IsPlayer = c.IsPlayer,
             Finished = c.Lap > TotalLaps,
             Position = c.Position,
@@ -645,8 +664,9 @@ internal sealed class PoRacerSim
             GameCode = code,
             ServerTimeMs = _wallClock.ElapsedMilliseconds,
             Cars = cars,
-            ElapsedRaceTime = elapsed,
-            Started = true,
+            ElapsedRaceTime = Math.Max(0, elapsed),
+            Started = elapsed >= 0,
+            CountdownSeconds = (int)Math.Max(0, Math.Ceiling(-elapsed)),
             Finished = AllFinishedOrStopped(),
         };
     }
@@ -747,6 +767,8 @@ internal sealed class PoRacerSim
         public double FinishTime = -1;
         public double BestLapTime = -1;   // fastest single lap (s); -1 until first lap done
         public double LapStartElapsed = 0; // race-clock seconds when the current lap began
+        public double LastLapTime = -1;
+        public double LapTravel;
         public int Position;
         public int ProjIdx;
         public double ProjT;

@@ -75,6 +75,8 @@ let _last = 0;
 let _running = false;
 
 let _flashEl = null;
+let _shockwaveCanvas = null;
+const _shockwaves = [];
 /** @type {Set<HTMLElement>} */
 const _stages = new Set();
 
@@ -87,6 +89,7 @@ const _root = typeof document !== 'undefined' ? document.documentElement : null;
  */
 function motionReduced() {
     try {
+        if (document.querySelector('.racer-root[data-reduced-effects="true"]')) return true;
         if (_root && _root.getAttribute('data-motion') === 'reduce') return true;
         return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     } catch {
@@ -461,6 +464,8 @@ export function popSelector(selector) {
 
 /** Cancel everything immediately — used on game teardown and route change. */
 export function reset() {
+    _shockwaves.length = 0;
+    if (_shockwaveCanvas) _shockwaveCanvas.style.opacity = '0';
     _trauma = _punch = _flash = 0;
     _stopUntil = 0;
     _timeScale = 1;

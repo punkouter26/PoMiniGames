@@ -22,6 +22,8 @@ public partial class PoRacerPage
     private int? _localCarId;
     private int _totalLaps = PoRacerCatalog.TotalLaps;
     private double _elapsed;
+    private int _countdown;
+    private bool _raceStarted;
     private IReadOnlyList<PoRacerCarState> _cars = [];
     private PoRacerCarState? Player => _cars.FirstOrDefault(c => c.Id == _localCarId);
     private PoRacerCarCustomization _customization = PoRacerCarCustomization.Default;
@@ -131,6 +133,8 @@ public partial class PoRacerPage
         if (_disposed) return;
         _cars = snapshot.Cars;
         _elapsed = snapshot.ElapsedRaceTime;
+        _countdown = snapshot.CountdownSeconds;
+        _raceStarted = snapshot.Started;
         await JS.InvokeVoidAsync("PoRacerRender.drawSnapshot", "racerCanvas", "racerMinimap",
             snapshot.ElapsedRaceTime, 1, _cars.Select(c => new
             {
@@ -141,7 +145,7 @@ public partial class PoRacerPage
                 boost = c.BoostGlow, skid = c.SkidIntensity, surface = c.Surface,
                 livery = c.Id == _localCarId ? _customization.LiveryPattern : c.LiveryStyle
             }).ToArray(), snapshot.ServerTimeMs);
-        await UpdateAudioAsync();
+        if (_raceStarted) await UpdateAudioAsync();
         StateHasChanged();
     }
 
@@ -211,6 +215,8 @@ public partial class PoRacerPage
         _submitStatus = null;
         _localCarId = null;
         _elapsed = 0;
+        _countdown = 0;
+        _raceStarted = false;
         _connectionStatus = null;
         _announcement = "";
         _lastLap = _lastPosition = 0;

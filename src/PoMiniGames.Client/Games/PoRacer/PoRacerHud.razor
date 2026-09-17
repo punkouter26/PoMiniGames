@@ -13,8 +13,8 @@
     <ol class="race-standings" aria-label="Race standings">
         @foreach (var car in Cars.OrderBy(c => c.Position))
         {
-            <li class="@(car.Id == PlayerId ? "local-driver" : "")">
-                <span>@car.Position. @car.Name</span><span>@(car.Finished ? "FIN" : $"L{car.Lap}")</span>
+            <li class="@(car.Id == PlayerId ? "local-driver" : "")" title="@car.Name">
+                <span>@car.Position. @(car.Id == PlayerId ? "YOU" : car.Name)</span><span>@(car.Finished ? "FIN" : $"L{car.Lap}")</span>
             </li>
         }
     </ol>

@@ -289,6 +289,10 @@ const CUES = {
     },
 
     // ── PoRacer — motorised, synthwave engine ───────────────────────────
+    // fx particle bursts removed 2026-09-17 (user request): every cue fired
+    // mid-rake bursts at the viewport centre, which is exactly where the
+    // camera keeps your car, so the sparks/smoke read as effects around the
+    // cars. Sounds and screen feel are unchanged.
     poracer: {
         shift: {
             voices: [v('saw', 220, 0.09, 0.10, { freqEnd: 340, sweep: 0.08, decay: 0.08, cutoff: 1400, q: 3, drive: 0.4 })],
@@ -305,39 +309,39 @@ const CUES = {
                 v('noise', 0, 0.25, 0.12, { decay: 0.22, cutoff: 4000, cutoffEnd: 8000, q: 4, sweep: 0.2 }),
                 v('sine', 880, 0.20, 0.08, { freqEnd: 1760, sweep: 0.18, decay: 0.18 }),
             ],
-            feel: 'tick', fx: { preset: 'sparks', scale: 0.8 },
+            feel: 'tick',
         },
         skid: {
             voices: [v('noise', 0, 0.42, 0.13, { decay: 0.40, cutoff: 2600, cutoffEnd: 900, q: 6, sweep: 0.4 })],
-            feel: null, fx: { preset: 'smoke', scale: 1 },
+            feel: null,
         },
         boost: {
             voices: [
                 v('saw', 140, 0.45, 0.15, { freqEnd: 620, sweep: 0.42, decay: 0.42, cutoff: 700, cutoffEnd: 5200, q: 4, drive: 0.5 }),
                 v('noise', 0, 0.45, 0.09, { decay: 0.42, cutoff: 900, cutoffEnd: 6000, q: 1.5, sweep: 0.42 }),
             ],
-            feel: 'medium', fx: { preset: 'sparks', scale: 1.2 }, duck: 0.3,
+            feel: 'medium', duck: 0.3,
         },
         crash: {
             voices: [
                 v('noise', 0, 0.50, 0.26, { decay: 0.48, cutoff: 4200, cutoffEnd: 260, q: 1.1, sweep: 0.45 }),
                 v('sine', 96, 0.30, 0.26, { freqEnd: 40, sweep: 0.28, decay: 0.28, drive: 0.7 }),
             ],
-            feel: 'heavy', fx: { preset: 'impact', scale: 1.5 }, duck: 0.5,
+            feel: 'heavy', duck: 0.5,
         },
         checkpoint: {
             voices: [
                 v('square', 1046, 0.06, 0.09, { decay: 0.05, cutoff: 4000 }),
                 v('square', 1568, 0.10, 0.09, { decay: 0.09, cutoff: 5000, delay: 0.06 }),
             ],
-            feel: 'select', fx: { preset: 'sparks', scale: 0.6 },
+            feel: 'select',
         },
         speedDemon: {
             voices: [
                 v('saw', 320, 0.35, 0.16, { freqEnd: 980, sweep: 0.32, decay: 0.32, cutoff: 3500, q: 4, drive: 0.5 }),
                 v('sine', 1400, 0.25, 0.08, { freqEnd: 2800, sweep: 0.22, decay: 0.22 }),
             ],
-            feel: 'select', fx: { preset: 'sparks', scale: 1.3 }, duck: 0.3,
+            feel: 'select', duck: 0.3,
         },
         dopplerPass: {
             voices: [
@@ -351,14 +355,14 @@ const CUES = {
                 v('sine', 440, 0.35, 0.12, { freqEnd: 1320, sweep: 0.30, decay: 0.30 }),
                 v('noise', 0, 0.40, 0.10, { decay: 0.38, cutoff: 1200, cutoffEnd: 7000, q: 2, sweep: 0.38 }),
             ],
-            feel: 'medium', fx: { preset: 'sparks', scale: 1.4 }, duck: 0.35,
+            feel: 'medium', duck: 0.35,
         },
         sandDrift: {
             voices: [
                 v('noise', 0, 0.45, 0.15, { decay: 0.42, cutoff: 1400, cutoffEnd: 400, q: 2.5, sweep: 0.38 }),
                 v('saw', 65, 0.35, 0.08, { freqEnd: 45, sweep: 0.30, decay: 0.30, cutoff: 400 }),
             ],
-            feel: 'tick', fx: { preset: 'smoke', scale: 0.9 },
+            feel: 'tick',
         },
     },
 

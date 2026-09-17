@@ -55,6 +55,7 @@ public sealed class PoRacerLifecycleTests
         race.SetInput("race-a", new() { Up = true });
         race.SetInput("intruder", new() { Up = true });
         race.Start();
+        await Task.Delay(3100); // The server holds every car during the starting countdown.
         await Task.Delay(120);
         race.Snapshot().Cars[0].Speed.Should().Be(0);
         race.SetInput("reconnected-a", new() { Up = true });

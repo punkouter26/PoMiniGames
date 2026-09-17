@@ -1,0 +1,375 @@
+.player-card-skel {
+    min-height: 280px;
+    background: var(--surface-1, #1e293b);
+    border-radius: var(--radius-lg, 16px);
+    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    animation: prf-pulse 1.8s ease-in-out infinite;
+}
+
+.card-skel-line {
+    height: 1.5rem;
+    width: 60%;
+    background: var(--surface-2, rgba(255, 255, 255, 0.06));
+    border-radius: 6px;
+}
+
+.card-skel-row {
+    height: 160px;
+    background: var(--surface-2, rgba(255, 255, 255, 0.04));
+    border-radius: 12px;
+}
+
+.player-card {
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.85));
+    border: 1px solid var(--tier-color, #c0c0c0);
+    border-radius: var(--radius-lg, 16px);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 0 15px -3px var(--tier-color, rgba(192, 192, 192, 0.2));
+    backdrop-filter: blur(12px);
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.player-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, var(--tier-color, #c0c0c0), transparent);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+    padding-bottom: 0.75rem;
+}
+
+.card-brand {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-muted, #94a3b8);
+    letter-spacing: 0.12em;
+}
+
+.card-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.2rem 0.65rem;
+    border-radius: 999px;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid currentColor;
+}
+
+.badge-verified {
+    color: var(--color-cyan, #00e5ff);
+}
+
+.badge-guest {
+    color: var(--text-muted, #94a3b8);
+}
+
+.badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: currentColor;
+}
+
+.card-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.driver-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.avatar-ring {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: var(--surface-2, #1e293b);
+    border: 2px solid var(--tier-color, #c0c0c0);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 12px var(--tier-color, rgba(192, 192, 192, 0.3));
+    flex-shrink: 0;
+}
+
+.avatar-text {
+    font-family: var(--font-sans, system-ui);
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--text-bright, #ffffff);
+}
+
+.driver-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.driver-name {
+    font-family: var(--font-sans, system-ui);
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--text-bright, #ffffff);
+    letter-spacing: -0.01em;
+}
+
+.sig-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.6rem;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted, #94a3b8);
+    width: fit-content;
+}
+
+.tier-rating-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.3rem;
+    min-width: 220px;
+}
+
+.tier-badge-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.2rem 0.6rem;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--tier-color, #c0c0c0);
+    border-radius: 6px;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: var(--tier-color, #c0c0c0);
+    letter-spacing: 0.06em;
+}
+
+.mmr-display {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+}
+
+.mmr-val {
+    font-family: var(--font-sans, system-ui);
+    font-size: 1.85rem;
+    font-weight: 900;
+    color: var(--text-bright, #ffffff);
+    line-height: 1.1;
+}
+
+.mmr-lbl {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: var(--tier-color, #c0c0c0);
+}
+
+.progress-bar-container {
+    width: 100%;
+    height: 7px;
+    background: var(--surface-2, rgba(255, 255, 255, 0.1));
+    border-radius: 999px;
+    overflow: hidden;
+    margin-top: 0.15rem;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, var(--tier-color, #c0c0c0));
+    border-radius: 999px;
+    transition: width 0.4s ease;
+}
+
+.progress-bar-sub {
+    font-size: 0.72rem;
+    color: var(--text-muted, #94a3b8);
+    font-weight: 600;
+}
+
+.card-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 1rem;
+    padding: 0.85rem 1rem;
+    background: var(--surface-2, rgba(0, 0, 0, 0.2));
+    border-radius: var(--radius-md, 10px);
+    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.stat-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.stat-label {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--text-muted, #64748b);
+    letter-spacing: 0.08em;
+}
+
+.stat-value {
+    font-family: var(--font-sans, system-ui);
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--text-bright, #ffffff);
+}
+
+.val-emerald {
+    color: var(--color-emerald, #10b981);
+}
+
+.val-tier {
+    color: var(--tier-color, #c0c0c0);
+}
+
+.val-streak {
+    color: #f59e0b;
+}
+
+.card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+    padding-top: 0.75rem;
+}
+
+.recent-form {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+
+.form-label {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-muted, #64748b);
+    letter-spacing: 0.08em;
+}
+
+.form-empty {
+    font-size: 0.78rem;
+    color: var(--text-muted, #64748b);
+    font-style: italic;
+}
+
+.form-dots {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.form-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: #ffffff;
+}
+
+.dot-win {
+    background-color: var(--color-emerald, #10b981);
+}
+
+.dot-loss {
+    background-color: var(--color-rose, #ef4444);
+}
+
+.dot-draw {
+    background-color: #64748b;
+}
+
+.card-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-card-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.75rem;
+    background: var(--surface-1, rgba(255, 255, 255, 0.06));
+    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+    border-radius: 8px;
+    color: var(--text-base, #e2e8f0);
+    font-family: var(--font-sans, system-ui);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-card-action:hover {
+    background: var(--surface-2, rgba(255, 255, 255, 0.12));
+    border-color: var(--tier-color, rgba(255, 255, 255, 0.3));
+    color: #ffffff;
+}
+
+@media (max-width: 640px) {
+    .player-card {
+        padding: 1.1rem;
+    }
+
+    .card-main {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .tier-rating-panel {
+        align-items: flex-start;
+        width: 100%;
+    }
+
+    .card-footer {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

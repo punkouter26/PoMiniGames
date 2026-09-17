@@ -75,6 +75,24 @@ public interface IStorageService
         bool isDraw);
 
     /// <summary>
+    /// Computes or retrieves a player's dynamic online player card containing
+    /// overall MMR, tier progression, win-rate, signature game, and recent form.
+    /// </summary>
+    Task<PlayerCardDto> GetPlayerCardAsync(
+        string owner, string? displayName = null, bool isGuest = true, CancellationToken ct = default) =>
+        Task.FromResult(new PlayerCardDto
+        {
+            DisplayName = displayName ?? owner,
+            UserId = isGuest ? "" : owner,
+            AccountKind = isGuest ? "guest" : "microsoft",
+            Initials = string.IsNullOrWhiteSpace(displayName ?? owner) ? "P" : (displayName ?? owner).Substring(0, Math.Min(2, (displayName ?? owner).Length)).ToUpperInvariant()
+        });
+
+    /// <summary>Top-ranked online multiplayer players by global competitive MMR.</summary>
+    Task<List<PlayerCardDto>> GetOnlineMmrLeaderboardAsync(int limit = 10, CancellationToken ct = default) =>
+        Task.FromResult(new List<PlayerCardDto>());
+
+    /// <summary>
     /// Bounded probe of the Table Storage backend. Returns <c>true</c> when the last attempt
     /// succeeded; <c>false</c> when storage is unreachable so the caller can render a
     /// "scores unavailable" state instead of letting an empty-list read mask the outage.

@@ -97,6 +97,7 @@ public static class UnifiedLeaderboardEndpoints
             SafeBuildFunQuizAsync(funQuiz, limit),
             SafeBuildPoJokerAsync(joker, limit),
             SafeBuildPoVoxelStrikeAsync(storage, limit),
+            SafeBuildOnlineMmrAsync(storage, limit),
         };
 
         var result = (await Task.WhenAll(winRateTasks.Concat(boardTasks))).ToList();
@@ -156,12 +157,20 @@ public static class UnifiedLeaderboardEndpoints
         try { return await BuildPoVoxelStrikeAsync(storage, limit); }
         catch { return EmptyBoard("Voxel Strike"); }
     }
+    private static async Task<GameLeaderboardDto> SafeBuildOnlineMmrAsync(IStorageService storage, int limit)
+    {
+        try { return await BuildOnlineMmrAsync(storage, limit); }
+        catch { return EmptyBoard("Online MMR"); }
+    }
 
     private static async Task<GameLeaderboardDto?> BuildOneAsync(
         IStorageService storage, ILeaderboardRepository funQuiz,
         IJokeStorageClient joker, string game, int limit)
     {
         var key = game.ToLowerInvariant();
+        if (string.Equals(key, "online-mmr", StringComparison.OrdinalIgnoreCase))
+            return await BuildOnlineMmrAsync(storage, limit);
+
         var winRate = Array.Find(WinRateGames, g => g.Key == key);
         if (winRate.Key is not null)
             return await BuildWinRateAsync(storage, winRate.Key, winRate.Title, limit);
@@ -548,5 +557,19 @@ public static class UnifiedLeaderboardEndpoints
         var letters = new string(name.Where(char.IsLetterOrDigit).ToArray());
         if (letters.Length == 0) return "PO";
         return letters[..Math.Min(3, letters.Length)].ToUpperInvariant();
+    }
+
+    private static async Task<GameLeaderboardDto> BuildOnlineMmrAsync(IStorageService storage, int limit)
+    {
+        var ratings = await storage.GetOnlineMmrLeaderboardAsync(limit);
+        var entries = ratings
+            .Select((r, i) => new LeaderboardEntryDto(
+                i + 1,
+                r.DisplayName,
+                r.Mmr,
+                $"{r.Mmr:N0} MMR ({r.TierName})"))
+            .ToList();
+        PadWithPlaceholders(entries, limit, "1,200 MMR");
+        return new GameLeaderboardDto("online-mmr", "Online MMR", "MMR", HigherIsBetter: true, entries);
     }
 }

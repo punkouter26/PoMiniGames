@@ -154,6 +154,13 @@ else
                 @onclick='() => SetTab("overview")'>
             📊 Overview
         </button>
+        <button role="tab" class="prf-tab @(_activeTab == "card" ? "prf-tab--active" : "")"
+                aria-selected="@(_activeTab == "card")"
+                aria-controls="prf-panel-card"
+                id="prf-tab-card"
+                @onclick='() => SetTab("card")'>
+            💳 Gamer Card
+        </button>
         <button role="tab" class="prf-tab @(_activeTab == "highscores" ? "prf-tab--active" : "")"
                 aria-selected="@(_activeTab == "highscores")"
                 aria-controls="prf-panel-highscores"
@@ -237,6 +244,17 @@ else
                 }
             </div>
         }
+    </div>
+
+    <!-- ── Panel: Gamer Card ── -->
+    <div id="prf-panel-card" role="tabpanel" aria-labelledby="prf-tab-card" class="prf-tabpanel @(_activeTab == "card" ? "prf-tabpanel--active" : "")">
+        <div class="prf-section" style="margin-bottom: 1.25rem;">
+            <h2 class="prf-section-title">Competitive Gamer Card</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: -0.5rem; margin-bottom: 1.25rem;">
+                Your dynamic driver license across all multiplayer modes. Export or copy the standalone vector SVG to showcase your rank anywhere.
+            </p>
+            <PlayerCard PlayerName="@_playerName" />
+        </div>
     </div>
 
     <!-- ── Panel: High Scores ── -->

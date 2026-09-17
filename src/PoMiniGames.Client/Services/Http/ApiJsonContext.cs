@@ -97,6 +97,8 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlMatchResultDto))]
 [JsonSerializable(typeof(PoMiniGames.Domain.Models.PoBrawlPlayerRating))]
 [JsonSerializable(typeof(List<PoMiniGames.Domain.Models.PoBrawlPlayerRating>))]
+// Player Card & Online MMR
+[JsonSerializable(typeof(PoMiniGames.Domain.Models.PlayerCardDto))]
 internal partial class ApiJsonContext : JsonSerializerContext
 {
 }

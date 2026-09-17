@@ -621,4 +621,40 @@ public class ApiService
             return false;
         }
     }
+
+    /// <summary>
+    /// GET /api/player/card — fetches a player's dynamic competitive license card.
+    /// </summary>
+    public async Task<PoMiniGames.Domain.Models.PlayerCardDto?> GetPlayerCardAsync(string? name = null)
+    {
+        try
+        {
+            var url = string.IsNullOrWhiteSpace(name)
+                ? "/api/player/card"
+                : $"/api/player/card?name={Uri.EscapeDataString(name)}";
+            return await _http.GetFromJsonAsync(url, ApiJsonContext.Default.PlayerCardDto);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// GET /api/player/card/svg — fetches raw standalone SVG text for clipboard copy or download.
+    /// </summary>
+    public async Task<string?> GetPlayerCardSvgAsync(string? name = null)
+    {
+        try
+        {
+            var url = string.IsNullOrWhiteSpace(name)
+                ? "/api/player/card/svg"
+                : $"/api/player/card/svg?name={Uri.EscapeDataString(name)}";
+            return await _http.GetStringAsync(url);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

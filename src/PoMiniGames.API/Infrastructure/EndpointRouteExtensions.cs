@@ -86,6 +86,8 @@ internal static class EndpointRouteExtensions
         // PoEcosystem gallery: shared islands are public by their owners' choice, and a visit
         // is a read of bytes only the browser engine can interpret.
         app.MapPoEcosystemGalleryEndpoints();
+        // Dynamic SVG Player License cards & Online MMR profile inspection
+        app.MapPlayerCardEndpoints();
 
         // ── Authenticated game API ─────────────────────────────────────────
         // All game-data endpoints require a valid session. Per-endpoint rate

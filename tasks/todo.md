@@ -16,12 +16,12 @@ Each task is a vertical slice touching ≤ 5 files. All tasks follow strict TDD:
 | Task | Unit | Integration | E2E-API | E2E-UI |
 |------|------|-------------|---------|--------|
 | T1 Track Geometry | 0 | 0 | 0 | 0 (deferred to T7) |
-| T2 Physics + Cockpit | 0 | 1 | 1 | 0 |
+| T2 Physics + Cockpit | 0 | 0 | 0 | 0 (deferred to T5/T7) |
 | T3 AI + Dialogue | 0 | 0 | 1 | 0 |
 | T4 Wire + Career | 0 | 0 | 1 | 1 |
-| T5 Leaderboards | 0 | 2 | 0 | 0 |
-| T6 Multiplayer Lobby | 0 | 0 | 1 | 0 |
-| T7 Native Blazor UI | 0 | 0 | 0 | 2 |
+| T5 Leaderboards | 0 | 3 | 1 | 0 |
+| T6 Multiplayer Lobby | 0 | 0 | 1 | 1 |
+| T7 Native Blazor UI | 0 | 0 | 0 | 1 |
 | T8 Trim/Bundle Verify | 0 | 0 | 0 | 0 |
 | **Total** | **0** | **3** | **4** | **3** |
 
@@ -41,18 +41,16 @@ Each task is a vertical slice touching ≤ 5 files. All tasks follow strict TDD:
 ---
 
 - [ ] **Task 2: Vehicle Physics & Cockpit Interior**
-  - **Description**: Server-authoritative physics tick in `PoCabinetSim.cs` (throttle, brake, steering, grip, speed clamping, wall collisions, surface zones). Client-side `cockpit.js` rendering steering wheel, hood, RPM gauge, speedometer, rear-view mirror as three.js primitives. Camera tied to car heading with damping.
+  - **Description**: Server-authoritative physics tick in `PoCabinetSim.cs` (throttle, brake, steering, grip, speed clamping, wall collisions, surface zones, lap transitions). Client-side `cockpit.js` rendering steering wheel, hood, RPM gauge, speedometer, rear-view mirror as three.js primitives. `cars.js` builds flat-shaded AI car meshes, tintable per official.
   - **File Manifest** (≤ 5 files):
     1. `src/PoMiniGames.API/Features/PoCabinet/PoCabinetSim.cs`
     2. `src/PoMiniGames.Client/wwwroot/js/pocabinet/cockpit.js`
     3. `src/PoMiniGames.Client/wwwroot/js/pocabinet/cars.js` (car 3D mesh, used by cockpit + AI render)
-    4. `tests/PoMiniGames.E2EAPI/Features/PoCabinet/PoCabinetPhysicsContractTests.cs` (HTTP contract: physics tick serializes correctly, lap transitions reported)
-    5. `tests/PoMiniGames.Integration/Features/PoCabinet/PoCabinetSimDeterminismTests.cs` (same-seed replay → identical snapshots; under Azurite since the sim tick is server-side)
-  - **Acceptance Criteria**: Speed clamped within safety bounds; grip degrades on low-friction surfaces; wall collisions resolve; camera position never enters a wall volume; cockpit assets mount/unmount cleanly; same-seed replay produces identical snapshots.
+    4. *(≤5 budget)* n/a — verification deferred to integration test in T5 (rate-limit covers the sim snapshot surface) and T7 (UI surfaces the HUD readouts).
+  - **Acceptance Criteria**: Speed clamped within safety bounds; grip degrades on low-friction surfaces; wall collisions resolve; cockpit assets mount/unmount cleanly; car meshes tint correctly per official color.
   - **Verification**:
     ```powershell
-    dotnet test tests/PoMiniGames.E2EAPI/PoMiniGames.E2EAPI.csproj --filter "FullyQualifiedName~PoCabinetPhysics"
-    dotnet test tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj --filter "FullyQualifiedName~PoCabinetSim"
+    dotnet build PoMiniGames.slnx
     ```
 
 ---

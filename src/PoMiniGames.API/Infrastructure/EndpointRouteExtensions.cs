@@ -17,7 +17,7 @@ using PoMiniGames.Features.PoEcosystem;   // cloud world slots, gallery, chronic
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoRacer;
-using PoMiniGames.Features.PoCabinet; // T4: career cross-device resume endpoint
+using PoMiniGames.Features.PoCabinet; // T4-T6: career, score, lobby + race hubs
 using PoMiniGames.Features.PoVoxelStrike;
 
 namespace PoMiniGames.Infrastructure;
@@ -138,6 +138,9 @@ internal static class EndpointRouteExtensions
         app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub").RequireAuthorization();
         app.MapHub<PoRacerRaceHub>("/poracer/race-hub").RequireAuthorization();
         app.MapHub<PoMiniGames.Features.PoSports.PoSportsLobbyHub>("/posports/lobby-hub").RequireAuthorization();
+        // PoCabinet (T6): lobby + race hubs at their own roots (anonymous /negotiate).
+        app.MapHub<PoCabinetLobbyHub>("/pocabinet/lobby-hub").RequireAuthorization();
+        app.MapHub<PoCabinetRaceHub>("/pocabinet/race-hub").RequireAuthorization();
         app.MapHub<PoMiniGames.Features.PoSports.PoSportsRaceHub>("/posports/race-hub").RequireAuthorization();
         // PoVoxelStrike co-op: lobby hub for the ready/start room, lockstep hub for the
         // active run. Both follow the platform pattern (auth required, separate from

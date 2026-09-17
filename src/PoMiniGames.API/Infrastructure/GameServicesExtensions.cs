@@ -263,6 +263,12 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoRacer.PoRacerLobbyService>();
         services.AddSingleton<PoMiniGames.Features.PoRacer.PoRacerRaceRegistry>();
 
+        // PoCabinet (T6): lobby + race registry, same shape as PoRacer. The registry
+        // owns the 30 Hz simulation timer and the per-game SimSession pool, and is
+        // disposed via its IAsyncDisposable on host shutdown so the timer doesn't leak.
+        services.AddSingleton<PoMiniGames.Features.PoCabinet.PoCabinetLobbyService>();
+        services.AddSingleton<PoMiniGames.Features.PoCabinet.PoCabinetRaceRegistry>();
+
         // PoBrawl online — 1v1 SignalR-driven combat. Same single-lobby shape as
         // PoRacer: in-memory lobby, in-memory match registry owning the simulation
         // timer, hosted pump driving the per-tick frame broadcast.

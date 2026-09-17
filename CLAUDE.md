@@ -112,7 +112,7 @@ Instant-play mini-games platform: .NET 10 Minimal API host that also serves the 
 
 - **No Radzen.Blazor** (or similar heavy component libraries) — deliberately rejected for bundle size (~1.2 MB). Use native Blazor (`<Virtualize>`, plain CSS). Note that the external NET_RULES doc mandates Radzen; this repo's rejection overrides it — do not reintroduce the dependency to satisfy that rule.
 - **Docs were rewritten in the 2026-08-18 cleanup.** `README.md` and `scripts/README.md` are now accurate summaries; `scripts/` holds working scripts only (the ~28 one-off debug files were deleted). The tree is still the truth when docs drift: trust `src/PoMiniGames.Client/Games/` and `src/PoMiniGames.API/Features/` over any doc table. There is no `docs/` tree and no `docs/build.mjs`; both went in b42fad4, so `README.md` plus this file are the whole written record.
-- Source comments reference an `AGENT.MD` that is not in this repo. It's a dangling pointer, not a file you failed to find.
+- Source comments reference `AGENT.md` at the repo root, which houses the mandatory agent invariants.
 - **`wwwroot/images/` is runtime-only, ~8 MB.** PoSports ships exactly 32 `atlas.json` + 32 `spritesheet.webp` pairs (4 characters x 8 animations), which is precisely what `js/posports/sprites.js` fetches. It was 170 MB until 2026-09-11: the per-frame `frames/**` export intermediates, the superseded `spritesheet.png` sheets, the capitalised `*-spritesheet/` source trees, and a whole `Mom` character cut from the roster back in f8fed70. They were retained "for re-export" by `scripts/posports-assets.ps1`, which had itself been deleted in b42fad4, so nothing could consume them. The three `<Content Remove>` rules that used to hide them from publish went too. Do not add a `Content Remove` rule to `PoMiniGamesClient.csproj` — everything under `wwwroot/` is published and precached deliberately now, so delete the unused asset instead.
 - Theming is entirely token-driven: `wwwroot/css/app.css` `:root` defines the palette and a `prefers-color-scheme: light` block re-points only the surface/text/elevation tokens. Components must read colour through those variables, never raw hex, or they will be unthemed in light mode. Accent hues and per-game/canvas tokens are intentionally scheme-invariant.
 - `style="..."` in `.razor` files is acceptable **only** to pass a runtime value into a CSS custom property (`style="--hp: @Percent%"`); the static rule still belongs in the scoped `.razor.css`.
@@ -123,7 +123,7 @@ Instant-play mini-games platform: .NET 10 Minimal API host that also serves the 
 
 ## NET_AGENTS rules
 
-These apply on top of the conventions above. They are intentionally short and absolute.
+These apply on top of the conventions above. They are intentionally short and absolute. See `AGENT.md` at the repo root for the full rule list.
 
 - **Branch policy.** Work only on `master`. Use a different branch only if explicitly asked.
 - **Restart + verify after a code change.** Rebuild and restart the API host (`dotnet run --project src/PoMiniGames.API/PoMiniGames.API.csproj`) after any code change and confirm it boots cleanly — a successful 200 from `GET /health` (or a "Now listening on" log line) is the bar. Do not report a change as done while the running instance is stale.
@@ -133,4 +133,7 @@ These apply on top of the conventions above. They are intentionally short and ab
 - **`git sync` is a standing push authorization.** When the user types `git sync`: stage and commit *everything* outstanding first (no leftover dirty tree), then push `master`. One commit, short subject, American slang, reads like a person wrote it.
 - **Commit message style.** Keep commits short, casual, American-English, and human-sounding (e.g. "wires the kiosk reel into the post-match handler", not "Implement MarkFinished integration"). Avoid emoji, ticket IDs, and 50-word subject lines.
 - **Don't hand the user commands to type.** If you can run it yourself (build, format, git, scripts, starting the host), run it. Only ask the user to type something when it genuinely needs their machine, their credentials, or their decision.
+- **Targeted tests only.** Do not run all tests after code changes. Only run the tests related to the code change, or run no tests at all if the change is simple. Never run full test suites unprompted.
+- **Treat warnings as errors.** Treat compile warnings as errors and make sure they are fixed.
 - **TL;DR on long replies.** Any response longer than 100 words ends with a `**TL;DR** …` line of roughly 20 words.
+

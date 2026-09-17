@@ -14,9 +14,12 @@ public sealed class PoRacerScoreApiClient
 
     public PoRacerScoreApiClient(HttpClient http) => _http = http;
 
-    public async Task<IReadOnlyList<PoRacerScoreDto>> GetTopAsync(int count = 10, CancellationToken ct = default)
+    public async Task<IReadOnlyList<PoRacerScoreDto>> GetTopAsync(int count = 10, string? trackId = null, CancellationToken ct = default)
     {
-        var result = await _http.GetFromJsonAsync($"/api/poracer/scores?top={count}", ApiJsonContext.Default.ListPoRacerScoreDto, ct);
+        var uri = string.IsNullOrWhiteSpace(trackId)
+            ? $"/api/poracer/scores?top={count}"
+            : $"/api/poracer/scores?top={count}&track={Uri.EscapeDataString(trackId)}";
+        var result = await _http.GetFromJsonAsync(uri, ApiJsonContext.Default.ListPoRacerScoreDto, ct);
         return result ?? new List<PoRacerScoreDto>();
     }
 

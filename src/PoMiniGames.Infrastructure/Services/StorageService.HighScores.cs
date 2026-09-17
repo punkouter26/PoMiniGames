@@ -189,6 +189,7 @@ public partial class StorageService
         {
             PlayerName = SanitizeName(e.PlayerName),
             UserId = string.IsNullOrWhiteSpace(e.UserId) ? "" : e.UserId,
+            TrackId = string.IsNullOrWhiteSpace(e.TrackId) ? "circuit" : e.TrackId.Trim().ToLowerInvariant(),
             TotalTimeSeconds = Math.Clamp(e.TotalTimeSeconds, 0.001, 3600),
             FinalPosition = Math.Clamp(e.FinalPosition, 1, 8),
             IsGuest = e.IsGuest,
@@ -199,6 +200,7 @@ public partial class StorageService
         {
             ["PlayerName"] = e.PlayerName,
             ["UserId"] = e.UserId,
+            ["TrackId"] = e.TrackId,
             ["TotalTimeSeconds"] = e.TotalTimeSeconds,
             ["FinalPosition"] = e.FinalPosition,
             ["IsGuest"] = e.IsGuest,
@@ -209,21 +211,37 @@ public partial class StorageService
         {
             PlayerName = e.GetString("PlayerName") ?? "",
             UserId = e.GetString("UserId") ?? "",
+            TrackId = e.GetString("TrackId") ?? "circuit",
             TotalTimeSeconds = e.GetDouble("TotalTimeSeconds") ?? 0d,
             FinalPosition = e.GetInt32("FinalPosition") ?? 0,
             IsGuest = e.GetBoolean("IsGuest") ?? false,
             Date = e.GetString("Date") ?? "",
             GameCode = e.GetString("GameCode") ?? "",
         },
-        RowKeyFields: ["FinalPosition", "PlayerName", "TotalTimeSeconds", "UserId"],
+        RowKeyFields: ["FinalPosition", "PlayerName", "TotalTimeSeconds", "UserId", "TrackId"],
         // Lowest race time wins; oldest submission breaks ties.
         Rank: s => s.OrderBy(x => x.TotalTimeSeconds).ThenBy(x => x.Date));
 
-    public Task<List<PoRacerHighScore>> GetPoRacerHighScoresAsync(int limit = 10) =>
-        GetHighScoresAsync(PoRacerScores, limit);
+    public static string PoRacerTrackPartition(string? trackId) =>
+        string.IsNullOrWhiteSpace(trackId) || trackId.Equals("circuit", StringComparison.OrdinalIgnoreCase)
+            ? "poracer_circuit"
+            : $"poracer_{trackId.Trim().ToLowerInvariant()}";
 
-    public Task<PoRacerHighScore> SavePoRacerHighScoreAsync(PoRacerHighScore entry) =>
-        SaveHighScoreAsync(PoRacerScores, entry);
+    public Task<List<PoRacerHighScore>> GetPoRacerHighScoresAsync(int limit = 10, string? trackId = null)
+    {
+        if (string.IsNullOrWhiteSpace(trackId) || trackId.Equals("circuit", StringComparison.OrdinalIgnoreCase))
+        {
+            return GetHighScoresAsync(PoRacerScores, limit, partition: "poracer_circuit", customFilter: "PartitionKey eq 'poracer_circuit' or PartitionKey eq 'poracer'");
+        }
+        var partition = PoRacerTrackPartition(trackId);
+        return GetHighScoresAsync(PoRacerScores, limit, partition: partition);
+    }
+
+    public Task<PoRacerHighScore> SavePoRacerHighScoreAsync(PoRacerHighScore entry)
+    {
+        var partition = PoRacerTrackPartition(entry.TrackId);
+        return SaveHighScoreAsync(PoRacerScores, entry, partition: partition);
+    }
 
     // ── PoSports High Scores ──────────────────────────────────────────────
     // Lowest combined meet time wins. One row per player — identity-keyed like
@@ -289,17 +307,18 @@ public partial class StorageService
 
 
     // The one shared high-score read: scan the game's partition, rebuild entries, rank, take.
-    private async Task<List<T>> GetHighScoresAsync<T>(HighScoreDescriptor<T> descriptor, int limit)
+    private async Task<List<T>> GetHighScoresAsync<T>(HighScoreDescriptor<T> descriptor, int limit, string? partition = null, string? customFilter = null)
     {
         // Storage is down: an empty board is the honest answer. There is no in-memory
         // shadow copy to read from any more (see the class header).
         if (!IsStorageAvailable()) return [];
 
         var scores = new List<T>();
+        var filter = customFilter ?? $"PartitionKey eq '{partition ?? descriptor.Partition}'";
         try
         {
             await foreach (var e in Table(descriptor.Table).QueryAsync<TableEntity>(
-                filter: $"PartitionKey eq '{descriptor.Partition}'",
+                filter: filter,
                 maxPerPage: 1000))
             {
                 scores.Add(descriptor.FromEntity(e));
@@ -319,7 +338,7 @@ public partial class StorageService
     // HTTP request or a retry-after-timeout collapses onto the same row instead of
     // inflating the leaderboard with a second identical entry. Ranking is done in
     // memory (see GetHighScoresAsync), so RowKey ordering is irrelevant to correctness.
-    private async Task<T> SaveHighScoreAsync<T>(HighScoreDescriptor<T> descriptor, T entry)
+    private async Task<T> SaveHighScoreAsync<T>(HighScoreDescriptor<T> descriptor, T entry, string? partition = null)
     {
         // Always sanitize first so the caller still gets a normalised entry back even when
         // storage is down — the endpoint's 201 Created response shape stays unchanged.
@@ -338,6 +357,7 @@ public partial class StorageService
         // duplicate the leaderboard then has to dedupe at read time, and a vector for cheap
         // score-flooding via bursty retries.
         var rowKey = DeterministicRowKey(fields, descriptor.RowKeyFields);
+        var effectivePartition = partition ?? descriptor.Partition;
 
         // Concurrency-safe upsert: read existing, merge, write with ETag. Bounded retry on
         // 412/409 (see TableConcurrency).
@@ -345,9 +365,9 @@ public partial class StorageService
         {
             await TableConcurrency.UpdateWithRetryAsync<TableEntity>(
                 Table(descriptor.Table),
-                partitionKey: descriptor.Partition,
+                partitionKey: effectivePartition,
                 rowKey: rowKey,
-                factory: () => new TableEntity(descriptor.Partition, rowKey),
+                factory: () => new TableEntity(effectivePartition, rowKey),
                 mutate: e =>
                 {
                     if (descriptor.ShouldOverwrite is not null && !descriptor.ShouldOverwrite(e, fields))

@@ -10,6 +10,7 @@ public sealed class PoRacerHighScore
     public string PlayerName { get; set; } = string.Empty;
     /// <summary>Server-populated from the auth cookie (sub/oid). Empty for anonymous cookies.</summary>
     public string UserId { get; set; } = string.Empty;
+    public string TrackId { get; set; } = "circuit";
     public double TotalTimeSeconds { get; set; }
     public int FinalPosition { get; set; }
     public bool IsGuest { get; set; }

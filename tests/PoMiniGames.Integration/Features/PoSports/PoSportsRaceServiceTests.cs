@@ -46,7 +46,7 @@ public sealed class PoSportsRaceServiceTests
         public Task<List<PoBrawlHighScore>> GetPoBrawlHighScoresAsync(int limit = 10) =>
             Task.FromResult(new List<PoBrawlHighScore>());
         public Task<PoBrawlHighScore> SavePoBrawlHighScoreAsync(PoBrawlHighScore entry) => Task.FromResult(entry);
-        public Task<List<PoRacerHighScore>> GetPoRacerHighScoresAsync(int limit = 10) =>
+        public Task<List<PoRacerHighScore>> GetPoRacerHighScoresAsync(int limit = 10, string? trackId = null) =>
             Task.FromResult(new List<PoRacerHighScore>());
         public Task<PoRacerHighScore> SavePoRacerHighScoreAsync(PoRacerHighScore entry) => Task.FromResult(entry);
         public Task<List<PoBrawlLadderEntry>> GetPoBrawlLadderAsync(int limit = 10) =>

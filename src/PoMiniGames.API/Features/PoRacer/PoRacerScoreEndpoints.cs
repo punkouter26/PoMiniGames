@@ -32,13 +32,14 @@ public static class PoRacerScoreEndpoints
     {
         var scores = app.MapGroup("/poracer/scores");
 
-        scores.MapGet("", async (int? top, StorageService storage, CancellationToken ct) =>
+        scores.MapGet("", async (int? top, string? track, StorageService storage, CancellationToken ct) =>
         {
             top = Math.Clamp(top ?? 10, 1, TopLimit);
-            var rows = await storage.GetPoRacerHighScoresAsync(top.Value);
+            var rows = await storage.GetPoRacerHighScoresAsync(top.Value, track);
             return Results.Ok(rows.Select(s => new PoRacerScoreDto
             {
                 PlayerDisplayName = s.PlayerName,
+                TrackId = s.TrackId,
                 TotalTimeSeconds = s.TotalTimeSeconds,
                 FinalPosition = s.FinalPosition,
                 AchievedAtUtc = DateTimeOffset.TryParse(s.Date, out var d) ? d : DateTimeOffset.UtcNow,
@@ -94,13 +95,15 @@ public static class PoRacerScoreEndpoints
             }
 
             var log = loggerFactory.CreateLogger("PoRacerScores");
-            log.LogInformation("PoRacer score POST user={UserId} guest={Guest} t={T}s pos={Pos}",
-                userId, isGuest, dto.TotalTimeSeconds, dto.FinalPosition);
+            var trackId = string.IsNullOrWhiteSpace(dto.TrackId) ? "circuit" : dto.TrackId.Trim().ToLowerInvariant();
+            log.LogInformation("PoRacer score POST user={UserId} guest={Guest} track={Track} t={T}s pos={Pos}",
+                userId, isGuest, trackId, dto.TotalTimeSeconds, dto.FinalPosition);
 
             var saved = await storage.SavePoRacerHighScoreAsync(new PoRacerHighScore
             {
                 PlayerName = integrity.ResolveDisplayName(displayName, isGuest ? "Guest" : "Player"),
                 UserId = userId,
+                TrackId = trackId,
                 TotalTimeSeconds = dto.TotalTimeSeconds,
                 FinalPosition = dto.FinalPosition,
                 Date = (dto.AchievedAtUtc == default ? DateTimeOffset.UtcNow : dto.AchievedAtUtc).ToString("yyyy-MM-ddTHH:mm:ssZ"),
@@ -110,6 +113,7 @@ public static class PoRacerScoreEndpoints
             return Results.Created("/api/poracer/scores", new PoRacerScoreDto
             {
                 PlayerDisplayName = saved.PlayerName,
+                TrackId = saved.TrackId,
                 TotalTimeSeconds = saved.TotalTimeSeconds,
                 FinalPosition = saved.FinalPosition,
                 AchievedAtUtc = DateTimeOffset.TryParse(saved.Date, out var d) ? d : DateTimeOffset.UtcNow,

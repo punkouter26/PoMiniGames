@@ -45,5 +45,9 @@ public class PoRacerTrackRegistryTests
         var dy = first.Y - last.Y;
         var dist = Math.Sqrt(dx * dx + dy * dy);
         dist.Should().BeLessThan(expectedWidth * 0.75, "closed spline endpoints must connect seamlessly");
+
+        // Partition key calculation for leaderboards
+        var partition = PoMiniGames.Infrastructure.Services.StorageService.PoRacerTrackPartition(trackId == "unknown_fallback" ? null : track.Id);
+        partition.Should().Be(trackId == "unknown_fallback" ? "poracer_circuit" : $"poracer_{track.Id}");
     }
 }

@@ -158,6 +158,11 @@ window.PoRacer = PoRacer;
     /** @type {Float32Array|null} */ let centerXY = null;
     /** @type {Float32Array|null} */ let wallsXY = null;
     let centerN = 0, wallsM = 0, trackWidth = 0;
+    let currentTheme = 'circuit';
+    let boostPadsData = [];
+    let surfaceZonesData = [];
+    let parallaxTheme = null;
+    let grassTheme = null;
 
     let grassTex = null, grassW = 0, grassH = 0, grassDpr = 0;
     // Track is cached in WORLD space (origin = bbox min) at a given scale, then
@@ -287,27 +292,82 @@ window.PoRacer = PoRacer;
 
     // --- Feature 4: Parallax layers ---
     function ensureParallaxLayers(w, h, dpr) {
-        if (parallaxW === w && parallaxH === h && parallaxDpr === dpr && parallaxFar && parallaxMid) return;
-        parallaxW = w; parallaxH = h; parallaxDpr = dpr;
+        if (parallaxW === w && parallaxH === h && parallaxDpr === dpr && parallaxFar && parallaxMid && parallaxTheme === currentTheme) return;
+        parallaxW = w; parallaxH = h; parallaxDpr = dpr; parallaxTheme = currentTheme;
         const farLayer = createLayer(w, h, dpr);
         const farOff = farLayer.canvas;
         const farCtx = farLayer.ctx;
-        const farGrad = farCtx.createLinearGradient(0, 0, 0, h);
-        farGrad.addColorStop(0, 'rgba(8,20,12,0.3)'); farGrad.addColorStop(1, 'rgba(4,10,6,0.5)');
-        farCtx.fillStyle = farGrad; farCtx.fillRect(0, 0, w, h);
-        farCtx.fillStyle = 'rgba(15,35,20,0.4)';
-        const rng = mulberry32(42);
-        for (let i = 0; i < 40; i++) { const tx = rng() * w, ty = rng() * h * 0.6 + h * 0.2, th = 20 + rng() * 40, tw = 10 + rng() * 15; farCtx.beginPath(); farCtx.moveTo(tx, ty); farCtx.lineTo(tx - tw, ty + th); farCtx.lineTo(tx + tw, ty + th); farCtx.closePath(); farCtx.fill(); }
-        parallaxFar = farOff;
-        const midLayer = createLayer(w, h, dpr);
-        const midOff = midLayer.canvas;
-        const midCtx = midLayer.ctx;
-        midCtx.fillStyle = 'rgba(20,50,30,0.25)';
-        const rng2 = mulberry32(99);
-        for (let i = 0; i < 60; i++) { midCtx.beginPath(); midCtx.arc(rng2() * w, rng2() * h, 4 + rng2() * 12, 0, Math.PI * 2); midCtx.fill(); }
-        midCtx.fillStyle = 'rgba(60,65,70,0.2)';
-        for (let i = 0; i < 25; i++) { midCtx.fillRect(rng2() * w, rng2() * h, 3 + rng2() * 5, 2 + rng2() * 3); }
-        parallaxMid = midOff;
+
+        if (currentTheme === 'neonskyline') {
+            const farGrad = farCtx.createLinearGradient(0, 0, 0, h);
+            farGrad.addColorStop(0, 'rgba(6, 8, 16, 0.9)'); farGrad.addColorStop(1, 'rgba(22, 10, 36, 0.95)');
+            farCtx.fillStyle = farGrad; farCtx.fillRect(0, 0, w, h);
+            const rng = mulberry32(101);
+            for (let i = 0; i < 26; i++) {
+                const bw = 24 + rng() * 50, bx = rng() * (w + 40) - 20, bh = 60 + rng() * 120, by = h - bh;
+                farCtx.fillStyle = 'rgba(12, 16, 28, 0.85)'; farCtx.fillRect(bx, by, bw, bh);
+                const neonCol = rng() > 0.5 ? 'rgba(0, 240, 255, 0.7)' : 'rgba(255, 0, 128, 0.7)';
+                farCtx.fillStyle = neonCol; farCtx.fillRect(bx + bw * 0.45, by - 10, 3, 10);
+                for (let wy = by + 8; wy < h - 10; wy += 12) {
+                    for (let wx = bx + 4; wx < bx + bw - 4; wx += 9) {
+                        if (rng() > 0.65) {
+                            farCtx.fillStyle = rng() > 0.4 ? 'rgba(0, 240, 255, 0.4)' : 'rgba(255, 230, 100, 0.45)';
+                            farCtx.fillRect(wx, wy, 3, 5);
+                        }
+                    }
+                }
+            }
+            parallaxFar = farOff;
+
+            const midLayer = createLayer(w, h, dpr);
+            const midOff = midLayer.canvas;
+            const midCtx = midLayer.ctx;
+            const rng2 = mulberry32(202);
+            for (let i = 0; i < 18; i++) {
+                const mx = rng2() * w, my = h * 0.35 + rng2() * (h * 0.45), mw = 30 + rng2() * 50, mh = 12 + rng2() * 18;
+                midCtx.fillStyle = 'rgba(18, 22, 38, 0.7)'; midCtx.fillRect(mx, my, mw, mh);
+                midCtx.strokeStyle = rng2() > 0.5 ? 'rgba(0, 240, 255, 0.6)' : 'rgba(255, 0, 128, 0.6)';
+                midCtx.lineWidth = 1.5; midCtx.strokeRect(mx, my, mw, mh);
+            }
+            parallaxMid = midOff;
+        } else if (currentTheme === 'desertdustway') {
+            const farGrad = farCtx.createLinearGradient(0, 0, 0, h);
+            farGrad.addColorStop(0, 'rgba(90, 48, 20, 0.5)'); farGrad.addColorStop(0.5, 'rgba(145, 85, 38, 0.6)'); farGrad.addColorStop(1, 'rgba(185, 115, 55, 0.7)');
+            farCtx.fillStyle = farGrad; farCtx.fillRect(0, 0, w, h);
+            farCtx.fillStyle = 'rgba(100, 52, 22, 0.65)';
+            const rng = mulberry32(303);
+            for (let i = 0; i < 16; i++) {
+                const tx = rng() * (w + 100) - 50, ty = h * 0.35 + rng() * (h * 0.35), tw = 60 + rng() * 100;
+                farCtx.beginPath(); farCtx.moveTo(tx - tw * 0.5, h); farCtx.lineTo(tx - tw * 0.32, ty); farCtx.lineTo(tx + tw * 0.32, ty); farCtx.lineTo(tx + tw * 0.5, h); farCtx.closePath(); farCtx.fill();
+            }
+            parallaxFar = farOff;
+
+            const midLayer = createLayer(w, h, dpr);
+            const midOff = midLayer.canvas;
+            const midCtx = midLayer.ctx;
+            midCtx.fillStyle = 'rgba(125, 70, 30, 0.45)';
+            const rng2 = mulberry32(404);
+            for (let i = 0; i < 40; i++) { midCtx.beginPath(); midCtx.arc(rng2() * w, rng2() * h, 5 + rng2() * 15, 0, Math.PI * 2); midCtx.fill(); }
+            parallaxMid = midOff;
+        } else {
+            const farGrad = farCtx.createLinearGradient(0, 0, 0, h);
+            farGrad.addColorStop(0, 'rgba(8,20,12,0.3)'); farGrad.addColorStop(1, 'rgba(4,10,6,0.5)');
+            farCtx.fillStyle = farGrad; farCtx.fillRect(0, 0, w, h);
+            farCtx.fillStyle = 'rgba(15,35,20,0.4)';
+            const rng = mulberry32(42);
+            for (let i = 0; i < 40; i++) { const tx = rng() * w, ty = rng() * h * 0.6 + h * 0.2, th = 20 + rng() * 40, tw = 10 + rng() * 15; farCtx.beginPath(); farCtx.moveTo(tx, ty); farCtx.lineTo(tx - tw, ty + th); farCtx.lineTo(tx + tw, ty + th); farCtx.closePath(); farCtx.fill(); }
+            parallaxFar = farOff;
+
+            const midLayer = createLayer(w, h, dpr);
+            const midOff = midLayer.canvas;
+            const midCtx = midLayer.ctx;
+            midCtx.fillStyle = 'rgba(20,50,30,0.25)';
+            const rng2 = mulberry32(99);
+            for (let i = 0; i < 60; i++) { midCtx.beginPath(); midCtx.arc(rng2() * w, rng2() * h, 4 + rng2() * 12, 0, Math.PI * 2); midCtx.fill(); }
+            midCtx.fillStyle = 'rgba(60,65,70,0.2)';
+            for (let i = 0; i < 25; i++) { midCtx.fillRect(rng2() * w, rng2() * h, 3 + rng2() * 5, 2 + rng2() * 3); }
+            parallaxMid = midOff;
+        }
     }
 
     // --- Feature 3: Screen shake ---
@@ -532,15 +592,53 @@ window.PoRacer = PoRacer;
 
     // --- Grass ---
     function ensureGrass(w, h, dpr) {
-        if (grassTex && grassW === w && grassH === h && grassDpr === dpr) return;
+        if (grassTex && grassW === w && grassH === h && grassDpr === dpr && grassTheme === currentTheme) return;
         const layer = createLayer(w, h, dpr), off = layer.canvas, g = layer.ctx;
-        grassDpr = dpr;
-        const grad = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.7);
-        grad.addColorStop(0, '#1f5a2f'); grad.addColorStop(0.5, '#163f20'); grad.addColorStop(1, '#0c2412');
-        g.fillStyle = grad; g.fillRect(0, 0, w, h);
-        g.fillStyle = 'rgba(140,200,120,0.08)';
-        for (let y = 0; y < h; y += 22) for (let x = 0; x < w; x += 22) g.fillRect(x, y, 2, 2);
+        grassDpr = dpr; grassTheme = currentTheme;
+
+        if (currentTheme === 'neonskyline') {
+            const grad = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.75);
+            grad.addColorStop(0, '#0c0e18'); grad.addColorStop(0.5, '#07080f'); grad.addColorStop(1, '#030408');
+            g.fillStyle = grad; g.fillRect(0, 0, w, h);
+
+            g.strokeStyle = 'rgba(0, 240, 255, 0.08)'; g.lineWidth = 1;
+            for (let x = 0; x < w; x += 36) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
+            for (let y = 0; y < h; y += 36) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+
+            g.fillStyle = 'rgba(255, 0, 128, 0.14)';
+            for (let y = 0; y < h; y += 72) {
+                for (let x = 0; x < w; x += 72) { g.fillRect(x - 1.5, y - 1.5, 3, 3); }
+            }
+        } else if (currentTheme === 'desertdustway') {
+            const grad = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.75);
+            grad.addColorStop(0, '#a3713f'); grad.addColorStop(0.5, '#82542a'); grad.addColorStop(1, '#573315');
+            g.fillStyle = grad; g.fillRect(0, 0, w, h);
+
+            g.fillStyle = 'rgba(240, 195, 130, 0.14)';
+            for (let y = 0; y < h; y += 20) {
+                for (let x = (y % 40 === 0 ? 0 : 10); x < w; x += 20) { g.fillRect(x, y, 2.5, 2.5); }
+            }
+        } else {
+            const grad = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.7);
+            grad.addColorStop(0, '#1f5a2f'); grad.addColorStop(0.5, '#163f20'); grad.addColorStop(1, '#0c2412');
+            g.fillStyle = grad; g.fillRect(0, 0, w, h);
+            g.fillStyle = 'rgba(140,200,120,0.08)';
+            for (let y = 0; y < h; y += 22) for (let x = 0; x < w; x += 22) g.fillRect(x, y, 2, 2);
+        }
         grassTex = off; grassW = w; grassH = h;
+    }
+
+    function getTrackHeadingAt(x, y) {
+        if (!centerXY || centerN < 2) return 0;
+        let bestDist = 1e9, bestIdx = 0;
+        for (let i = 0; i < centerN; i++) {
+            const dx = centerXY[i * 2] - x, dy = centerXY[i * 2 + 1] - y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < bestDist) { bestDist = d2; bestIdx = i; }
+        }
+        const prev = (bestIdx - 1 + centerN) % centerN;
+        const next = (bestIdx + 1) % centerN;
+        return Math.atan2(centerXY[next * 2 + 1] - centerXY[prev * 2 + 1], centerXY[next * 2] - centerXY[prev * 2]);
     }
 
     // --- Feature 6: Enhanced track with surface variety ---
@@ -605,7 +703,13 @@ window.PoRacer = PoRacer;
         for (let i = 0; i <= centerN; i++) { const [sx, sy] = trackTx(centerXY[(i % centerN) * 2], centerXY[(i % centerN) * 2 + 1]); if (i === 0) g.moveTo(sx, sy); else g.lineTo(sx, sy); }
         g.closePath();
         const grad = g.createLinearGradient(0, 0, texW, texH);
-        grad.addColorStop(0, '#3d424a'); grad.addColorStop(0.5, '#2a2e36'); grad.addColorStop(1, '#1f242c');
+        if (currentTheme === 'neonskyline') {
+            grad.addColorStop(0, '#161922'); grad.addColorStop(0.5, '#10121a'); grad.addColorStop(1, '#090b10');
+        } else if (currentTheme === 'desertdustway') {
+            grad.addColorStop(0, '#554230'); grad.addColorStop(0.5, '#423324'); grad.addColorStop(1, '#2f2216');
+        } else {
+            grad.addColorStop(0, '#3d424a'); grad.addColorStop(0.5, '#2a2e36'); grad.addColorStop(1, '#1f242c');
+        }
         g.fillStyle = grad; g.fill();
 
         // Feature 6: Rumble strips + curbs
@@ -614,9 +718,19 @@ window.PoRacer = PoRacer;
         for (let i = 0; i <= centerN; i++) { const [sx, sy] = trackTx(centerXY[(i % centerN) * 2], centerXY[(i % centerN) * 2 + 1]); if (i === 0) g.moveTo(sx, sy); else g.lineTo(sx, sy); }
         g.closePath();
         g.lineJoin = 'round'; g.lineCap = 'round';
-        g.strokeStyle = '#cc2222'; g.lineWidth = wpx + 14; g.stroke();
-        g.strokeStyle = '#ffffff'; g.lineWidth = wpx + 10; g.stroke();
-        g.setLineDash([6, 6]); g.strokeStyle = 'rgba(200,60,60,0.5)'; g.lineWidth = wpx + 2; g.stroke(); g.setLineDash([]);
+        if (currentTheme === 'neonskyline') {
+            g.strokeStyle = '#ff007f'; g.lineWidth = wpx + 14; g.stroke();
+            g.strokeStyle = '#00f0ff'; g.lineWidth = wpx + 10; g.stroke();
+            g.setLineDash([8, 8]); g.strokeStyle = 'rgba(0,240,255,0.75)'; g.lineWidth = wpx + 2; g.stroke(); g.setLineDash([]);
+        } else if (currentTheme === 'desertdustway') {
+            g.strokeStyle = '#b85d19'; g.lineWidth = wpx + 14; g.stroke();
+            g.strokeStyle = '#f3cf7a'; g.lineWidth = wpx + 10; g.stroke();
+            g.setLineDash([6, 6]); g.strokeStyle = 'rgba(180,100,30,0.6)'; g.lineWidth = wpx + 2; g.stroke(); g.setLineDash([]);
+        } else {
+            g.strokeStyle = '#cc2222'; g.lineWidth = wpx + 14; g.stroke();
+            g.strokeStyle = '#ffffff'; g.lineWidth = wpx + 10; g.stroke();
+            g.setLineDash([6, 6]); g.strokeStyle = 'rgba(200,60,60,0.5)'; g.lineWidth = wpx + 2; g.stroke(); g.setLineDash([]);
+        }
         g.restore();
 
         // Feature 6: Surface color patches
@@ -630,6 +744,90 @@ window.PoRacer = PoRacer;
             g.closePath(); g.fill();
         }
         g.globalAlpha = 1.0;
+
+        // Surface Zones (e.g. sand drift zones)
+        if (surfaceZonesData && surfaceZonesData.length > 0) {
+            for (let i = 0; i < surfaceZonesData.length; i++) {
+                const zone = surfaceZonesData[i];
+                if (!zone || !zone.radius) continue;
+                const isSand = zone.surfaceType === 'sand' || (zone.name && zone.name.toLowerCase().includes('sand')) || (zone.name && zone.name.toLowerCase().includes('dune'));
+                if (isSand) {
+                    const [zx, zy] = trackTx(zone.x, zone.y);
+                    const zr = zone.radius * scale;
+                    const sandGrad = g.createRadialGradient(zx, zy, zr * 0.15, zx, zy, zr);
+                    sandGrad.addColorStop(0, 'rgba(224, 182, 114, 0.85)');
+                    sandGrad.addColorStop(0.65, 'rgba(196, 149, 82, 0.7)');
+                    sandGrad.addColorStop(0.9, 'rgba(168, 122, 58, 0.35)');
+                    sandGrad.addColorStop(1, 'rgba(140, 96, 40, 0)');
+                    g.save();
+                    g.fillStyle = sandGrad;
+                    g.beginPath();
+                    g.arc(zx, zy, zr, 0, Math.PI * 2);
+                    g.fill();
+                    g.strokeStyle = 'rgba(245, 210, 150, 0.3)';
+                    g.lineWidth = 2.5;
+                    for (let r = zr * 0.25; r < zr * 0.8; r += 16) {
+                        g.beginPath();
+                        g.arc(zx, zy, r, 0.2, Math.PI * 1.6);
+                        g.stroke();
+                    }
+                    g.restore();
+                }
+            }
+        }
+
+        // Boost Pads
+        if (boostPadsData && boostPadsData.length > 0) {
+            for (let i = 0; i < boostPadsData.length; i++) {
+                const pad = boostPadsData[i];
+                if (!pad) continue;
+                const [px, py] = trackTx(pad.x, pad.y);
+                const pr = (pad.radius || 45) * scale;
+                const angle = (pad.directionAngle && Math.abs(pad.directionAngle) > 0.001)
+                    ? pad.directionAngle
+                    : getTrackHeadingAt(pad.x, pad.y);
+
+                g.save();
+                g.translate(px, py);
+                g.rotate(angle);
+
+                const padGrad = g.createRadialGradient(0, 0, 2, 0, 0, pr);
+                if (currentTheme === 'neonskyline') {
+                    padGrad.addColorStop(0, 'rgba(0, 240, 255, 0.95)');
+                    padGrad.addColorStop(0.6, 'rgba(0, 150, 255, 0.65)');
+                    padGrad.addColorStop(1, 'rgba(0, 50, 120, 0)');
+                } else if (currentTheme === 'desertdustway') {
+                    padGrad.addColorStop(0, 'rgba(255, 180, 0, 0.95)');
+                    padGrad.addColorStop(0.6, 'rgba(255, 120, 0, 0.65)');
+                    padGrad.addColorStop(1, 'rgba(180, 50, 0, 0)');
+                } else {
+                    padGrad.addColorStop(0, 'rgba(0, 255, 180, 0.95)');
+                    padGrad.addColorStop(0.6, 'rgba(0, 180, 220, 0.65)');
+                    padGrad.addColorStop(1, 'rgba(0, 80, 100, 0)');
+                }
+                g.fillStyle = padGrad;
+                g.beginPath();
+                g.roundRect(-pr, -pr * 0.5, pr * 2, pr, 8);
+                g.fill();
+
+                const arrowCol = currentTheme === 'neonskyline' ? '#00ffff' : currentTheme === 'desertdustway' ? '#ffe066' : '#55ffff';
+                g.strokeStyle = arrowCol;
+                g.shadowColor = arrowCol;
+                g.shadowBlur = 8;
+                g.lineWidth = 3.5;
+                g.lineCap = 'round';
+                g.lineJoin = 'round';
+                for (let c = -1; c <= 1; c++) {
+                    const cx = c * (pr * 0.45);
+                    g.beginPath();
+                    g.moveTo(cx - 8, -pr * 0.32);
+                    g.lineTo(cx + 8, 0);
+                    g.lineTo(cx - 8, pr * 0.32);
+                    g.stroke();
+                }
+                g.restore();
+            }
+        }
 
         // Feature 6: Apex markers
         for (let i = 0; i < centerN; i += Math.max(1, Math.floor(centerN / 12))) {
@@ -647,10 +845,17 @@ window.PoRacer = PoRacer;
         }
 
         // Centerline
-        g.setLineDash([14, 14]); g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 2;
+        g.setLineDash([14, 14]);
+        if (currentTheme === 'neonskyline') {
+            g.strokeStyle = 'rgba(0,240,255,0.7)'; g.shadowColor = '#00f0ff'; g.shadowBlur = 6; g.lineWidth = 2.5;
+        } else if (currentTheme === 'desertdustway') {
+            g.strokeStyle = 'rgba(240,225,180,0.5)'; g.shadowBlur = 0; g.lineWidth = 2;
+        } else {
+            g.strokeStyle = 'rgba(255,255,255,0.55)'; g.shadowBlur = 0; g.lineWidth = 2;
+        }
         g.beginPath();
         for (let i = 0; i < centerN; i++) { const [sx, sy] = trackTx(centerXY[i * 2], centerXY[i * 2 + 1]); if (i === 0) g.moveTo(sx, sy); else g.lineTo(sx, sy); }
-        g.closePath(); g.stroke(); g.setLineDash([]);
+        g.closePath(); g.stroke(); g.setLineDash([]); g.shadowBlur = 0;
 
         // Start/finish
         const [ax, ay] = trackTx(centerXY[0], centerXY[1]);
@@ -665,22 +870,32 @@ window.PoRacer = PoRacer;
     function buildMinimapBitmap() {
         if (!centerXY) return;
         const w = 180, h = 180, off = createOffscreen(w, h), g = off.getContext('2d');
-        g.clearRect(0, 0, w, h); g.fillStyle = 'rgba(20,30,48,0.9)'; g.fillRect(0, 0, w, h);
+        g.clearRect(0, 0, w, h);
+        if (currentTheme === 'neonskyline') {
+            g.fillStyle = 'rgba(10,12,24,0.92)';
+        } else if (currentTheme === 'desertdustway') {
+            g.fillStyle = 'rgba(42,28,16,0.92)';
+        } else {
+            g.fillStyle = 'rgba(20,30,48,0.9)';
+        }
+        g.fillRect(0, 0, w, h);
         let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
         for (let i = 0; i < centerN; i++) { const x = centerXY[i * 2], y = centerXY[i * 2 + 1]; if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
         const pad = trackWidth * 0.7; minX -= pad; minY -= pad; maxX += pad; maxY += pad;
         const sx = (w - 12) / (maxX - minX), sy = (h - 12) / (maxY - minY), s = Math.min(sx, sy);
         const ox = (w - (maxX - minX) * s) / 2, oy = (h - (maxY - minY) * s) / 2;
         const toX = (x) => ox + (x - minX) * s, toY = (y) => oy + (y - minY) * s;
-        g.strokeStyle = '#0a1424'; g.lineWidth = trackWidth * s + 4; g.lineJoin = 'round';
+        g.strokeStyle = currentTheme === 'neonskyline' ? '#1c0828' : currentTheme === 'desertdustway' ? '#22150a' : '#0a1424';
+        g.lineWidth = trackWidth * s + 4; g.lineJoin = 'round';
         g.beginPath(); for (let i = 0; i <= centerN; i++) { const [x, y] = [toX(centerXY[(i % centerN) * 2]), toY(centerXY[(i % centerN) * 2 + 1])]; if (i === 0) g.moveTo(x, y); else g.lineTo(x, y); } g.closePath(); g.stroke();
-        g.strokeStyle = '#9bb1cc'; g.lineWidth = 1.2;
+        g.strokeStyle = currentTheme === 'neonskyline' ? '#00f0ff' : currentTheme === 'desertdustway' ? '#e0a860' : '#9bb1cc';
+        g.lineWidth = 1.2;
         g.beginPath(); for (let i = 0; i < centerN; i++) { const x = toX(centerXY[i * 2]), y = toY(centerXY[i * 2 + 1]); if (i === 0) g.moveTo(x, y); else g.lineTo(x, y); } g.closePath(); g.stroke();
         minimapTex = off; minimapBbox = { minX, minY, s, ox, oy };
     }
 
     // --- Feature 7: Enhanced car drawing ---
-    function drawCar(g, c, cx, cy, color, colorDark, boost, isPlayer, speedRatio, skidInt) {
+    function drawCar(g, c, cx, cy, color, colorDark, boost, isPlayer, speedRatio, skidInt, livery) {
         const [sx, sy] = project(cx, cy, c.camX, c.camY, c.scale, c.w, c.h);
         g.save(); g.translate(sx, sy); g.rotate(c.hdg); g.scale(c.scale, c.scale);
 
@@ -696,9 +911,31 @@ window.PoRacer = PoRacer;
         g.shadowBlur = 0; g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = 1.2;
         g.beginPath(); g.roundRect(-16, -9, 32, 18, 5); g.stroke();
 
-        // Windshield + stripe
+        // Livery pattern
+        const liv = livery || 'stripe';
+        if (liv === 'dual') {
+            g.fillStyle = 'rgba(255,255,255,0.85)';
+            g.fillRect(-14, -4.5, 28, 1.8);
+            g.fillRect(-14, 2.7, 28, 1.8);
+        } else if (liv === 'carbon') {
+            g.fillStyle = 'rgba(25,25,30,0.7)';
+            g.fillRect(-14, -7, 10, 14);
+            g.fillRect(8, -8, 6, 16);
+            g.fillStyle = 'rgba(255,255,255,0.6)';
+            g.fillRect(-14, -1, 28, 2);
+        } else if (liv === 'neon') {
+            g.strokeStyle = '#00ffff'; g.shadowColor = '#00ffff'; g.shadowBlur = 6; g.lineWidth = 1.5;
+            g.strokeRect(-12, -7, 24, 14);
+            g.shadowBlur = 0;
+            g.fillStyle = '#ff007f';
+            g.fillRect(-14, -1.2, 28, 2.4);
+        } else {
+            g.fillStyle = 'rgba(255,255,255,0.85)';
+            g.fillRect(-14, -1.2, 28, 2.4);
+        }
+
+        // Windshield
         g.fillStyle = 'rgba(20,30,45,0.85)'; g.beginPath(); g.roundRect(2, -7, 8, 14, 2); g.fill();
-        g.fillStyle = 'rgba(255,255,255,0.85)'; g.fillRect(-14, -1.2, 28, 2.4);
 
         // Feature 7: Headlight glow
         g.fillStyle = '#fffbe0'; g.shadowColor = '#fff7a0'; g.shadowBlur = 10;
@@ -751,11 +988,17 @@ window.PoRacer = PoRacer;
 
     // --- Public API ---
     window.PoRacerRender = {
-        setStatic(center, width, walls) {
+        setStatic(center, width, walls, boostPads, surfaceZones, theme) {
             centerXY = new Float32Array(center); centerN = centerXY.length / 2;
             wallsXY = new Float32Array(walls); wallsM = wallsXY.length / 4;
-            trackWidth = width; trackTex = null; minimapTex = null;
-            parallaxFar = null; parallaxMid = null;
+            trackWidth = width;
+            boostPadsData = Array.isArray(boostPads) ? boostPads : [];
+            surfaceZonesData = Array.isArray(surfaceZones) ? surfaceZones : [];
+            currentTheme = (typeof theme === 'string' && theme) ? theme.toLowerCase() : 'circuit';
+            window.PoRacerCurrentTheme = currentTheme;
+            trackTex = null; minimapTex = null;
+            grassTex = null; parallaxFar = null; parallaxMid = null;
+            grassTheme = null; parallaxTheme = null;
             _specCamX = null; _specCamY = null;
         },
         shake(intensity) { applyShake(intensity); },
@@ -772,7 +1015,7 @@ window.PoRacer = PoRacer;
         clearParticles() { _jsSmoke.fill(0); _jsSmokeHead=0; _jsSkids.fill(0); _jsSkidHead=0; _jsWeather.fill(0); _jsWeatherHead=0; window._smokeSprite=null; },
         // Also clears the per-layer dpr keys. resize() calls this when the backing
         // store changes, which is exactly when those keys are stale.
-        invalidateBitmaps() { grassTex=null; trackTex=null; trackReqDpr=0; trackDpr=0; minimapTex=null; parallaxFar=null; parallaxMid=null; bloomTex=null; bloomCtx=null; vignetteTex=null; fogTex=null; grassDpr=0; parallaxDpr=0; vignetteDpr=0; fogDpr=0; mainCtx_=null; mainCanvasEl=null; mainCanvasId_=null; miniCanvasEl=null; miniCanvasId_=null; },
+        invalidateBitmaps() { grassTex=null; trackTex=null; trackReqDpr=0; trackDpr=0; minimapTex=null; parallaxFar=null; parallaxMid=null; bloomTex=null; bloomCtx=null; vignetteTex=null; fogTex=null; grassDpr=0; parallaxDpr=0; vignetteDpr=0; fogDpr=0; grassTheme=null; parallaxTheme=null; mainCtx_=null; mainCanvasEl=null; mainCanvasId_=null; miniCanvasEl=null; miniCanvasId_=null; },
 
         // drawSnapshot — multiplayer thin-client entry point. Server pushes
         // a snapshot every ~50ms; we compute the camera and render in one call.
@@ -875,7 +1118,8 @@ window.PoRacer = PoRacer;
                 new Float32Array(0), 0,
                 dt,
                 weather || 0,
-                0, 0.5, 0);
+                0, 0.5, 0,
+                cars);
         },
 
         draw(mainCanvasId, miniCanvasId,
@@ -886,7 +1130,8 @@ window.PoRacer = PoRacer;
              skidEvts, skidEvtsN,
              dt,
              weatherType,
-             shakeIntensity, tod, fogD)
+             shakeIntensity, tod, fogD,
+             carsList)
         {
             // Cache canvas lookups — getElementById every frame is expensive
             if (mainCanvasId !== mainCanvasId_) { mainCanvasId_ = mainCanvasId; mainCanvasEl = document.getElementById(mainCanvasId); mainCtx_ = null; }
@@ -992,9 +1237,10 @@ window.PoRacer = PoRacer;
             // Cars — cachedColor avoids rgb() string allocation per car
             for (let i = 0; i < carCount; i++) {
                 const o = i * 6;
+                const livery = (carsList && carsList[i]) ? carsList[i].livery : 'stripe';
                 drawCar(g, { camX, camY, scale, w, h, hdg: carBuf[o + 2] },
                     carBuf[o], carBuf[o + 1], cachedColor(carCols[i]), cachedColor(carDark[i]),
-                    carBuf[o + 3], carBuf[o + 4] !== 0, carBuf[o + 5], carBuf[o + 5]);
+                    carBuf[o + 3], carBuf[o + 4] !== 0, carBuf[o + 5], carBuf[o + 5], livery);
             }
 
             // Feature 1: Ambient

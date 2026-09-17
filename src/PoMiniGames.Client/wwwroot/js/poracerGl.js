@@ -91,6 +91,8 @@ uniform vec2  uRes;
 uniform float uTime;
 uniform float uSpeed;    // 0..1 normalised road speed
 uniform float uPunch;    // 0..1 impact envelope
+uniform float uBoost;    // 0..1 player boost intensity
+uniform float uTheme;    // 0 = circuit, 1 = neon, 2 = desert
 
 in vec2 vUv;
 out vec4 frag;
@@ -110,27 +112,17 @@ void main() {
     // ── Heat shimmer ───────────────────────────────────────────────────
     // Applied to the sample coordinate before anything reads the texture, so
     // every later effect inherits the warp instead of fighting it. Amplitude
-    // rises with speed: still air does not shimmer, air being torn through does.
-    float haze = (0.25 + uSpeed * 0.75) * 0.0016;
+    // rises with speed and desert heat: still air does not shimmer, air being torn through does.
+    float desertBonus = (uTheme > 1.5) ? 0.0012 : 0.0;
+    float haze = (0.25 + uSpeed * 0.75) * 0.0016 + desertBonus;
     uv += vec2(
         sin(uv.y * 46.0 + uTime * 3.1) * haze,
         cos(uv.x * 38.0 + uTime * 2.4) * haze * 0.6);
 
-    // ── Radial motion blur — REMOVED 2026-08-08 (user request) ─────────
-    // This ran up to 12 weighted taps smeared outward from the frame centre,
-    // ramped by uSpeed*0.055 + uPunch*0.10. Because a racing game spends
-    // almost all of its time at speed, the smear was effectively always on and
-    // the whole picture outside the very centre read as out of focus rather
-    // than as fast — the same reason the equivalent effect came out of
-    // PoMarbleRace. A single sharp read replaces the tap loop, so this is also
-    // 11 fewer texture fetches per pixel per frame.
-    //
-    // The uTaps uniform went with the loop. tierTaps() stays: returning 0 is still what
-    // switches the whole GL layer off on the low tier (see the guard in installGl()).
     vec3 col = texture(tScene, uv).rgb;
 
-    // ── Chromatic aberration (cyberpunk lens flare on speed and punch) ──
-    float ca = (uSpeed * 0.0028 + uPunch * 0.0090) * smoothstep(0.08, 0.92, r);
+    // ── Chromatic aberration (cyberpunk lens flare on speed, boost, and punch) ──
+    float ca = (uSpeed * 0.0028 + uBoost * 0.0075 + uPunch * 0.0090) * smoothstep(0.08, 0.92, r);
     if (ca > 0.00002) {
         vec2 dir = r > 0.0001 ? toC / r : vec2(0.0);
         col.r = texture(tScene, uv - dir * ca).r;
@@ -145,18 +137,31 @@ void main() {
     bloom += texture(tScene, uv + vec2( px.x, -px.y) * 3.2).rgb;
     bloom += texture(tScene, uv + vec2(-px.x, -px.y) * 3.2).rgb;
     bloom *= 0.25;
-    bloom = max(bloom - 0.58, 0.0) * 2.2;
+    float bloomCut = (uTheme > 0.5 && uTheme < 1.5) ? 0.46 : 0.58;
+    float bloomMul = (uTheme > 0.5 && uTheme < 1.5) ? 2.9 : 2.2;
+    bloom = max(bloom - bloomCut, 0.0) * bloomMul;
     col += bloom;
 
     // ── Speed warp and relativistic speed streaks ─────────────────────
-    float sl = smoothstep(0.48, 1.0, uSpeed);
+    float activeSpeed = max(uSpeed, uBoost * 0.85);
+    float sl = smoothstep(0.46, 1.0, activeSpeed);
     if (sl > 0.001) {
         float ang = atan(toC.y, toC.x);
         float lane = floor(ang * 48.0);
         float streak = step(0.74, hash11(lane + floor(uTime * 32.0)));
         float mask = smoothstep(0.20, 0.88, r) * streak * sl;
-        vec3 neonStreak = mix(vec3(0.0, 0.95, 1.0), vec3(1.0, 0.30, 0.88), hash11(lane));
-        col += neonStreak * mask * 0.32;
+        vec3 themeStreak;
+        if (uTheme > 1.5) {
+            // Desert rally: amber, sand, and golden spark streaks
+            themeStreak = mix(vec3(1.0, 0.78, 0.25), vec3(1.0, 0.45, 0.1), hash11(lane));
+        } else if (uTheme > 0.5) {
+            // Neon skyline: vivid electric cyan & magenta
+            themeStreak = mix(vec3(0.0, 0.95, 1.0), vec3(1.0, 0.25, 0.88), hash11(lane));
+        } else {
+            // Grand prix: crisp cyan-white slipstream streaks
+            themeStreak = mix(vec3(0.85, 0.95, 1.0), vec3(0.2, 0.85, 1.0), hash11(lane));
+        }
+        col += themeStreak * mask * (0.32 + uBoost * 0.28);
     }
 
     // ── Speed vignette & Contrast tuning ──────────────────────────────
@@ -190,6 +195,8 @@ let uRes = null;
 let uTime = null;
 let uSpeed = null;
 let uPunch = null;
+let uBoost = null;
+let uTheme = null;
 let sceneCanvas = null;
 let glReady = false;
 let startTime = 0;
@@ -322,6 +329,8 @@ function ensureGl(canvas2d) {
     uTime = gl.getUniformLocation(prog, 'uTime');
     uSpeed = gl.getUniformLocation(prog, 'uSpeed');
     uPunch = gl.getUniformLocation(prog, 'uPunch');
+    uBoost = gl.getUniformLocation(prog, 'uBoost');
+    uTheme = gl.getUniformLocation(prog, 'uTheme');
     gl.uniform1i(gl.getUniformLocation(prog, 'tScene'), 0);
 
     // The 2D canvas keeps drawing — it is the texture source — but stops being
@@ -350,11 +359,12 @@ function teardownGl() {
     if (glCanvas && glCanvas.parentNode) glCanvas.parentNode.removeChild(glCanvas);
     if (sceneCanvas) sceneCanvas.style.opacity = '';
     gl = null; prog = null; vao = null; tex = null; glCanvas = null; glReady = false;
+    uBoost = null; uTheme = null;
 }
 
 let lastSpeedDemonTime = 0;
 
-function composite(speed01) {
+function composite(speed01, boost01, themeId) {
     if (!glReady || !sceneCanvas) return;
 
     if (speed01 > 0.88) {
@@ -389,6 +399,8 @@ function composite(speed01) {
     gl.uniform1f(uTime, (performance.now() - startTime) / 1000);
     gl.uniform1f(uSpeed, speed01);
     gl.uniform1f(uPunch, Impact.getPunch());
+    if (uBoost) gl.uniform1f(uBoost, boost01 || 0);
+    if (uTheme) gl.uniform1f(uTheme, themeId || 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
@@ -414,6 +426,9 @@ function frame() {
 
     const player = cars.find((c) => c.isPlayer) || cars[0];
     const speed01 = player ? Math.min(1, Math.abs(player.v || 0) / MAX_SPEED) : 0;
+    const boost01 = player ? Math.min(1, Math.max(0, player.boost || 0)) : 0;
+    const themeStr = window.PoRacerCurrentTheme || 'circuit';
+    const themeId = themeStr === 'neonskyline' ? 1.0 : (themeStr === 'desertdustway' ? 2.0 : 0.0);
 
     origDrawSnapshot(mainId, miniId, newest.elapsedSec, newest.weather, cars);
 
@@ -422,7 +437,7 @@ function frame() {
             const el = document.getElementById(mainId);
             if (el) ensureGl(el);
         }
-        composite(speed01);
+        composite(speed01, boost01, themeId);
     } else if (glReady) {
         // Dropped to the low tier mid-session: hand the canvas back rather than
         // leaving a frozen composited frame on screen.

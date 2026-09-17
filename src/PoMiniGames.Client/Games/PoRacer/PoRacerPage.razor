@@ -549,7 +549,8 @@
         if (initialSnap?.Static is not null)
         {
             await JS.InvokeVoidAsync("PoRacerRender.setStatic",
-                initialSnap.Static.CenterXY, initialSnap.Static.TrackWidth, initialSnap.Static.WallsXY);
+                initialSnap.Static.CenterXY, initialSnap.Static.TrackWidth, initialSnap.Static.WallsXY,
+                initialSnap.Static.BoostPads, initialSnap.Static.SurfaceZones, initialSnap.Static.Theme);
         }
 
         // Stream input at 30 Hz — only meaningful when we're an actual player. In
@@ -608,6 +609,7 @@
                     isPlayer = c.IsPlayer, name = c.Name, lap = c.Lap,
                     position = c.Position, finished = c.Finished,
                     boost = c.BoostGlow, skid = c.SkidIntensity,
+                    surface = c.Surface, livery = c.LiveryStyle,
                 }).ToArray(),
                 // The interpolator's timeline (js/poracerGl.js). Interpolating on
                 // ARRIVAL time made playback speed track packet spacing, so every

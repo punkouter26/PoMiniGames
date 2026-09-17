@@ -23,6 +23,7 @@ internal sealed class PoRacerSim
     public PoRacerStaticWorld Static { get; }
 
     // Track
+    private readonly PoRacerTrackData _track;
     private readonly List<Vec2> _centerline = new();
     private readonly List<(Vec2 a, Vec2 b)> _walls = new();
     private readonly double _trackWidth;
@@ -37,6 +38,7 @@ internal sealed class PoRacerSim
     public PoRacerSim(IReadOnlyList<PoRacerLobbyPlayer> players, string? trackId = null)
     {
         var track = PoRacerTrackRegistry.GetTrack(trackId);
+        _track = track;
         _trackWidth = track.TrackWidth;
         _centerline.Clear();
         _walls.Clear();
@@ -184,6 +186,12 @@ internal sealed class PoRacerSim
 
     public void Tick(double dt, IReadOnlyDictionary<string, PoRacerInput> inputs)
     {
+        // Update surface friction and boost pads for every car
+        foreach (var c in _cars)
+        {
+            UpdateSurfaceAndBoost(c, dt);
+        }
+
         // Apply player input.
         foreach (var (cid, car) in _byConnectionId)
         {
@@ -243,17 +251,59 @@ internal sealed class PoRacerSim
         }
     }
 
+    private void UpdateSurfaceAndBoost(SimCar c, double dt)
+    {
+        // 1. Boost pads check
+        foreach (var pad in _track.BoostPads)
+        {
+            if (pad.Contains(c.Pos))
+            {
+                c.BoostTimer = pad.DurationSeconds;
+                c.BoostGlow = 1.0;
+                break;
+            }
+        }
+
+        // Boost decay
+        if (c.BoostTimer > 0)
+        {
+            c.BoostTimer -= dt;
+            c.AccelerationModifier = 1.35;
+            c.BoostGlow = Math.Max(c.BoostGlow, Math.Min(1.0, c.BoostTimer / 1.8));
+        }
+        else
+        {
+            c.BoostTimer = 0;
+            c.AccelerationModifier = 1.0;
+        }
+
+        // 2. Surface zone check (sand vs tarmac)
+        string detectedSurface = "asphalt";
+        double grip = 1.0;
+        foreach (var zone in _track.SurfaceZones)
+        {
+            if (zone.Contains(c.Pos))
+            {
+                detectedSurface = zone.SurfaceType.ToString().ToLowerInvariant();
+                grip = zone.GripMultiplier;
+                break;
+            }
+        }
+        c.Surface = detectedSurface;
+        c.EffectiveGrip = grip;
+    }
+
     private void ApplyControl(SimCar c, double dt, bool accel, bool brake, bool left, bool right, bool handbrake)
     {
         double steerInput = (right ? 1 : 0) - (left ? 1 : 0);
-        double steerRate = 3.0 * c.Handling;
+        double steerRate = 3.0 * c.Handling * c.EffectiveGrip;
         double maxSteer = 0.55;
         c.Steer += (steerInput - c.Steer / maxSteer) * steerRate * dt;
         c.Steer = Math.Clamp(c.Steer, -maxSteer, maxSteer);
         if (steerInput == 0) c.Steer *= Math.Max(0, 1 - 2.0 * dt);
 
         double engine = 0;
-        if (accel) engine += c.Acceleration;
+        if (accel) engine += c.Acceleration * c.AccelerationModifier;
         if (brake)
         {
             if (c.Speed > 1) engine -= c.Acceleration * 1.6;
@@ -269,12 +319,13 @@ internal sealed class PoRacerSim
         double speedFactor = Math.Min(1, Math.Abs(c.Speed) / 80);
         double turnRate = (c.Speed / 60.0) * c.Steer * (1.0 - 0.3 * speedFactor);
         double desiredHeading = c.Heading + turnRate * dt;
-        bool drifting = handbrake || (Math.Abs(c.Steer) > 0.35 && Math.Abs(c.Speed) > c.MaxSpeed * 0.55);
+        bool onSand = c.Surface == "sand";
+        bool drifting = handbrake || onSand || (Math.Abs(c.Steer) > 0.35 && Math.Abs(c.Speed) > c.MaxSpeed * 0.45);
         if (drifting)
         {
-            double slideStrength = handbrake ? 0.7 : 0.4;
+            double slideStrength = handbrake ? 0.7 : (onSand ? 0.55 : 0.4);
             c.Heading = desiredHeading * (1 - slideStrength) + c.Heading * slideStrength;
-            c.SkidIntensity = Math.Min(1, c.SkidIntensity + dt * 4);
+            c.SkidIntensity = Math.Min(1, c.SkidIntensity + dt * (onSand ? 5 : 4));
         }
         else
         {
@@ -565,6 +616,8 @@ internal sealed class PoRacerSim
             Position = c.Position,
             SkidIntensity = c.SkidIntensity,
             BoostGlow = c.BoostGlow,
+            BoostTimer = c.BoostTimer,
+            Surface = c.Surface,
             Damage = c.Damage,
         }).ToList();
         var elapsed = (_wallClock.ElapsedMilliseconds - _startElapsedMs) / 1000.0;
@@ -715,6 +768,10 @@ internal sealed class PoRacerSim
         public double ProjSide;
         public double SkidIntensity;
         public double BoostGlow;
+        public double BoostTimer;
+        public string Surface = "asphalt";
+        public double EffectiveGrip = 1.0;
+        public double AccelerationModifier = 1.0;
         public double Damage;
         public double StuckTimer;   // seconds without track progress — drives the AI unstick maneuver
         public double ProgressMark; // last DistanceAlongTrack the car meaningfully advanced past

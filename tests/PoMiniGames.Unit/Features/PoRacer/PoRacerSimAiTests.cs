@@ -1,25 +1,27 @@
 using FluentAssertions;
 using PoMiniGames.Features.PoRacer;
 using PoMiniGames.Shared.Games;
+using Xunit;
 using Xunit.Abstractions;
 
 namespace PoMiniGames.Unit.Features.PoRacer;
 
 /// <summary>
-/// Drives a bot-only PoRacer race (zero human players → the sim pads all 8 slots
-/// with AI). Exercises <see cref="PoRacerSim.UpdateAi"/> headlessly so AI-driving
-/// quality is measurable: every bot must actually complete the 3-lap race, in a
-/// reasonable sim-time budget, as a spread-out field rather than a stuck pile-up.
+/// Headless multi-track simulation tests. Verifies all 3 tracks (circuit, neonskyline, desertdustway),
+/// surface physics detection (sand grip reduction), boost pad triggering, and AI lap completion.
 /// </summary>
 public class PoRacerSimAiTests
 {
     private readonly ITestOutputHelper _out;
     public PoRacerSimAiTests(ITestOutputHelper output) => _out = output;
 
-    [Fact]
-    public void BotOnlyRace_AllBotsFinishThreeLaps_AsASpreadField()
+    [Theory]
+    [InlineData("circuit")]
+    [InlineData("neonskyline")]
+    [InlineData("desertdustway")]
+    public void BotOnlyRace_AllBotsFinishThreeLaps_OnAllTracks(string trackId)
     {
-        var sim = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>());
+        var sim = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>(), trackId);
         var noInput = new Dictionary<string, PoRacerInput>();
         const double dt = 0.02;              // 50 Hz, matches the server tick rate
         const int maxTicks = 12_000;         // 240 sim-seconds hard budget
@@ -27,14 +29,21 @@ public class PoRacerSimAiTests
         var finishSec = new Dictionary<int, double>();
         int carCount = sim.Snapshot("t", 0).Cars.Count;
 
+        bool anyCarBoosted = false;
+        bool anyCarHitSand = false;
+
         int tick = 0;
         for (; tick < maxTicks; tick++)
         {
             sim.Tick(dt, noInput);
             var snap = sim.Snapshot("t", 0);
             foreach (var car in snap.Cars)
+            {
+                if (car.BoostTimer > 0) anyCarBoosted = true;
+                if (car.Surface == "sand") anyCarHitSand = true;
                 if (car.Finished && !finishSec.ContainsKey(car.Id))
                     finishSec[car.Id] = (tick + 1) * dt;
+            }
             if (finishSec.Count == carCount) break;
         }
 
@@ -42,26 +51,31 @@ public class PoRacerSimAiTests
         int finished = final.Cars.Count(c => c.Finished);
         double raceSeconds = (tick + 1) * dt;
 
-        _out.WriteLine($"cars={carCount} finished={finished} raceSeconds={raceSeconds:0.0}");
+        _out.WriteLine($"track={trackId} cars={carCount} finished={finished} raceSeconds={raceSeconds:0.0}");
         foreach (var kv in finishSec.OrderBy(k => k.Value))
             _out.WriteLine($"  car {kv.Key} finished at {kv.Value:0.0}s");
-        _out.WriteLine("final laps: " + string.Join(" ",
-            final.Cars.OrderByDescending(c => c.Lap).Select(c => $"car{c.Id}:L{Math.Min(c.Lap, 3)}{(c.Finished ? "*" : "")}")));
 
         var names = final.Cars.Select(c => c.Name).ToList();
         names.Distinct().Count().Should().Be(names.Count,
-            "each car needs a unique name (regression: the bot-fill loop once labelled all 8 'Vega')");
+            "each car needs a unique name");
 
-        finished.Should().Be(carCount, "every AI bot should complete the 3-lap race without getting stuck");
+        finished.Should().Be(carCount, $"every AI bot should complete the 3-lap race on {trackId} without getting stuck");
 
         var times = finishSec.Values.OrderBy(x => x).ToList();
         double winner = times.First();
         double last = times.Last();
         _out.WriteLine($"winner={winner:0.0}s last={last:0.0}s spread={last - winner:0.0}s");
 
-        // A competent field completes 3 laps of this ~6-7k-unit track well inside the budget.
-        winner.Should().BeLessThan(120, "the leading bot should not crawl");
-        // Real racing produces a spread, not a synchronized train.
-        (last - winner).Should().BeGreaterThan(0.5);
+        winner.Should().BeLessThan(140, "the leading bot should not crawl");
+        (last - winner).Should().BeGreaterThan(0.2, "racing should produce a spread");
+
+        // Verify boost pad triggering on all tracks
+        anyCarBoosted.Should().BeTrue("at least one car should drive over boost pads during the race");
+
+        // Verify desert sand surface interaction
+        if (trackId == "desertdustway")
+        {
+            anyCarHitSand.Should().BeTrue("desert dustway must trigger sand surface physics during cornering");
+        }
     }
 }

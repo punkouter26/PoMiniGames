@@ -28,9 +28,9 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 3: Surface Physics, Grip & Boost Pad Simulation Engine**
+- [x] **Task 3: Surface Physics, Grip & Boost Pad Simulation Engine**
   - **Description**: Refactor `PoRacerSim.cs` to execute multi-track physics: lookup car surface (asphalt vs sand/dirt), apply surface friction modifiers (1.0x vs 0.68x grip), calculate drift slip angles, and trigger boost pad speed surges (+35% acceleration for 1.8s).
-  - **File Manifest** (&le; 5 files):
+  - **File Manifest** (≤ 5 files):
     1. `src/PoMiniGames.API/Features/PoRacer/PoRacerSim.cs`
     2. `tests/PoMiniGames.Unit/Features/PoRacer/PoRacerSimAiTests.cs`
   - **Acceptance Criteria**: Cars experience increased drift and reduced grip on sand surfaces; driving over a boost pad triggers boost timer; car speed is clamped within safety bounds.

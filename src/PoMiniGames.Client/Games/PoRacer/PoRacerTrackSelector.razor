@@ -1,0 +1,90 @@
+@using PoMiniGames.Shared.Games
+
+<div class="racer-track-selector" role="radiogroup" aria-label="Select Race Track">
+    <div class="racer-track-grid">
+        @foreach (var t in Tracks)
+        {
+            var isSelected = string.Equals(SelectedTrackId, t.Id, StringComparison.OrdinalIgnoreCase);
+            <button type="button"
+                    class="racer-track-card @(isSelected ? "is-selected" : "") track-card--@t.Id"
+                    role="radio"
+                    aria-checked="@isSelected"
+                    @onclick="() => SelectTrack(t.Id)">
+                <div class="track-header">
+                    <span class="track-theme-tag">@t.Tag</span>
+                    <span class="track-difficulty" title="Difficulty: @t.DifficultyName">@t.Stars</span>
+                </div>
+                <div class="track-name">@t.Name</div>
+                <div class="track-desc">@t.Description</div>
+                <div class="track-specs">
+                    <span class="spec-pill">🏎️ @t.Grip</span>
+                    <span class="spec-pill">⚡ @t.BoostPads</span>
+                </div>
+                @if (isSelected)
+                {
+                    <div class="track-selected-badge">✓ READY TO RACE</div>
+                }
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string SelectedTrackId { get; set; } = "circuit";
+
+    [Parameter]
+    public EventCallback<string> SelectedTrackIdChanged { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnTrackSelected { get; set; }
+
+    private record TrackCardMeta(
+        string Id,
+        string Name,
+        string Tag,
+        string Stars,
+        string DifficultyName,
+        string Description,
+        string Grip,
+        string BoostPads);
+
+    private static readonly IReadOnlyList<TrackCardMeta> Tracks = new[]
+    {
+        new TrackCardMeta(
+            "circuit",
+            "Grand Prix Circuit",
+            "ASPHALT",
+            "★☆☆",
+            "Beginner",
+            "Sweeping high-speed bends, clean asphalt lines, and standard grip.",
+            "1.0x Grip",
+            "2 Turbo Pads"),
+        new TrackCardMeta(
+            "neonskyline",
+            "Neon Skyline",
+            "CYBERPUNK",
+            "★★☆",
+            "Intermediate",
+            "Midnight city street circuit lined with glowing neon curbs and chicanes.",
+            "High Velocity",
+            "3 Turbo Pads"),
+        new TrackCardMeta(
+            "desertdustway",
+            "Desert Dustway",
+            "DESERT RALLY",
+            "★★★",
+            "Expert",
+            "Loose sand drift traps with low grip and wide counter-steering hairpins.",
+            "0.68x Sand Grip",
+            "2 Turbo Pads")
+    };
+
+    private async Task SelectTrack(string trackId)
+    {
+        if (SelectedTrackId == trackId) return;
+        SelectedTrackId = trackId;
+        await SelectedTrackIdChanged.InvokeAsync(trackId);
+        await OnTrackSelected.InvokeAsync(trackId);
+    }
+}

@@ -49,7 +49,7 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 5: WebGL Multi-Track Themes, Shaders & Boost Visuals**
+- [x] **Task 5: WebGL Multi-Track Themes, Shaders & Boost Visuals**
   - **Description**: Upgrade `poracerGl.js` to render 3 environmental themes (Grand Prix asphalt & red/white curbs, Neon Skyline glowing cyber barriers & reflective road, Desert Rally dunes & dust storms), animated chevron boost pads, and tire skid/dust particle emitters.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/wwwroot/js/poracerGl.js`
@@ -58,7 +58,7 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 6: Track-Partitioned Leaderboards & Persistence**
+- [x] **Task 6: Track-Partitioned Leaderboards & Persistence**
   - **Description**: Extend `PoRacerHighScore.cs` and `StorageService.cs` to partition high scores by `TrackId`. Update `PoRacerScoreEndpoints.cs` to filter by `?track={trackId}` and validate input ranges. Update `PoRacerScoreApiClient.cs` on the client.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Domain/Models/PoRacerHighScore.cs`
@@ -70,7 +70,7 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 7: Native Blazor Track Selector & Car Paint Shop**
+- [x] **Task 7: Native Blazor Track Selector & Car Paint Shop**
   - **Description**: Build `PoRacerTrackSelector.razor` (3 track cards with previews, length, difficulty) and `PoRacerPaintShop.razor` (body colors, livery styles, persisted in `localStorage`). Integrate into `PoRacerPage.razor` pre-race flow.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/Games/PoRacer/PoRacerTrackSelector.razor`

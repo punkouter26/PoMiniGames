@@ -653,3 +653,310 @@
 
     /* Start-screen error variant */
     .racer-hint--error { color: #ff6b6b; }
+
+    /* ─── Paddock & Customization Overlay (Task 7) ─── */
+    .racer-paddock-card {
+        max-width: 760px;
+        width: 94%;
+        max-height: 88vh;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(78, 195, 255, 0.4) rgba(10, 16, 28, 0.6);
+        padding: 24px 28px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        text-align: center;
+    }
+
+    .paddock-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        text-align: left;
+    }
+
+    .paddock-section-title {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 2px;
+        color: #7fd4ff;
+        text-transform: uppercase;
+    }
+
+    /* Track Selector Grid */
+    .racer-track-selector {
+        width: 100%;
+    }
+
+    .racer-track-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+    }
+
+    @media (max-width: 680px) {
+        .racer-track-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .racer-track-card {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(120, 200, 255, 0.2);
+        border-radius: 12px;
+        padding: 14px 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+        cursor: pointer;
+        text-align: left;
+        color: #e2e8f0;
+        position: relative;
+        transition: all 0.18s ease;
+        outline: none;
+    }
+
+    .racer-track-card:hover, .racer-track-card:focus-visible {
+        border-color: #4ec3ff;
+        box-shadow: 0 0 16px rgba(78, 195, 255, 0.25);
+        transform: translateY(-2px);
+    }
+
+    .racer-track-card.is-selected {
+        border-color: #00f0ff;
+        background: linear-gradient(180deg, rgba(0, 150, 255, 0.15) 0%, rgba(15, 23, 42, 0.95) 100%);
+        box-shadow: 0 0 20px rgba(0, 240, 255, 0.35), inset 0 0 12px rgba(0, 240, 255, 0.1);
+    }
+
+    .track-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+    }
+
+    .track-theme-tag {
+        font-family: 'Orbitron', monospace;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 1.5px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        text-transform: uppercase;
+    }
+
+    .track-card--circuit .track-theme-tag {
+        background: rgba(78, 195, 255, 0.2);
+        color: #4ec3ff;
+        border: 1px solid rgba(78, 195, 255, 0.4);
+    }
+
+    .track-card--neonskyline .track-theme-tag {
+        background: rgba(255, 0, 127, 0.2);
+        color: #ff3b9d;
+        border: 1px solid rgba(255, 0, 127, 0.4);
+    }
+
+    .track-card--desertdustway .track-theme-tag {
+        background: rgba(255, 170, 0, 0.2);
+        color: #ffaa00;
+        border: 1px solid rgba(255, 170, 0, 0.4);
+    }
+
+    .track-difficulty {
+        font-size: 11px;
+        color: #ffd700;
+        letter-spacing: 1px;
+    }
+
+    .track-name {
+        font-family: 'Orbitron', sans-serif;
+        font-weight: 700;
+        font-size: 14px;
+        color: #ffffff;
+    }
+
+    .track-desc {
+        font-size: 11px;
+        color: #94a3b8;
+        line-height: 1.35;
+        flex-grow: 1;
+    }
+
+    .track-specs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 4px;
+    }
+
+    .spec-pill {
+        font-family: 'Orbitron', monospace;
+        font-size: 9px;
+        background: rgba(255, 255, 255, 0.07);
+        padding: 2px 6px;
+        border-radius: 4px;
+        color: #cbd5e1;
+    }
+
+    .track-selected-badge {
+        font-family: 'Orbitron', monospace;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        color: #00ff66;
+        margin-top: 4px;
+        text-shadow: 0 0 8px rgba(0, 255, 102, 0.6);
+    }
+
+    /* Paint Shop Styling */
+    .racer-paintshop {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(120, 200, 255, 0.15);
+        border-radius: 12px;
+        padding: 12px 18px;
+    }
+
+    @media (max-width: 600px) {
+        .racer-paintshop {
+            flex-direction: column;
+            align-items: stretch;
+        }
+    }
+
+    .paintshop-preview-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at center, rgba(30, 45, 75, 0.8) 0%, rgba(10, 16, 28, 0.9) 70%);
+        border: 1px solid rgba(120, 200, 255, 0.25);
+        border-radius: 10px;
+        padding: 8px 14px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+        min-width: 130px;
+    }
+
+    .car-preview-svg {
+        filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));
+    }
+
+    .paintshop-controls {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        flex: 1;
+    }
+
+    .control-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        text-align: left;
+    }
+
+    .control-label {
+        font-family: 'Orbitron', monospace;
+        font-size: 9px;
+        letter-spacing: 1.5px;
+        color: #94a3b8;
+        text-transform: uppercase;
+    }
+
+    .swatch-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .swatch-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--swatch-color);
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        cursor: pointer;
+        transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+        position: relative;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .swatch-btn:hover, .swatch-btn:focus-visible {
+        transform: scale(1.15);
+        border-color: #ffffff;
+    }
+
+    .swatch-btn.is-selected {
+        transform: scale(1.2);
+        border-color: #ffffff;
+        box-shadow: 0 0 12px var(--swatch-color);
+    }
+
+    .swatch-btn.is-selected::after {
+        content: '';
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #ffffff;
+        box-shadow: 0 0 4px rgba(0,0,0,0.8);
+    }
+
+    .livery-row {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    .livery-btn {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 10px;
+        letter-spacing: 1px;
+        padding: 5px 12px;
+        border-radius: 6px;
+        background: rgba(30, 41, 59, 0.7);
+        border: 1px solid rgba(120, 200, 255, 0.2);
+        color: #cbd5e1;
+        cursor: pointer;
+        transition: all 0.12s ease;
+    }
+
+    .livery-btn:hover, .livery-btn:focus-visible {
+        border-color: #4ec3ff;
+        color: #ffffff;
+        background: rgba(78, 195, 255, 0.15);
+    }
+
+    .livery-btn.is-selected {
+        border-color: #00f0ff;
+        color: #00f0ff;
+        background: rgba(0, 240, 255, 0.15);
+        box-shadow: 0 0 10px rgba(0, 240, 255, 0.25);
+        font-weight: 700;
+    }
+
+    .paddock-spinner-wrap {
+        display: flex;
+        justify-content: center;
+        padding: 24px 0;
+    }
+
+    .paddock-spinner {
+        width: 36px;
+        height: 36px;
+        border: 3px solid rgba(78, 195, 255, 0.2);
+        border-top-color: #00f0ff;
+        border-radius: 50%;
+        animation: paddock-spin 0.8s linear infinite;
+    }
+
+    @@keyframes paddock-spin {
+        to { transform: rotate(360deg); }
+    }

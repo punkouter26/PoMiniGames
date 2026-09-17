@@ -52,7 +52,8 @@
            GameOver="@(Phase == GamePhase.Finished && !_isDemo)"
            GameKey="poracer"
            RequiresWebGl="true"
-           GameSummary="@RaceSummaryContent">
+           GameSummary="@RaceSummaryContent"
+           PlayAgain="RestartRace">
 @if (!_introDone)
 {
     <GameIntro CueScope="poracer"
@@ -125,26 +126,51 @@
     @if (Phase == GamePhase.Start && _introDone)
     {
         <div class="racer-overlay racer-start">
-            <div class="racer-card">
-                <div class="racer-title">Racer</div>
-                @if (string.IsNullOrEmpty(_startError))
+            <div class="racer-card racer-paddock-card">
+                <div class="racer-title small">🏁 RACE PADDOCK</div>
+                @if (string.IsNullOrEmpty(_startError) && !_isStarting)
                 {
-                    <div class="racer-subtitle">Joining race…</div>
+                    <div class="racer-subtitle">SELECT TRACK & VEHICLE</div>
+
+                    <div class="paddock-section">
+                        <div class="paddock-section-title">CHOOSE TRACK</div>
+                        <PoRacerTrackSelector SelectedTrackId="@_selectedTrackId"
+                                              SelectedTrackIdChanged="OnTrackSelected" />
+                    </div>
+
+                    <div class="paddock-section">
+                        <div class="paddock-section-title">CUSTOMIZE CAR</div>
+                        <PoRacerPaintShop @bind-Customization="_carCustomization" />
+                    </div>
+
                     <div class="racer-controls">
                         <div><kbd>W</kbd> / <kbd>↑</kbd> Accelerate</div>
                         <div><kbd>S</kbd> / <kbd>↓</kbd> Brake / Reverse</div>
                         <div><kbd>A</kbd> <kbd>D</kbd> / <kbd>←</kbd> <kbd>→</kbd> Steer</div>
                         <div><kbd>Space</kbd> Handbrake (drift)</div>
                     </div>
+
+                    <div class="racer-start-actions">
+                        <button type="button" class="racer-btn" @onclick="OnStartRaceClicked">START RACE</button>
+                    </div>
                     <div class="racer-hint">@_startHint</div>
+                }
+                else if (_isStarting)
+                {
+                    <div class="racer-subtitle">Joining race on @TrackDisplayName(_selectedTrackId)…</div>
+                    <div class="paddock-spinner-wrap">
+                        <span class="paddock-spinner" aria-hidden="true"></span>
+                    </div>
+                    <div class="racer-hint">Connecting to SignalR race grid…</div>
                 }
                 else
                 {
                     <div class="racer-subtitle">Couldn't start the race</div>
                     <div class="racer-hint racer-hint--error">@_startError</div>
                     <div class="racer-start-actions">
-                        <button class="racer-btn" @onclick="StartRace">Retry</button>
-                        <button class="racer-btn-secondary" @onclick="OpenLobby">Multiplayer lobby</button>
+                        <button type="button" class="racer-btn" @onclick="OnStartRaceClicked">Retry</button>
+                        <button type="button" class="racer-btn-secondary" @onclick="BackToPaddock">Back to Paddock</button>
+                        <button type="button" class="racer-btn-secondary" @onclick="OpenLobby">Multiplayer lobby</button>
                     </div>
                 }
             </div>
@@ -310,6 +336,9 @@
     private string? _gameCode;
     private string _startHint = "8 cars · 3 laps · first across the line wins";
     private string? _startError;
+    private bool _isStarting;
+    private string _selectedTrackId = "circuit";
+    private PoRacerCarCustomization _carCustomization = PoRacerCarCustomization.Default;
     private string? _toast;
     private System.Timers.Timer? _toastTimer;
 
@@ -397,6 +426,28 @@
             _crtOn = bool.TryParse(stored, out var val) && val;
         }
         catch { _crtOn = false; }
+        try
+        {
+            var storedTrack = LocalStorageService.GetItem<string>("PoRacer.SelectedTrack");
+            if (!string.IsNullOrWhiteSpace(storedTrack))
+            {
+                _selectedTrackId = storedTrack;
+            }
+        }
+        catch { }
+        try
+        {
+            var storedCar = LocalStorageService.GetItem<string>("PoRacer.Customization");
+            if (!string.IsNullOrWhiteSpace(storedCar))
+            {
+                var parts = storedCar.Split('|');
+                if (parts.Length >= 2)
+                {
+                    _carCustomization = new PoRacerCarCustomization(parts[0], parts[1]);
+                }
+            }
+        }
+        catch { }
         GameStats.SaveLastPlayedGame("poracer");
         return Task.CompletedTask;
     }
@@ -448,10 +499,68 @@
         {
             await StartDemoRaceAsync();
         }
-        else
+    }
+
+    private async Task OnStartRaceClicked()
+    {
+        _isStarting = true;
+        StateHasChanged();
+        await StartRace();
+    }
+
+    private void BackToPaddock()
+    {
+        _startError = null;
+        _isStarting = false;
+        StateHasChanged();
+    }
+
+    private void OnTrackSelected(string trackId)
+    {
+        _selectedTrackId = trackId;
+        try
         {
-            await StartRace();
+            LocalStorageService.SetItem("PoRacer.SelectedTrack", trackId);
         }
+        catch { }
+    }
+
+    private static string TrackDisplayName(string trackId) => trackId switch
+    {
+        "neonskyline" => "Neon Skyline",
+        "desertdustway" => "Desert Dustway",
+        _ => "Grand Prix Circuit",
+    };
+
+    private void RestartRace()
+    {
+        Phase = GamePhase.Start;
+        _isStarting = false;
+        _startError = null;
+        _playerSubmitted = false;
+        _submitState = SubmitState.Idle;
+        _finalResult = null;
+        _countdownMs = 0;
+        _elapsedRaceTime = 0;
+        _gunFired = false;
+        _wasBoosting = false;
+        _wasSkidding = false;
+        _lastLap = 0;
+        _lastPosition = 0;
+        Cars.Clear();
+        _standings.Clear();
+        if (_inputTimer is not null)
+        {
+            _inputTimer.Stop();
+            _inputTimer.Dispose();
+            _inputTimer = null;
+        }
+        if (_raceHub is not null)
+        {
+            _ = _raceHub.DisposeAsync();
+            _raceHub = null;
+        }
+        StateHasChanged();
     }
 
     public async ValueTask DisposeAsync()
@@ -471,6 +580,7 @@
 
     private async Task StartRace()
     {
+        _isStarting = true;
         _startError = null;
         // 2026-07-19 browser audit #9: gate the "Joining race…" placeholder
         // on a timeout. The SignalR WebSocket upgrade through
@@ -483,6 +593,7 @@
         if (!available)
         {
             _startError = "Server unavailable. Try Demo mode.";
+            _isStarting = false;
             StateHasChanged();
             return;
         }
@@ -500,16 +611,19 @@
             if (winner != connectTask)
             {
                 _startError = "Race hub took too long to connect. Try again, or switch to Demo mode for an offline CPU grid.";
+                _isStarting = false;
                 StateHasChanged();
                 return;
             }
             await connectTask; // surface any exception to the catch below
             Phase = GamePhase.Racing;
+            _isStarting = false;
             StateHasChanged();
         }
         catch (Exception ex)
         {
             _startError = ex.Message;
+            _isStarting = false;
             StateHasChanged();
         }
     }
@@ -545,7 +659,7 @@
         // so arrow-key input drives it; demo passes false to spectate.
         var initialSnap = await _raceHub.InvokeAsync<PoRacerRaceSnapshot?>(
             "JoinRace", code, asPlayer,
-            AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated);
+            AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated, _selectedTrackId);
         if (initialSnap?.Static is not null)
         {
             await JS.InvokeVoidAsync("PoRacerRender.setStatic",
@@ -605,11 +719,13 @@
                 Cars.Select(c => new
                 {
                     x = c.X, y = c.Y, h = c.Heading, v = c.Speed,
-                    color = c.Color, colorDark = c.ColorDark,
+                    color = c.IsPlayer ? _carCustomization.ColorHex : c.Color,
+                    colorDark = c.IsPlayer ? Darken(_carCustomization.ColorHex) : c.ColorDark,
                     isPlayer = c.IsPlayer, name = c.Name, lap = c.Lap,
                     position = c.Position, finished = c.Finished,
                     boost = c.BoostGlow, skid = c.SkidIntensity,
-                    surface = c.Surface, livery = c.LiveryStyle,
+                    surface = c.Surface,
+                    livery = c.IsPlayer ? _carCustomization.LiveryPattern : c.LiveryStyle,
                 }).ToArray(),
                 // The interpolator's timeline (js/poracerGl.js). Interpolating on
                 // ARRIVAL time made playback speed track packet spacing, so every
@@ -901,6 +1017,7 @@
                 AchievedAtUtc = _finalResult.FinishedAtUtc,
                 IsGuest = !AuthState.IsAuthenticated,
                 GameCode = _gameCode ?? "",
+                TrackId = _selectedTrackId,
             });
             _submitState = SubmitState.Saved;
         }
@@ -985,4 +1102,20 @@
     }
 
     private static double SpeedKph(PoRacerCarState? c) => c is null ? 0 : Math.Abs(c.Speed) * 1.2;
+
+    private static string Darken(string hex)
+    {
+        if (hex.StartsWith("#") && hex.Length == 7)
+        {
+            try
+            {
+                int r = Convert.ToInt32(hex.Substring(1, 2), 16);
+                int g = Convert.ToInt32(hex.Substring(3, 2), 16);
+                int b = Convert.ToInt32(hex.Substring(5, 2), 16);
+                return $"#{(int)(r * 0.35):X2}{(int)(g * 0.35):X2}{(int)(b * 0.35):X2}";
+            }
+            catch { }
+        }
+        return "#222";
+    }
 }

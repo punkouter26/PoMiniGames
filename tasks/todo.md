@@ -93,7 +93,7 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 9: E2E Verification, Ceiling Compliance & Smoke Test**
+- [x] **Task 9: E2E Verification, Ceiling Compliance & Smoke Test**
   - **Description**: Verify solution builds with 0 warnings, runs targeted PoRacer unit tests, and verifies that all 4 test ceilings (Unit &le; 100, Integration &le; 50, E2E-API &le; 25, E2E-UI &le; 25) remain compliant.
   - **File Manifest** (&le; 5 files):
     1. `tests/PoMiniGames.Unit/Features/PoRacer/PoRacerTrackRegistryTests.cs`

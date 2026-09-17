@@ -54,6 +54,8 @@ public class PoRacerSimAiTests
         _out.WriteLine($"track={trackId} cars={carCount} finished={finished} raceSeconds={raceSeconds:0.0}");
         foreach (var kv in finishSec.OrderBy(k => k.Value))
             _out.WriteLine($"  car {kv.Key} finished at {kv.Value:0.0}s");
+        foreach (var c in final.Cars.Where(c => !c.Finished))
+            _out.WriteLine($"  UNFINISHED car {c.Id} ({c.Name}): Lap={c.Lap}, Pos=({c.X:0.0},{c.Y:0.0}), Speed={c.Speed:0.0}");
 
         var names = final.Cars.Select(c => c.Name).ToList();
         names.Distinct().Count().Should().Be(names.Count,

@@ -82,7 +82,7 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 8: Audio & Telemetry HUD Integration**
+- [x] **Task 8: Audio & Telemetry HUD Integration**
   - **Description**: Connect boost pad activation and sand/dirt surface transitions to procedural audio cues in `gameCues.js` and `PoRacerPage.razor`. Enhance HUD with live boost duration meter, surface grip status badge, and dynamic track minimap.
   - **File Manifest** (&le; 5 files):
     1. `src/PoMiniGames.Client/Games/PoRacer/PoRacerPage.razor`

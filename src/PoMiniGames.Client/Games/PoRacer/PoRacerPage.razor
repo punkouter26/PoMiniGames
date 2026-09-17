@@ -212,6 +212,29 @@
                         <div class="hud-speed-fill" style="width:@(Math.Min(100, SpeedKph(Player) / 3.4))%"></div>
                     </div>
 
+                    @* Boost Duration Meter (Task 8) *@
+                    @if ((Player?.BoostTimer ?? 0) > 0.02 || (Player?.BoostGlow ?? 0) > 0.05)
+                    {
+                        <div class="hud-label hud-boost-label">⚡ TURBO BURST</div>
+                        <div class="hud-boost-bar">
+                            <div class="hud-boost-fill" style="width:@(Math.Min(100, Math.Max((Player?.BoostTimer ?? 0) / 1.8 * 100, (Player?.BoostGlow ?? 0) * 100)))%"></div>
+                        </div>
+                    }
+
+                    @* Surface Grip Status Badge (Task 8) *@
+                    <div class="hud-surface-badge surface--@(Player?.Surface ?? "asphalt")">
+                        @if (string.Equals(Player?.Surface, "sand", StringComparison.OrdinalIgnoreCase))
+                        {
+                            <span class="surface-icon">⏳</span>
+                            <span class="surface-text">SAND (0.68x GRIP)</span>
+                        }
+                        else
+                        {
+                            <span class="surface-icon">🛣️</span>
+                            <span class="surface-text">TARMAC (1.0x GRIP)</span>
+                        }
+                    </div>
+
                     <div class="hud-label">Time</div>
                     <div class="hud-value">@FormatTime(_elapsedRaceTime)</div>
                 }
@@ -229,6 +252,11 @@
                         <span class="hud-laps">@(c.Lap > TotalLaps ? "Fin" : $"L{c.Lap}")</span>
                     </div>
                 }
+
+                @* Dynamic Minimap (Task 8) *@
+                <div class="hud-minimap-wrap">
+                    <canvas id="racerMinimap" class="racer-minimap-canvas" width="180" height="180" role="img" aria-label="Course minimap"></canvas>
+                </div>
             </div>
         </div>
     }
@@ -366,6 +394,7 @@
     private int _lastPosition;
     private bool _wasBoosting;
     private bool _wasSkidding;
+    private bool _wasOnSand;
     private bool _gunFired;
     private DateTime _lastSkidCueUtc = DateTime.MinValue;
 
@@ -545,6 +574,7 @@
         _gunFired = false;
         _wasBoosting = false;
         _wasSkidding = false;
+        _wasOnSand = false;
         _lastLap = 0;
         _lastPosition = 0;
         Cars.Clear();
@@ -714,7 +744,7 @@
         try
         {
             _ = JS.InvokeVoidAsync("PoRacerRender.drawSnapshot",
-                "racerCanvas", null,
+                "racerCanvas", "racerMinimap",
                 snap.ElapsedRaceTime, snap.CountdownMs > 0 ? 0 : 1,
                 Cars.Select(c => new
                 {
@@ -800,12 +830,20 @@
 
         // Boost: rising edge only, or the 20 Hz snapshot rate would retrigger it
         // for the whole duration of the boost.
-        var boosting = me.BoostGlow > 0.15;
+        var boosting = me.BoostGlow > 0.15 || me.BoostTimer > 0.05;
         if (boosting && !_wasBoosting)
         {
-            await Feedback.CueAtAsync("poracer", "boost");
+            await Feedback.CueAtAsync("poracer", "boostPad");
         }
         _wasBoosting = boosting;
+
+        // Sand / loose surface transition audio
+        var onSand = string.Equals(me.Surface, "sand", StringComparison.OrdinalIgnoreCase);
+        if (onSand && !_wasOnSand)
+        {
+            await Feedback.CueAtAsync("poracer", "sandDrift", gain: 0.9);
+        }
+        _wasOnSand = onSand;
 
         // Tyre squeal, gated by both an edge and a cooldown (see SkidCueCooldown).
         // Level follows how hard the car is actually sliding.
@@ -813,7 +851,8 @@
         if (skidding && !_wasSkidding && DateTime.UtcNow - _lastSkidCueUtc > SkidCueCooldown)
         {
             _lastSkidCueUtc = DateTime.UtcNow;
-            await Feedback.CueAtAsync("poracer", "skid", gain: Math.Min(1.2, me.SkidIntensity));
+            var cueName = onSand ? "sandDrift" : "skid";
+            await Feedback.CueAtAsync("poracer", cueName, gain: Math.Min(1.2, me.SkidIntensity));
         }
         _wasSkidding = skidding;
 

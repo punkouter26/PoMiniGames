@@ -960,3 +960,83 @@
     @@keyframes paddock-spin {
         to { transform: rotate(360deg); }
     }
+
+    /* ─── HUD Boost, Surface & Minimap (Task 8) ─── */
+    .hud-boost-label {
+        color: #ffaa00;
+        text-shadow: 0 0 10px rgba(255, 170, 0, 0.6);
+        animation: boost-glow-pulse 0.4s ease-in-out infinite alternate;
+    }
+
+    @@keyframes boost-glow-pulse {
+        from { opacity: 0.8; }
+        to { opacity: 1.0; }
+    }
+
+    .hud-boost-bar {
+        width: 100%;
+        height: 6px;
+        background: rgba(255, 170, 0, 0.2);
+        border: 1px solid rgba(255, 170, 0, 0.4);
+        border-radius: 3px;
+        overflow: hidden;
+        margin: 4px 0 8px;
+    }
+
+    .hud-boost-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #ffaa00 0%, #00ffff 100%);
+        box-shadow: 0 0 10px #00ffff;
+        transition: width 0.05s linear;
+    }
+
+    .hud-surface-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: 'Orbitron', monospace;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        padding: 4px 8px;
+        border-radius: 6px;
+        margin: 6px 0;
+        width: fit-content;
+        transition: all 0.2s ease;
+    }
+
+    .hud-surface-badge.surface--asphalt {
+        background: rgba(78, 195, 255, 0.15);
+        border: 1px solid rgba(78, 195, 255, 0.35);
+        color: #7fd4ff;
+    }
+
+    .hud-surface-badge.surface--sand {
+        background: rgba(255, 150, 0, 0.2);
+        border: 1px solid rgba(255, 150, 0, 0.5);
+        color: #ffaa00;
+        box-shadow: 0 0 12px rgba(255, 150, 0, 0.3);
+        animation: sand-warning-pulse 0.6s ease-in-out infinite alternate;
+    }
+
+    @@keyframes sand-warning-pulse {
+        from { border-color: rgba(255, 150, 0, 0.3); }
+        to { border-color: rgba(255, 80, 0, 0.9); }
+    }
+
+    .hud-minimap-wrap {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(120, 200, 255, 0.18);
+        display: flex;
+        justify-content: center;
+    }
+
+    .racer-minimap-canvas {
+        width: 180px;
+        height: 180px;
+        border-radius: 8px;
+        border: 1px solid rgba(120, 200, 255, 0.3);
+        background: rgba(5, 10, 20, 0.8);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    }

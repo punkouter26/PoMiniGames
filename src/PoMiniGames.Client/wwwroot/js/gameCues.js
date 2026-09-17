@@ -326,6 +326,21 @@ const CUES = {
             ],
             feel: 'tick', jitter: 0.8,
         },
+        boostPad: {
+            voices: [
+                v('saw', 160, 0.50, 0.18, { freqEnd: 740, sweep: 0.45, decay: 0.45, cutoff: 800, cutoffEnd: 6000, q: 4.5, drive: 0.6 }),
+                v('sine', 440, 0.35, 0.12, { freqEnd: 1320, sweep: 0.30, decay: 0.30 }),
+                v('noise', 0, 0.40, 0.10, { decay: 0.38, cutoff: 1200, cutoffEnd: 7000, q: 2, sweep: 0.38 }),
+            ],
+            feel: 'medium', fx: { preset: 'sparks', scale: 1.4 }, duck: 0.35,
+        },
+        sandDrift: {
+            voices: [
+                v('noise', 0, 0.45, 0.15, { decay: 0.42, cutoff: 1400, cutoffEnd: 400, q: 2.5, sweep: 0.38 }),
+                v('saw', 65, 0.35, 0.08, { freqEnd: 45, sweep: 0.30, decay: 0.30, cutoff: 400 }),
+            ],
+            feel: 'tick', fx: { preset: 'smoke', scale: 0.9 },
+        },
     },
 
     // ── PoSports — rubber, air & stadium crowd ─────────────────────────

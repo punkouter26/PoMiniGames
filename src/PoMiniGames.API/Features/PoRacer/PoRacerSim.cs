@@ -125,20 +125,18 @@ internal sealed class PoRacerSim
         {
             slots.Add((p.ConnectionId, p.DisplayName, true));
         }
-        string[] botNames = { "Vega", "Kairo", "Nyx", "Rocco", "Sable", "Jinx", "Echo", "Astra" };
-        // Capture the human count ONCE: slots.Count grows as bots are added, so using
-        // it live made `botNames[i - slots.Count]` always index 0 → every bot "Vega".
         int humanCount = slots.Count;
-        for (int i = humanCount; i < 8 && i - humanCount < botNames.Length; i++)
+        for (int i = humanCount; i < 8; i++)
         {
-            slots.Add(($"bot-{i}", botNames[i - humanCount], false));
+            var p = PoRacerAiDriver.GetPersonality(i);
+            slots.Add(($"bot-{i}", p.Name, false));
         }
-        while (slots.Count < 8) slots.Add(($"bot-{slots.Count}", botNames[slots.Count % botNames.Length], false));
 
         for (int i = 0; i < slots.Count && i < 8; i++)
         {
             var s = slots[i];
             var prof = profiles[i];
+            var personality = s.isPlayer ? null : PoRacerAiDriver.GetPersonality(i);
             int row = i / 2;
             int col = i % 2;
             double fwdOffset = 60 + row * 38;
@@ -146,20 +144,22 @@ internal sealed class PoRacerSim
             var pos = new Vec2(
                 startA.X + tx * fwdOffset + nrm.X * sideOffset,
                 startA.Y + ty * fwdOffset + nrm.Y * sideOffset);
+            string carColor = personality?.PrimaryColor ?? palette[i];
             var car = new SimCar
             {
                 Id = i,
                 ConnectionId = s.connectionId,
                 Name = s.name,
                 IsPlayer = s.isPlayer,
-                Color = palette[i],
-                ColorDark = Darken(palette[i]),
+                Personality = personality,
+                Color = carColor,
+                ColorDark = Darken(carColor),
                 Pos = pos,
                 Heading = Math.Atan2(ty, tx),
-                MaxSpeed = prof.maxSpeed,
-                Acceleration = prof.accel,
-                Handling = prof.handling,
-                CorneringSkill = prof.skill,
+                MaxSpeed = personality?.MaxSpeed ?? prof.maxSpeed,
+                Acceleration = personality?.Acceleration ?? prof.accel,
+                Handling = personality?.Handling ?? prof.handling,
+                CorneringSkill = personality?.CorneringSkill ?? prof.skill,
                 Lap = 1,
                 LastCheckpoint = 0,
                 CheckpointT = 0,
@@ -379,11 +379,39 @@ internal sealed class PoRacerSim
 
         double speedFrac = Math.Clamp(Math.Abs(c.Speed) / c.MaxSpeed, 0, 1);
 
-        // Aim a few nodes down the track — tight enough to follow the line through
-        // corners instead of cutting the chord into the outside wall.
-        int steerLook = (int)(3 + speedFrac * 6 + c.CorneringSkill * 3);
+        // Aim a few nodes down the track, taking personality lookahead and lateral offset into account
+        double lookFactor = c.Personality?.LookaheadFactor ?? 1.0;
+        int steerLook = (int)((3 + speedFrac * 6 + c.CorneringSkill * 3) * lookFactor);
         int aimIdx = (c.LastCheckpoint + steerLook) % n;
         var target = _centerline[aimIdx];
+
+        if (c.Personality is { } pers && pers.LateralOffsetRatio != 0)
+        {
+            var a = _centerline[aimIdx];
+            var b = _centerline[(aimIdx + 1) % n];
+            var nrm = PoRacerTrackRegistry.ComputeNormal(a, b);
+            target = new Vec2(target.X + nrm.X * (pers.LateralOffsetRatio * _trackWidth * 0.35),
+                              target.Y + nrm.Y * (pers.LateralOffsetRatio * _trackWidth * 0.35));
+        }
+
+        // Slipstream drafting for AI
+        if (c.Personality?.PrefersDrafting == true)
+        {
+            bool isDrafting = false;
+            foreach (var other in _cars)
+            {
+                if (other.Id != c.Id && other.Lap <= TotalLaps && PoRacerAiDriver.IsDrafting(c.Pos, c.Heading, other.Pos))
+                {
+                    isDrafting = true;
+                    break;
+                }
+            }
+            if (isDrafting)
+            {
+                c.AccelerationModifier = Math.Max(c.AccelerationModifier, 1.15);
+            }
+        }
+
         double desired = Math.Atan2(target.Y - c.Pos.Y, target.X - c.Pos.X);
         double diff = ShortAngleDiff(desired, c.Heading);
 
@@ -393,7 +421,8 @@ internal sealed class PoRacerSim
         int scan = (int)(9 + speedFrac * 15);
         double bend = UpcomingBend(c.LastCheckpoint, scan);
         double curviness = Math.Clamp(bend / 0.85, 0, 1);
-        double cornerSpeed = c.MaxSpeed * (1.0 - 0.58 * curviness) * (0.92 + 0.14 * c.CorneringSkill);
+        double aggression = c.Personality?.Aggression ?? 0.5;
+        double cornerSpeed = c.MaxSpeed * (1.0 - 0.58 * curviness) * (0.90 + 0.12 * c.CorneringSkill + 0.08 * aggression);
         cornerSpeed = Math.Clamp(cornerSpeed, c.MaxSpeed * 0.36, c.MaxSpeed);
 
         const double deadband = 0.05;
@@ -772,6 +801,7 @@ internal sealed class PoRacerSim
         public string Surface = "asphalt";
         public double EffectiveGrip = 1.0;
         public double AccelerationModifier = 1.0;
+        public PoRacerAiPersonality? Personality;
         public double Damage;
         public double StuckTimer;   // seconds without track progress — drives the AI unstick maneuver
         public double ProgressMark; // last DistanceAlongTrack the car meaningfully advanced past

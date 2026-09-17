@@ -38,9 +38,9 @@ Each task is a vertical slice touching &le; 5 files. All tasks follow strict TDD
 
 ---
 
-- [ ] **Task 4: AI Bot Personalities & Driving Heuristics**
+- [x] **Task 4: AI Bot Personalities & Driving Heuristics**
   - **Description**: Implement `PoRacerAiDriver.cs` with 7 distinct bot personality profiles (*Apex Predator*, *Draft Hunter*, *Aggressive Bumper*, *Ghost Line*, *Speed Demon*, *Cautious Cruiser*, *Slipstreamer*). Integrate distinct lateral offsets, braking distances, and slipstreaming logic into `PoRacerSim.cs`.
-  - **File Manifest** (&le; 5 files):
+  - **File Manifest** (≤ 5 files):
     1. `src/PoMiniGames.API/Features/PoRacer/PoRacerAiDriver.cs`
     2. `src/PoMiniGames.API/Features/PoRacer/PoRacerSim.cs`
     3. `tests/PoMiniGames.Unit/Features/PoRacer/PoRacerSimAiTests.cs`

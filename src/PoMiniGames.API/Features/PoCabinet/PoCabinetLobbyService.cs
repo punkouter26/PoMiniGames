@@ -21,7 +21,12 @@ public sealed class PoCabinetLobbyService
     public string Open(string hostConnectionId, string displayName, bool isGuest, string? trackId)
     {
         var code = GenerateJoinCode();
-        var lobby = new Lobby(code, hostConnectionId, displayName, isGuest, trackId ?? PoCabinetCatalog.DefaultTrackId);
+        var lobby = new Lobby(
+            code,
+            hostConnectionId,
+            displayName,
+            isGuest,
+            trackId ?? PoCabinetCatalog.DefaultTrackId);
         _byCode[code] = lobby;
         return code;
     }

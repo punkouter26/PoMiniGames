@@ -1,14 +1,14 @@
+@page "/pocabinet/{ModeSegment}"
 @page "/pocabinet"
-@page "/pocabinet/1player"
-@page "/pocabinet/2player"
-@page "/pocabinet/multi"
-@page "/pocabinet/demo"
 
 @using PoMiniGames.Shared.Games
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject GameResultService GameResults
+@inject PlayerNameService PlayerNameSvc
+@inject PoCabinetSession Session
 @inject PoCabinetCareerState Career
+@inherits PoCabinetPageBase
 
 <PageTitle>Cabinet · PoMiniGames</PageTitle>
 
@@ -20,23 +20,34 @@
             <section class="pocabinet-start" aria-label="Cabinet start">
                 <div class="pocabinet-card">
                     <h1>Cabinet</h1>
-                    <p>Three tracks. Four officials. One presidency. 3 laps per race.</p>
+                    <p class="pocabinet-card__lede">@(Mode == GameMode.Demo ? "Watch a 3-lap showcase. The cockpit controls read WASD / arrow keys; a single click is enough — the AI fills the rest." : "Pick a track, pick your paint, and take on the officials.") 3 laps per race.</p>
                     <PoCabinetTrackSelector SelectedTrackId="@_trackId" SelectedTrackIdChanged="OnTrackChanged" />
-                    <details>
-                        <summary>Customize car</summary>
+                    <details class="pocabinet-customize">
+                        <summary>Customize paint job</summary>
                         <PoCabinetPaintShop SelectedLivery="@_livery" SelectedColor="@_color" SelectionChanged="OnPaintChanged" />
                     </details>
+                    <details class="pocabinet-customize">
+                        <summary>Settings</summary>
+                        <PoCabinetSettingsPanel Value="Settings" ValueChanged="OnSettingsChangedAsync" />
+                    </details>
+                    <p class="pocabinet-hint" aria-hidden="true">Selected: <strong>@(_livery)</strong> · <strong>@(_color)</strong></p>
                     <div class="pocabinet-actions">
-                        <button class="pocabinet-primary" @onclick="StartRaceAsync">Start race</button>
-                        @if (Mode == GameMode.Multiplayer)
+                        <button class="pocabinet-primary" @onclick="StartRaceAsync">@(Mode == GameMode.Demo ? "Watch demo" : "Start race")</button>
+                        @if (Mode != GameMode.Multiplayer)
                         {
-                            <a href="/pocabinet/multi">Multiplayer lobby</a>
+                            <a href="/pocabinet/multi">Multiplayer</a>
                         }
                         <a href="/leaderboards?game=pocabinet">Leaderboard</a>
                     </div>
                     @if (Mode == GameMode.OnePlayer)
                     {
                         <PoCabinetChampionshipView />
+                        @if (HasAnyCareerProgress)
+                        {
+                            <button class="pocabinet-secondary" @onclick="ResetCareerAsync" aria-label="Reset career progression">
+                                Reset career
+                            </button>
+                        }
                     }
                 </div>
             </section>
@@ -45,90 +56,180 @@
         {
             <PoCabinetLobby Mode="@Mode.ToString()" InitialJoinCode="@_joinCode" />
         }
-        else if (_phase == Phase.Racing)
+        else if (_phase == Phase.Racing || _phase == Phase.Loading)
         {
-            <section class="pocabinet-race" aria-label="Race in progress">
+            <section class="pocabinet-race @(Settings.ReducedMotion ? "pocabinet-reduced" : "")"
+                     style="--pocabinet-hud:@Settings.HudScaleCss"
+                     aria-label="Race in progress">
                 <canvas id="pocabinetCanvas"
+                        @ref="_canvas"
                         class="pocabinet-canvas"
                         role="img"
                         tabindex="0"
                         aria-label="Cabinet cockpit view. Drive with W A S D or arrow keys.">
                 </canvas>
+                <canvas id="pocabinetMinimap" @ref="_minimapCanvas" class="pocabinet-minimap" aria-hidden="true"></canvas>
+                <div id="pocabinetDialogueLayer" class="pocabinet-dialogue-layer" aria-hidden="true"></div>
+                @if (_countdownDisplay > 0)
+                {
+                    <div class="pocabinet-countdown" role="status">@_countdownDisplay</div>
+                }
+                else if (_showGo)
+                {
+                    <div class="pocabinet-countdown pocabinet-countdown--go" role="status">GO!</div>
+                }
+                @if (IsMultiplayerMode && _phase == Phase.Racing && _pingMs is not null)
+                {
+                    <span class="pocabinet-ping @PingClass" title="Round-trip latency to the race server">@_pingMs ms</span>
+                }
                 <div class="pocabinet-hud" aria-live="polite">
                     <span>Lap <strong>@_lap</strong>/@_totalLaps</span>
                     <span>Pos <strong>@_position</strong>/@_totalCars</span>
                     <span>Speed <strong>@($"{_speedKmh:0}")</strong> km/h</span>
                     <span>Time <strong>@FormatLapTime(_lapSeconds)</strong></span>
+                    <span>Last <strong>@FormatLapTime(_lastLapSeconds)</strong></span>
+                    <span>Best <strong>@FormatLapTime(_bestLapSession > 0 ? _bestLapSession : _storedBestLap)</strong></span>
+                    <span class="pocabinet-sectors" aria-label="Sector splits">
+                        @for (var i = 0; i < 3; i++)
+                        {
+                            var idx = i;
+                            <span class="pocabinet-sector @SectorClass(idx)">
+                                <span class="pocabinet-sector__label">S@(idx + 1)</span>
+                                @if (_sectorTimes[idx] is { } done)
+                                {
+                                    @FormatLapTime(done)
+                                }
+                                else if (idx == _sectorIndex && _lastSnapshot is { } ls && ls.Started && !ls.Finished)
+                                {
+                                    @FormatLapTime(Math.Max(0, ls.ElapsedRaceTime - _sectorStart))
+                                }
+                                else
+                                {
+                                    @("—")
+                                }
+                            </span>
+                        }
+                    </span>
+                    @if (Pausable)
+                    {
+                        <button type="button" class="pocabinet-pausebtn" @onclick="TogglePauseAsync"
+                                aria-label="@(_paused ? "Resume race" : "Pause race")">
+                            @(_paused ? "▶" : "⏸")
+                        </button>
+                    }
                 </div>
-                @if (_announcement is not null)
+                @if (!string.IsNullOrEmpty(_announcement))
                 {
                     <p class="pocabinet-announcement" role="status">@_announcement</p>
                 }
+                @if (IsMultiplayerMode && _phase == Phase.Racing && !string.IsNullOrEmpty(_status))
+                {
+                    <div class="pocabinet-reconnect" role="alert">
+                        <span class="pocabinet-reconnect__spinner" aria-hidden="true"></span>
+                        <span>@_status</span>
+                    </div>
+                }
+                else if (!string.IsNullOrEmpty(_status))
+                {
+                    <p class="pocabinet-status" role="alert">@_status</p>
+                }
+            </section>
+            @if (_paused)
+            {
+                <div class="pocabinet-overlay" role="dialog" aria-modal="true" aria-label="Race paused">
+                    <div class="pocabinet-overlay__card">
+                        <h2>Paused</h2>
+                        <PoCabinetSettingsPanel Value="Settings" ValueChanged="OnSettingsChangedAsync" />
+                        <div class="pocabinet-actions">
+                            <button class="pocabinet-primary" @onclick="ResumeRaceAsync">Resume</button>
+                            <button class="pocabinet-secondary" @onclick="QuitToMenuAsync">Quit to menu</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+        else if (_phase == Phase.Finished)
+        {
+            <section class="pocabinet-finished" aria-label="Race finished">
+                @if (_position <= 3 && !Settings.ReducedMotion)
+                {
+                    <div class="pocabinet-confetti" aria-hidden="true">
+                        @for (var i = 0; i < 24; i++)
+                        {
+                            var n = i;
+                            // Values computed in code-behind helpers — the Razor
+                            // expression parser mis-compiles the modulo character
+                            // inside markup code blocks, so this file stays free of it.
+                            <span style="--cx:@ConfettiX(n);--cd:@ConfettiDelay(n);--cc:@ConfettiColor(n)"></span>
+                        }
+                    </div>
+                }
+                <h2>Race finished</h2>
+                @if (_isPersonalBest)
+                {
+                    <p class="pocabinet-pb" role="status">★ New personal best!</p>
+                }
+                else if (_previousBest > 0)
+                {
+                    <p class="pocabinet-pbdelta">Personal best: @FormatLapTime(_previousBest)</p>
+                }
+                <p>Position: <strong>P@_position</strong>/@_totalCars</p>
+                @if (_finalStandings is { } standings && standings.Count > 0)
+                {
+                    <div class="pocabinet-podium" aria-label="Podium">
+                        @foreach (var (entry, idx) in standings.Take(3).Select((c, i) => (c, i)))
+                        {
+                            <div class="pocabinet-podium__step @(entry.IsPlayer ? "pocabinet-podium__step--player" : "")">
+                                <span class="pocabinet-podium__medal" aria-hidden="true">@(idx == 0 ? "🥇" : idx == 1 ? "🥈" : "🥉")</span>
+                                <strong>@entry.Name</strong>
+                                <span class="pocabinet-podium__official">@entry.OfficialId</span>
+                            </div>
+                        }
+                    </div>
+                    @if (standings.Count > 3)
+                    {
+                        <ol class="pocabinet-standings">
+                            @foreach (var entry in standings.Skip(3))
+                            {
+                                <li>@entry.Name — position @entry.Position</li>
+                            }
+                        </ol>
+                    }
+                }
+                @if (_lastLapSectorTimes.Any(s => s is not null))
+                {
+                    <div class="pocabinet-laps">
+                        <h3>Last lap sectors</h3>
+                        <div class="pocabinet-laps__row">
+                            @for (var i = 0; i < 3; i++)
+                            {
+                                var idx = i;
+                                <span class="pocabinet-sector @SectorClassFor(_lastLapSectorTimes[idx], idx)">
+                                    S@(idx + 1) @(_lastLapSectorTimes[idx] is { } t ? FormatLapTime(t) : "—")
+                                </span>
+                            }
+                        </div>
+                        @if (_lapTimes.Count > 0)
+                        {
+                            <p class="pocabinet-laps__all">
+                                Laps:
+                                @foreach (var (t, idx) in _lapTimes.Select((t, i) => (t, i)))
+                                {
+                                    <span>@(idx + 1): @FormatLapTime(t)&nbsp;</span>
+                                }
+                            </p>
+                        }
+                    </div>
+                }
+                <div class="pocabinet-actions">
+                    <button class="pocabinet-primary" @onclick="() => _phase = Phase.Start">Back to start</button>
+                    <button class="pocabinet-secondary" @onclick="ShareResultAsync">Share result</button>
+                    @if (IsMultiplayerMode)
+                    {
+                        <a class="pocabinet-secondary" href="/pocabinet/multi">Rematch — new lobby</a>
+                    }
+                </div>
             </section>
         }
     </div>
 </GameShell>
-
-@code {
-    [Parameter] public string? ModeSegment { get; set; }
-
-    private enum Phase { Start, Lobby, Racing, Finished }
-
-    private GameMode Mode => GameModes.Parse(ModeSegment);
-
-    private string _playerName = "Player";
-    private Phase _phase = Phase.Start;
-    private string? _trackId = PoCabinetCatalog.DefaultTrackId;
-    private string? _livery = "Stripe";
-    private string? _color = "Indigo";
-    private string? _joinCode = null;
-
-    private int _lap = 1;
-    private int _position = 1;
-    private int _totalLaps = PoCabinetCatalog.TotalLaps;
-    private int _totalCars = 4;
-    private double _speedKmh = 0;
-    private double _lapSeconds = 0;
-    private string? _announcement = null;
-
-    private RenderFragment TitleContent => @<span>🏛️ Cabinet</span>;
-
-    protected override async Task OnInitializedAsync()
-    {
-        await Career.LoadAsync();
-    }
-
-    private Task OnTrackChanged(string trackId)
-    {
-        _trackId = trackId;
-        return Task.CompletedTask;
-    }
-
-    private Task OnPaintChanged((string Livery, string Color) sel)
-    {
-        _livery = sel.Livery;
-        _color = sel.Color;
-        return Task.CompletedTask;
-    }
-
-    private Task StartRaceAsync()
-    {
-        if (Mode == GameMode.Multiplayer)
-        {
-            _phase = Phase.Lobby;
-        }
-        else
-        {
-            _phase = Phase.Racing;
-        }
-        return Task.CompletedTask;
-    }
-
-    private static string FormatLapTime(double seconds)
-    {
-        if (double.IsNaN(seconds) || seconds < 0) return "0:00.0";
-        var minutes = (int)(seconds / 60);
-        var rest = seconds - minutes * 60;
-        return $"{minutes}:{rest:0.0}";
-    }
-}

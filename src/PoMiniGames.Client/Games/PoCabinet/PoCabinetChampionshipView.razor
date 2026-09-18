@@ -42,6 +42,18 @@
     protected override async Task OnInitializedAsync()
     {
         await Career.LoadAsync();
-        Career.Current = Career.Current; // trigger re-render
+        Career.Changed += OnCareerChanged;
+    }
+
+    private void OnCareerChanged()
+    {
+        // RecordStageResultAsync updates Current + persists. The career is a
+        // singleton-style service so we just nudge the view to redraw.
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        if (Career is not null) Career.Changed -= OnCareerChanged;
     }
 }

@@ -57,6 +57,7 @@ class DialogueHandle {
 }
 
 export function mount(parent, officialId) {
+    if (typeof parent === 'string') parent = document.getElementById(parent);
     if (!parent) throw new Error('pocabinet/dialogue: parent element is required');
 
     const root = document.createElement('div');
@@ -81,6 +82,18 @@ export function mount(parent, officialId) {
 export function unmount(handle) {
     if (!handle) return;
     handle.dispose();
+}
+
+/** Show a line on the bubble; facade for window.PoCabinet.showDialogue. */
+export function show(handle, text, durationMs) {
+    if (!handle) return;
+    handle.show(text, durationMs);
+}
+
+/** Hide the bubble immediately; facade for window.PoCabinet.hideDialogue. */
+export function hide(handle) {
+    if (!handle) return;
+    handle.hide();
 }
 
 export function officialName(officialId) {

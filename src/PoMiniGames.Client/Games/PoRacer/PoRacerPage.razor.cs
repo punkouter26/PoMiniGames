@@ -138,11 +138,20 @@ public partial class PoRacerPage
         await JS.InvokeVoidAsync("PoRacerRender.drawSnapshot", "racerCanvas", "racerMinimap",
             snapshot.ElapsedRaceTime, 1, _cars.Select(c => new
             {
-                x = c.X, y = c.Y, h = c.Heading, v = c.Speed,
+                x = c.X,
+                y = c.Y,
+                h = c.Heading,
+                v = c.Speed,
                 color = c.Id == _localCarId ? _customization.ColorHex : c.Color,
-                colorDark = c.ColorDark, isPlayer = c.Id == _localCarId,
-                name = c.Name, lap = c.Lap, position = c.Position, finished = c.Finished,
-                boost = c.BoostGlow, skid = c.SkidIntensity, surface = c.Surface,
+                colorDark = c.ColorDark,
+                isPlayer = c.Id == _localCarId,
+                name = c.Name,
+                lap = c.Lap,
+                position = c.Position,
+                finished = c.Finished,
+                boost = c.BoostGlow,
+                skid = c.SkidIntensity,
+                surface = c.Surface,
                 livery = c.Id == _localCarId ? _customization.LiveryPattern : c.LiveryStyle
             }).ToArray(), snapshot.ServerTimeMs);
         if (_raceStarted) await UpdateAudioAsync();
@@ -165,8 +174,11 @@ public partial class PoRacerPage
                 if (double.IsFinite(mine.BestLapSeconds) && mine.BestLapSeconds > 0)
                     _score = new PoRacerScoreDto
                     {
-                        BestLapSeconds = mine.BestLapSeconds, FinalPosition = mine.Position,
-                        TrackId = _selectedTrackId, GameCode = _gameCode, AchievedAtUtc = result.FinishedAtUtc
+                        BestLapSeconds = mine.BestLapSeconds,
+                        FinalPosition = mine.Position,
+                        TrackId = _selectedTrackId,
+                        GameCode = _gameCode,
+                        AchievedAtUtc = result.FinishedAtUtc
                     };
                 await SubmitScoreAsync();
             }

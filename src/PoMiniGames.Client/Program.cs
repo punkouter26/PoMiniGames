@@ -6,6 +6,7 @@ using Microsoft.JSInterop;
 using PoMiniGamesClient;
 using PoMiniGamesClient.Games.PoCoupleQuiz.Services;
 using PoMiniGamesClient.Games.PoFunQuiz.Services;
+using PoMiniGamesClient.Games.PoCabinet;
 using PoMiniGamesClient.Games.PoRacer;
 using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
@@ -98,6 +99,13 @@ builder.Services.AddAuthorizationCore();
 builder.Services.AddScoped<PlayerNameService>();
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<GameStatsService>();
+// T9a: PoCabinet race session owns both lobby + race hub connections for
+// the lifetime of one race. Scoped — each Blazor circuit creates its own.
+builder.Services.AddScoped<PoCabinetSession>();
+// T13 (2026-09-17): PoCabinetCareerState holds the player's 3-stage progress
+// in localStorage and exposes a Changed event the ChampionshipView subscribes
+// to. Scoped so each Blazor circuit reads its own ILocalStorageService cache.
+builder.Services.AddScoped<PoCabinetCareerState>();
 // Offline score resilience: durable localStorage queue + flusher behind GameResultService,
 // so a failed leaderboard submit is parked and synced on reconnect rather than lost.
 builder.Services.AddScoped<PendingScoreStore>();

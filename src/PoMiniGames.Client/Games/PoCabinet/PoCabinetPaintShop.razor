@@ -9,41 +9,30 @@
 @inject ILocalStorageService LocalStorage
 
 <div class="pocabinet-paintshop" aria-label="Customize your car">
-    <h3 class="pocabinet-paintshop__title">Pick a livery</h3>
-    <div class="pocabinet-paintshop__liveries" role="radiogroup" aria-label="Livery pattern">
-        @foreach (var livery in LIVERIES)
-        {
-            var isSelected = livery == _selectedLivery;
-            <button type="button"
-                    class="pocabinet-livery @(isSelected ? "pocabinet-livery--selected" : null)"
-                    role="radio"
-                    aria-checked="@isSelected"
-                    @onclick="() => SelectLivery(livery)">
-                <span class="pocabinet-livery__preview" data-livery="@livery" aria-hidden="true"></span>
-                <span class="pocabinet-livery__name">@livery</span>
-            </button>
-        }
-    </div>
-
-    <h3 class="pocabinet-paintshop__title">Pick a color</h3>
-    <div class="pocabinet-paintshop__colors" role="radiogroup" aria-label="Body color">
+    <div class="pocabinet-paintshop__grid" role="radiogroup" aria-label="Pick a paint job">
         @foreach (var (name, hex) in COLORS)
         {
-            var isSelected = name == _selectedColor;
-            <button type="button"
-                    class="pocabinet-color @(isSelected ? "pocabinet-color--selected" : null)"
-                    role="radio"
-                    aria-checked="@isSelected"
-                    style="--swatch: @hex;"
-                    aria-label="@name"
-                    @onclick="() => SelectColor(name)">
-                <span class="pocabinet-color__chip" aria-hidden="true"></span>
-            </button>
+            @foreach (var livery in LIVERIES)
+            {
+                var isSelected = livery == _selectedLivery && name == _selectedColor;
+                var swatchBg = hex;
+                // Stripe livery lays the colour over a contrasting base so the
+                // pattern reads as a paint job, not a flat swatch.
+                var stripeColor = name == "Gold" ? "#fff" : "#fff8";
+                var previewBg = livery == "Solid" ? swatchBg
+                    : livery == "Stripe" ? $"repeating-linear-gradient(45deg, {swatchBg} 0 6px, {stripeColor} 6px 12px)"
+                    : livery == "Block"  ? $"linear-gradient(135deg, {swatchBg} 0 50%, #ffffff22 50% 100%)"
+                    /* Split */            : $"linear-gradient(90deg, {swatchBg} 0 50%, #ffffff22 50% 100%)";
+                <button type="button"
+                        class="pocabinet-swatch @(isSelected ? "pocabinet-swatch--selected" : null)"
+                        role="radio"
+                        aria-checked="@isSelected"
+                        aria-label="@livery @name"
+                        style="--swatch: @previewBg;"
+                        @onclick="() => Select(livery, name)">
+                </button>
+            }
         }
-    </div>
-
-    <div class="pocabinet-paintshop__preview" aria-live="polite">
-        Your car: <strong>@_selectedLivery</strong> in <strong>@_selectedColor</strong>.
     </div>
 </div>
 
@@ -92,20 +81,14 @@
         SelectedColor = _selectedColor;
     }
 
-    private async Task SelectLivery(string livery)
+    private async Task Select(string livery, string color)
     {
         _selectedLivery = livery;
-        SelectedLivery = livery;
-        await PersistAsync();
-        await SelectionChanged.InvokeAsync((livery, _selectedColor));
-    }
-
-    private async Task SelectColor(string color)
-    {
         _selectedColor = color;
+        SelectedLivery = livery;
         SelectedColor = color;
         await PersistAsync();
-        await SelectionChanged.InvokeAsync((_selectedLivery, color));
+        await SelectionChanged.InvokeAsync((livery, color));
     }
 
     private async Task PersistAsync()

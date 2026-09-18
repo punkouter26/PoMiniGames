@@ -3,6 +3,10 @@
    light/dark themes flow through automatically. */
 
 .pocabinet-root {
+    --color-primary: var(--color-accent-solid, #6366f1);
+    --color-on-primary: var(--color-accent-contrast, #ffffff);
+    --color-text-muted: var(--color-text-secondary, #94a3b8);
+    --color-text: var(--color-text-primary, #e2e8f0);
     width: 100%;
     height: 100%;
     color: var(--color-text);
@@ -16,6 +20,28 @@
     max-width: 720px;
     margin: 2rem auto;
     box-shadow: var(--shadow-card, none);
+}
+
+.pocabinet-card__lede {
+    margin: 0 0 1.25rem 0;
+    color: var(--color-text-muted);
+    line-height: 1.45;
+}
+
+.pocabinet-hint {
+    margin: 0.75rem 0 0;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+}
+
+.pocabinet-customize {
+    margin-top: 1rem;
+}
+
+.pocabinet-customize > summary {
+    cursor: pointer;
+    color: var(--color-text-muted);
+    user-select: none;
 }
 
 .pocabinet-actions {
@@ -38,6 +64,17 @@
 .pocabinet-primary:focus-visible {
     outline: 2px solid var(--color-focus, currentColor);
     outline-offset: 2px;
+}
+
+.pocabinet-secondary {
+    background: transparent;
+    color: var(--color-text, inherit);
+    border: 1px solid var(--color-border, currentColor);
+    border-radius: var(--radius-md, 6px);
+    padding: 0.45rem 0.9rem;
+    margin-top: 0.75rem;
+    cursor: pointer;
+    font: inherit;
 }
 
 /* ─── Track selector ─────────────────────────────────────────────────────── */
@@ -97,52 +134,34 @@
 /* ─── Paint shop ─────────────────────────────────────────────────────────── */
 
 .pocabinet-paintshop {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
     margin-top: 1rem;
 }
 
-.pocabinet-paintshop__title {
-    margin: 0;
-    font-size: 1rem;
+.pocabinet-paintshop__grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.4rem;
 }
 
-.pocabinet-paintshop__liveries,
-.pocabinet-paintshop__colors {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-}
-
-.pocabinet-livery,
-.pocabinet-color {
+.pocabinet-swatch {
+    aspect-ratio: 1 / 1;
+    width: 100%;
+    min-height: 38px;
     border: 1px solid var(--color-border, transparent);
-    background: var(--color-surface);
-    border-radius: var(--radius-md, 6px);
-    padding: 0.4rem 0.6rem;
-    cursor: pointer;
-    color: inherit;
-    font: inherit;
-}
-
-.pocabinet-livery--selected,
-.pocabinet-color--selected {
-    outline: 2px solid var(--color-primary);
-}
-
-.pocabinet-color__chip {
-    display: inline-block;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
     background: var(--swatch);
-    vertical-align: middle;
+    border-radius: var(--radius-md, 6px);
+    cursor: pointer;
+    padding: 0;
+    color: inherit;
 }
 
-.pocabinet-paintshop__preview {
-    color: var(--color-text-muted);
-    font-size: 0.85rem;
+.pocabinet-swatch:hover {
+    border-color: var(--color-primary);
+}
+
+.pocabinet-swatch--selected {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
 }
 
 /* ─── Championship ───────────────────────────────────────────────────────── */
@@ -315,4 +334,320 @@
     margin-top: 0.5rem;
     color: var(--color-text-muted);
     font-style: italic;
+}
+
+/* ─── Race overlays: minimap, countdown, ping, reconnect ─────────────────── */
+
+.pocabinet-minimap {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    width: calc(170px * var(--pocabinet-hud, 1));
+    height: calc(120px * var(--pocabinet-hud, 1));
+    border-radius: var(--radius-md, 6px);
+    background: rgba(8, 12, 24, 0.55);
+    border: 1px solid var(--color-border, transparent);
+    pointer-events: none;
+}
+
+.pocabinet-countdown {
+    position: absolute;
+    top: 38%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: calc(4.5rem * var(--pocabinet-hud, 1));
+    font-weight: 800;
+    color: #ffffff;
+    text-shadow: 0 2px 18px rgba(0, 0, 0, 0.65);
+    pointer-events: none;
+}
+
+.pocabinet-countdown--go {
+    color: #2ecc71;
+    font-size: calc(3.6rem * var(--pocabinet-hud, 1));
+}
+
+/* Dialogue bubble layer — dialogue.js appends its own .pocabinet-dialogue
+   bubble inside this overlay. */
+.pocabinet-dialogue-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.pocabinet-ping {
+    position: absolute;
+    top: 0.7rem;
+    left: 0.7rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: calc(0.78rem * var(--pocabinet-hud, 1));
+    color: #ffffff;
+    background: rgba(8, 12, 24, 0.55);
+}
+
+.pocabinet-ping--good { outline: 2px solid #2ecc71; outline-offset: -2px; }
+.pocabinet-ping--fair { outline: 2px solid #e6a23c; outline-offset: -2px; }
+.pocabinet-ping--poor { outline: 2px solid #c0392b; outline-offset: -2px; }
+
+.pocabinet-reconnect {
+    position: absolute;
+    top: 45%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.75rem 1.1rem;
+    border-radius: var(--radius-md, 8px);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card, none);
+    color: var(--color-text);
+    font-size: calc(1rem * var(--pocabinet-hud, 1));
+}
+
+.pocabinet-reconnect__spinner {
+    width: 1em;
+    height: 1em;
+    border-radius: 50%;
+    border: 2px solid var(--color-border, #666);
+    border-top-color: var(--color-primary);
+    animation: pocabinet-spin 0.9s linear infinite;
+}
+
+@keyframes pocabinet-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ─── HUD: sector strip, pause button ────────────────────────────────────── */
+
+.pocabinet-hud {
+    font-size: calc(1rem * var(--pocabinet-hud, 1));
+}
+
+.pocabinet-sectors {
+    display: inline-flex;
+    gap: 0.35rem;
+}
+
+.pocabinet-sector {
+    display: inline-block;
+    padding: 0.12rem 0.45rem;
+    border-radius: var(--radius-md, 5px);
+    background: rgba(8, 12, 24, 0.55);
+    color: var(--color-text);
+    font-size: 0.85em;
+    min-width: 6.2em;
+    text-align: center;
+}
+
+.pocabinet-sector__label {
+    margin-right: 0.35em;
+    color: var(--color-text-muted);
+}
+
+.pocabinet-sector--pb {
+    outline: 2px solid #2ecc71;
+    outline-offset: -2px;
+}
+
+.pocabinet-sector--session {
+    outline: 2px solid #a66bff;
+    outline-offset: -2px;
+}
+
+.pocabinet-pausebtn {
+    margin-left: auto;
+    background: transparent;
+    color: var(--color-text, inherit);
+    border: 1px solid var(--color-border, currentColor);
+    border-radius: var(--radius-md, 6px);
+    padding: 0.25rem 0.7rem;
+    cursor: pointer;
+    font: inherit;
+}
+
+.pocabinet-pausebtn:focus-visible {
+    outline: 2px solid var(--color-focus, currentColor);
+    outline-offset: 2px;
+}
+
+/* ─── Pause overlay ──────────────────────────────────────────────────────── */
+
+.pocabinet-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(4, 8, 18, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 40;
+}
+
+.pocabinet-overlay__card {
+    background: var(--color-surface);
+    color: var(--color-text);
+    border-radius: var(--radius-md, 10px);
+    padding: 1.5rem;
+    max-width: 480px;
+    width: min(92vw, 480px);
+    max-height: 86vh;
+    overflow-y: auto;
+    box-shadow: var(--shadow-card, none);
+}
+
+.pocabinet-overlay__card h2 {
+    margin: 0 0 0.75rem 0;
+}
+
+/* ─── Settings panel ─────────────────────────────────────────────────────── */
+
+.pocabinet-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-top: 0.5rem;
+}
+
+.pocabinet-settings__row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+
+.pocabinet-settings__row label {
+    flex: 1 1 auto;
+    color: var(--color-text-muted);
+}
+
+.pocabinet-settings__row select,
+.pocabinet-settings__row input[type="range"] {
+    flex: 0 1 auto;
+    accent-color: var(--color-primary);
+}
+
+.pocabinet-settings__value {
+    min-width: 3.2em;
+    text-align: right;
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ─── Results: podium, confetti, PB, laps ────────────────────────────────── */
+
+.pocabinet-finished {
+    position: relative;
+    overflow: hidden;
+    padding: 1rem;
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.pocabinet-pb {
+    color: #2ecc71;
+    font-weight: 700;
+}
+
+.pocabinet-pbdelta {
+    color: var(--color-text-muted);
+}
+
+.pocabinet-podium {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 0.6rem;
+    margin: 1rem 0;
+}
+
+.pocabinet-podium__step {
+    flex: 1 1 0;
+    max-width: 180px;
+    padding: 0.75rem 0.5rem;
+    border-radius: var(--radius-md, 6px) var(--radius-md, 6px) 0 0;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border, transparent);
+    text-align: center;
+}
+
+.pocabinet-podium__step:nth-child(1) { min-height: 5.6rem; }
+.pocabinet-podium__step:nth-child(2) { min-height: 4.6rem; }
+.pocabinet-podium__step:nth-child(3) { min-height: 3.8rem; }
+
+.pocabinet-podium__step--player {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+}
+
+.pocabinet-podium__medal {
+    display: block;
+    font-size: 1.4rem;
+}
+
+.pocabinet-podium__official {
+    display: block;
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+}
+
+.pocabinet-standings {
+    color: var(--color-text-muted);
+}
+
+.pocabinet-laps {
+    margin: 0.75rem 0;
+}
+
+.pocabinet-laps h3 {
+    font-size: 0.95rem;
+    letter-spacing: 0.06em;
+    color: var(--color-text-muted);
+}
+
+.pocabinet-laps__row {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    margin: 0.4rem 0;
+}
+
+.pocabinet-laps__all {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+}
+
+.pocabinet-confetti {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.pocabinet-confetti span {
+    position: absolute;
+    top: -12px;
+    left: calc(var(--cx, 0) * 1%);
+    width: 9px;
+    height: 14px;
+    background: var(--cc);
+    opacity: 0.9;
+    animation: pocabinet-fall var(--cd, 2s) linear infinite;
+}
+
+@keyframes pocabinet-fall {
+    to { transform: translateY(110vh) rotate(340deg); }
+}
+
+/* Reduced motion: kill the confetti animation entirely (the element stays for
+   layout simplicity but renders as nothing). */
+.pocabinet-reduced .pocabinet-confetti span {
+    animation: none;
+    display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pocabinet-confetti span { animation: none; display: none; }
+    .pocabinet-reconnect__spinner { animation-duration: 2.4s; }
 }

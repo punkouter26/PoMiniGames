@@ -30,6 +30,14 @@ public sealed class PoCabinetRaceHub : Hub
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Round-trip latency probe. The client stamps a stopwatch around the
+    /// InvokeAsync and renders the result in the HUD's ping badge. Returning
+    /// a value (rather than a void) guarantees an actual round trip instead
+    /// of a fire-and-forget send.
+    /// </summary>
+    public Task<string> Ping() => Task.FromResult("pong");
+
     public override Task OnDisconnectedAsync(Exception? exception)
     {
         _registry.DetachConnection(Context.ConnectionId);

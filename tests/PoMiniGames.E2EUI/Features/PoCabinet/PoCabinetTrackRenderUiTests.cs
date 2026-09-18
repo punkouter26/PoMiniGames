@@ -34,7 +34,8 @@ public class PoCabinetTrackRenderUiTests
         });
         var page = await context.NewPageAsync();
 
-        await page.GotoAsync($"{_fixture.ServerAddress}/pocabinet/1player?autoGuest=1",
+        var origin = _fixture.ServerAddress.TrimEnd('/');
+        await page.GotoAsync($"{origin}/pocabinet/1player?autoGuest=1",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
 
         // The three tracks each carry their id as data-track-id; verifying the

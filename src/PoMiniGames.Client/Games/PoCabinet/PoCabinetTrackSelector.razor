@@ -19,12 +19,12 @@
                 role="radio"
                 aria-checked="@isSelected"
                 data-track-id="@track.Id"
+                title="@track.Description"
                 @onclick="() => SelectTrack(track.Id)">
             <span class="pocabinet-track__swatch" style="--accent: @accent;" aria-hidden="true"></span>
             <span class="pocabinet-track__body">
                 <strong class="pocabinet-track__title">@track.Name</strong>
                 <span class="pocabinet-track__meta">@TrackMeta(track.Id)</span>
-                <span class="pocabinet-track__description">@track.Description</span>
             </span>
         </button>
     }

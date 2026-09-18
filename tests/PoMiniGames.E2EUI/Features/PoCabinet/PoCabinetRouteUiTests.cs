@@ -44,7 +44,8 @@ public class PoCabinetRouteUiTests
         page.Console += (_, msg) => { if (msg.Type is "error") Console.WriteLine($"[browser:error] {msg.Text}"); };
         page.PageError += (_, err) => Console.WriteLine($"[pageerror] {err}");
 
-        await page.GotoAsync($"{_fixture.ServerAddress}{path}?autoGuest=1",
+        var origin = _fixture.ServerAddress.TrimEnd('/');
+        await page.GotoAsync($"{origin}{path}?autoGuest=1",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
 
         // The Blazor WASM runtime replaces the loading placeholder once #app renders.
@@ -57,11 +58,19 @@ public class PoCabinetRouteUiTests
         var appHtml = await page.Locator("#app").InnerHTMLAsync();
         appHtml.Should().NotBeNullOrWhiteSpace("the Blazor app shell must render markup after NetworkIdle");
 
-        // The track selector is part of every mode's pre-race UI (Concept 1 design).
-        // Asserting that its three track buttons mount proves the Blazor component
-        // graph built without an early error.
-        var trackButtons = await page.Locator(".pocabinet-track").CountAsync();
-        trackButtons.Should().Be(3,
-            "the track selector must render Capitol + Mar-a-Lago + Press Briefing");
+        // The track selector is part of every interactive mode's pre-race UI.
+        // Demo mode auto-starts into the kiosk race reel on first paint.
+        if (path.EndsWith("/demo", StringComparison.OrdinalIgnoreCase))
+        {
+            var raceMount = page.Locator("#pocabinetCanvas, .pocabinet-track").First;
+            await raceMount.WaitForAsync(new() { Timeout = 30_000 });
+            (await raceMount.IsVisibleAsync()).Should().BeTrue("demo mode mounts the race view or track selector");
+        }
+        else
+        {
+            var trackButtons = await page.Locator(".pocabinet-track").CountAsync();
+            trackButtons.Should().Be(3,
+                "the track selector must render Capitol + Mar-a-Lago + Press Briefing");
+        }
     }
 }

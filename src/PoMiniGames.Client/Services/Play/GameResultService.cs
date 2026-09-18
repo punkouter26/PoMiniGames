@@ -173,6 +173,24 @@ public sealed class GameResultService
             () => _sync.EnqueueMarbleRace(highScore!));
 
     /// <summary>
+    /// §PoCabinet (T11, 2026-09-17): per-track best-lap ratchet. Ties the
+    /// finished-race flow through the same offline-resilient path as the
+    /// other games so a player who finishes a race while offline still gets
+    /// the run recorded later.
+    /// </summary>
+    public Task<PlayerStats> RecordAndSubmitPoCabinetAsync(
+        string playerName, GameResult result, PoCabinetHighScoreRequest? highScore) =>
+        RecordAndSubmitCoreAsync("pocabinet", playerName, result, highScore is not null,
+            async () =>
+            {
+                var submitted = await _api.SubmitPoCabinetHighScoreAsync(highScore!);
+                return submitted.IsSaved ? SubmitOutcome.Saved
+                    : submitted.ShouldRetry ? SubmitOutcome.Park
+                    : SubmitOutcome.Rejected;
+            },
+            () => _sync.EnqueuePoCabinet(highScore!));
+
+    /// <summary>
     /// The single sync path for adaptive-ELO games (ConnectFive/TicTacToe): mirror the
     /// adaptive record into the legacy stats shape (Medium bucket carries the adaptive
     /// W/L/D and ELO), persist locally, and PUT to the server so the leaderboard shows

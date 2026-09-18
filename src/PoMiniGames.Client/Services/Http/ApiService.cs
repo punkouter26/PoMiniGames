@@ -344,6 +344,34 @@ public class ApiService
         }
     }
 
+    /// <summary>
+    /// Submits a PoCabinet race result. Best-lap ratcheting on
+    /// <c>POST /api/pocabinet/scores</c>; validations come back as 4xx when
+    /// the payload is malformed, never as 5xx — replaying a 4xx would only
+    /// replay the rejection, so a parked score only fires on genuine unavailability.
+    /// </summary>
+    public async Task<ScoreSubmitResult<PoCabinetHighScore>> SubmitPoCabinetHighScoreAsync(PoCabinetHighScoreRequest entry)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync(
+                "/api/pocabinet/scores", entry, ApiJsonContext.Default.PoCabinetHighScoreRequest);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var saved = await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoCabinetHighScore);
+                return ScoreSubmitResult<PoCabinetHighScore>.Saved(saved);
+            }
+            if ((int)response.StatusCode is >= 400 and < 500)
+                return ScoreSubmitResult<PoCabinetHighScore>.Rejected(response.StatusCode);
+            return ScoreSubmitResult<PoCabinetHighScore>.Unavailable(response.StatusCode);
+        }
+        catch
+        {
+            return ScoreSubmitResult<PoCabinetHighScore>.Unavailable(null);
+        }
+    }
+
     public async Task<PoMiniGames.Domain.Models.PoVoxelStrikeHighScore[]?> GetPoVoxelStrikeHighScoresAsync(int count = 10)
     {
         try

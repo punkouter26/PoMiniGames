@@ -30,18 +30,8 @@ public sealed record CatalogMode(GameMode Mode, string Url, bool RequiresNetwork
 /// home page renders one card per game with a chip per mode, so a game can no
 /// longer go missing from a mode it supports.
 /// </summary>
-/// <param name="Subtitle">
-/// Optional one-line clarification rendered under the card title. Used where the
-/// product name does not by itself tell the player what variant they are about
-/// to play (e.g. Tic-Tac-Toe is actually 4-in-a-row on a 6×6 grid). Null for the
-/// common case where the title is unambiguous.
-/// </param>
 public sealed record CatalogGame(GameKey Key, string Title, string Icon, IReadOnlyList<CatalogMode> Modes)
 {
-    /// <summary>Optional one-line clarification rendered under the card title on the
-    /// home page. See <see cref="CatalogGame"/> remarks.</summary>
-    public string? Subtitle { get; init; }
-
     /// <summary>
     /// Render a chip for <see cref="Primary"/> even though the card title already links
     /// there. Off by default: the duplicate chip normally reads as a broken second link
@@ -112,9 +102,10 @@ public static class GameCatalog
         // Audit #10: the home card used to just say "Tic-Tac-Toe", which primed
         // visitors for the 3×3 / 3-in-a-row game they learned as a kid. This
         // variant is Connect-Four mechanics on a 6×6 grid — line up four in a
-        // row, horizontally, vertically or diagonally. The Subtitle surfaces
-        // that one-line clarification on the home card so the first move
-        // matches the rules the player just read.
+        // Audit #10: the home card used to just say "Tic-Tac-Toe", which primed
+        // visitors for the 3×3 / 3-in-a-row game they learned as a kid. This
+        // variant is Connect-Four mechanics on a 6×6 grid — line up four in a
+        // row, horizontally, vertically or diagonally.
         new(GameKeys.TicTacToe, "Tic-Tac-Toe", "❌",
         [
             new(GameMode.OnePlayer, "/tictactoe/1player"),
@@ -124,7 +115,6 @@ public static class GameCatalog
             new(GameMode.Demo, "/tictactoe/demo"),
         ])
         {
-            Subtitle = "4-in-a-row · 6×6",
             // 1P is the card head, so the dedup-by-URL filter would hide the 1P
             // chip and leave the row reading "2P Demo" — a player looking for a
             // solo game sees no 1P and assumes the game is 2-player only. Same
@@ -254,7 +244,6 @@ public static class GameCatalog
             new(GameMode.Demo, "/poecosystem/demo"),
         ])
         {
-            Subtitle = "Autonomous tribal evolution",
             ChipPrimary = true,
         },
 
@@ -266,8 +255,6 @@ public static class GameCatalog
             new(GameMode.Demo, "/sandplayground/demo"),
         ])
         {
-            // Shortened for the same reason as PoEcosystem above.
-            Subtitle = "Wet sand · buried charges",
             ChipPrimary = true,
         },
     ];

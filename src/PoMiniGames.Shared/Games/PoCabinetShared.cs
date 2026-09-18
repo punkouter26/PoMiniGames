@@ -118,6 +118,10 @@ public sealed class PoCabinetRaceSnapshot
     public IReadOnlyList<PoCabinetCarState> Cars { get; set; } = new List<PoCabinetCarState>();
     public PoCabinetDialogueEvent? LatestDialogue { get; set; }
     public PoCabinetStaticWorld? Static { get; set; }
+    // T11 (2026-09-17): the player's best lap, populated on the solo path
+    // (the JS ticker) and on the server path (the registry). The page reads
+    // this value on `Finished=true` to compute the leaderboard submission.
+    public double? BestLapSeconds { get; set; }
 }
 
 /// <summary>

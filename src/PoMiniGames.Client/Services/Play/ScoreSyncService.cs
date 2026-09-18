@@ -63,6 +63,9 @@ public sealed class ScoreSyncService
     public void EnqueuePoRacer(PoMiniGames.Shared.Games.PoRacerScoreDto entry) =>
         Enqueue(PendingScoreKind.PoRacer, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoRacerScoreDto));
 
+    public void EnqueuePoCabinet(PoCabinetHighScoreRequest entry) =>
+        Enqueue(PendingScoreKind.PoCabinet, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoCabinetHighScoreRequest));
+
     public void EnqueuePlayerStats(PendingPlayerStats entry) =>
         Enqueue(PendingScoreKind.PlayerStats, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PendingPlayerStats));
 
@@ -163,8 +166,19 @@ public sealed class ScoreSyncService
         PendingScoreKind.PlayerStats => await SubmitPlayerStatsAsync(item.PayloadJson),
         PendingScoreKind.PoSports => await SubmitPoSportsAsync(item.PayloadJson),
         PendingScoreKind.PoVoxelStrike => await SubmitPoVoxelStrikeAsync(item.PayloadJson),
+        PendingScoreKind.PoCabinet => await SubmitPoCabinetAsync(item.PayloadJson),
         _ => Disposition.Drop, // unknown kind: drop rather than wedge the queue forever
     };
+
+    private async Task<Disposition> SubmitPoCabinetAsync(string payloadJson)
+    {
+        var entry = JsonSerializer.Deserialize(payloadJson, ApiJsonContext.Default.PoCabinetHighScoreRequest);
+        if (entry is null) return Disposition.Drop;
+        var result = await _api.SubmitPoCabinetHighScoreAsync(entry);
+        return result.IsSaved ? Disposition.Synced
+            : result.ShouldRetry ? Disposition.Retry
+            : Disposition.Drop;
+    }
 
     private async Task<Disposition> SubmitPoRacerAsync(string payloadJson)
     {

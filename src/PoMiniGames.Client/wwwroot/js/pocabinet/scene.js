@@ -56,6 +56,16 @@ function getOrCreateTrackMaterial() {
 //  renderer can swap tracks mid-session without leaking GPU resources.
 // ──────────────────────────────────────────────────────────────────────────
 
+/**
+ * Centerline points arrive either as [x, y] arrays (C# double[][] via
+ * IJSRuntime) or {X, Y} objects — accept both. The wire shape drifted at some
+ * point and the ribbon silently produced NaN vertices for one of them.
+ */
+function pointOf(p) {
+    if (Array.isArray(p)) return { x: Number(p[0]) || 0, y: Number(p[1]) || 0 };
+    return { x: Number(p?.X) || 0, y: Number(p?.Y) || 0 };
+}
+
 class SceneHandle {
     constructor(renderer, scene, camera, ambient, sun, groundMesh, trackMesh, canvas) {
         this.renderer = renderer;
@@ -67,6 +77,75 @@ class SceneHandle {
         this.trackMesh = trackMesh;
         this.canvas = canvas;
         this.disposed = false;
+        // Atmosphere the track was mounted with (unmodified) — environment.js
+        // derives night/rain lighting from this baseline.
+        this.baseAtmosphere = null;
+        // Per-frame callbacks (environment rain field, future FX). Registration
+        // is ref-counted so dispose() always unwinds cleanly.
+        this._frameCbs = new Set();
+        this._raf = null;
+    }
+
+    /** Register a per-frame callback (receives a DOMHighResTimeStamp). */
+    onFrame(cb) {
+        if (!this.disposed && typeof cb === 'function') this._frameCbs.add(cb);
+    }
+
+    offFrame(cb) {
+        this._frameCbs.delete(cb);
+    }
+
+    startLoop() {
+        if (this._raf !== null) return;
+        const loop = (now) => {
+            if (this.disposed) return;
+            this._raf = requestAnimationFrame(loop);
+            for (const cb of this._frameCbs) {
+                try { cb(now); } catch { /* one bad effect never kills the frame */ }
+            }
+            this.renderer.render(this.scene, this.camera);
+        };
+        this._raf = requestAnimationFrame(loop);
+    }
+
+    stopLoop() {
+        if (this._raf !== null) {
+            cancelAnimationFrame(this._raf);
+            this._raf = null;
+        }
+    }
+
+    /**
+     * Cockpit camera follow: place the eye at the player's car and face its
+     * heading. Called per snapshot — the RAF loop renders whatever the last
+     * view was, so latency stays invisible.
+     * Server X → world X, server Y → world Z (÷10 scene scale, cars.js rule).
+     */
+    updatePlayerView(p) {
+        if (this.disposed || !p) return;
+        const x = (Number(p.x) || 0) / 10;
+        const z = (Number(p.y) || 0) / 10;
+        const heading = Number(p.heading) || 0;
+        this.camera.position.set(x, 4, z);
+        // Car forward = (cos h, 0, sin h); camera default forward = -Z, so
+        // yaw = -h - π/2 aligns the view with the body (cars.js convention).
+        this.camera.rotation.set(0, -heading - Math.PI / 2, 0);
+    }
+
+    /**
+     * Apply player view preferences — pixel-ratio cap multiplier + FOV.
+     * Called from the settings facade; both values are clamped defensively.
+     */
+    applyView(opts) {
+        if (this.disposed) return;
+        const o = opts && typeof opts === 'object' ? opts : {};
+        const scale = Math.min(1.5, Math.max(0.5, Number(o.renderScale) || 1));
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * scale);
+        const fov = Math.min(90, Math.max(60, Number(o.fov) || 70));
+        if (Math.abs(this.camera.fov - fov) > 0.01) {
+            this.camera.fov = fov;
+            this.camera.updateProjectionMatrix();
+        }
     }
 
     /**
@@ -76,6 +155,9 @@ class SceneHandle {
      */
     setTrack(atmosphere, centerline) {
         if (this.disposed) return;
+
+        // Keep the pristine baseline for environment.js night/rain math.
+        this.baseAtmosphere = { ...atmosphere };
 
         // Atmosphere: sky color, fog, ambient intensity.
         this.scene.background = new THREE.Color(atmosphere.skyHex);
@@ -114,6 +196,8 @@ class SceneHandle {
     dispose() {
         if (this.disposed) return;
         this.disposed = true;
+        this.stopLoop();
+        this._frameCbs.clear();
         // Materials and ground geometry are cached and reused — do NOT dispose them.
         // Only dispose the per-track ribbon geometry.
         if (this.trackMesh && this.trackMesh.geometry) {
@@ -155,11 +239,11 @@ function buildTrackRibbonGeometry(centerline) {
     const positions = [];
 
     for (let i = 0; i < centerline.length; i++) {
-        const a = centerline[i];
-        const b = centerline[(i + 1) % centerline.length];
+        const a = pointOf(centerline[i]);
+        const b = pointOf(centerline[(i + 1) % centerline.length]);
         // World-X = server X / 10 ; World-Z = server Y / 10 (scale down for screen)
-        const ax = a.X / 10, az = a.Y / 10;
-        const bx = b.X / 10, bz = b.Y / 10;
+        const ax = a.x / 10, az = a.y / 10;
+        const bx = b.x / 10, bz = b.y / 10;
         const dx = bx - ax, dz = bz - az;
         const len = Math.hypot(dx, dz) || 1;
         const nx = -dz / len, nz = dx / len; // 90° CCW normal
@@ -195,13 +279,16 @@ function buildTrackRibbonGeometry(centerline) {
 /**
  * Mount the scene on a canvas element.
  *
- * @param {HTMLCanvasElement} canvas
+ * @param {HTMLCanvasElement|string} canvas the element, or its DOM id — Blazor's
+ *        IJSRuntime does not marshal ElementReference as a live element, so the
+ *        id-string path is the reliable one.
  * @param {{ skyHex: string, fogStart: number, fogEnd: number, fogHex: string,
  *           ambientIntensity: number, groundHex: string, accentHex: string }} atmosphere
  * @param {Array<{X: number, Y: number}>} centerline
  * @returns {Promise<SceneHandle>}
  */
 export async function mount(canvas, atmosphere, centerline) {
+    if (typeof canvas === 'string') canvas = document.getElementById(canvas);
     if (!canvas) throw new Error('pocabinet/scene: canvas element is required');
     if (!atmosphere) throw new Error('pocabinet/scene: atmosphere is required');
 
@@ -245,7 +332,17 @@ export async function mount(canvas, atmosphere, centerline) {
     scene.add(trackMesh);
 
     const handle = new SceneHandle(renderer, scene, camera, ambient, sun, groundMesh, trackMesh, canvas);
+    handle.baseAtmosphere = {
+        skyHex: atmosphere.skyHex,
+        fogHex: atmosphere.fogHex,
+        fogStart: atmosphere.fogStart,
+        fogEnd: atmosphere.fogEnd,
+        ambientIntensity: atmosphere.ambientIntensity,
+        groundHex: atmosphere.groundHex,
+        accentHex: atmosphere.accentHex,
+    };
     handle.resize();
+    handle.startLoop();
     return handle;
 }
 

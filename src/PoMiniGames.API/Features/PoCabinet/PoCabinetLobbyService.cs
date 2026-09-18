@@ -133,17 +133,17 @@ public sealed class PoCabinetLobbyService
     }
 
     public sealed class LobbyPlayer
-{
-    public LobbyPlayer(string connectionId, string displayName, bool isGuest, bool isReady)
     {
-        ConnectionId = connectionId;
-        DisplayName = displayName;
-        IsGuest = isGuest;
-        IsReady = isReady;
+        public LobbyPlayer(string connectionId, string displayName, bool isGuest, bool isReady)
+        {
+            ConnectionId = connectionId;
+            DisplayName = displayName;
+            IsGuest = isGuest;
+            IsReady = isReady;
+        }
+        public string ConnectionId { get; }
+        public string DisplayName { get; }
+        public bool IsGuest { get; }
+        public bool IsReady { get; set; }
     }
-    public string ConnectionId { get; }
-    public string DisplayName { get; }
-    public bool IsGuest { get; }
-    public bool IsReady { get; set; }
-}
 }

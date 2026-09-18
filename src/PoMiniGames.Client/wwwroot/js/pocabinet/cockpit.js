@@ -125,11 +125,19 @@ class CockpitHandle {
 /**
  * Build the cockpit interior. Returns a handle with `updateHud(hud)` and `dispose()`.
  *
- * @param {THREE.Camera} camera the player's camera (cockpit attaches as child)
+ * @param {THREE.Camera|{camera: THREE.Camera}} sceneOrCamera the player's camera,
+ *        or the scene handle from scene.js (whose `.camera` we mount into). The
+ *        page passes the scene handle; the cockpit must ride the camera so it
+ *        tracks the player's eye.
  * @returns {CockpitHandle}
  */
-export function mountCockpit(camera) {
-    if (!camera) throw new Error('pocabinet/cockpit: camera is required');
+export function mountCockpit(sceneOrCamera) {
+    const camera = sceneOrCamera && sceneOrCamera.isCamera
+        ? sceneOrCamera
+        : sceneOrCamera?.camera;
+    if (!camera || typeof camera.add !== 'function') {
+        throw new Error('pocabinet/cockpit: camera is required');
+    }
 
     const geom = getOrCreateGeometry();
     const mats = getOrCreateMaterials();

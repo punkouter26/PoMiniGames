@@ -10,8 +10,11 @@
 *@
 
 @using PoMiniGames.Shared.Games
+@implements IAsyncDisposable
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject PlayerNameService PlayerNameSvc
+@inject PoCabinetSession Session
 
 <div class="pocabinet-lobby" aria-label="Multiplayer lobby">
     <header class="pocabinet-lobby__header">
@@ -80,25 +83,43 @@
     private string _joinCode = "";
     private string _trackId = PoCabinetCatalog.DefaultTrackId;
     private bool _isHost;
-    private bool _isReady;
+    private bool _isReady = false;
     private string? _error = null;
     private readonly List<PlayerRow> _players = new();
+    private string? _previousRaceStartingTrackId = null;
 
     private bool CanStart => _players.Count >= 2 && _players.All(p => p.IsReady);
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         _isHost = string.IsNullOrWhiteSpace(InitialJoinCode);
-        if (_isHost)
+        var playerName = PlayerNameSvc.GetOrReadInitialName();
+        var isGuest = true;
+        try
         {
-            _joinCode = GeneratePlaceholderCode();
-            _players.Add(new PlayerRow { DisplayName = "You", IsHost = true, IsReady = true });
+            if (_isHost)
+            {
+                // Host auto-readies and gets a code from the server.
+                _joinCode = await Session.OpenLobbyAsync(playerName, isGuest, _trackId);
+                _players.Add(new PlayerRow { DisplayName = playerName, IsHost = true, IsReady = true });
+                _joinCode = Session.JoinCode ?? _joinCode;
+            }
+            else
+            {
+                _joinCode = InitialJoinCode!;
+                var ok = await Session.JoinLobbyAsync(_joinCode, playerName, isGuest);
+                if (!ok)
+                {
+                    _error = "That lobby is full or has already started.";
+                    return;
+                }
+                _players.Add(new PlayerRow { DisplayName = playerName, IsHost = false });
+            }
+            Session.RaceStarting += OnRaceStartingAsync;
         }
-        else
+        catch (Exception ex)
         {
-            _joinCode = InitialJoinCode!;
-            // Real seat hydration lands once the racing service is wired in T7's
-            // service code. Until then the page renders the empty 8-seat grid.
+            _error = $"Could not reach the lobby: {ex.Message}";
         }
     }
 
@@ -110,23 +131,54 @@
         return Task.CompletedTask;
     }
 
-    private Task ToggleReadyAsync()
+    private async Task ToggleReadyAsync()
     {
-        _isReady = !_isReady;
-        return Task.CompletedTask;
+        try { await Session.ToggleReadyAsync(_joinCode); } catch { /* ignore */ }
     }
 
-    private Task StartAsync() => Task.CompletedTask; // race hub wiring lands in T7 service code
+    private async Task StartAsync()
+    {
+        try
+        {
+            await Session.TryStartAsync(_joinCode);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task OnRaceStartingAsync(string trackId)
+    {
+        _previousRaceStartingTrackId = trackId;
+        await InvokeAsync(StateHasChanged);
+        // Carry the join code in the query string so the race page can join
+        // the race hub. The lobby is short-lived — it disposes on this nav —
+        // so we cannot rely on the session's JoinCode from the race page side
+        // (the PoCabinetSession scope is per-circuit).
+        var code = Session.JoinCode ?? _joinCode;
+        Nav.NavigateTo($"/pocabinet/multi?code={Uri.EscapeDataString(code)}");
+    }
 
     private async Task CopyCodeAsync()
     {
         try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", _joinCode); } catch { /* ignore */ }
     }
 
+    public ValueTask DisposeAsync()
+    {
+        if (Session is not null)
+        {
+            Session.RaceStarting -= OnRaceStartingAsync;
+        }
+        return ValueTask.CompletedTask;
+    }
+
     private string GeneratePlaceholderCode()
     {
-        // Stub used until the racing service lands — generates a CAB-XXXXXXXX
-        // shape so the UI is testable in the meantime.
+        // Stub used only when the lobby service is unreachable — the screen
+        // still renders a CAB-XXXXXXXX placeholder so the player can fall
+        // back to solo racing from the lobby.
         return "CAB-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
     }
 }

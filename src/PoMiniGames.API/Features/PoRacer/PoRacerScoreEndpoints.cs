@@ -57,16 +57,16 @@ public static class PoRacerScoreEndpoints
             try
             {
                 saved = await storage.SavePoRacerHighScoreAsync(new PoRacerHighScore
-            {
-                PlayerName = integrity.ResolveDisplayName(displayName, isGuest ? "Guest" : "Player"),
-                UserId = userId,
-                TrackId = trackId,
-                TotalTimeSeconds = dto.BestLapSeconds,
-                FinalPosition = dto.FinalPosition,
-                Date = (dto.AchievedAtUtc == default ? DateTimeOffset.UtcNow : dto.AchievedAtUtc).ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                IsGuest = isGuest,
-                GameCode = dto.GameCode ?? "",
-            });
+                {
+                    PlayerName = integrity.ResolveDisplayName(displayName, isGuest ? "Guest" : "Player"),
+                    UserId = userId,
+                    TrackId = trackId,
+                    TotalTimeSeconds = dto.BestLapSeconds,
+                    FinalPosition = dto.FinalPosition,
+                    Date = (dto.AchievedAtUtc == default ? DateTimeOffset.UtcNow : dto.AchievedAtUtc).ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                    IsGuest = isGuest,
+                    GameCode = dto.GameCode ?? "",
+                });
             }
             catch (IOException)
             {

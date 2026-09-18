@@ -93,6 +93,31 @@ public sealed class MarbleRaceHighScore
 /// </summary>
 public sealed record MarbleRaceHighScoreRequest(int BestScore);
 
+/// <summary>
+/// PoCabinet (T11, 2026-09-17): the lap time the server ratchets on
+/// <c>POST /api/pocabinet/scores</c>. Identity fields
+/// (<c>PlayerDisplayName</c> / <c>UserId</c> / <c>IsGuest</c>) are resolved
+/// server-side from the auth cookie, so the payload is intentionally minimal —
+/// no field that an attacker could vary to insert duplicate rows.
+/// </summary>
+public sealed class PoCabinetHighScore
+{
+    public string PlayerInitials { get; set; } = "";
+    public string UserId { get; set; } = "";
+    public bool IsGuest { get; set; }
+    public string TrackId { get; set; } = "capitol";
+    public double BestLapSeconds { get; set; }
+    public int FinalPosition { get; set; }
+    public DateTimeOffset AchievedAtUtc { get; set; }
+}
+
+public sealed record PoCabinetHighScoreRequest(
+    string TrackId,
+    double BestLapSeconds,
+    int FinalPosition,
+    bool IsGuest,
+    string GameCode = "");
+
 public class PoBrawlHighScore
 {
     public string PlayerInitials { get; set; } = "";

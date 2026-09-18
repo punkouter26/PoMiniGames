@@ -9,7 +9,8 @@ public enum PendingScoreKind
     PlayerStats,
     PoSports,
     PoVoxelStrike,
-    PoRacer
+    PoRacer,
+    PoCabinet,
 }
 
 /// <summary>

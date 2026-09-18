@@ -51,6 +51,12 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(MarbleRaceHighScore))]
 [JsonSerializable(typeof(MarbleRaceHighScore[]))]
 [JsonSerializable(typeof(MarbleRaceHighScoreRequest))]
+// PoCabinet (T11, 2026-09-17): the per-track leaderboard ratchets on lap time;
+// the request shape carries only the score + the contextual track/position,
+// identity is resolved server-side.
+[JsonSerializable(typeof(PoCabinetHighScore))]
+[JsonSerializable(typeof(PoCabinetHighScore[]))]
+[JsonSerializable(typeof(PoCabinetHighScoreRequest))]
 [JsonSerializable(typeof(PoBrawlHighScore))]
 [JsonSerializable(typeof(PoBrawlHighScore[]))]
 // Single entry only — the client POSTs ladder progress but never reads the board back

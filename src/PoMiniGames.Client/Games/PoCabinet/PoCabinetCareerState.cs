@@ -28,6 +28,12 @@ public sealed class PoCabinetCareerState
     /// <summary>Current state (loaded from storage, or fresh state if none).</summary>
     public PoCabinetCareerDto Current { get; set; } = PoCabinetCareerDto.New();
 
+    /// <summary>T13 (2026-09-17): raised when <see cref="RecordStageResultAsync"/>
+    /// or <see cref="ResetAsync"/> changes state. The ChampionshipView and
+    /// PaintShop subscribe so the gold-livery picker can re-react to a fresh
+    /// unlock without a full page reload.</summary>
+    public event Action? Changed;
+
     /// <summary>True if storage I/O is available — false means no persistence this session.</summary>
     public bool StorageAvailable { get; private set; }
 
@@ -79,6 +85,7 @@ public sealed class PoCabinetCareerState
                 Current.GoldLiveryUnlocked = true;
             }
             await SaveAsync();
+            Changed?.Invoke();
         }
     }
 
@@ -87,5 +94,6 @@ public sealed class PoCabinetCareerState
     {
         Current = PoCabinetCareerDto.New();
         await SaveAsync();
+        Changed?.Invoke();
     }
 }

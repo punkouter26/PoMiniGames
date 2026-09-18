@@ -1,0 +1,117 @@
+@* PoCabinetSettingsPanel — audio / render / accessibility / environment prefs.
+   Bound two-way via Value + ValueChanged; persistence and JS-side application
+   (pixel ratio, FOV, Web Audio gains) are the page's job — this component only
+   edits the view model and raises the change. Native Blazor + design tokens,
+   no Radzen. *@
+
+<div class="pocabinet-settings" role="group" aria-label="Cabinet settings">
+    <div class="pocabinet-settings__row">
+        <label for="pocabinet-vol">Master volume</label>
+        <input id="pocabinet-vol" type="range" min="0" max="1" step="0.05"
+               value="@Format(Value.MasterVolume)" @oninput="OnVolumeChanged" />
+        <span class="pocabinet-settings__value">@($"{Value.MasterVolume:0%}")</span>
+    </div>
+
+    <div class="pocabinet-settings__row">
+        <label for="pocabinet-mute">Mute all audio</label>
+        <input id="pocabinet-mute" type="checkbox" checked="@Value.Muted" @onchange="OnMuteChanged" />
+    </div>
+
+    <div class="pocabinet-settings__row">
+        <label for="pocabinet-quality">Render quality</label>
+        <select id="pocabinet-quality" value="@Format(Value.RenderScale)" @onchange="OnQualityChanged">
+            <option value="0.6">Low (fast)</option>
+            <option value="0.8">Medium</option>
+            <option value="1">High (device default)</option>
+        </select>
+    </div>
+
+    <div class="pocabinet-settings__row">
+        <label for="pocabinet-fov">Field of view</label>
+        <input id="pocabinet-fov" type="range" min="60" max="90" step="1"
+               value="@Format(Value.Fov)" @oninput="OnFovChanged" />
+        <span class="pocabinet-settings__value">@($"{Value.Fov:0}°")</span>
+    </div>
+
+    <div class="pocabinet-settings__row">
+        <label for="pocabinet-hud">HUD size</label>
+        <select id="pocabinet-hud" value="@Format(Value.HudScale)" @onchange="OnHudScaleChanged">
+            <option value="0.85">Small</option>
+            <option value="1">Normal</option>
+            <option value="1.15">Large</option>
+        </select>
+    </div>
+
+    <div class="pocabinet-settings__row">
+        <label for="pocabinet-tod">Time of day</label>
+        <select id="pocabinet-tod" value="@Value.TimeOfDay" @onchange="OnTimeOfDayChanged">
+            <option value="auto">Auto (my clock)</option>
+            <option value="day">Day</option>
+            <option value="night">Night (headlights)</option>
+        </select>
+    </div>
+
+    <div class="pocabinet-settings__row">
+        <label for="pocabinet-weather">Weather</label>
+        <select id="pocabinet-weather" value="@Value.Weather" @onchange="OnWeatherChanged">
+            <option value="auto">Auto (Washington D.C.)</option>
+            <option value="clear">Clear</option>
+            <option value="rain">Rain (slippery, solo)</option>
+        </select>
+    </div>
+
+    <div class="pocabinet-settings__row">
+        <label for="pocabinet-motion">Reduced motion (confetti, rain density)</label>
+        <input id="pocabinet-motion" type="checkbox" checked="@Value.ReducedMotion" @onchange="OnReducedMotionChanged" />
+    </div>
+
+    <div class="pocabinet-settings__row">
+        <label for="pocabinet-colorsafe">Colorblind-safe minimap palette</label>
+        <input id="pocabinet-colorsafe" type="checkbox" checked="@Value.ColorSafe" @onchange="OnColorSafeChanged" />
+    </div>
+</div>
+
+@code {
+    [Parameter] public PoCabinetUiSettings Value { get; set; } = new();
+    [Parameter] public EventCallback<PoCabinetUiSettings> ValueChanged { get; set; }
+
+    private static string Format(double d) =>
+        d.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private async Task RaiseAsync(Action<PoCabinetUiSettings> mutate)
+    {
+        mutate(Value);
+        if (ValueChanged.HasDelegate) await ValueChanged.InvokeAsync(Value);
+    }
+
+    private Task OnVolumeChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.MasterVolume = ParseDouble(e.Value?.ToString(), s.MasterVolume));
+
+    private Task OnMuteChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.Muted = e.Value is bool b && b);
+
+    private Task OnQualityChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.RenderScale = ParseDouble(e.Value?.ToString(), s.RenderScale));
+
+    private Task OnFovChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.Fov = ParseDouble(e.Value?.ToString(), s.Fov));
+
+    private Task OnHudScaleChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.HudScale = ParseDouble(e.Value?.ToString(), s.HudScale));
+
+    private Task OnTimeOfDayChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.TimeOfDay = e.Value?.ToString() ?? s.TimeOfDay);
+
+    private Task OnWeatherChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.Weather = e.Value?.ToString() ?? s.Weather);
+
+    private Task OnReducedMotionChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.ReducedMotion = e.Value is bool b && b);
+
+    private Task OnColorSafeChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.ColorSafe = e.Value is bool b && b);
+
+    private static double ParseDouble(string? raw, double fallback) =>
+        double.TryParse(raw, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : fallback;
+}

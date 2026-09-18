@@ -64,7 +64,7 @@ public sealed class InstrumentedChatClient : DelegatingChatClient
                 usage?.TotalTokenCount ?? 0,
                 elapsedMs);
 
-            _usage.Record(_game, _deployment, usage?.TotalTokenCount ?? 0, elapsedMs);
+            _usage.Record(_game, _deployment, usage?.InputTokenCount ?? 0, usage?.OutputTokenCount ?? 0, elapsedMs);
             // Charges the caller's per-identity allowance with what the provider actually billed,
             // when a request handler has opened a scope for it.
             AiUsageScope.Report(usage?.TotalTokenCount ?? 0);

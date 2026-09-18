@@ -15,9 +15,16 @@ public class PerformanceSettings
     /// <summary>
     /// Hard cap on a single /api/joker/analyze round-trip in seconds. Exceeding it
     /// surfaces a shrug-line "the jester has nothing to add" instead of letting the
-    /// demo stall on "Jester is thinking…". Default: 8.
+    /// demo stall on "Jester is thinking…". Default: 20.
+    /// <para>
+    /// 8 (the prior default) raced against the Azure chat pipeline's retry/circuit-breaker
+    /// budget on the shared account — first calls consistently took 10-30 s, and the orchestrator's
+    /// cancel cascaded through the Jev gate before it could record a bypass trace, which is why
+    /// every joke rendered as "the jester has nothing to add". 20 aligns with the server-side
+    /// <c>AiJesterService._timeoutSeconds=30</c> with headroom for the chat pipeline.
+    /// </para>
     /// </summary>
-    public int AnalysisTimeoutSeconds { get; set; } = 8;
+    public int AnalysisTimeoutSeconds { get; set; } = 20;
 
     /// <summary>Delay before revealing the punchline in seconds. Default: 1.</summary>
     public int PunchlineDelaySeconds { get; set; } = 1;

@@ -119,7 +119,7 @@ public sealed class AiEmbeddingService
 
             var tokens = response.Value.Usage?.TotalTokenCount ?? 0;
             _logger.EmbeddingCallCompleted(purpose, deployment, inputs.Count, tokens, elapsedMs);
-            _usage.Record($"embed:{purpose}", deployment, tokens, elapsedMs);
+            _usage.Record($"embed:{purpose}", deployment, tokens, 0, elapsedMs);
             AiUsageScope.Report(tokens);
             if (!string.IsNullOrEmpty(identity))
                 _budget.Record(identity, tokens);

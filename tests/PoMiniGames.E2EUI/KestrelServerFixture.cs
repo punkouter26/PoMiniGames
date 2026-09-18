@@ -7,7 +7,9 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using PoMiniGames.AI;
 using PoMiniGames.TestUtilities;
 using Testcontainers.Azurite;
 
@@ -131,6 +133,13 @@ public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifeti
         {
             services.AddSingleton(_ => new TableServiceClient(_azuriteConnectionString));
             services.AddSingleton(_ => new BlobServiceClient(_azuriteConnectionString));
+
+            // §Jev: pin the decision client to the in-process stub so no live
+            // tokens can be spent even if a real OpenRouter key sits in
+            // appsettings.Development.json. The E2E-UI tier asserts rendered
+            // HTML, not gate outcomes, so the default bypass is sufficient.
+            services.RemoveAll<IJevClient>();
+            services.AddSingleton<IJevClient, StubJevClient>();
         });
     }
 

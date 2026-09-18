@@ -50,13 +50,19 @@ public static class AiUsageEndpoints
                 Failures: kv.Value.Failures,
                 TotalTokens: kv.Value.TotalTokens,
                 AverageTokens: kv.Value.AverageTokens,
-                AverageLatencyMs: kv.Value.AverageLatencyMs))
+                AverageLatencyMs: kv.Value.AverageLatencyMs,
+                InputTokens: kv.Value.InputTokens,
+                OutputTokens: kv.Value.OutputTokens,
+                TotalCostUsd: kv.Value.TotalCostUsd,
+                AverageCostUsd: kv.Value.AverageCostUsd))
             .ToList();
 
         // The caller's own allowance, so a player hitting the ceiling can be told why without
         // anyone reading a log. Only ever their own — this reports no other identity's spend.
         var identity = AiUsageScopeExtensions.ResolveIdentity(http);
         var verdict = budget.Check(identity);
+
+        var totalCost = games.Sum(g => g.TotalCostUsd);
 
         return Results.Ok(new AiUsageReportDto(
             Configured: opts.IsConfigured,
@@ -67,6 +73,7 @@ public static class AiUsageEndpoints
             TotalCalls: games.Sum(g => g.Calls),
             TotalFailures: games.Sum(g => g.Failures),
             TotalTokens: games.Sum(g => g.TotalTokens),
+            TotalCostUsd: totalCost,
             Budget: new AiBudgetDto(
                 Unlimited: budget.IsUnlimited,
                 Spent: verdict.Spent,
@@ -78,6 +85,7 @@ public static class AiUsageEndpoints
 
 /// <param name="Configured">False when no foundry endpoint is set; games serve mocks or fail.</param>
 /// <param name="Games">Per-game counters for this process. Empty before the first call.</param>
+/// <param name="TotalCostUsd">Running USD total across every game in <see cref="Games"/>, at list prices.</param>
 /// <param name="Budget">The calling identity's own daily token allowance.</param>
 public sealed record AiUsageReportDto(
     bool Configured,
@@ -88,10 +96,12 @@ public sealed record AiUsageReportDto(
     long TotalCalls,
     long TotalFailures,
     long TotalTokens,
+    double TotalCostUsd,
     AiBudgetDto Budget);
 
 /// <param name="Game">Game key, or <c>embed:&lt;purpose&gt;</c> for an embedding workload.</param>
 /// <param name="Failures">Calls that threw — timeouts, circuit-open, service errors.</param>
+/// <param name="TotalCostUsd">Running USD total for this game, at <see cref="DeploymentPricing.Catalog"/> list prices.</param>
 public sealed record AiGameUsageDto(
     string Game,
     string Deployment,
@@ -99,7 +109,11 @@ public sealed record AiGameUsageDto(
     long Failures,
     long TotalTokens,
     long AverageTokens,
-    long AverageLatencyMs);
+    long AverageLatencyMs,
+    long InputTokens,
+    long OutputTokens,
+    double TotalCostUsd,
+    double AverageCostUsd);
 
 /// <param name="Unlimited">True when the daily ceiling is switched off.</param>
 /// <param name="ResetUtc">Start of the next UTC day, when the allowance returns.</param>

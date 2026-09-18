@@ -55,6 +55,15 @@ public sealed class AiJesterService : IAnalysisService
     private readonly HybridCache _cache;
     private readonly IAiDecisionOptionsCache _optionsCache;
     private readonly int _timeoutSeconds;
+    private readonly IJevClient _jev;
+
+    /// <summary>
+    /// Confidence threshold above which a joke is considered "worth spending a model call on".
+    /// Below this (or on Jev bypass) the gate falls through to the current behaviour.
+    /// 0.65 is the calibrated point the doc recommends for low-stakes gates: high enough that
+    /// obviously weak jokes are skipped, low enough that borderline material still gets a verdict.
+    /// </summary>
+    private const double JokeGateThreshold = 0.65;
 
     /// <summary>
     /// The one prompt for the one call: predict a punchline AND score the real joke.
@@ -94,7 +103,8 @@ public sealed class AiJesterService : IAnalysisService
         GameChatClientFactory clients,
         IOptionsMonitor<AIFoundryOptions> foundryOptions,
         HybridCache cache,
-        IAiDecisionOptionsCache optionsCache)
+        IAiDecisionOptionsCache optionsCache,
+        IJevClient jev)
     {
         _logger = logger;
         _environment = environment;
@@ -103,6 +113,7 @@ public sealed class AiJesterService : IAnalysisService
         _foundryOptions = foundryOptions;
         _cache = cache;
         _optionsCache = optionsCache;
+        _jev = jev;
         _timeoutSeconds = configuration.GetValue("PoJoker:AzureOpenAI:TimeoutSeconds", 30);
     }
 
@@ -166,8 +177,7 @@ public sealed class AiJesterService : IAnalysisService
 
     private async Task<JesterVerdict> ResolveVerdictAsync(JokeDto joke, CancellationToken cancellationToken)
     {
-        var cacheKey = $"pojoker:verdict:{Hash(joke.Setup, joke.Punchline)}";
-        // Identity in the state: a HybridCache factory does not inherit the caller's
+        var cacheKey = $"pojoker:verdict:{Hash(joke.Setup, joke.Punchline)}"; _logger.LogInformation("PoJoker: AnalyzeAsync ENTER jokeId={JokeId} key={Key}", joke.Id, cacheKey);        // Identity in the state: a HybridCache factory does not inherit the caller's
         // ExecutionContext, so an ambient scope is invisible inside it. See AiUsageScope.Restore.
         var identity = AiUsageScope.CurrentIdentity;
         try
@@ -203,6 +213,26 @@ public sealed class AiJesterService : IAnalysisService
 
     private async ValueTask<JesterVerdict> AnalyzeUncachedAsync(JokeDto joke, CancellationToken cancellationToken)
     {
+        // §Jev pre-call gate: Jev noul decides whether this joke is worth a chat-model
+        // call. Below JokeGateThreshold (or on Jev bypass) the verdict pipeline runs
+        // exactly as before — the gate is transparent to the cache and to the chat
+        // decorator chain. The /api/health/jev endpoint surfaces the trace so the
+        // bypass / skip / spend outcomes are visible to the dev diag page.
+        _logger.LogInformation("PoJoker: AnalyzeUncachedAsync entered for joke {JokeId}; ct-cancelled={Cancelled}", joke.Id, cancellationToken.IsCancellationRequested);
+        using var scope = JevCallScope.Push("joker");
+        var gate = await _jev.EvaluateNoulAsync(
+            instructions: "Is this joke worth spending a model call to predict a punchline and score?",
+            state: new { joke.Setup, joke.Punchline, joke.Category },
+            ct: cancellationToken);
+        _logger.LogInformation("PoJoker: Jev gate returned noul={Noul:0.00} confidence={Confidence:0.00} failingThrough={FailingThrough}", gate.Value, gate.Confidence, gate.FailingThrough);
+        if (JevGate.ShouldSkip(gate, JokeGateThreshold))
+        {
+            _logger.LogInformation(
+                "PoJoker: Jev gate skipped joke {JokeId} (noul={Noul:0.00}, confidence={Confidence:0.00})",
+                joke.Id, gate.Value, gate.Confidence);
+            return Unavailable("[The Jester shrugged this one off.]");
+        }
+
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(_timeoutSeconds));
 

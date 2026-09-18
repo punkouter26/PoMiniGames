@@ -87,7 +87,8 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         GameChatClientFactory clients,
         IOptionsMonitor<AIFoundryOptions> foundry,
         IAiDecisionOptionsCache options,
-        HybridCache cache)
+        HybridCache cache,
+        IJevClient jev)
     {
         _configuration = configuration;
         _environment = environment;
@@ -96,7 +97,19 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         _foundry = foundry;
         _options = options;
         _cache = cache;
+        _jev = jev;
     }
+
+    private readonly IJevClient _jev;
+
+    /// <summary>
+    /// Confidence threshold for the cloud-thought gate. Below this (or on Jev bypass)
+    /// the call falls through to the existing chat path. 0.55 is the calibration the doc
+    /// recommends for "is this worth a model call?" gates where the false-positive cost
+    /// (a wasted chat call) is much smaller than the false-negative cost (a dropped
+    /// narrative moment).
+    /// </summary>
+    private const double ThoughtGateThreshold = 0.55;
 
     private bool UseMock => AiMockFallback.ShouldUseMock(_environment, _configuration.GetValue<bool>("PoEcosystem:Features:UseMockAI"));
 
@@ -172,6 +185,25 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
     public async Task<EcoThoughtReply> ThinkAsync(EcoThoughtRequest request, CancellationToken ct = default)
     {
         var prompt = (request.Prompt ?? string.Empty).Trim();
+
+        // §Jev thought gate. Replaces the 20-s client-side throttle in thoughtBridge.js
+        // when Jev is configured: Jev noul decides whether the creature prompt is worth
+        // a chat-model call. On bypass / failure / low confidence the gate is transparent
+        // and the call falls through to the chat path exactly as before. The
+        // /api/health/jev endpoint surfaces the trace.
+        using var scope = JevCallScope.Push("ecosystem");
+        var gate = await _jev.EvaluateNoulAsync(
+            instructions: "Is this creature's inner thought worth spending a chat-model call to voice?",
+            state: new { Prompt = prompt, Length = prompt.Length },
+            ct: ct);
+        if (JevGate.ShouldSkip(gate, ThoughtGateThreshold))
+        {
+            _logger.LogInformation(
+                "PoEcosystem: Jev gate skipped cloud thought (noul={Noul:0.00}, confidence={Confidence:0.00})",
+                gate.Value, gate.Confidence);
+            return new EcoThoughtReply(MockThought(prompt), Mock: true);
+        }
+
         var client = Client(AIFoundryOptions.Tasks.EcosystemThought, out var deployment);
         if (client is null) return new EcoThoughtReply(MockThought(prompt), Mock: true);
         try

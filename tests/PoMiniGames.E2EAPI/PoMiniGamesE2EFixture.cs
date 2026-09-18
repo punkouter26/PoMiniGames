@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using PoMiniGames.AI;
 using PoMiniGames.TestUtilities;
 
 namespace PoMiniGames.E2EAPI;
@@ -69,6 +71,15 @@ public sealed class PoMiniGamesE2EFixture : WebApplicationFactory<Program>
             // here from the same Azurite connection string the host already uses.
             services.AddSingleton(_ => new TableServiceClient(AzuriteConnectionString));
             services.AddSingleton(_ => new BlobServiceClient(AzuriteConnectionString));
+
+            // §Jev: pin the decision client to the in-process stub so no live
+            // tokens can be spent even if a real OpenRouter key sits in
+            // appsettings.Development.json. Bypass-by-default keeps the gate
+            // transparent for the rest of the suite; gate-specific tests can
+            // Resolve<StubJevClient>() and override RespondNoul.
+            services.RemoveAll<IJevClient>();
+            services.AddSingleton<IJevClient, StubJevClient>();
+            services.AddSingleton<StubJevClient>(sp => (StubJevClient)sp.GetRequiredService<IJevClient>());
 
             // The canonical harness for header-driven FakeAuth identity is
             // TestWebApplicationFactory in the integration-test project. The e2e

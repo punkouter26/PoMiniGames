@@ -22,6 +22,12 @@
     },
     "microsoftAuthTenantId": {
       "value": ""
+    },
+    "_comment_jevApiKey": {
+      "value": "OpenRouter key for the Jev gate. Override per environment via `azd env set PoMiniGamesJevApiKey <sk-or-v1-...>`. Empty by default is the documented bypass — Jev down = gate falls through to the existing chat call, no behaviour change. Set this for environments where Jev should actually gate calls."
+    },
+    "jevApiKey": {
+      "value": ""
     }
   }
 }

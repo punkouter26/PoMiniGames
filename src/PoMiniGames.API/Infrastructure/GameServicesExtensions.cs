@@ -83,6 +83,19 @@ internal static class GameServicesExtensions
             });
         services.AddSingleton<AIFoundryClientFactory>();
         services.AddSingleton<AIFoundryChatClientCache>();
+        // ─── Jev decision client (System One) ────────────────────────────────
+        // Jev does not fit the OpenAI ChatClient decorator chain (no token stream,
+        // typed primitives only) — see IJevClient for why. A typed HttpClient keeps
+        // the timeout, the bearer header, and the JSON contract in one place; the
+        // telemetry decorator wraps the inner client so the dev-facing
+        // /api/health/jev endpoint sees every branch, including pre-flight bypasses.
+        services.AddOptions<JevOptions>().BindConfiguration(JevOptions.SectionName);
+        services.AddSingleton<JevUsageAccumulator>();
+        services.AddHttpClient<IJevClient, JevHttpClient>();
+        services.AddSingleton<JevTelemetryDecorator>();
+        // Register the telemetry decorator under the same interface so callers
+        // resolve the decorated client without remembering to ask for it.
+        services.AddSingleton<IJevClient>(sp => sp.GetRequiredService<JevTelemetryDecorator>());
         // §3: register the resilience pipeline (retry + circuit breaker + outer timeout)
         // used by every AI Foundry consumer. Idempotent — safe to call multiple times.
         // Consumed by ResilientChatClient, which every keyed game chat client is wrapped in;

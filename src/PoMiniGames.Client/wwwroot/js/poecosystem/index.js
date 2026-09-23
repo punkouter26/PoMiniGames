@@ -10,6 +10,9 @@ import { BINDABLE, DEFAULT_BINDINGS, mergeBindings } from './render/input.js';
 import { HOST } from './sim/core/config.js';
 import { createAudio } from './render/audio.js';
 import { createMusic } from './render/music.js';
+import { createLeitmotif } from './render/leitmotif.js';
+import { createChronicle, isChronicleEvent } from './render/chronicle.js';
+import { createReel } from './render/reel.js';
 import { openWorldStore, loadWorldMeta } from './sim/persistence/idb.js';
 import { createPrefs } from './sim/persistence/prefs.js';
 import { hashString } from './sim/core/prng.js';
@@ -23,6 +26,10 @@ let engine = null;
 // Loading it here keeps it off every other
 // page — the game is route-gated through engineLoader.
 const STYLE_ID = 'poecosystem-css';
+// The HUD's mood hue per score mode (GFX pass 2, idea 8): thriving teal, stable blue,
+// declining violet, collapse red. poecosystem.css turns it into the chip's glow.
+const MOOD_HUE = { ionian: 150, dorian: 200, aeolian: 268, phrygian: 352 };
+const BLOOM_BIRTHS = 3;   // births in one stats interval that make the HUD bloom
 function ensureStyles() {
   if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
   const link = document.createElement('link');
@@ -44,8 +51,14 @@ function createEngine(container, dotnetRef, opts) {
     // reservoir bumped by each natural event, which is what lets the soundtrack stay tense
     // for a few seconds after an eruption rather than only during it.
     lastBorn: -1, lastDied: 0, eventPressure: 0,
+    // GFX pass 2: the chronicle card, the reel, the genome synth.
+    chronicle: null, reel: null, leitmotif: null, subjectTimer: 0, bloomTimer: 0,
   };
   state.music = createMusic(state.audio);
+  state.leitmotif = createLeitmotif(state.audio, state.music);
+  const rootEl = () => container?.closest?.('.poeco-root') ?? null;
+  const motionReduced = () => !!state.prefs?.get('reducedMotion')
+    || (typeof document !== 'undefined' && document.documentElement.dataset.motion === 'reduce');
 
   const invoke = async (method, ...args) => {
     if (!dotnetRef) return;
@@ -111,6 +124,15 @@ function createEngine(container, dotnetRef, opts) {
         return;
       case 'events':
         for (const ev of msg.events) {
+          // A landmark gets its moment: the card, the camera, the score and the reel all
+          // land on it together (chronicle.js throttles the card; the rest are cheap).
+          if (isChronicleEvent(ev) && state.ready) {
+            const year = state.stats?.year ?? 0;
+            state.chronicle?.show(ev, year);
+            state.renderer?.moment(ev);
+            state.music?.flourish(ev.kind === 'diplomacy' ? ev.action : ev.kind);
+            state.reel?.capture(`Year ${year} — ${ev.text ?? ev.kind}`);
+          }
           // A tech unlock or an outbreak is a cut for the director, not a stinger or a shake.
           if (ev.kind === 'tech' || ev.kind === 'outbreak') { state.renderer?.onEvent(ev); continue; }
           // Diplomacy logs as kind 'diplomacy' with an action; the old checks here looked
@@ -186,6 +208,42 @@ function createEngine(container, dotnetRef, opts) {
       eventPressure: state.eventPressure,
       dayFraction: stats.dayFraction,
     });
+    applyMood(births);
+  }
+
+  /**
+   * The HUD follows the island's mood (idea 8): the score's mode picks a hue, its tempo
+   * sets the breathing rate, and a burst of births makes the chip bloom. Written as custom
+   * properties and data attributes on .poeco-root, which Blazor never renders, so a
+   * component re-render cannot clobber them (same trick as the HUD's data-idle).
+   */
+  function applyMood(births) {
+    const el = rootEl();
+    const music = state.music?.state;
+    if (!el || !music) return;
+    el.style.setProperty('--poeco-mood-hue', String(MOOD_HUE[music.mode] ?? 200));
+    el.style.setProperty('--poeco-beat', `${(60 / Math.max(30, music.bpm || 54)).toFixed(2)}s`);
+    el.dataset.poecoMood = music.mode;
+    if (births >= BLOOM_BIRTHS && !motionReduced()) {
+      el.removeAttribute('data-poeco-bloom');
+      void el.offsetWidth;          // restart the animation if it is already running
+      el.setAttribute('data-poeco-bloom', '');
+      clearTimeout(state.bloomTimer);
+      state.bloomTimer = setTimeout(() => el.removeAttribute('data-poeco-bloom'), 1800);
+    }
+  }
+
+  /**
+   * The genome synth's subject (idea 5): whatever the camera is on — the director's
+   * subject, else the followed creature, else the inspected one. Polled at 4 Hz so the
+   * motif follows the creature across the island.
+   */
+  function updateSubject() {
+    const r = state.renderer;
+    if (!r || !state.sound) { state.leitmotif?.setSubject(null); return; }
+    const handle = r.director ? state.directorSubject
+      : r.followHandle >= 0 ? r.followHandle : state.selected;
+    state.leitmotif?.setSubject(handle !== NONE && handle >= 0 ? r.creatureInfo(handle) : null);
   }
 
   const api = {
@@ -221,6 +279,11 @@ function createEngine(container, dotnetRef, opts) {
         state.renderer = buildRenderer();
         state.renderer.setPose(prefs.get('player'));
         state.poseTimer = setInterval(() => { if (state.renderer) prefs.set('player', state.renderer.player); }, 5000);
+        state.chronicle = createChronicle(container, { reducedMotion: motionReduced });
+        state.reel = createReel(container, { tier: state.renderer.tier, photo: () => state.renderer?.photo() });
+        state.reel.setSource(state.renderer.canvas);
+        state.subjectTimer = setInterval(updateSubject, 250);
+        if (motionReduced()) rootEl()?.setAttribute('data-poeco-still', '');
       }
       if (typeof document !== 'undefined') applyPalette(prefs.get('palette'));
       await startHost();
@@ -265,6 +328,8 @@ function createEngine(container, dotnetRef, opts) {
             invoke('OnAction', action, value === undefined ? null : String(value));
           },
           directorIdleSeconds: opts.demo ? 4 : 150,
+          tempo: () => state.music?.state?.bpm ?? 54,
+          onAfterRender: () => state.reel?.mirror(),
         });
   }
 
@@ -281,6 +346,7 @@ function createEngine(container, dotnetRef, opts) {
     if (pose) state.renderer.setPose(pose);
     if (tint >= 0) state.renderer.setTint(tint);
     if (held) state.renderer.holdDirector(true);
+    state.reel?.setSource(state.renderer.canvas);
   }
 
   /** Chart and chip colours follow a data attribute (poecosystem.css defines both palettes). */
@@ -320,7 +386,13 @@ function createEngine(container, dotnetRef, opts) {
       applyPalette(p);
       rebuildRenderer();   // tribe banners are baked into their materials
     },
-    setReducedMotion(on) { state.prefs?.set('reducedMotion', !!on); state.renderer?.setReducedMotion(!!on); },
+    setReducedMotion(on) {
+      state.prefs?.set('reducedMotion', !!on);
+      state.renderer?.setReducedMotion(!!on);
+      if (on) rootEl()?.setAttribute('data-poeco-still', ''); else rootEl()?.removeAttribute('data-poeco-still');
+    },
+    /** Open or close the Island Reel drawer; returns whether it is now open. */
+    toggleReel: () => state.reel?.toggle() ?? false,
     setBinding(action, code) {
       if (!BINDABLE.includes(action) || typeof code !== 'string' || !code) return settingsSnapshot();
       const current = mergeBindings(state.prefs?.get('bindings'));
@@ -441,6 +513,16 @@ function createEngine(container, dotnetRef, opts) {
         document.querySelector('.poeco-hud')?.removeAttribute('data-idle');
         state.hudIdle = null;
       }
+      clearInterval(state.subjectTimer);
+      clearTimeout(state.bloomTimer);
+      state.chronicle?.dispose(); state.chronicle = null;
+      state.reel?.dispose(); state.reel = null;
+      state.leitmotif?.dispose();
+      const root = rootEl();
+      if (root) {
+        for (const a of ['data-poeco-mood', 'data-poeco-bloom', 'data-poeco-still']) root.removeAttribute(a);
+        root.style.removeProperty('--poeco-mood-hue'); root.style.removeProperty('--poeco-beat');
+      }
       state.music?.dispose();
       state.audio.dispose();
       state.host?.send({ type: 'saveNow', reason: 'stop' });
@@ -505,6 +587,7 @@ const PoEcosystem = {
   setTint: (traitIndex) => engine?.setTint(traitIndex),
   setDirector: (on) => engine?.setDirector(on),
   togglePip: () => engine?.togglePip(),
+  toggleReel: () => engine?.toggleReel() ?? false,
   toggleFly: () => engine?.state.renderer?.toggleFly(),
   setPose: (pose) => engine?.state.renderer?.setPose(pose),
   requestLock: () => engine?.state.renderer?.requestLock(),

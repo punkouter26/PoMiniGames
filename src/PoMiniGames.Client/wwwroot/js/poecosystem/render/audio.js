@@ -22,6 +22,19 @@
 //              send, so a rockslide in the mountains rings and a footfall on the beach
 //              does not.
 //
+// CREATURE VOICES (GFX pass 2, idea 6). Until this the only living things you could hear
+// were birds and crickets — four species and a tribe, all silent. The renderer now scans
+// the creatures near the listener and calls these, positioned like every other source:
+//
+//   HOWL    a wolf pack that is hunting after dark. Formant synthesis — a near-sine
+//           fundamental gliding up and settling into vibrato, pushed through two
+//           band-pass formants that open from "oo" to "ah" — so it needs no asset.
+//   BARK    a deer's alarm when it bolts: a short nasal burst.
+//   THUMP   a rabbit's alarm, which in the wild is not a voice at all but a double foot
+//           drum on the ground.
+//   DRUMS   the tribe's night drumming at the campfire once it has Fire, one bar at a
+//           time on the score's own tempo so it sits inside the music rather than over it.
+//
 // WHY ITS OWN AudioContext AND NOT PoAudioBus
 // The app-wide bus is a fine mixer but it is a different AudioContext with a listener
 // parked at the origin, and PoMaterialAudio's positioning is a stereo pan in screen space.
@@ -245,6 +258,100 @@ export function createAudio() {
     windBoost = kind === 2 ? 0.1 * i : kind === 4 ? 0.05 * i : 0;
   }
 
+  /** Where a positioned voice starts: now plus the sound's travel time. */
+  const arrival = (placed) => ctx.currentTime + placed.dist / SPEED_OF_SOUND;
+
+  /** A wolf howl. `pitch` ~0.85..1.2 so a pack chorus does not sing in unison. */
+  function howl(at, pitch = 1) {
+    if (!ctx || !enabled || !at) return;
+    try {
+      const placed = place(at.x, at.y, at.z, { hrtf: true, wet: 0.6, ref: 22, rolloff: 0.8 });
+      if (!placed) return;
+      const when = arrival(placed);
+      const len = 2.2 + Math.random() * 0.9;
+      const f0 = 330 * pitch;
+      const glide = (param) => {
+        param.setValueAtTime(f0 * 0.82, when);
+        param.exponentialRampToValueAtTime(f0 * 1.28, when + 0.55);
+        param.setValueAtTime(f0 * 1.28, when + len * 0.7);
+        param.exponentialRampToValueAtTime(f0 * 0.86, when + len);
+      };
+      // The fundamental carries the howl; a quiet sawtooth through the formants gives it
+      // a throat. Vibrato comes in after the rise, as a real one does.
+      const pure = ctx.createOscillator(); pure.type = 'sine'; glide(pure.frequency);
+      const reed = ctx.createOscillator(); reed.type = 'sawtooth'; glide(reed.frequency);
+      const vib = ctx.createOscillator(); vib.frequency.value = 5.2;
+      const vibDepth = ctx.createGain();
+      vibDepth.gain.setValueAtTime(0, when);
+      vibDepth.gain.linearRampToValueAtTime(f0 * 0.018, when + 0.9);
+      vib.connect(vibDepth); vibDepth.connect(pure.frequency); vibDepth.connect(reed.frequency);
+      const f1 = ctx.createBiquadFilter(); f1.type = 'bandpass'; f1.Q.value = 5;
+      f1.frequency.setValueAtTime(420, when); f1.frequency.linearRampToValueAtTime(820, when + 0.7);
+      const f2 = ctx.createBiquadFilter(); f2.type = 'bandpass'; f2.Q.value = 7;
+      f2.frequency.setValueAtTime(900, when); f2.frequency.linearRampToValueAtTime(1250, when + 0.7);
+      const reedGain = ctx.createGain(); reedGain.gain.value = 0.18;
+      reed.connect(f1).connect(reedGain); reed.connect(f2).connect(reedGain);
+      const env = ctx.createGain();
+      env.gain.setValueAtTime(0, when);
+      env.gain.linearRampToValueAtTime(0.26, when + 0.35);
+      env.gain.setValueAtTime(0.26, when + len * 0.75);
+      env.gain.exponentialRampToValueAtTime(0.0001, when + len);
+      pure.connect(env); reedGain.connect(env);
+      env.connect(placed.node);
+      for (const o of [pure, reed, vib]) { o.start(when); o.stop(when + len + 0.1); }
+    } catch { /* best effort */ }
+  }
+
+  /** A deer's alarm bark: a nasal burst with a falling pitch. */
+  function bark(at) {
+    if (!ctx || !enabled || !at) return;
+    try {
+      const placed = place(at.x, at.y, at.z, { wet: 0.35, ref: 10, rolloff: 1.2 });
+      if (!placed) return;
+      const when = arrival(placed);
+      const o = ctx.createOscillator(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(260, when); o.frequency.exponentialRampToValueAtTime(150, when + 0.16);
+      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 2.5;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, when); g.gain.linearRampToValueAtTime(0.32, when + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + 0.2);
+      o.connect(f).connect(g).connect(placed.node);
+      o.start(when); o.stop(when + 0.25);
+      burst(placed.node, when, { type: 'bandpass', frequency: 1800, Q: 1.2, level: 0.12, attack: 0.005, seconds: 0.12 });
+    } catch { /* best effort */ }
+  }
+
+  /** A rabbit's alarm: two quick foot drums on the ground. */
+  function footThump(at) {
+    if (!ctx || !enabled || !at) return;
+    try {
+      const placed = place(at.x, at.y, at.z, { wet: 0.15, ref: 5, rolloff: 1.5 });
+      if (!placed) return;
+      const when = arrival(placed);
+      thump(placed.node, when, 110, 48, 0.07, 0.45);
+      thump(placed.node, when + 0.11, 105, 46, 0.07, 0.38);
+    } catch { /* best effort */ }
+  }
+
+  /**
+   * One bar of campfire drumming starting at `when` (context time), `beat` seconds per
+   * beat. Low drum on 1 and 3, a hand drum on the offbeats, the last one ghosted.
+   */
+  function drumBar(at, when, beat) {
+    if (!ctx || !enabled || !at) return;
+    try {
+      const placed = place(at.x, at.y, at.z, { wet: 0.4, ref: 14, rolloff: 1.1 });
+      if (!placed) return;
+      const t0 = when + placed.dist / SPEED_OF_SOUND;
+      thump(placed.node, t0, 90, 42, 0.32, 0.5);
+      thump(placed.node, t0 + beat * 2, 88, 42, 0.3, 0.42);
+      for (const [off, lvl] of [[1.5, 0.22], [2.5, 0.2], [3, 0.26], [3.5, 0.12]]) {
+        thump(placed.node, t0 + beat * off, 210, 140, 0.09, lvl);
+        burst(placed.node, t0 + beat * off, { type: 'bandpass', frequency: 700, Q: 1.4, level: lvl * 0.5, attack: 0.002, seconds: 0.06 });
+      }
+    } catch { /* best effort */ }
+  }
+
   /** Tribal war / peace drum pulse */
   function tribalDrum(at, isWar = false) {
     ensure();
@@ -447,7 +554,11 @@ export function createAudio() {
     tribalDrum,
     warHorn,
     constructionMallet,
+    howl, bark, footThump, drumBar,
     setPlayer,
+    /** A positioned output node for voices built elsewhere (leitmotif.js); null out of earshot. */
+    placeNode(x, y, z, opts) { if (!ctx || !enabled) return null; try { return place(x, y, z, opts); } catch { return null; } },
+    get speedOfSound() { return SPEED_OF_SOUND; },
     /** music.js builds its own graph on this context and mixes into the same master. */
     get context() { return ctx; },
     get musicDestination() { return master; },

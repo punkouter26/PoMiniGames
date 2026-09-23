@@ -17,6 +17,18 @@
 //
 // Everything is driven from the same `info` object lighting.update() returns, so the sky,
 // the fog, the water and the shafts never disagree about the time of day.
+//
+// NIGHT SPECTACLE (GFX pass 2, idea 10). Two more terms in the dome, both additive, so a
+// mild night stays mild — they bring light, they never take it away:
+//
+//   AURORA    curtains projected onto three stacked sheets above the island, rippled by
+//             drifting noise and streaked with vertical rays; green at the foot, violet at
+//             the crown. Its strength is decided by the renderer from the world's seed and
+//             the date, so it is the ISLAND's aurora — two people watching the same world
+//             on the same night see it together, and nothing the viewer does summons it.
+//   METEORS   one potential streak per 2.6 s slot, hashed from the slot; the rate is the
+//             renderer's (a shower night is again a property of the world and the date).
+//             Each is a short great-circle segment with a fading tail.
 import * as THREE from 'three';
 
 const DOME_RADIUS = 560;
@@ -51,8 +63,49 @@ uniform vec3 uSunDir;
 uniform float uNight;
 uniform float uDusk;
 uniform float uTime;
+uniform float uAurora;     // 0..1 tonight's aurora
+uniform float uMeteors;    // 0..1 chance a meteor slot fires
 varying vec3 vDir;
 ${NOISE}
+
+vec3 aurora(vec3 d) {
+  if (d.y < 0.03) return vec3(0.0);
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < 3; i++) {
+    float fi = float(i);
+    float sheet = 1.0 + fi * 0.35;
+    vec2 q = d.xz / (d.y + 0.12) * sheet * 0.55;
+    // The curtain line itself: a slow sinuous band across the sky.
+    float wave = q.x * 1.3 + sNoise(q * 0.9 + vec2(uTime * 0.02, fi * 3.1)) * 2.6 + sin(q.y * 0.8 + uTime * 0.05) * 0.8;
+    float band = exp(-pow(sin(wave) * 2.2, 2.0));
+    // Vertical rays: noise stretched along the curtain, flickering slowly.
+    float rays = 0.45 + 0.55 * sNoise(vec2(wave * 9.0, uTime * 0.35 + fi * 5.0));
+    vec3 tint = mix(vec3(0.12, 1.0, 0.45), vec3(0.62, 0.25, 1.0), fi / 2.0);
+    acc += tint * band * rays * (0.55 - fi * 0.12);
+  }
+  float lift = smoothstep(0.03, 0.25, d.y) * (1.0 - smoothstep(0.75, 1.0, d.y));
+  return acc * lift;
+}
+
+vec3 meteor(vec3 d) {
+  float slot = floor(uTime / 2.6);
+  float h = sHash(vec2(slot, 17.0));
+  if (h > uMeteors) return vec3(0.0);
+  float p = fract(uTime / 2.6) / 0.32;          // lives for the first third of its slot
+  if (p > 1.0) return vec3(0.0);
+  float az = sHash(vec2(slot, 3.0)) * 6.2831;
+  float el = 0.35 + sHash(vec2(slot, 5.0)) * 0.4;
+  vec3 a = normalize(vec3(cos(az) * cos(el), sin(el), sin(az) * cos(el)));
+  vec3 b = normalize(a + vec3(-sin(az), -0.55, cos(az)) * 0.35);
+  vec3 head = normalize(mix(a, b, p));
+  vec3 tail = normalize(mix(a, b, max(0.0, p - 0.35)));
+  // Distance from d to the segment tail→head, on the chord.
+  vec3 seg = head - tail;
+  float t = clamp(dot(d - tail, seg) / max(dot(seg, seg), 1e-6), 0.0, 1.0);
+  float dist = length(d - (tail + seg * t));
+  float line = exp(-dist * dist * 2.2e5) * t * t;
+  return vec3(0.85, 0.92, 1.0) * line * (1.0 - p * 0.6) * 2.4;
+}
 
 void main() {
   vec3 d = normalize(vDir);
@@ -84,6 +137,10 @@ void main() {
   float star = step(0.986, s) * (0.6 + 0.4 * sin(uTime * (1.5 + s * 3.0) + s * 40.0));
   float aboveHorizon = smoothstep(0.02, 0.2, up);
   col += vec3(0.9, 0.95, 1.0) * star * aboveHorizon * smoothstep(0.35, 0.9, uNight) * 0.9;
+
+  float dark = smoothstep(0.3, 0.85, uNight);
+  if (uAurora > 0.01 && dark > 0.0) col += aurora(d) * uAurora * dark * 0.9;
+  if (uMeteors > 0.001 && dark > 0.0) col += meteor(d) * dark;
 
   gl_FragColor = vec4(col, 1.0);
 }
@@ -137,6 +194,8 @@ export function createSky(scene, { tier = 'high' } = {}) {
       uNight: { value: 0 },
       uDusk: { value: 0 },
       uTime: { value: 0 },
+      uAurora: { value: 0 },
+      uMeteors: { value: 0 },
     },
     vertexShader: DOME_VERT,
     fragmentShader: DOME_FRAG,
@@ -188,6 +247,7 @@ export function createSky(scene, { tier = 'high' } = {}) {
   // a spell rolls in rather than switching the sky.
   let overcast = 0;
   let overcastTarget = 0;
+  const spectacle = { aurora: 0, meteors: 0 };
   const DAY_ZENITH = new THREE.Color(0x2f6fd0);
   const NIGHT_ZENITH = new THREE.Color(0x0b1326);
   const DUSK_ZENITH = new THREE.Color(0x4a3a7a);
@@ -203,6 +263,11 @@ export function createSky(scene, { tier = 'high' } = {}) {
      */
     /** 0..1 cloud deck from the weather (renderer.js). */
     setOvercast(v) { overcastTarget = Math.max(0, Math.min(1, v)); },
+    /** Tonight's spectacle (renderer.js decides it from the world): 0..1 each. Eased. */
+    setSpectacle(auroraLevel, meteorRate) {
+      spectacle.aurora = Math.max(0, Math.min(1, auroraLevel));
+      spectacle.meteors = Math.max(0, Math.min(1, meteorRate));
+    },
     get overcast() { return overcast; },
     update(sky, player, time) {
       const u = domeMat.uniforms;
@@ -215,6 +280,11 @@ export function createSky(scene, { tier = 'high' } = {}) {
       u.uNight.value = sky.night;
       u.uDusk.value = sky.dusk;
       u.uTime.value = time;
+      // A closed cloud deck hides both; the aurora also fades in over a minute or so rather
+      // than switching on at dusk.
+      const clear = 1 - overcast;
+      u.uAurora.value += (spectacle.aurora * clear - u.uAurora.value) * 0.004;
+      u.uMeteors.value = spectacle.meteors * clear;
       if (clouds) {
         const c = clouds.mat.uniforms;
         c.uSunDir.value.copy(sky.sunDir);

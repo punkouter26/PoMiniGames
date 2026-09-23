@@ -11,6 +11,9 @@ const PALETTES = Object.freeze({
   cb: Object.freeze({ 0: 0xe69f00, 1: 0x0072b2, 2: 0x009e73 }),
 });
 
+/** A tribe's banner colour (hex) in the chosen palette — the territory borders use it too. */
+export const bannerColour = (palette, tribeId) => (PALETTES[palette] ?? PALETTES.default)[tribeId] ?? 0xffffff;
+
 export function createSettlementMeshes(scene, heightAt = () => 0, palette = 'default') {
   const group = new THREE.Group();
   group.name = 'settlement_structures';

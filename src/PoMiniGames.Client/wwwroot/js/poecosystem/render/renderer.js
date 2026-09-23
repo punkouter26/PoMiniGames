@@ -11,6 +11,13 @@
 // the atmosphere (lighting.js) all hang off this one frame loop, because every one of them
 // needs the same three facts — the frame delta, where the camera is, and what time of day
 // the sim thinks it is.
+//
+// GFX pass 2 hangs more off the same loop, all of it observation — nothing here writes to
+// the sim: creature trails (trails.js) and the grass field (grass.js), a SURFACE state
+// (wetness from the sim's weather, rain, snow cover, bioluminescent surf) handed to the
+// terrain and water, tonight's spectacle (aurora, meteors) decided from the world's seed
+// and the date, heat sources and shockwaves for the composer, the mood grade, creature
+// voices near the listener, and gamepad rumble for a near blast.
 import * as THREE from 'three';
 import { CREATURE_CAP, PROP_CAP } from '../sim/core/config.js';
 import { FRAME, frameViews } from '../sim/frame.js';
@@ -30,10 +37,13 @@ import { createEventFx } from './eventFx.js';
 import { createDirector } from './director.js';
 import { createPip } from './pip.js';
 import { createSky } from './sky.js';
-import { materialClock, materialDetail, materialSeason, materialSnow } from './materials.js';
+import { materialClock, materialDetail, materialSeason, materialSnow, materialWet, materialSky } from './materials.js';
 import { applyCameraShake } from '../../postFx.js';
-import { createSettlementMeshes } from './settlementMesh.js';
+import { createSettlementMeshes, bannerColour } from './settlementMesh.js';
 import { createFauna } from './fauna.js';
+import { createTrails } from './trails.js';
+import { createGrass } from './grass.js';
+import { GOAL } from '../sim/behavior/utility.js';
 
 const TAU = Math.PI * 2;
 // What the auto-director calls a cut to an event tile.
@@ -41,6 +51,27 @@ const EVENT_CAPTIONS = { lightning: 'Lightning strike', rockslide: 'Rockslide', 
 // Weather kinds (sim/events/weather.js) → how closed the cloud deck is.
 const OVERCAST = [0, 0.7, 1, 0, 0.6];
 const WEATHER_STORM = 2;
+// Weather kinds (sim/events/weather.js).
+const WEATHER_RAIN = 1;
+const WEATHER_DROUGHT = 3;
+const WEATHER_SNOW = 4;
+// Tonight's spectacle, per season (Spring, Summer, Autumn, Winter): the chance a given
+// night has an aurora, and bioluminescent surf. A shower of meteors is its own draw.
+const AURORA_CHANCE = [0.1, 0.05, 0.25, 0.45];
+const BIO_CHANCE = [0.3, 0.45, 0.25, 0.1];
+// Mood grade per season and weather (idea 8): [r, g, b, saturation].
+const SEASON_MOOD = [[1, 1.02, 0.98, 1.05], [1.05, 1, 0.92, 1.08], [1.07, 0.97, 0.86, 1.04], [0.93, 0.98, 1.07, 0.85]];
+const WEATHER_MOOD = [null, [0.97, 0.99, 1.02, 0.92], [0.94, 0.97, 1.02, 0.82], [1.06, 1, 0.88, 0.88], [0.96, 0.99, 1.05, 0.9]];
+const EPIDEMIC_MOOD = [0.95, 1.05, 0.9, 0.9];
+const VOICE_RANGE = 70;           // metres: creatures further than this are not voiced
+const HEAT_RANGE = 85;
+/** Deterministic 0..1 from a few integers — the world's seed and the date, never the viewer. */
+function hash01(...parts) {
+  let h = 2166136261;
+  for (const v of parts) { h ^= (v | 0); h = Math.imul(h, 16777619); h ^= h >>> 13; }
+  h = Math.imul(h ^ (h >>> 16), 2246822507); h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
+}
 const shortestAngle = (a, b) => { let d = (b - a) % TAU; if (d > Math.PI) d -= TAU; else if (d < -Math.PI) d += TAU; return d; };
 const smoothstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -62,6 +93,10 @@ export function createRenderer(container, {
   palette = 'default', reducedMotion = false,
   // Key bindings (input.js DEFAULT_BINDINGS shape), loaded from prefs by the engine.
   bindings = null,
+  // The score's tempo (music.js), so the campfire drums sit on its beat.
+  tempo = () => 54,
+  // Called right after every composed frame (the reel's mirror).
+  onAfterRender = null,
 } = {}) {
   const canvas = document.createElement('canvas');
   canvas.className = 'poeco-canvas';
@@ -117,6 +152,18 @@ export function createRenderer(container, {
   // Weather as the last stats message reported it; the per-frame emitters read it.
   let weatherKind = 0; let weatherIntensity = 0;
   let rainDebt = 0;
+  // GFX pass 2 state. `surface` is what the terrain and water read every frame.
+  let trails = null;
+  let grass = null;
+  const surface = { wet: 0, rain: 0, snow: 0, bio: 0 };
+  let snowFall = 0;                // snow laid by a weather spell; melts when it ends
+  let bioTarget = 0;
+  let spectacleKey = '';
+  const moodGrade = new THREE.Color(1, 1, 1);
+  const heatNdc = new THREE.Vector3();
+  const heatList = [];
+  let voiceAt = 0; let howlAt = -1e9; let barkAt = -1e9; let thumpAt = -1e9; let drumBarAt = 0;
+  const howlTimers = new Set();
   // The tour (Blazor) wants to know the first look and the first step, once each.
   const told = { look: false, move: false };
   // The page can hold the director off (the onboarding tour needs the camera to stay put).
@@ -267,6 +314,10 @@ export function createRenderer(container, {
     settlementMeshes = createSettlementMeshes(scene, (x, z) => terrainApi.heightAt(x, z), palette);
     fauna?.dispose();
     fauna = createFauna(scene, terrainApi, { tier });
+    trails?.dispose();
+    trails = createTrails(terrainApi.size);
+    grass?.dispose();
+    grass = createGrass(scene, terrainApi, { tier });
     // A pose set before the terrain arrived (Resume reads prefs synchronously at start)
     // must survive the rebuild, or the god is teleported back to the island's centre.
     // Fresh players float ('fly') until they press F to walk (2026-09-02 user call).
@@ -285,6 +336,7 @@ export function createRenderer(container, {
   function setTiles(msg) {
     if (!island) return;
     island.paint(msg.tileState, msg.grass);
+    grass?.setTiles(msg.tileState, msg.grass);
     flora?.update(msg, lastTime / 1000);
     minimap?.setTiles(msg);
 
@@ -376,6 +428,149 @@ export function createRenderer(container, {
     post.setSun(sunUv, Math.min(1.1, facing * facing * edge * hour), sky.sunColour);
   }
 
+  /**
+   * The ground's weather state (idea 3). Wetness is the sim's own (weather.js tracks how
+   * soaked the island is and dries it out); snow cover is laid here, because the sim has
+   * no notion of snow on the ground — only of snow falling.
+   */
+  function updateSurface(dt) {
+    const wetTarget = Math.max(0, Math.min(1, stats?.weather?.wetness ?? 0));
+    surface.wet += (wetTarget - surface.wet) * Math.min(1, dt * 0.5);
+    const raining = weatherKind === WEATHER_RAIN || weatherKind === WEATHER_STORM ? weatherIntensity : 0;
+    surface.rain += (raining - surface.rain) * Math.min(1, dt * 0.8);
+    const season = stats?.season ?? 0;
+    if (weatherKind === WEATHER_SNOW) snowFall = Math.min(1, snowFall + dt * weatherIntensity * 0.03);
+    else snowFall = Math.max(0, snowFall - dt * (season === 1 ? 0.02 : season === 3 ? 0.002 : 0.008));
+    // Winter's own cover, and the thaw in the first part of Spring (the old seasonal rule).
+    const seasonal = season === 3 ? 0.75 : season === 0 ? Math.max(0, 0.75 - (stats?.seasonProgress ?? 0) * 2.5) : 0;
+    const snowTarget = Math.max(seasonal, snowFall);
+    surface.snow += (snowTarget - surface.snow) * Math.min(1, dt * 0.25);
+    surface.bio += (bioTarget - surface.bio) * Math.min(1, dt * 0.05);
+    materialSnow.value = surface.snow;
+    materialWet.value = surface.wet * (1 - surface.snow);
+  }
+
+  /** Tonight's aurora, meteor rate and glowing surf — a property of the world and the date. */
+  function decideSpectacle(s) {
+    const key = `${s.seed}:${s.year}:${s.day}`;
+    if (key === spectacleKey) return;
+    spectacleKey = key;
+    const season = s.season ?? 0;
+    const seed = s.seed | 0; const year = s.year | 0; const day = s.day | 0;
+    const aurora = hash01(seed, year, day, 1) < AURORA_CHANCE[season] ? 0.45 + 0.55 * hash01(seed, year, day, 2) : 0;
+    const meteors = hash01(seed, year, day, 3) < 0.12 ? 0.55 : 0.07;
+    skyDome.setSpectacle(aurora, meteors);
+    bioTarget = hash01(seed, year, day, 4) < BIO_CHANCE[season] ? 0.6 + 0.4 * hash01(seed, year, day, 5) : 0;
+  }
+
+  /** The mood grade (idea 8): season, weather and sickness tint the whole frame. */
+  function decideMood(s) {
+    const m = SEASON_MOOD[s.season ?? 0] ?? SEASON_MOOD[0];
+    let r = m[0]; let g = m[1]; let b = m[2]; let sat = m[3];
+    const w = WEATHER_MOOD[weatherKind];
+    if (w) {
+      const i = Math.min(1, weatherIntensity);
+      r *= 1 + (w[0] - 1) * i; g *= 1 + (w[1] - 1) * i; b *= 1 + (w[2] - 1) * i; sat *= 1 + (w[3] - 1) * i;
+    }
+    const sick = (s.sick ?? []).reduce((a, v) => a + v, 0);
+    const epidemic = Math.min(1, (sick / Math.max(1, s.alive ?? 1)) * 4);
+    if (epidemic > 0.02) {
+      r *= 1 + (EPIDEMIC_MOOD[0] - 1) * epidemic; g *= 1 + (EPIDEMIC_MOOD[1] - 1) * epidemic;
+      b *= 1 + (EPIDEMIC_MOOD[2] - 1) * epidemic; sat *= 1 + (EPIDEMIC_MOOD[3] - 1) * epidemic;
+    }
+    moodGrade.setRGB(r, g, b);
+    post.setMood(moodGrade, sat);
+  }
+
+  /**
+   * Heat sources for the composer (idea 4): the nearest fire and lava tiles in front of
+   * the camera, projected to screen space. Lava burns hotter than a grass fire.
+   */
+  function updateHeat() {
+    if (!post.enabled) return;
+    heatList.length = 0;
+    if (motionReduced) { post.setHeat(heatList); return; }
+    const consider = (tiles, hot) => {
+      for (const t of tiles) {
+        const d = Math.hypot(t.x - player.x, t.y - player.y, t.z - player.z);
+        if (d > HEAT_RANGE || d < 1.5) continue;
+        heatNdc.set(t.x, t.y + 0.6, t.z).project(camera);
+        if (heatNdc.z > 1 || Math.abs(heatNdc.x) > 1.2 || Math.abs(heatNdc.y) > 1.2) continue;
+        const radius = Math.min(0.35, (3.2 / (d * Math.tan((camera.fov * Math.PI) / 360))) * 0.5);
+        heatList.push({ x: heatNdc.x * 0.5 + 0.5, y: heatNdc.y * 0.5 + 0.5, radius, strength: hot * (1 - d / HEAT_RANGE), d });
+      }
+    };
+    consider(lavaTiles, 1);
+    consider(fireTiles, 0.75);
+    heatList.sort((a, b) => a.d - b.d);
+    // Neighbouring burning tiles project to nearly the same spot; keep ones that are apart.
+    const picked = [];
+    for (const h of heatList) {
+      if (picked.length >= 4) break;
+      if (picked.some(q => Math.hypot(q.x - h.x, q.y - h.y) < q.radius * 0.8)) continue;
+      picked.push(h);
+    }
+    post.setHeat(picked);
+  }
+
+  /**
+   * Creature voices (idea 6), at 2 Hz: a hunting pack howls after dark, a bolting deer
+   * barks, a fleeing rabbit drums the ground, and a tribe with Fire drums at night.
+   */
+  function updateVoices(timeSec, night) {
+    if (!audio || !curr || !terrainApi) return;
+    if (timeSec - voiceAt < 0.5) return;
+    voiceAt = timeSec;
+    let wolves = 0; let hunting = 0; let wx = 0; let wy = 0; let wz = 0;
+    let deer = null; let rabbit = null;
+    const r2 = VOICE_RANGE * VOICE_RANGE;
+    for (let k = 0; k < interpCount; k++) {
+      const o = k * FRAME.CREATURE_STRIDE;
+      const dx = interp[o] - player.x; const dz = interp[o + 2] - player.z;
+      if (dx * dx + dz * dz > r2) continue;
+      const species = interp[o + 5] | 0; const goal = interp[o + 6] | 0;
+      if (species === 2) { wolves++; wx += interp[o]; wy += interp[o + 1]; wz += interp[o + 2]; if (goal === GOAL.HUNT) hunting++; }
+      else if (goal === GOAL.FLEE) {
+        if (species === 1 && !deer) deer = { x: interp[o], y: interp[o + 1] + 1, z: interp[o + 2] };
+        else if (species === 0 && !rabbit) rabbit = { x: interp[o], y: interp[o + 1], z: interp[o + 2] };
+      }
+    }
+    const gap = (hunting ? 24 : 55) + (hash01(Math.floor(timeSec), 9) * 20);
+    if (wolves && night > 0.35 && timeSec - howlAt > gap) {
+      howlAt = timeSec;
+      const at = { x: wx / wolves, y: wy / wolves + 1.2, z: wz / wolves };
+      const voices = Math.min(3, wolves);
+      for (let i = 0; i < voices; i++) {
+        const id = setTimeout(() => { howlTimers.delete(id); if (running) audio.howl(at, 0.88 + i * 0.13 + Math.random() * 0.05); }, i * 650 + Math.random() * 400);
+        howlTimers.add(id);
+      }
+    }
+    if (deer && timeSec - barkAt > 5) { barkAt = timeSec; audio.bark(deer); }
+    if (rabbit && timeSec - thumpAt > 3.5) { thumpAt = timeSec; audio.footThump(rabbit); }
+
+    const ctx = audio.context;
+    if (ctx && campfireAt && night > 0.4 && Math.hypot(campfireAt.x - player.x, campfireAt.z - player.z) < 110) {
+      const beat = 30 / Math.max(30, tempo() || 54);
+      if (drumBarAt < ctx.currentTime) drumBarAt = ctx.currentTime + 0.2;
+      if (drumBarAt < ctx.currentTime + 1.1) { audio.drumBar(campfireAt, drumBarAt, beat); drumBarAt += beat * 4; }
+    }
+  }
+
+  /** A connected gamepad rumbles for a near blast (the phone path is impactBus's). */
+  function rumble(strength, delayMs = 0) {
+    if (motionReduced || strength < 0.05 || !navigator.getGamepads) return;
+    try {
+      for (const pad of navigator.getGamepads() ?? []) {
+        const act = pad?.vibrationActuator;
+        if (!act?.playEffect) continue;
+        act.playEffect('dual-rumble', {
+          startDelay: Math.round(delayMs), duration: Math.round(180 + strength * 520),
+          strongMagnitude: Math.min(1, strength), weakMagnitude: Math.min(1, strength * 0.6),
+        })?.catch?.(() => {});
+      }
+    } catch { /* haptics are never load-bearing */ }
+  }
+
   /** Rain and snow, emitted in a column above the god so the weather is always on screen. */
   function emitWeather(dt) {
     if (!particles.enabled || weatherIntensity <= 0.02) return;
@@ -446,6 +641,7 @@ export function createRenderer(container, {
         }
       }
       creatures.draw(interp, interpCount, timeSec, speeds);
+      trails?.stamp(interp, interpCount, speeds, dt);
       props.draw(curr.views.props, propCount);
       // Only on a frame the sim actually produced: see eventFx.props for why feeding it
       // repeated rows would read every falling body as one that had just landed.
@@ -460,12 +656,13 @@ export function createRenderer(container, {
     const sky = lighting.update(stats?.dayFraction ?? 0.5, player, timeSec, skyDome.overcast);
     scene.background = sky.sky;
     materialClock.value = timeSec;
-    if (stats && stats.season !== undefined) {
-      materialSeason.value = stats.season;
-      materialSnow.value = stats.season === 3 ? 0.75 : (stats.season === 0 ? Math.max(0.0, 0.75 - (stats.seasonProgress ?? 0) * 2.5) : 0.0);
-    }
+    if (stats && stats.season !== undefined) materialSeason.value = stats.season;
+    updateSurface(dt);
+    materialSky.value.copy(sky.sky);
     skyDome.update(sky, player, timeSec);
-    island?.update(timeSec, sky);
+    island?.update(timeSec, sky, surface);
+    const windy = weatherKind === WEATHER_STORM ? weatherIntensity : weatherKind === WEATHER_RAIN ? weatherIntensity * 0.4 : 0.12;
+    grass?.update(dt, player, windy);
     if (campfireAt) {
       campfireLight.position.set(campfireAt.x, campfireAt.y + 1.1, campfireAt.z);
       const flicker = 0.85 + 0.15 * Math.sin(timeSec * 11.3) * Math.sin(timeSec * 7.1);
@@ -482,6 +679,11 @@ export function createRenderer(container, {
 
     post.setNight(sky.night, sky.dusk);
     updateShafts(sky, dir);
+    updateHeat();
+    post.setHaze(weatherKind === WEATHER_DROUGHT && !motionReduced ? weatherIntensity * (sky.day ?? 1) : 0);
+    // Lens rain only while the camera is out in it: a god flying above the storm deck is dry.
+    post.setLensRain(motionReduced ? 0 : surface.rain * (player.y < 90 ? 1 : 0));
+    updateVoices(timeSec, sky.night ?? 0);
     post.update(dt);
     // Shake LAST, after everything that reads the camera has read it: applyCameraShake
     // offsets in the camera's own basis and is recomputed from scratch each frame, so it
@@ -491,6 +693,7 @@ export function createRenderer(container, {
     if (terrainApi && !motionReduced) applyCameraShake(camera, timeSec, 0.55);
     post.render();
     pip.mirror();
+    onAfterRender?.();
     // While the world is popped out, the pop-out window's frame clock drives the loop:
     // a hidden tab's own requestAnimationFrame never fires.
     pip.raf(frame);
@@ -522,6 +725,8 @@ export function createRenderer(container, {
         weatherKind = s.weather.kind | 0; weatherIntensity = s.weather.intensity ?? 0;
         audio?.setWeather?.(weatherKind, weatherIntensity);
       }
+      if (s) { decideSpectacle(s); decideMood(s); }
+      if (island && s?.tribes) island.setTribes(s.tribes, (id) => bannerColour(palette, id));
       if (settlementMeshes && s?.buildings) {
         settlementMeshes.syncBuildings(s.buildings);
       }
@@ -531,8 +736,70 @@ export function createRenderer(container, {
       if (!ev || ev.tile === undefined || ev.tile < 0 || !terrainApi) return;
       const at = eventFx.worldOf(ev.tile, terrainApi, terrainApi.size);
       eventFx.event(ev, at, player, post);
+      // Shockwave + rumble (idea 4 and the haptics bonus): only for the physical blasts,
+      // scaled by distance, and only when the blast is actually in front of the camera.
+      if (ev.kind === 'eruption' || ev.kind === 'lightning' || ev.kind === 'rockslide') {
+        const dist = Math.hypot(at.x - player.x, at.y - player.y, at.z - player.z);
+        const reach = ev.kind === 'eruption' ? 220 : ev.kind === 'lightning' ? 120 : 80;
+        const near = Math.max(0, 1 - dist / reach);
+        if (near > 0 && !motionReduced) {
+          heatNdc.set(at.x, at.y + 2, at.z).project(camera);
+          if (heatNdc.z < 1 && Math.abs(heatNdc.x) < 1.3 && Math.abs(heatNdc.y) < 1.3) {
+            post.shockwave(heatNdc.x * 0.5 + 0.5, heatNdc.y * 0.5 + 0.5, near * (ev.kind === 'eruption' ? 1 : 0.6));
+          }
+        }
+        // The pad rumbles when the SOUND arrives, not the light.
+        rumble(near * near * (ev.kind === 'eruption' ? 1 : 0.7), (dist / 343) * 1000);
+      }
       if (director.enabled) director.cut(at.x, at.z, EVENT_CAPTIONS[ev.kind] ?? ev.text ?? '', lastTime / 1000);
     },
+    /**
+     * A chronicle moment (idea 7): the director cuts to it if it is running, and an
+     * extinction drains the colour out of the frame for a few seconds.
+     */
+    moment(ev) {
+      if (!ev) return;
+      if (ev.kind === 'extinction') post.dip(1, 5);
+      if (director.enabled && terrainApi && ev.tile !== undefined && ev.tile >= 0) {
+        const at = eventFx.worldOf(ev.tile, terrainApi, terrainApi.size);
+        director.cut(at.x, at.z, ev.text ?? '', lastTime / 1000);
+      }
+    },
+    /** The creature `handle` as the frame has it now, or null: position, species, traits. */
+    creatureInfo(handle) {
+      if (!curr || handle === undefined || handle < 0) return null;
+      for (let k = 0; k < interpCount; k++) {
+        if (curr.views.handles[k] !== handle) continue;
+        const o = k * FRAME.CREATURE_STRIDE;
+        const traits = [];
+        for (let f = 0; f < 5; f++) traits.push(interp[o + FRAME.TRAIT_OFFSET + f]);
+        return { handle, species: interp[o + 5] | 0, traits, x: interp[o], y: interp[o + 1], z: interp[o + 2] };
+      }
+      return null;
+    },
+    get followHandle() { return followHandle; },
+    /**
+     * A still of the current view at up to twice the display resolution (the reel's photo
+     * mode). Rendered on demand outside the loop and copied into a 2D canvas in the same
+     * task, which is what makes it readable without preserveDrawingBuffer.
+     */
+    photo() {
+      if (contextLost) return null;
+      const base = renderer.getPixelRatio();
+      const w = container.clientWidth || 1;
+      const scale = Math.max(1, Math.min(2, 4096 / Math.max(1, w * base)));
+      try {
+        if (scale > 1) { renderer.setPixelRatio(base * scale); post.setPixelRatio(base * scale); resize(); }
+        post.render();
+        const out = document.createElement('canvas');
+        out.width = canvas.width; out.height = canvas.height;
+        out.getContext('2d').drawImage(canvas, 0, 0);
+        return out;
+      } finally {
+        if (scale > 1) { renderer.setPixelRatio(base); post.setPixelRatio(base); resize(); }
+      }
+    },
+    get surface() { return { ...surface }; },
     // Selection is the sim's and the page's business, not the renderer's: nothing is
     // drawn differently for the inspected creature since the wireframe box went
     // (creatureMeshes.js). Kept as a no-op so the engine API stays one shape.
@@ -575,6 +842,9 @@ export function createRenderer(container, {
       canvas.removeEventListener('webglcontextlost', onContextLost);
       canvas.removeEventListener('webglcontextrestored', onContextRestored);
       fauna?.dispose();
+      for (const id of howlTimers) clearTimeout(id);
+      howlTimers.clear();
+      grass?.dispose(); trails?.dispose();
       observer.disconnect();
       window.removeEventListener('resize', resize);
       input.dispose();

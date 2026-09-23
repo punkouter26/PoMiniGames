@@ -41,6 +41,9 @@
             title="Pop the island out into a small always-on-top window (P)"
             @onclick="OnPip">⧉</button>
 
+    <button type="button" class="poeco-pill poeco-reel-btn" title="Island reel — replays of the big moments, photos and miniatures"
+            aria-label="Open the island reel" @onclick="OnReel">🎞</button>
+
     <button type="button" class="poeco-pill poeco-dashboard-btn" @onclick="OnDashboard"
             title="Dashboard — populations, tribe, chronicle, cloud saves (Tab)"
             aria-label="Open the dashboard">
@@ -57,6 +60,7 @@
     [Parameter] public EventCallback OnDashboard { get; set; }
     [Parameter] public EventCallback OnDirector { get; set; }
     [Parameter] public EventCallback OnPip { get; set; }
+    [Parameter] public EventCallback OnReel { get; set; }
 
     private static string WeatherIcon(int kind) => kind switch { 1 => "🌧️", 2 => "⛈️", 3 => "🌵", 4 => "🌨️", _ => "" };
 }

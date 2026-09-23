@@ -26,9 +26,24 @@
 // Lava and fire additionally get a real EMISSIVE channel, via a per-vertex `aGlow`
 // attribute written by paint(). That is what makes them bloom in postProcess.js — before
 // this they were flat orange vertex colours, which no bright-pass can find.
+//
+// GFX pass 2 lets the ground answer to what happens ON it:
+//
+//   PATHS    the WEAR channel of trails.js packs grass into bare earth along the routes
+//            creatures actually walk; the FRESH channel darkens sand and cuts tracks
+//            through snow.
+//   WEATHER  the sim's own ground wetness (weather.js) darkens the soil, puts a sky sheen
+//            on it and opens puddles on flat ground that mirror the sky and the sun, with
+//            rain rings while it is still falling. Snow cover (a weather spell, or winter)
+//            settles on every gentle face, not only the peaks.
+//   BORDERS  each tribe's territory edge as a faint ground-projected line of its banner
+//            colour that brightens after dark — the island's politics, drawn on the land.
 import * as THREE from 'three';
 import { TILE, TILE_STATE, tileX, tileZ } from '../sim/terrain/tiles.js';
 import { createWater } from './water.js';
+import { trailUniforms } from './trails.js';
+
+const MAX_TRIBES = 4;
 
 // Base colours per tile type (linear-ish sRGB hex, picked to read at a distance).
 const BIOME = {
@@ -60,6 +75,18 @@ const COMMON_FRAG = `
 uniform float uGlowPulse;
 uniform float uDetail;      // 0 disables every injected term — the low-tier escape hatch
 uniform float uSnowLine;    // world y where snow starts; huge on an island with no peak
+uniform sampler2D uTrail;   // trails.js: R = worn path, G = fresh tracks
+uniform float uTrailSpan;
+uniform float uWet;         // 0..1 ground wetness (the sim's)
+uniform float uRain;        // 0..1 rain still falling (puddle rings)
+uniform float uSnowCover;   // 0..1 lowland snow (weather spell / winter)
+uniform vec3 uSkyCol;
+uniform vec3 uSunDirW;
+uniform vec3 uSunCol;
+uniform float uNight;
+uniform float uTerrainTime;
+uniform vec4 uTribe[${MAX_TRIBES}];      // x, z, territory radius, 1 = present
+uniform vec3 uTribeCol[${MAX_TRIBES}];
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying float vGlow;
@@ -106,11 +133,21 @@ export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
     uGlowPulse: { value: 1 },
     uDetail: { value: tier === 'low' ? 0 : 1 },
     uSnowLine: { value: peak > 16 ? peak * 0.78 : 1e6 },
+    uTrail: trailUniforms.uTrail,
+    uTrailSpan: trailUniforms.uTrailSpan,
+    uWet: { value: 0 },
+    uRain: { value: 0 },
+    uSnowCover: { value: 0 },
+    uSkyCol: { value: new THREE.Color(0x8ec5ff) },
+    uSunDirW: { value: new THREE.Vector3(0, 1, 0) },
+    uSunCol: { value: new THREE.Color(0xfff2df) },
+    uNight: { value: 0 },
+    uTerrainTime: { value: 0 },
+    uTribe: { value: Array.from({ length: MAX_TRIBES }, () => new THREE.Vector4(0, 0, 0, 0)) },
+    uTribeCol: { value: Array.from({ length: MAX_TRIBES }, () => new THREE.Color(0xffffff)) },
   };
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.uGlowPulse = uniforms.uGlowPulse;
-    shader.uniforms.uDetail = uniforms.uDetail;
-    shader.uniforms.uSnowLine = uniforms.uSnowLine;
+    Object.assign(shader.uniforms, uniforms);
 
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', COMMON_VERT)
@@ -156,6 +193,40 @@ export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
           float ripple = sin((vWorldPos.x * 0.9 + vWorldPos.z * 0.35 + tNoise(vWorldPos.xz * 0.5) * 2.0) * 6.0) * 0.5 + 0.5;
           diffuseColor.rgb *= 1.0 - beach * ripple * 0.09;
         }
+
+        // ── GFX pass 2: paths, tracks, wet ground, lowland snow ──
+        float tSteep = smoothstep(0.22, 0.62, 1.0 - clamp(vWorldNormal.y, 0.0, 1.0));
+        float tDry = smoothstep(0.1, 0.7, vWorldPos.y) * (1.0 - step(0.01, vGlow));
+        vec2 tTrail = texture2D(uTrail, vWorldPos.xz / uTrailSpan).rg;
+        // Worn earth only where the ground is vegetated (greener than it is red): a path
+        // across the beach is sand either way, and a burnt tile has nothing left to wear.
+        float tVeg = smoothstep(0.0, 0.08, diffuseColor.g - diffuseColor.r);
+        float tWorn = smoothstep(0.06, 0.55, tTrail.r) * tVeg * (1.0 - tSteep) * tDry;
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.31, 0.24, 0.16) * (0.9 + tNoise(vWorldPos.xz * 3.0) * 0.2), tWorn * 0.78);
+        diffuseColor.rgb *= 1.0 - tTrail.g * 0.16 * tDry;
+
+        float tSnowCov = 0.0;
+        if (uSnowCover > 0.01) {
+          float drift = tNoise(vWorldPos.xz * 0.33) * 0.6 + tNoise(vWorldPos.xz * 1.7) * 0.4;
+          // The threshold walks down the noise as cover grows, so a dusting is a few drifts
+          // in the hollows and a full winter is a blanket with the odd bare patch.
+          float line = 1.02 - uSnowCover * 1.1;
+          tSnowCov = smoothstep(line, line + 0.16, drift) * (1.0 - tSteep * 0.9) * tDry;
+          // Tracks and paths show the ground through it: a wolf's route across a snowfield.
+          tSnowCov *= (1.0 - tTrail.g * 0.85) * (1.0 - tTrail.r * 0.6);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.93, 0.97), tSnowCov * 0.9);
+        }
+
+        float tPuddle = 0.0;
+        if (uWet > 0.01) {
+          diffuseColor.rgb *= 1.0 - uWet * 0.26 * tDry * (1.0 - tSnowCov);
+          float flatness = pow(clamp(vWorldNormal.y, 0.0, 1.0), 12.0);
+          // Puddles are the hollows of a finer noise; a drier island needs a deeper hollow to
+          // hold one, so they shrink back as the ground dries rather than all at once.
+          float hollow = tNoise(vWorldPos.xz * 0.6 + 11.0) * 0.7 + tNoise(vWorldPos.xz * 1.9 - 4.0) * 0.3;
+          float pool = smoothstep(0.7, 0.75, hollow - (1.0 - uWet) * 0.3);
+          tPuddle = pool * flatness * uWet * tDry * (1.0 - tSnowCov) * (1.0 - tWorn * 0.5);
+        }
       `)
       .replace('#include <normal_fragment_begin>', `
         #include <normal_fragment_begin>
@@ -174,6 +245,38 @@ export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
         // vGlow is 0 for all but burning and molten tiles, so this is a multiply-add for
         // the whole island and a real light source for the handful of tiles that are lit.
         totalEmissiveRadiance += diffuseColor.rgb * vGlow * uGlowPulse * 2.4;
+        // Territory borders: a soft line at each tribe's radius, breathing slowly, faint by
+        // day and a real glow after dark.
+        for (int k = 0; k < ${MAX_TRIBES}; k++) {
+          if (uTribe[k].w < 0.5) continue;
+          float edge = abs(distance(vWorldPos.xz, uTribe[k].xy) - uTribe[k].z);
+          float line = exp(-edge * edge * 1.4);
+          float pulse = 0.75 + 0.25 * sin(uTerrainTime * 0.9 + float(k) * 2.1 + vWorldPos.x * 0.05);
+          totalEmissiveRadiance += uTribeCol[k] * line * pulse * (0.05 + uNight * 0.55) * (1.0 - tSteep * 0.5);
+        }
+      `)
+      // Puddles and wet sheen are reflections, so they go after the lighting sum.
+      .replace('#include <opaque_fragment>', `
+        if (tPuddle > 0.001 || uWet > 0.01) {
+          vec3 tView = normalize(cameraPosition - vWorldPos);
+          float tFres = 0.04 + 0.96 * pow(1.0 - clamp(tView.y, 0.0, 1.0), 5.0);
+          vec3 tN = vec3(0.0, 1.0, 0.0);
+          if (uRain > 0.02 && tPuddle > 0.001) {
+            // Rain rings: one expanding ring per cell, at a hashed phase.
+            vec2 cell = floor(vWorldPos.xz * 1.6);
+            vec2 local = fract(vWorldPos.xz * 1.6) - 0.5;
+            float ph = fract(uTerrainTime * 0.9 + tHash(cell) * 7.0);
+            float ringD = length(local - (vec2(tHash(cell + 3.1), tHash(cell + 7.7)) - 0.5) * 0.5);
+            float ring = exp(-pow((ringD - ph * 0.5) * 22.0, 2.0)) * (1.0 - ph) * step(tHash(cell + 1.3), uRain);
+            tN = normalize(tN + vec3(local.x, 0.0, local.y) * ring * 1.5);
+          }
+          vec3 refl = reflect(-tView, tN);
+          float sunSpec = pow(max(dot(refl, normalize(uSunDirW)), 0.0), 220.0);
+          vec3 mirror = uSkyCol * 0.85 + uSunCol * sunSpec * 3.0;
+          outgoingLight = mix(outgoingLight, mirror, tPuddle * (0.45 + 0.5 * tFres));
+          outgoingLight += uSkyCol * tFres * uWet * 0.1 * tDry;
+        }
+        #include <opaque_fragment>
       `);
   };
 
@@ -219,11 +322,33 @@ export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
      * Per frame. `time` drives the fire flicker on the emissive channel and the water's
      * wave clock; `sky` is the object lighting.update() returns.
      */
-    update(time, sky) {
+    update(time, sky, surface = null) {
       // One shared flicker for every burning tile: fires on an island genuinely do pulse
       // together at a distance, and a per-tile phase would need a second attribute upload.
       uniforms.uGlowPulse.value = 0.78 + Math.sin(time * 7.3) * 0.14 + Math.sin(time * 11.9) * 0.08;
-      water.update(time, sky);
+      uniforms.uTerrainTime.value = time;
+      if (sky) {
+        uniforms.uSkyCol.value.copy(sky.sky);
+        uniforms.uSunDirW.value.copy(sky.sunDir);
+        uniforms.uSunCol.value.copy(sky.sunColour);
+        uniforms.uNight.value = sky.night;
+      }
+      if (surface) {
+        uniforms.uWet.value = surface.wet;
+        uniforms.uRain.value = surface.rain;
+        uniforms.uSnowCover.value = surface.snow;
+      }
+      water.update(time, sky, surface);
+    },
+    /** Tribe territories: [{ id, centerX, centerZ, territoryRadius }] with a banner colour each. */
+    setTribes(tribes, colourOf) {
+      for (let k = 0; k < MAX_TRIBES; k++) {
+        const t = tribes?.[k];
+        const v = uniforms.uTribe.value[k];
+        if (!t || !(t.territoryRadius > 0)) { v.w = 0; continue; }
+        v.set(t.centerX, t.centerZ, t.territoryRadius, 1);
+        uniforms.uTribeCol.value[k].setHex(colourOf(t.id));
+      }
     },
     dispose() { geometry.dispose(); material.dispose(); water.dispose(); },
     tileAt: (x, z) => Math.min(size - 1, Math.max(0, x | 0)) + Math.min(size - 1, Math.max(0, z | 0)) * size,

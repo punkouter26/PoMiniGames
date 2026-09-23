@@ -23,6 +23,10 @@ export const materialClock = { value: 0 };
 export const materialDetail = { value: 1 };   // 0 on the low tier: every injected term collapses
 export const materialSeason = { value: 0 };   // 0 = Spring, 1 = Summer, 2 = Autumn, 3 = Winter
 export const materialSnow = { value: 0 };     // 0..1 snow coverage factor
+// Weather on surfaces (GFX pass 2, idea 3): the sim's own ground wetness (weather.js), and
+// the sky colour a wet surface reflects. Set once per frame by the renderer, like the clock.
+export const materialWet = { value: 0 };
+export const materialSky = { value: new THREE.Color(0x8ec5ff) };
 
 const NOISE = `
 float mHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -48,6 +52,8 @@ export function enhanceLambert(material, { rim = 0.35, rimColor = 0xbfd4ff, mott
     shader.uniforms.uMatDetail = materialDetail;
     shader.uniforms.uSeason = materialSeason;
     shader.uniforms.uSnow = materialSnow;
+    shader.uniforms.uWet = materialWet;
+    shader.uniforms.uSkyTint = materialSky;
     shader.uniforms.uRim = { value: rim };
     shader.uniforms.uRimColor = { value: rimCol };
     shader.uniforms.uMottle = { value: mottle };
@@ -99,6 +105,8 @@ export function enhanceLambert(material, { rim = 0.35, rimColor = 0xbfd4ff, mott
         uniform float uMottleScale;
         uniform float uSeason;
         uniform float uSnow;
+        uniform float uWet;
+        uniform vec3 uSkyTint;
         varying vec3 vMatWorld;
         ${NOISE}
       `)
@@ -120,6 +128,8 @@ export function enhanceLambert(material, { rim = 0.35, rimColor = 0xbfd4ff, mott
       // normal is view-space; inverseTransformDirection (from <common>) gives world up.
       .replace('#include <normal_fragment_begin>', `
         #include <normal_fragment_begin>
+        // Wet bark, wet fur, wet thatch: darker and a touch more saturated.
+        diffuseColor.rgb *= 1.0 - uWet * 0.2;
         if (uSnow > 0.05) {
           float upNorm = clamp(inverseTransformDirection(normal, viewMatrix).y, 0.0, 1.0);
           float snowFactor = smoothstep(0.2, 0.75, upNorm) * uSnow;
@@ -135,6 +145,9 @@ export function enhanceLambert(material, { rim = 0.35, rimColor = 0xbfd4ff, mott
           vec3 viewDir = normalize(vViewPosition);
           float rimF = pow(1.0 - clamp(dot(normal, viewDir), 0.0, 1.0), 3.2);
           outgoingLight += uRimColor * rimF * uRim * (0.35 + 0.65 * diffuseColor.g);
+          // A wet surface mirrors the sky along its silhouette — the sheen that tells the
+          // eye it has been raining before it sees a single drop.
+          outgoingLight += uSkyTint * rimF * uWet * 0.35;
         }
         #include <opaque_fragment>
       `);

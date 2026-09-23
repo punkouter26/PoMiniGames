@@ -30,7 +30,7 @@
                 @* Everything statistical lives behind the Tab dashboard now; the bar keeps
                    only the status chip (one glance line, click = dashboard) and the pills. *@
                 <HudBar Stats="_stats" Sound="_sound" OnSound="ToggleSoundAsync" OnDashboard="ToggleDashboard"
-                        Director="_directorOn" OnDirector="ToggleDirectorAsync" Pip="_pipOn" OnPip="TogglePipAsync" />
+                        Director="_directorOn" OnDirector="ToggleDirectorAsync" Pip="_pipOn" OnPip="TogglePipAsync" OnReel="ToggleReelAsync" />
             </div>
 
             @if (_directorOn)

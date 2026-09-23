@@ -409,6 +409,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
     private Task ToggleDirectorAsync() => Interop.SetDirectorAsync(!_directorOn).AsTask();
     private Task TogglePipAsync() => Interop.TogglePipAsync().AsTask();
+    private Task ToggleReelAsync() => Interop.ToggleReelAsync().AsTask();
 
     private Task SetTintAsync(int traitIndex)
     {

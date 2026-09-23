@@ -23,7 +23,7 @@
 //
 // Oscillators are created ONCE and re-tuned with setTargetAtTime. Rebuilding them per
 // chord is the obvious implementation and it clicks on every change.
-const SCALES = {
+export const SCALES = {
   ionian: [0, 2, 4, 5, 7, 9, 11],      // thriving
   dorian: [0, 2, 3, 5, 7, 9, 10],      // stable — minor, but with a hopeful sixth
   aeolian: [0, 2, 3, 5, 7, 8, 10],     // declining
@@ -34,7 +34,7 @@ const SCALES = {
 // composed, and this progression resolves home every fourth chord.
 const PROGRESSION = [0, 5, 3, 4, 0, 2, 5, 4];
 
-const ROOT_HZ = 110;                   // A2 — low enough to sit under everything else
+export const ROOT_HZ = 110;                   // A2 — low enough to sit under everything else
 const LOOKAHEAD_MS = 120;
 const SCHEDULE_AHEAD = 0.55;
 
@@ -204,7 +204,36 @@ export function createMusic(audio) {
     }
   }
 
+  /**
+   * A chronicle flourish (GFX pass 2, idea 7): a bell arpeggio in the current mode, rising
+   * for a birth of something new and falling for a loss, landing on the next downbeat so
+   * it reads as the score answering the moment rather than a sound effect laid over it.
+   */
+  function flourish(kind) {
+    if (!ctx || !bus) return;
+    const scale = SCALES[mode];
+    const beat = 60 / bpm;
+    const start = Math.max(ctx.currentTime + 0.05, nextNoteAt);
+    const falling = kind === 'extinction' || kind === 'outbreak' || kind === 'war';
+    const degrees = falling ? [7, 4, 2, 0] : [0, 2, 4, 7];
+    degrees.forEach((deg, i) => {
+      const when = start + i * beat * 0.5;
+      const f = ROOT_HZ * Math.pow(2, (scale[deg % 7] + (deg >= 7 ? 12 : 0) + 24) / 12);
+      for (const [mult, lvl] of [[1, 0.06], [2.76, 0.018], [5.4, 0.008]]) {
+        const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f * mult;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, when);
+        g.gain.linearRampToValueAtTime(lvl, when + 0.006);
+        g.gain.exponentialRampToValueAtTime(0.0001, when + 2.4 / mult);
+        o.connect(g).connect(bus);
+        o.start(when); o.stop(when + 2.5);
+      }
+    });
+  }
+
   return {
+    flourish,
+    get running() { return !!timer; },
     /** Starts on the first gesture, like every other voice in this game. */
     start() {
       if (timer || reduceMotion) return;

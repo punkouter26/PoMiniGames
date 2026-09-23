@@ -18,6 +18,14 @@
 //   • Foam where the depth ramps to zero, modulated by the wave crest and drifting noise,
 //     so the shoreline moves.
 //
+// GFX pass 2 adds two things the weather and the night now drive:
+//   • Rain rings: while rain is falling, every cell of the surface carries an expanding
+//     ring at a hashed phase, perturbing the normal — so a squall is visible on the sea
+//     from a distance, not only as streaks in front of the camera.
+//   • Bioluminescent surf: on the nights the world picks (renderer.js, seeded by the
+//     world and the date, so it is the island's night and not the viewer's), the foam and
+//     the wave crests glow cyan. It only ADDS light — mild nights stay a user call.
+//
 // The depth bake is why this takes a `terrain`: the shader needs to know how deep the
 // water is at a point, and the CPU already has that. Sampling a baked texture is one tap;
 // re-deriving it in the shader would mean shipping the heightfield to the GPU anyway.
@@ -70,6 +78,8 @@ uniform vec3 uFogColor;
 uniform float uFogDensity;
 uniform float uTime;
 uniform float uNight;
+uniform float uRain;       // 0..1 rain falling
+uniform float uBio;        // 0..1 bioluminescent surf tonight
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying vec2 vDepthUv;
@@ -100,6 +110,17 @@ void main() {
   float re = 0.08;
   vec2 rg = vec2(noise(rp + vec2(re, 0.0)) - noise(rp - vec2(re, 0.0)), noise(rp + vec2(0.0, re)) - noise(rp - vec2(0.0, re)));
   n = normalize(n + vec3(rg.x, 0.0, rg.y) * 0.35 * (1.0 - uNight * 0.5));
+
+  if (uRain > 0.02) {
+    vec2 cell = floor(vWorld.xz * 0.9);
+    vec2 local = fract(vWorld.xz * 0.9) - 0.5;
+    float h = hash(cell);
+    float ph = fract(uTime * 1.1 + h * 9.0);
+    vec2 centre = (vec2(hash(cell + 4.1), hash(cell + 8.3)) - 0.5) * 0.5;
+    vec2 away = local - centre;
+    float ring = exp(-pow((length(away) - ph * 0.45) * 26.0, 2.0)) * (1.0 - ph) * step(h, uRain * 0.9);
+    n = normalize(n + vec3(away.x, 0.0, away.y) * ring * 2.2);
+  }
 
   // Fresnel (Schlick). Water's F0 is ~0.02: almost perfectly transparent head-on and
   // almost perfectly reflective at the horizon, which is the whole look.
@@ -136,6 +157,16 @@ void main() {
   float grain = noise(vWorld.xz * 1.7 + vec2(uTime * 0.35, uTime * -0.22));
   float foam = clamp(shore * (0.55 + grain * 0.75) + crest * shore * 0.9, 0.0, 1.0) * inside;
   col = mix(col, vec3(0.93, 0.97, 1.0), foam * 0.85);
+
+  // Bioluminescence: dinoflagellates light where the water is disturbed — the breaking
+  // shore and the crests — in pulses that travel with the surf.
+  if (uBio > 0.01 && uNight > 0.05) {
+    float spark = noise(vWorld.xz * 2.6 + vec2(uTime * 0.8, -uTime * 0.5));
+    float pulse = 0.55 + 0.45 * sin(uTime * 1.7 + vWorld.x * 0.4 + vWorld.z * 0.25);
+    float glow = (foam * (0.6 + spark * 0.8) + crest * 0.25 * spark) * pulse;
+    col = mix(col, col * 0.4, uBio * uNight * foam * 0.5);
+    col += vec3(0.1, 0.75, 0.95) * glow * uBio * smoothstep(0.05, 0.6, uNight) * 1.6;
+  }
 
   // Alpha: see the bed in the shallows, opaque in the deep, and never fully transparent at
   // a grazing angle however shallow it is (that is where the reflection lives).
@@ -194,6 +225,8 @@ export function createWater(terrain, { tier = 'high' } = {}) {
       uFogColor: { value: new THREE.Color(0x8ec5ff) },
       uFogDensity: { value: 0.006 },
       uNight: { value: 0 },
+      uRain: { value: 0 },
+      uBio: { value: 0 },
     },
     vertexShader: VERT,
     fragmentShader: FRAG,
@@ -214,8 +247,9 @@ export function createWater(terrain, { tier = 'high' } = {}) {
      * @param {{ sunDir: THREE.Vector3, sunColour: THREE.Color, sky: THREE.Color, night: number, fogDensity: number }} sky
      *   the `info` object lighting.update() returns — same object every frame, by design.
      */
-    update(time, sky) {
+    update(time, sky, surface = null) {
       u.uTime.value = time;
+      if (surface) { u.uRain.value = surface.rain; u.uBio.value = surface.bio ?? 0; }
       if (!sky) return;
       u.uSunDir.value.copy(sky.sunDir);
       u.uSunColor.value.copy(sky.sunColour);

@@ -109,6 +109,8 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     public ValueTask SetTintAsync(int traitIndex) => SafeInvokeAsync("PoEcosystem.setTint", traitIndex);
     public ValueTask SetDirectorAsync(bool on) => SafeInvokeAsync("PoEcosystem.setDirector", on);
     public ValueTask TogglePipAsync() => SafeInvokeAsync("PoEcosystem.togglePip");
+    /// <summary>Open or close the Island Reel drawer (engine-owned DOM: clips, photos).</summary>
+    public ValueTask ToggleReelAsync() => SafeInvokeAsync("PoEcosystem.toggleReel");
 
     // ── cloud saves ──────────────────────────────────────────────────────
     /// <summary>Ask the engine for a gzip'd snapshot; it answers through <see cref="SnapshotExported"/>.</summary>

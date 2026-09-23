@@ -115,3 +115,21 @@ export function setWeatherState(w, s) {
   while (w.counts.length < 5) w.counts.push(0);
   refreshEffects(w);
 }
+
+/** Triggers a catastrophic drought weather catastrophe that parches the island. */
+export function triggerCatastrophicDrought(world, durationSeconds = 30) {
+  const w = world.weather;
+  const tick = world.clock.tick;
+  w.kind = WEATHER_KIND.DROUGHT;
+  w.since = tick;
+  w.endTick = tick + secs(durationSeconds);
+  w.intensity = 1.0;
+  w.wetness = 0;
+  w.counts[WEATHER_KIND.DROUGHT] = (w.counts[WEATHER_KIND.DROUGHT] ?? 0) + 1;
+  refreshEffects(w);
+  w.effects.grass = 0;
+  w.effects.bush = 0;
+  w.effects.thirst = 2.0;
+  world.log.push({ tick, kind: 'weather', weather: WEATHER_KIND.DROUGHT, text: 'A catastrophic drought dried up the land of vegetation' });
+  world.bus.emit('catastrophe', { kind: 'drought', text: 'A catastrophic drought has dried up the island!' });
+}

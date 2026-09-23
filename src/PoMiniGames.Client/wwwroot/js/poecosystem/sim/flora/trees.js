@@ -17,8 +17,9 @@ export function createTrees(terrain, rng) {
   for (let k = 0; k < count; k++) byTile[tile[k]] = k;
   const state = new Uint8Array(count);
   const regrow = new Float32Array(count);
+  const foliage = new Float32Array(count).fill(1.0);
   const trees = {
-    count, tile, byTile, state, regrow,
+    count, tile, byTile, state, regrow, foliage,
     standingCount() { let n = 0; for (let k = 0; k < count; k++) if (state[k] === TREE_STATE.STANDING) n++; return n; },
   };
   return trees;
@@ -28,6 +29,7 @@ function fell(trees, k, tileState, regrowSeconds, newTileState) {
   if (trees.state[k] !== TREE_STATE.STANDING) return false;
   trees.state[k] = TREE_STATE.STUMP;
   trees.regrow[k] = regrowSeconds;
+  trees.foliage[k] = 0;
   tileState[trees.tile[k]] = newTileState;
   return true;
 }
@@ -35,14 +37,34 @@ function fell(trees, k, tileState, regrowSeconds, newTileState) {
 export const chopTree = (trees, k, tileState) => fell(trees, k, tileState, FLORA.treeRegrowSeconds, TILE_STATE.STUMP);
 export const burnTree = (trees, k, tileState) => fell(trees, k, tileState, FLORA.treeRegrowSeconds * FLORA.treeBurnRegrowMultiplier, TILE_STATE.BURNT);
 
-export function stepTrees(trees, tileState, dt) {
-  const { count, state, regrow, tile } = trees;
+/** Herbivores browse tree foliage. Returns amount eaten. */
+export function browseTree(trees, k, amount) {
+  if (trees.state[k] !== TREE_STATE.STANDING) return 0;
+  const have = trees.foliage[k];
+  const eaten = have < amount ? have : amount;
+  trees.foliage[k] = have - eaten;
+  return eaten;
+}
+
+/** Dries up all tree foliage on the island (weather catastrophe). */
+export function dryUpTrees(trees) {
+  trees.foliage.fill(0);
+}
+
+export function stepTrees(trees, tileState, dt, growthMultiplier = 1) {
+  const { count, state, regrow, tile, foliage } = trees;
   for (let k = 0; k < count; k++) {
-    if (state[k] === TREE_STATE.STANDING) continue;
+    if (state[k] === TREE_STATE.STANDING) {
+      if (growthMultiplier > 0 && foliage[k] < 1) {
+        foliage[k] = Math.min(1, foliage[k] + (dt / 30) * growthMultiplier);
+      }
+      continue;
+    }
     regrow[k] -= dt;
     if (regrow[k] <= 0) {
       state[k] = TREE_STATE.STANDING;
       regrow[k] = 0;
+      foliage[k] = 1;
       const s = tileState[tile[k]];
       if (s === TILE_STATE.STUMP || s === TILE_STATE.BURNT) tileState[tile[k]] = TILE_STATE.NORMAL;
     }

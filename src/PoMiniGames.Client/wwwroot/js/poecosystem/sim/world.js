@@ -13,9 +13,9 @@ import { createSpatialHash } from './core/spatial.js';
 import { generateIsland } from './terrain/island.js';
 import { bfsDistanceField, descendStep, shoreTiles } from './terrain/pathing.js';
 import { TILE, TILE_STATE, isFlammable, isSolidState, isWalkable, tileIndex, tileX, tileZ } from './terrain/tiles.js';
-import { createGrass, grazeAt, stepGrass } from './flora/grass.js';
-import { createBushes, isRipe, stepBushes, stripBush } from './flora/bushes.js';
-import { TREE_STATE, burnTree, chopTree, createTrees, stepTrees } from './flora/trees.js';
+import { createGrass, dryUpGrass, grazeAt, stepGrass } from './flora/grass.js';
+import { createBushes, dryUpBushes, isRipe, stepBushes, stripBush } from './flora/bushes.js';
+import { TREE_STATE, browseTree, burnTree, chopTree, createTrees, dryUpTrees, stepTrees } from './flora/trees.js';
 import { SPECIES, SPECIES_ID } from './creatures/species.js';
 import { drink, feed, stepDrives } from './creatures/drives.js';
 import { DEATH_CAUSE, LIFE_STAGE, checkVitals, killCreature, oldAgeDeathChance, spawnCreature, updateLifeStage } from './creatures/lifecycle.js';
@@ -41,7 +41,7 @@ import { THOUGHT_SOURCE, applyThought } from './thoughts/nudges.js';
 import { createLedger } from './telemetry/ledger.js';
 import { nullPhysics } from './physics/world.js';
 import { createTribeStore } from './tribe/tribeStore.js';
-import { WEATHER_NAMES, createWeather, getWeatherState, setWeatherState, stepWeather, weatherTelemetry } from './events/weather.js';
+import { WEATHER_NAMES, createWeather, getWeatherState, setWeatherState, stepWeather, triggerCatastrophicDrought, weatherTelemetry } from './events/weather.js';
 import { isSick, stepDisease } from './creatures/disease.js';
 
 export { nullPhysics };   // re-exported: createWorld's default physics lives beside it
@@ -104,6 +104,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   let lastFullTick = -1e9;
   let lastStanding = NONE;
   let silent = false;
+  let ended = false;
   // Natural events: the scheduler, rockslide corridors in flight, boulders blocking tiles,
   // and burning / burnt tiles (T12's fire spread extends the same lists).
   const scheduler = createEventScheduler(streams.events);
@@ -112,7 +113,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   const fires = [];   // { tile, ticksLeft }
   const burnt = [];   // { tile, ticksLeft }
   const secsToTicks = (s) => Math.round(s / TICK_SECONDS);
-  const naturalEvents = { lightning: 0, rockslide: 0, eruption: 0 };
+  const naturalEvents = { lightning: 0, rockslide: 0, eruption: 0, drought: 0 };
   // Thoughts: the LLM round-robin (driven by the host) and the template cadence (ours).
   const thoughtScheduler = createThoughtScheduler();
   const thoughtStats = { requested: 0, applied: 0, rejected: 0 };
@@ -289,6 +290,11 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       triggerRockslide(world, streams.events);
     } else if (kind === EVENT_KIND.ERUPTION && world.erupt) {
       world.erupt();
+    } else if (kind === EVENT_KIND.DROUGHT) {
+      triggerCatastrophicDrought(world, EVENTS.drought?.durationSeconds ?? 30);
+      dryUpGrass(grass);
+      dryUpBushes(bushes);
+      dryUpTrees(trees);
     }
   }
 
@@ -419,8 +425,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       ctx.threatDist = Math.max(1, Math.hypot(x - ctx.threatX, z - ctx.threatZ));
     }
 
-    // Food: grass and ripe bushes in a square around the creature (herbivores + humans for berries).
-    if (sp.eats.grass || sp.eats.berries) {
+    // Food: grass, trees, and ripe bushes in a square around the creature (herbivores + humans for berries).
+    if (sp.eats.grass || sp.eats.berries || sp.eats.trees) {
       const tx = tileX(t, size); const tz = tileZ(t, size); const r = sp.foodScanTiles || WORLD.foodScanTiles;
       for (let dz = -r; dz <= r; dz++) {
         for (let dx = -r; dx <= r; dx++) {
@@ -434,12 +440,21 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
             const b = bushes.byTile[tt];
             if (b >= 0 && isRipe(bushes, b) && d < ctx.foodDist) { ctx.foodDist = d; ctx.foodKind = 'bush'; ctx.foodTile = tt; ctx.foodIdx = b; }
           }
+          if (sp.eats.trees) {
+            const tr = trees.byTile[tt];
+            if (tr >= 0 && trees.state[tr] === TREE_STATE.STANDING && trees.foliage && trees.foliage[tr] >= 0.1 && d < ctx.foodDist) {
+              ctx.foodDist = d; ctx.foodKind = 'tree'; ctx.foodTile = tt; ctx.foodIdx = tr;
+            }
+          }
         }
       }
       if (ctx.foodDist === Infinity) {
         const mem = recall(e, i, MEMORY_KIND.FOOD, tick);
         if (mem !== NONE) {
           if (sp.eats.grass && grass.biomass[mem] >= WORLD.foodBiomassMin) { const [cx, cz] = centre(mem); ctx.foodDist = dist(i, cx, cz); ctx.foodKind = 'grass'; ctx.foodTile = mem; }
+          else if (sp.eats.trees && trees.byTile[mem] >= 0 && trees.state[trees.byTile[mem]] === TREE_STATE.STANDING && trees.foliage && trees.foliage[trees.byTile[mem]] >= 0.1) {
+            const [cx, cz] = centre(mem); ctx.foodDist = dist(i, cx, cz); ctx.foodKind = 'tree'; ctx.foodTile = mem; ctx.foodIdx = trees.byTile[mem];
+          }
           else forget(e, i, MEMORY_KIND.FOOD);
         }
       }
@@ -549,6 +564,23 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
             stop(e, i);
           } else if (!isRipe(bushes, c.foodIdx)) { dirty[i] = 1; stop(e, i); }
           else seekTo(e, i, cx, cz, sp.walkSpeed);
+          return;
+        }
+        if (c.foodKind === 'tree') {
+          const tr = c.foodIdx >= 0 ? c.foodIdx : trees.byTile[c.foodTile];
+          const [cx, cz] = centre(c.foodTile);
+          if (dist(i, cx, cz) <= WORLD.interactDistance + 0.5) {
+            if (tr >= 0 && trees.state[tr] === TREE_STATE.STANDING && trees.foliage && trees.foliage[tr] >= 0.05) {
+              const eaten = browseTree(trees, tr, WORLD.grazeRate * dt);
+              feed(e, i, eaten);
+              remember(e, i, MEMORY_KIND.FOOD, c.foodTile, tick);
+              stop(e, i);
+            } else { dirty[i] = 1; stop(e, i); }
+          } else if (tr < 0 || trees.state[tr] !== TREE_STATE.STANDING || (trees.foliage && trees.foliage[tr] < 0.05)) {
+            dirty[i] = 1; stop(e, i);
+          } else {
+            seekTo(e, i, cx, cz, sp.walkSpeed);
+          }
           return;
         }
         dirty[i] = 1;
@@ -703,7 +735,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     stepGrass(grass, terrain, tileState, dt * weather.effects.grass);
     stepBushes(bushes, dt * weather.effects.bush, TECH.fieldRipenMultiplier);
     const thirstExtra = weather.effects.thirst - 1;
-    stepTrees(trees, tileState, dt);
+    stepTrees(trees, tileState, dt, weather.effects.grass);
     spatial.rebuild(e);
     const hearth = settlement.campfireTile !== NONE && isNight(clock.dayFraction());
 
@@ -774,6 +806,14 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     }
     lastStanding = living === 1 ? lastId : NONE;
     silent = living === 0;
+
+    const allAnimalsDead = counts[0] === 0 && counts[1] === 0 && counts[2] === 0;
+    if (allAnimalsDead && !ended) {
+      ended = true;
+      clock.setSpeed(0);
+      log.push({ tick, kind: 'end', text: `All animals have died. The simulation ended in year ${clock.year()}.` });
+      bus.emit('simulationEnd', { year: clock.year(), living, silent });
+    }
     if (tick % WORLD.popSampleTicks === 0) {
       popHistory.push(counts.slice());
       if (popHistory.length > WORLD.popHistoryMax) popHistory.shift();
@@ -827,7 +867,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       year: clock.year(), day: clock.day(), dayFraction: clock.dayFraction(),
       season: clock.season(), seasonProgress: clock.seasonProgress(),
       counts: counts.slice(), alive: e.count, huts: settlement.huts.length,
-      extinct: extinct.slice(), lastStanding, silent, popHistory, carcasses: carcasses.length,
+      extinct: extinct.slice(), lastStanding, silent, ended, popHistory, carcasses: carcasses.length,
       naturalEvents: { ...naturalEvents },
       almanac: {
         born: almanac.born.slice(), died: almanac.died.slice(), byCause: { ...almanac.byCause }, stages: almanac.stages.slice(),
@@ -972,7 +1012,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       tileState: tileState.slice(), fear: fear.slice(),
       grass: { biomass: grass.biomass.slice(), cursor: grass.cursor },
       bushes: { ripeness: bushes.ripeness.slice(), count: bushes.count, tile: bushes.tile.slice(), fast: bushes.fast.slice() },
-      trees: { state: trees.state.slice(), regrow: trees.regrow.slice() },
+      trees: { state: trees.state.slice(), regrow: trees.regrow.slice(), foliage: trees.foliage ? trees.foliage.slice() : null },
+      ended: !!ended,
       settlement: {
         huts: settlement.huts.map(h => ({ ...h })), carried: settlement.carried.slice(),
         tech: settlement.tech, campfireTile: settlement.campfireTile, towerTile: settlement.towerTile, fieldTiles: settlement.fieldTiles.slice(),
@@ -1000,6 +1041,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     scheduler.setState(s.scheduler); thoughtScheduler.setState(s.thoughtScheduler);
     Object.assign(thoughtStats, s.thoughtStats); templateCursor = s.templateCursor | 0; nextCarcassId = s.nextCarcassId | 0; lastFullTick = s.lastFullTick;
     Object.assign(naturalEvents, s.naturalEvents); for (let k = 0; k < 4; k++) extinct[k] = !!s.extinct[k];
+    ended = !!s.ended;
+    if (s.trees?.foliage && trees.foliage) trees.foliage.set(s.trees.foliage);
     // Almanac/telemetry are additive: snapshots from before they existed restore with the
     // counters zeroed rather than being refused (schemaVersion stays 1).
     if (s.almanac) {

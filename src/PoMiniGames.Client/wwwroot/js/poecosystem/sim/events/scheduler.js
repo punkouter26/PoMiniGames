@@ -3,8 +3,8 @@
 // natural events fire within EVENTS.minSpacingSeconds of each other.
 import { EVENTS, TICK_SECONDS } from '../core/config.js';
 
-export const EVENT_KIND = Object.freeze({ LIGHTNING: 'lightning', ROCKSLIDE: 'rockslide', ERUPTION: 'eruption' });
-const KINDS = Object.freeze([EVENT_KIND.LIGHTNING, EVENT_KIND.ROCKSLIDE, EVENT_KIND.ERUPTION]);
+export const EVENT_KIND = Object.freeze({ LIGHTNING: 'lightning', ROCKSLIDE: 'rockslide', ERUPTION: 'eruption', DROUGHT: 'drought' });
+const KINDS = Object.freeze([EVENT_KIND.LIGHTNING, EVENT_KIND.ROCKSLIDE, EVENT_KIND.ERUPTION, EVENT_KIND.DROUGHT]);
 const secs = (s) => Math.round(s / TICK_SECONDS);
 
 export function createEventScheduler(rng, cfg = EVENTS) {

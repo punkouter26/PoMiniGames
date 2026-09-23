@@ -202,13 +202,15 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     {
         _stats = stats;
         _watched = stats.Watched is null ? [] : stats.Watched.Select(w => w.Handle).ToHashSet();
+        var allAnimalsDead = stats.Counts.Length >= 3 && stats.Counts[0] == 0 && stats.Counts[1] == 0 && stats.Counts[2] == 0;
         if (stats.Silent) _banner = $"The island is silent — year {stats.Year}";
+        else if (allAnimalsDead) _banner = $"Simulation ended: All animals have perished — year {stats.Year}";
         else if (stats.LastStanding >= 0 && stats.LastStanding != _lastStanding)
         {
             _lastStanding = stats.LastStanding;
             _banner = $"Last species standing: {EcoSpeciesInfo.PluralOf(stats.LastStanding)} — year {stats.Year}";
         }
-        else if (stats.LastStanding < 0 && !stats.Silent) _banner = null;
+        else if (stats.LastStanding < 0 && !stats.Silent && !allAnimalsDead) _banner = null;
 
         // Every ten years the chronicler is offered a decade. Offered, not written: a saga is
         // a model call, and the player decides whether this decade deserves one.

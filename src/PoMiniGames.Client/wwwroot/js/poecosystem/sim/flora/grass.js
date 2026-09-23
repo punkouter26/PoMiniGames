@@ -44,3 +44,8 @@ export function grazeAt(grass, tile, amount) {
   grass.biomass[tile] = have - eaten;
   return eaten;
 }
+
+/** Dries up all grass biomass on the island (weather catastrophe). */
+export function dryUpGrass(grass) {
+  grass.biomass.fill(0);
+}

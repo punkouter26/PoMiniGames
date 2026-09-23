@@ -32,7 +32,7 @@ export const SPECIES = Object.freeze([
   species({
     id: 0, name: 'Rabbit', plural: 'Rabbits',
     maxAgeYears: 6, matureYears: 1, walkSpeed: 3, runSpeed: 6,
-    eats: Object.freeze({ grass: true, berries: true }),
+    eats: Object.freeze({ grass: true, berries: true, trees: true }),
     gestationSeconds: 20, litter: Object.freeze([1, 3]), mateCooldownSeconds: 60,
     radius: 0.25, mass: 2, perception: 12, mealValue: 0.35, foodValue: 0.5, sprintSeconds: 2,
     foodScanTiles: 5, huntReach: 0, flees: Object.freeze({ 2: 9, 3: 4 }),
@@ -41,7 +41,7 @@ export const SPECIES = Object.freeze([
   species({
     id: 1, name: 'Deer', plural: 'Deer',
     maxAgeYears: 12, matureYears: 2, walkSpeed: 4, runSpeed: 8,
-    eats: Object.freeze({ grass: true, berries: true }),
+    eats: Object.freeze({ grass: true, berries: true, trees: true }),
     gestationSeconds: 30, litter: Object.freeze([1, 2]), mateCooldownSeconds: 40,
     radius: 0.6, mass: 60, perception: 18, mealValue: 0.3, foodValue: 1.0, sprintSeconds: 4,
     foodScanTiles: 6, huntReach: 0, flees: Object.freeze({ 2: 12, 3: 5 }),

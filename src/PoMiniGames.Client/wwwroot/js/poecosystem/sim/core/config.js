@@ -172,8 +172,9 @@ export const PHYSICS = Object.freeze({
 // ── Natural events (SPEC §7.7) ───────────────────────────────────────────
 export const EVENTS = Object.freeze({
   minSpacingSeconds: 45,     // between any two natural events
-  intervalSeconds: Object.freeze({ lightning: [90, 240], rockslide: [120, 300], eruption: [240, 480] }),
+  intervalSeconds: Object.freeze({ lightning: [90, 240], rockslide: [120, 300], eruption: [240, 480], drought: [180, 420] }),
   lightning: Object.freeze({ killRadius: 6, treeRadius: 3, fearRadius: 10, strength: 40 }),
+  drought: Object.freeze({ durationSeconds: 25, fearRadius: 20 }),
   rockslide: Object.freeze({
     count: [3, 8], speed: [3, 7], up: [2, 5],
     rollTiles: 12,           // corridor length downhill from the impact tile

@@ -51,3 +51,8 @@ export function stripBush(bushes, k) {
   bushes.ripeness[k] = 0;
   return FLORA.bushFoodValue;
 }
+
+/** Dries up all bushes on the island (weather catastrophe). */
+export function dryUpBushes(bushes) {
+  bushes.ripeness.fill(0);
+}

@@ -12,6 +12,10 @@ export function stepFire(world, cfg = EVENTS) {
   const { size, type } = terrain;
   const rng = streams.events;
   const dt = TICK_SECONDS;
+  // Weather (events/weather.js): rain and snow douse, a drought spreads. Both are exactly
+  // 1 under clear skies, so a world without weather burns as it always did.
+  const spreadMul = world.weather?.effects.fireSpread ?? 1;
+  const burnout = world.weather?.effects.fireBurnout ?? 1;
 
   // Spread from the tiles burning at the start of this tick only.
   const burning = fires.length;
@@ -26,14 +30,15 @@ export function stepFire(world, cfg = EVENTS) {
       const s = tileState[n];
       if (s !== TILE_STATE.NORMAL && s !== TILE_STATE.STUMP) continue;
       const rate = type[n] === TILE.FOREST ? cfg.fire.spreadPerSecond.forest : cfg.fire.spreadPerSecond.grass * grass.biomass[n];
-      if (rate > 0 && rng.next() < rate * dt) world.ignite(n);
+      if (rate > 0 && rng.next() < rate * spreadMul * dt) world.ignite(n);
     }
   }
 
   // Burn down, then recover.
   for (let k = fires.length - 1; k >= 0; k--) {
     const f = fires[k];
-    if (--f.ticksLeft > 0) continue;
+    f.ticksLeft -= burnout;
+    if (f.ticksLeft > 0) continue;
     tileState[f.tile] = TILE_STATE.BURNT;
     grass.biomass[f.tile] = 0;
     const b = bushes.byTile[f.tile];

@@ -49,6 +49,10 @@ export function createAudio() {
   let birdGain = null;
   let cricketGain = null;
   let windGain = null;
+  let rainGain = null;
+  // Weather (setWeather): how much the rain bed is up, and how far it hushes the birds.
+  let weatherHush = 0;
+  let windBoost = 0;
   let noise = null;          // shared 2 s looped buffer
   let enabled = true;
   let lastChirpAt = 0;
@@ -138,6 +142,17 @@ export function createAudio() {
     surf.connect(surfFilter).connect(surfGain).connect(master);
     surf.start(); surfLfo.start();
 
+    // Rain: the same noise, high-passed into hiss, with a slow swell so a downpour breathes.
+    // Silent until the weather says otherwise (setWeather).
+    const rain = loopNoise();
+    const rainFilter = ctx.createBiquadFilter();
+    rainFilter.type = 'highpass'; rainFilter.frequency.value = 1400; rainFilter.Q.value = 0.3;
+    const rainTone = ctx.createBiquadFilter();
+    rainTone.type = 'peaking'; rainTone.frequency.value = 3200; rainTone.gain.value = 4; rainTone.Q.value = 0.8;
+    rainGain = ctx.createGain(); rainGain.gain.value = 0;
+    rain.connect(rainFilter).connect(rainTone).connect(rainGain).connect(master);
+    rain.start();
+
     // Birds: silent bus; chirps are scheduled on top of it while the sun is up.
     birdGain = ctx.createGain(); birdGain.gain.value = 0;
     birdGain.connect(master);
@@ -214,10 +229,20 @@ export function createAudio() {
     const day = Math.max(0, Math.sin((dayFraction - 0.25) * Math.PI * 2));
     const t = ctx.currentTime;
     const isWinter = season === 3;
-    const birdLevel = isWinter ? 0 : smooth(day) * 0.9;
+    const birdLevel = isWinter ? 0 : smooth(day) * 0.9 * (1 - weatherHush);
     birdGain?.gain.setTargetAtTime(birdLevel, t, 0.5);
     cricketGain?.gain.setTargetAtTime(isWinter ? 0 : smooth(1 - day) * 0.035, t, 0.5);
-    if (!isWinter && day > 0.3 && t - lastChirpAt > 2.5 + Math.random() * 5) { lastChirpAt = t; chirp(t + 0.05); }
+    if (!isWinter && weatherHush < 0.6 && day > 0.3 && t - lastChirpAt > 2.5 + Math.random() * 5) { lastChirpAt = t; chirp(t + 0.05); }
+  }
+
+  /** kind: 0 clear · 1 rain · 2 storm · 3 drought · 4 snow (sim/events/weather.js); intensity 0..1. */
+  function setWeather(kind, intensity = 0) {
+    if (!ctx) return;
+    const i = Math.max(0, Math.min(1, intensity));
+    const rainLevel = kind === 1 ? 0.07 * i : kind === 2 ? 0.12 * i : 0;
+    rainGain?.gain.setTargetAtTime(rainLevel, ctx.currentTime, 1.2);
+    weatherHush = kind === 1 ? 0.6 * i : kind === 2 ? 0.95 * i : kind === 4 ? 0.5 * i : 0;
+    windBoost = kind === 2 ? 0.1 * i : kind === 4 ? 0.05 * i : 0;
   }
 
   /** Tribal war / peace drum pulse */
@@ -409,13 +434,14 @@ export function createAudio() {
     // Altitude is the one thing the wind should answer to: a god at 80 m is in it.
     if (windGain) {
       const high = Math.min(1, Math.max(0, (pose.y - 6) / 70));
-      windGain.gain.setTargetAtTime(0.05 + high * 0.13, ctx.currentTime, 0.6);
+      windGain.gain.setTargetAtTime(0.05 + high * 0.13 + windBoost, ctx.currentTime, 0.6);
     }
   }
 
   return {
     ensure,
     setDay,
+    setWeather,
     stinger,
     impact,
     tribalDrum,

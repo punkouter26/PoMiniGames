@@ -6,12 +6,27 @@
         <div class="poeco-record"><span>Huts built</span><strong>@(A?.HutsBuilt ?? 0)</strong></div>
         <div class="poeco-record"><span>Trees felled</span><strong>@(A?.TreesFelled ?? 0)</strong></div>
         <div class="poeco-record"><span>Strikes · slides · eruptions</span><strong>@NatureText</strong></div>
+        <div class="poeco-record"><span>Deepest family line</span><strong>@(Stats?.MaxGeneration ?? 0) generations</strong></div>
+        <div class="poeco-record" title="Shannon diversity H′ (max ln 4 ≈ 1.39) · Pielou evenness J (1 = all four equally common) · species alive S">
+            <span>Biodiversity H′ · J · S</span><strong>@DiversityText</strong>
+        </div>
     </div>
+
+    <h3>Weather</h3>
+    <p class="poeco-note">
+        Now: <strong>@(Stats?.Weather?.Name ?? "Clear")</strong>@(Stats?.Weather is { Kind: > 0 } w ? $" ({w.Intensity:P0})" : "") ·
+        soil moisture @((Stats?.Weather?.Wetness ?? 0.5).ToString("P0")).
+        @if (Stats?.Weather?.Counts is { Length: 5 } wc)
+        {
+            <span> Spells so far — rain @wc[1], storms @wc[2], droughts @wc[3], snow @wc[4].</span>
+        }
+    </p>
+    <p class="poeco-note">Rain and storms speed up grass and berries and douse fires; droughts slow growth, make everything thirstier and let fire run. Storms throw their own lightning.</p>
 
     <h3>Species totals</h3>
     <table class="poeco-species-table">
         <thead>
-            <tr><th scope="col"><span class="gps-sr-only">Species</span></th><th scope="col">Alive</th><th scope="col">Born</th><th scope="col">Died</th></tr>
+            <tr><th scope="col"><span class="gps-sr-only">Species</span></th><th scope="col">Alive</th><th scope="col">Born</th><th scope="col">Died</th><th scope="col" title="Currently sick">Sick</th></tr>
         </thead>
         <tbody>
             @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
@@ -22,6 +37,7 @@
                     <td>@AliveOf(id)</td>
                     <td>@BornOf(id)</td>
                     <td>@DiedOf(id)</td>
+                    <td>@SickOf(id)</td>
                 </tr>
             }
         </tbody>
@@ -62,6 +78,50 @@
         }
     </div>
     <p class="poeco-note">Shades per row: light = young, full = adult, dark = old.</p>
+
+    <h3>Varieties</h3>
+    @if (Stats?.Varieties is { Length: > 0 } vs)
+    {
+        <ul class="poeco-varieties">
+            @foreach (var v in vs.Reverse())
+            {
+                <li><i class="poeco-species-chip" style="background: @EcoSpeciesInfo.ColourOf(v.Species)" aria-hidden="true"></i> <strong>@v.Name</strong> · year @v.Year</li>
+            }
+        </ul>
+    }
+    else
+    {
+        <p class="poeco-note">None yet. When a species' average personality drifts far from where it started, the island names the new variety after the biggest shift.</p>
+    }
+
+    <h3>Field guide</h3>
+    @if (Cards.Count == 0)
+    {
+        <p class="poeco-note">Real-world notes on the four species load from iNaturalist and Wikipedia when you are online.</p>
+    }
+    else
+    {
+        <div class="poeco-fieldguide">
+            @foreach (var c in Cards.OrderBy(c => c.Species))
+            {
+                <article class="poeco-fieldcard" style="border-top-color: @EcoSpeciesInfo.ColourOf(c.Species)">
+                    @if (!string.IsNullOrWhiteSpace(c.PhotoUrl))
+                    {
+                        <img src="@c.PhotoUrl" alt="@c.CommonName" loading="lazy" referrerpolicy="no-referrer" />
+                    }
+                    <div>
+                        <h4>@c.CommonName <em>@c.ScientificName</em></h4>
+                        <p>@c.Summary</p>
+                        <p class="poeco-note">
+                            @c.Observations.ToString("N0") observations on
+                            <a href="@c.Url" target="_blank" rel="noopener noreferrer">iNaturalist</a>
+                            @if (!string.IsNullOrWhiteSpace(c.Attribution)) { <span> · photo @c.Attribution</span> }
+                        </p>
+                    </div>
+                </article>
+            }
+        </div>
+    }
 </div>
 
 @code {
@@ -76,10 +136,15 @@
         ["rockfall"] = "Rockfall",
         ["eruption"] = "Eruption",
         ["drowning"] = "Drowned",
+        ["disease"] = "Sickness",
         ["debug"] = "Debug",
     };
 
     [Parameter, EditorRequired] public EcoStats? Stats { get; set; }
+    [Parameter] public IReadOnlyList<EcoSpeciesCard> Cards { get; set; } = [];
+
+    private string DiversityText => Stats?.Biodiversity is { } b ? $"{b.Shannon:0.00} · {b.Evenness:0.00} · {b.Richness}" : "—";
+    private int SickOf(int s) => Stats?.Sick is { Length: EcoSpeciesInfo.Count } k ? k[s] : 0;
 
     private EcoAlmanac? A => Stats?.Almanac;
 

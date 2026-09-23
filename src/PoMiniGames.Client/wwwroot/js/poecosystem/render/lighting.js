@@ -15,6 +15,8 @@ const NIGHT_SKY = new THREE.Color(0x2a3c5a);
 const DUSK_SKY = new THREE.Color(0xf59e0b);
 const DAY_SUN = new THREE.Color(0xfff2df);
 const NIGHT_SUN = new THREE.Color(0x9db4d8);
+// A closed storm deck greys the sky and the haze together (weather, 2026-09-23).
+const OVERCAST_SKY = new THREE.Color(0x7d8894);
 
 export function createLighting(scene, { shadows = true, shadowMapSize = 2048 } = {}) {
   const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x2f3a2a, 1.1);
@@ -66,7 +68,7 @@ export function createLighting(scene, { shadows = true, shadowMapSize = 2048 } =
      * uses `sky` for the clear colour, the water shader takes the sun and the night
      * factor, and the god-ray pass takes the sun's world position off `sun`.
      */
-    update(dayFraction, player, time = 0) {
+    update(dayFraction, player, time = 0, overcast = 0) {
       const angle = (dayFraction - 0.25) * Math.PI * 2;      // 0.25 = sunrise
       const elevation = Math.sin(angle);
       const dist = 180;
@@ -78,16 +80,18 @@ export function createLighting(scene, { shadows = true, shadowMapSize = 2048 } =
       const day = Math.max(0, elevation);
       const dusk = Math.max(0, 1 - Math.abs(elevation) * 4);  // brief warm band at the horizon
       const night = 1 - day;
-      sky.copy(NIGHT_SKY).lerp(DAY_SKY, day).lerp(DUSK_SKY, dusk * 0.5);
+      sky.copy(NIGHT_SKY).lerp(DAY_SKY, day).lerp(DUSK_SKY, dusk * 0.5).lerp(OVERCAST_SKY, overcast * 0.55);
       sunColour.copy(NIGHT_SUN).lerp(DAY_SUN, day);
       sun.color.copy(sunColour);
-      sun.intensity = 0.55 + day * 1.6;      // floors keep the night watchable
+      // Cloud cover takes the sun first and the sky light barely: under a storm the island
+      // goes flat and grey, never dark (the night floor rule above still holds).
+      sun.intensity = (0.55 + day * 1.6) * (1 - 0.5 * overcast);
       hemi.intensity = 0.55 + day * 0.6;
       ambient.intensity = 0.34 + day * 0.12;
 
       // Haze thickens at both ends of the day. The dusk term dominates because that is
       // when the shafts are longest and the fog is what they scatter through.
-      fog.density = 0.0040 + dusk * 0.0085 + night * 0.0035;
+      fog.density = 0.0040 + dusk * 0.0085 + night * 0.0035 + overcast * 0.0055;
       fog.color.copy(sky);
 
 

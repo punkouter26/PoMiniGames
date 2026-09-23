@@ -2,7 +2,7 @@
 'use strict';
 
 import { DEFAULT_TRIBES, TECH_TIER, TRIBE_DIPLOMACY, BUILDING_KIND, BUILDING_SPECS } from './contracts.js';
-import { TRIBES } from '../core/config.js';
+import { TRIBES, YEAR_SECONDS } from '../core/config.js';
 import { TILE, isWater, tileIndex, tileX, tileZ } from '../terrain/tiles.js';
 import { createTerritoryManager } from './territory.js';
 import { createTechLadder } from './techLadder.js';
@@ -14,7 +14,10 @@ export function createTribeStore(terrain, streams) {
   const territory = createTerritoryManager(size);
   const techLadder = createTechLadder();
   const construction = createConstructionManager();
-  const diplomacy = createDiplomacyManager();
+  const diplomacy = createDiplomacyManager(streams.tribes);
+  // Pacts the Chieftain Council wrote for this island, newest last (applyTreaty).
+  const treaties = [];
+  const RELATION_OF = { PeaceTreaty: TRIBE_DIPLOMACY.NEUTRAL, Armistice: TRIBE_DIPLOMACY.NEUTRAL, DemandTribute: TRIBE_DIPLOMACY.RIVAL, WarDeclaration: TRIBE_DIPLOMACY.WAR };
 
   // Find candidate center settlement tiles across the island with separation
   const grassTiles = [];
@@ -189,6 +192,42 @@ export function createTribeStore(terrain, streams) {
       return construction.toTelemetry();
     },
 
+    /**
+     * Apply a council's answer: { tribeA, tribeB, action, resource, amount, peaceYears,
+     * title, narrative }. The action and every number are bounded here — the model wrote
+     * them, and the store is the last word on what a pact can do.
+     */
+    applyTreaty(t, log = null, tick = 0) {
+      const a = this.getTribe(t?.tribeA); const b = this.getTribe(t?.tribeB);
+      if (!a || !b || a === b) return false;
+      const action = Object.prototype.hasOwnProperty.call(RELATION_OF, t.action) ? t.action : 'PeaceTreaty';
+      const relation = RELATION_OF[action];
+      a.relations[b.id] = relation; b.relations[a.id] = relation;
+      const years = Math.max(1, Math.min(10, t.peaceYears | 0 || 3));
+      if (action === 'PeaceTreaty' || action === 'Armistice') {
+        // Cooldowns count once-a-second diplomacy steps, i.e. seconds.
+        const cooldown = years * YEAR_SECONDS;
+        a.warCooldownTicks = Math.max(a.warCooldownTicks, cooldown); b.warCooldownTicks = Math.max(b.warCooldownTicks, cooldown);
+        a.casualtyCount = 0; b.casualtyCount = 0;
+      }
+      let paid = 0;
+      const kind = String(t.resource ?? '').toLowerCase();
+      if (action === 'DemandTribute' && (kind === 'wood' || kind === 'stone' || kind === 'food')) {
+        paid = Math.max(0, Math.min(100, t.amount | 0, Math.floor(b[kind])));
+        b[kind] -= paid; a[kind] += paid;
+      }
+      const title = String(t.title ?? 'Tribal Concordat').slice(0, 80);
+      const narrative = String(t.narrative ?? '').slice(0, 400);
+      treaties.push({ tick, tribeA: a.id, tribeB: b.id, action, title, narrative, paid, resource: paid ? kind : '', years });
+      if (treaties.length > 20) treaties.shift();
+      if (log) log.push({ tick, kind: 'treaty', action, tribeA: a.id, tribeB: b.id, text: `${title} — ${a.name} and ${b.name}${paid ? ` (${paid} ${kind} paid)` : ''}` });
+      return true;
+    },
+
+    treatyTelemetry() {
+      return treaties.map(t => ({ ...t }));
+    },
+
     getCaravansTelemetry() {
       return diplomacy.toTelemetry();
     },
@@ -249,6 +288,8 @@ export function createTribeStore(terrain, streams) {
           isComplete: b.isComplete,
         })),
         caravans: diplomacy.getState(),
+        nextBuildingId: construction.nextId,
+        treaties: treaties.map(t => ({ ...t })),
       };
     },
 
@@ -278,10 +319,25 @@ export function createTribeStore(terrain, streams) {
       }
       if (Array.isArray(s.buildings)) {
         construction.buildings.length = 0;
+        for (const t of placedTribes) { t.buildings.length = 0; t.huts.length = 0; }
+        let maxId = 0;
         for (const sb of s.buildings) {
-          construction.buildings.push({ ...sb });
+          // Saved under tileIndex; the live objects read .tile (createBuilding). Without the
+          // alias, and without re-linking below, a restored tribe owned no buildings and
+          // raised a second watchtower and granary on its next construction pass.
+          const b = { ...sb, tile: sb.tile ?? sb.tileIndex };
+          construction.buildings.push(b);
+          const owner = placedTribes.find(p => p.id === b.tribeId);
+          if (owner) {
+            owner.buildings.push(b);
+            if (b.isComplete && b.kind === BUILDING_KIND.HUT) owner.huts.push(b);
+          }
+          if (b.id > maxId) maxId = b.id;
         }
+        construction.nextId = Number.isInteger(s.nextBuildingId) ? s.nextBuildingId : maxId + 1;
       }
+      treaties.length = 0;
+      for (const t of s.treaties ?? []) treaties.push({ ...t });
       if (s.caravans) {
         diplomacy.setState(s.caravans);
       }

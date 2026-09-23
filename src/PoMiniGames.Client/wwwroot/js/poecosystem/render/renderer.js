@@ -33,10 +33,14 @@ import { createSky } from './sky.js';
 import { materialClock, materialDetail, materialSeason, materialSnow } from './materials.js';
 import { applyCameraShake } from '../../postFx.js';
 import { createSettlementMeshes } from './settlementMesh.js';
+import { createFauna } from './fauna.js';
 
 const TAU = Math.PI * 2;
 // What the auto-director calls a cut to an event tile.
-const EVENT_CAPTIONS = { lightning: 'Lightning strike', rockslide: 'Rockslide', eruption: 'The volcano erupts', tech: 'The tribe builds' };
+const EVENT_CAPTIONS = { lightning: 'Lightning strike', rockslide: 'Rockslide', eruption: 'The volcano erupts', tech: 'The tribe builds', outbreak: 'Sickness spreads' };
+// Weather kinds (sim/events/weather.js) → how closed the cloud deck is.
+const OVERCAST = [0, 0.7, 1, 0, 0.6];
+const WEATHER_STORM = 2;
 const shortestAngle = (a, b) => { let d = (b - a) % TAU; if (d > Math.PI) d -= TAU; else if (d < -Math.PI) d += TAU; return d; };
 const smoothstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -54,6 +58,10 @@ export function createRenderer(container, {
   // The auto-director takes the camera after this many seconds without input (0 = never);
   // demo mode passes a few seconds, 1-player a couple of minutes.
   directorIdleSeconds = 0,
+  // Accessibility (Settings): 'default' | 'cb' tribe banner colours, and no camera shake.
+  palette = 'default', reducedMotion = false,
+  // Key bindings (input.js DEFAULT_BINDINGS shape), loaded from prefs by the engine.
+  bindings = null,
 } = {}) {
   const canvas = document.createElement('canvas');
   canvas.className = 'poeco-canvas';
@@ -62,11 +70,14 @@ export function createRenderer(container, {
 
   // PoQuality is the app's quality authority (?fx= override, reduced-motion cap, battery
   // demotion, fps watchdog); the core count is only the fallback when it has not loaded.
-  const lowEnd = quality.lowEnd ?? (window.PoQuality ? window.PoQuality.tier() === 'low' : (navigator.hardwareConcurrency ?? 8) <= 4);
+  // An explicit tier from the Settings panel wins outright (it is the player's choice, made
+  // on this machine); otherwise the old resolution applies.
+  const forcedTier = quality.tier === 'high' || quality.tier === 'medium' || quality.tier === 'low' ? quality.tier : null;
+  const lowEnd = forcedTier ? forcedTier === 'low' : (quality.lowEnd ?? (window.PoQuality ? window.PoQuality.tier() === 'low' : (navigator.hardwareConcurrency ?? 8) <= 4));
   // One tier string, resolved once, handed to every subsystem. `lowEnd` from the caller is
   // an override that can only demote — a Blazor-side low-end hint must not be undone by a
   // machine that happens to report a fast GPU.
-  const tier = lowEnd ? 'low' : (window.PoQuality?.tier?.() ?? 'high');
+  const tier = forcedTier ?? (lowEnd ? 'low' : (window.PoQuality?.tier?.() ?? 'high'));
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !lowEnd, powerPreference: 'high-performance' });
   const maxDpr = window.PoCanvasDpr?.ceiling ? window.PoCanvasDpr.ceiling(lowEnd ? 1 : 2) : Math.min(devicePixelRatio || 1, lowEnd ? 1 : 2);
   let dprScale = 1;
@@ -102,6 +113,17 @@ export function createRenderer(container, {
   let pendingPose = null;      // a pose set before the first terrain message
   let terrainReady = false;
   let settlementMeshes = null;
+  let fauna = null;
+  // Weather as the last stats message reported it; the per-frame emitters read it.
+  let weatherKind = 0; let weatherIntensity = 0;
+  let rainDebt = 0;
+  // The tour (Blazor) wants to know the first look and the first step, once each.
+  const told = { look: false, move: false };
+  // The page can hold the director off (the onboarding tour needs the camera to stay put).
+  let directorHeld = false;
+  let lastRecycle = null;
+  let contextLost = false;
+  let motionReduced = !!reducedMotion;
 
   // Two frames + their views, for interpolation.
   let prev = null; let curr = null; let prevAt = 0; let currAt = 0;
@@ -178,7 +200,11 @@ export function createRenderer(container, {
   const pip = createPip(canvas, { onChange: (on) => onAction('pip', on) });
 
   const input = createInput(canvas, {
-    onLook: (dx, dy) => { if (dx || dy) noteInput(); player.look(dx, dy); },
+    bindings,
+    onLook: (dx, dy) => {
+      if (dx || dy) { noteInput(); if (!told.look) { told.look = true; onAction('tour', 'look'); } }
+      player.look(dx, dy);
+    },
     onAction: (action, value) => {
       if (action === 'fly') { noteInput(); player.toggleFly(); return; }
       if (action === 'inspect') { noteInput(); onPick(hovered ? hovered.handle : -1); return; }
@@ -238,7 +264,9 @@ export function createRenderer(container, {
     flora = createFloraMeshes(scene, terrainApi, { trees: msg.trees, bushes: msg.bushes });
     if (minimapCanvas) minimap = createMinimap(minimapCanvas, terrainApi);
     if (settlementMeshes) settlementMeshes.dispose();
-    settlementMeshes = createSettlementMeshes(scene, (x, z) => terrainApi.heightAt(x, z));
+    settlementMeshes = createSettlementMeshes(scene, (x, z) => terrainApi.heightAt(x, z), palette);
+    fauna?.dispose();
+    fauna = createFauna(scene, terrainApi, { tier });
     // A pose set before the terrain arrived (Resume reads prefs synchronously at start)
     // must survive the rebuild, or the god is teleported back to the island's centre.
     // Fresh players float ('fly') until they press F to walk (2026-09-02 user call).
@@ -281,7 +309,13 @@ export function createRenderer(container, {
   }
 
   function acceptFrame(buffer, recycle) {
-    const views = frameViews(buffer, cap, propCap);
+    lastRecycle = recycle;
+    // The sim's creature cap is the world's, not ours: a low-end (phone) world runs 250 while
+    // this renderer is sized for CREATURE_CAP, and reading a 250-row buffer as 400 rows threw
+    // a RangeError on every frame, so phones drew no creatures at all. The row count is
+    // recovered from the buffer itself (the layout in sim/frame.js), capped at ours.
+    const rows = (buffer.byteLength - FRAME.HEADER_INTS * 4 - propCap * FRAME.PROP_STRIDE * 4) / (4 + FRAME.CREATURE_STRIDE * 4);
+    const views = frameViews(buffer, Math.min(cap, rows | 0), propCap);
     if (curr) { if (prev) recycle(prev.buffer); prev = curr; prevAt = currAt; }
     curr = { buffer, views };
     currAt = performance.now();
@@ -342,6 +376,23 @@ export function createRenderer(container, {
     post.setSun(sunUv, Math.min(1.1, facing * facing * edge * hour), sky.sunColour);
   }
 
+  /** Rain and snow, emitted in a column above the god so the weather is always on screen. */
+  function emitWeather(dt) {
+    if (!particles.enabled || weatherIntensity <= 0.02) return;
+    const k = weatherKind;
+    if (k !== 1 && k !== 2 && k !== 4) return;
+    const perSecond = (k === 4 ? 70 : k === 2 ? 420 : 260) * weatherIntensity * (tier === 'medium' ? 0.6 : 1);
+    rainDebt += dt * perSecond;
+    const n = Math.min(40, Math.floor(rainDebt));
+    rainDebt -= n;
+    const kind = k === 4 ? 'snow' : 'rain';
+    const top = player.y + (k === 4 ? 10 : 14);
+    for (let q = 0; q < n; q++) {
+      const x = player.x + (Math.random() - 0.5) * 44; const z = player.z + (Math.random() - 0.5) * 44;
+      particles.emit(kind, x, top + Math.random() * 4, z, { count: 1, dir: [k === 2 ? 0.12 : 0.04, -1, 0.05], spread: k === 4 ? 0.5 : 0.06 });
+    }
+  }
+
   function frame(now) {
     if (!running) return;
     const dt = Math.min(0.05, (now - lastTime) / 1000 || 0);
@@ -361,8 +412,10 @@ export function createRenderer(container, {
     // interpolation and the direction is read once the pose is final.
     const intent = input.consume();
     if (terrainApi) {
-      if (intent.forward || intent.right || intent.up || intent.jump) noteInput(now);
-      else if (directorIdleSeconds > 0 && !director.enabled && !directorDismissed
+      if (intent.forward || intent.right || intent.up || intent.jump) {
+        noteInput(now);
+        if (!told.move) { told.move = true; onAction('tour', 'move'); }
+      } else if (directorIdleSeconds > 0 && !director.enabled && !directorDismissed && !directorHeld
         && now - lastInputAt > (everInteracted ? Math.max(directorIdleSeconds, DIRECTOR_RETAKE_SECONDS) : directorIdleSeconds) * 1000) setDirector(true);
       const driven = director.enabled && curr
         && director.update(dt, timeSec, { player, terrain: terrainApi, interp, handles: curr.views.handles, count: interpCount });
@@ -402,7 +455,9 @@ export function createRenderer(container, {
       minimap?.draw(interp, interpCount, player);
     }
 
-    const sky = lighting.update(stats?.dayFraction ?? 0.5, player, timeSec);
+    const overcast = (OVERCAST[weatherKind] ?? 0) * weatherIntensity;
+    skyDome.setOvercast(overcast);
+    const sky = lighting.update(stats?.dayFraction ?? 0.5, player, timeSec, skyDome.overcast);
     scene.background = sky.sky;
     materialClock.value = timeSec;
     if (stats && stats.season !== undefined) {
@@ -418,6 +473,8 @@ export function createRenderer(container, {
     } else campfireLight.intensity = 0;
 
     eventFx.ambient(dt, { fireTiles, lavaTiles, player, dayFraction: stats?.dayFraction ?? 0.5 });
+    emitWeather(dt);
+    fauna?.update(dt, timeSec, { player, night: sky.night ?? 0, storm: weatherKind === WEATHER_STORM ? weatherIntensity : 0 });
     particles.update(dt, {
       fogColor: sky.sky, fogDensity: sky.fogDensity,
       pixelHeight: renderer.domElement.height, fov: camera.fov,
@@ -431,7 +488,7 @@ export function createRenderer(container, {
     // must not be applied before the audio listener or the shaft projection. Still gated
     // on terrainApi, though the re-seat above is now unconditional: every shake is raised
     // by a sim event, and there are none before a world exists.
-    if (terrainApi) applyCameraShake(camera, timeSec, 0.55);
+    if (terrainApi && !motionReduced) applyCameraShake(camera, timeSec, 0.55);
     post.render();
     pip.mirror();
     // While the world is popped out, the pop-out window's frame clock drives the loop:
@@ -439,6 +496,15 @@ export function createRenderer(container, {
     pip.raf(frame);
   }
   requestAnimationFrame(frame);
+
+  // A lost GL context (driver reset, GPU process crash, too many contexts) stops every draw
+  // dead. preventDefault is what makes the browser offer a restore at all; the engine
+  // answers 'contextRestored' by rebuilding the renderer from the cached terrain and tiles,
+  // because every GPU resource this module made is gone with the context.
+  const onContextLost = (e) => { e.preventDefault(); contextLost = true; running = false; onAction('contextLost'); };
+  const onContextRestored = () => { onAction('contextRestored'); };
+  canvas.addEventListener('webglcontextlost', onContextLost);
+  canvas.addEventListener('webglcontextrestored', onContextRestored);
 
   return {
     canvas, scene, camera, renderer, particles,
@@ -452,6 +518,10 @@ export function createRenderer(container, {
     setTerrain, setTiles, acceptFrame,
     setStats(s) {
       stats = s;
+      if (s?.weather) {
+        weatherKind = s.weather.kind | 0; weatherIntensity = s.weather.intensity ?? 0;
+        audio?.setWeather?.(weatherKind, weatherIntensity);
+      }
       if (settlementMeshes && s?.buildings) {
         settlementMeshes.syncBuildings(s.buildings);
       }
@@ -478,12 +548,33 @@ export function createRenderer(container, {
     togglePip: () => pip.toggle(),
     get pipActive() { return pip.active; },
     setPose(pose) { if (terrainReady) player.setPose(pose); else pendingPose = pose; },
+    /** Park the camera looking at a world point from 26 m back and 22 m up (timeline, tribes). */
+    flyTo(x, z) {
+      noteInput();
+      const h = terrainApi ? Math.max(0, terrainApi.heightAt(x, z)) : 0;
+      const pose = { x, y: h + 22, z: Math.max(1, z - 26), yaw: 0, pitch: -0.62, mode: 'fly' };
+      if (terrainReady) player.setPose(pose); else pendingPose = pose;
+    },
+    /** Hold the director off (true) or release it (false). A held director is also switched off. */
+    holdDirector(on) { directorHeld = !!on; if (directorHeld && director.enabled) setDirector(false); },
+    setBindings: (b) => input.setBindings(b),
+    setReducedMotion(on) { motionReduced = !!on; },
+    get contextLost() { return contextLost; },
+    get faunaInfo() { return { birds: fauna?.birdCount ?? 0, fishSchools: fauna?.fishSchools ?? 0 }; },
     touchMove: (x, z) => input.setTouchVector(x, z),
     touchRelease: () => input.releaseTouch(),
     toggleFly: () => player.toggleFly(),
     requestLock: () => canvas.requestPointerLock?.(),
     dispose() {
       running = false;
+      // The two frames held for interpolation belong to the worker's pool of three; a
+      // renderer rebuilt without returning them (quality change, context restore) would
+      // leave the sim one buffer short, and it skips frames when the pool is empty.
+      if (lastRecycle) { if (prev) lastRecycle(prev.buffer); if (curr) lastRecycle(curr.buffer); }
+      prev = null; curr = null;
+      canvas.removeEventListener('webglcontextlost', onContextLost);
+      canvas.removeEventListener('webglcontextrestored', onContextRestored);
+      fauna?.dispose();
       observer.disconnect();
       window.removeEventListener('resize', resize);
       input.dispose();

@@ -4,13 +4,16 @@
 import { BUILDING_KIND, BUILDING_SPECS } from './contracts.js';
 import { TILE, TILE_STATE, isWater, tileIndex, tileX, tileZ } from '../terrain/tiles.js';
 
-let nextBuildingId = 1;
-
 export function createConstructionManager() {
   const buildings = []; // Array of active structures across all tribes
+  // Per world, not per module: a module-level counter kept counting across every world the
+  // tab ever built, and was never saved, so ids depended on how many islands came before.
+  let nextBuildingId = 1;
 
   return {
     buildings,
+    get nextId() { return nextBuildingId; },
+    set nextId(v) { if (Number.isInteger(v) && v > 0) nextBuildingId = v; },
 
     findBuildSite(terrain, tileState, tribe, kind, rng) {
       const { size, type } = terrain;

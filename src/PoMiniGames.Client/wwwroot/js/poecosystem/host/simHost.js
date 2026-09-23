@@ -39,6 +39,12 @@ export async function createSimHost({ onMessage, WorkerCtor = globalThis.Worker,
 
   const sent = [];      // replayed if the worker dies before it is ready
   let ready = false;
+  // The last message that asked for a world. A worker that dies AFTER ready used to be
+  // left for dead — giveUpOnWorker only rescues one that never started — and the island
+  // froze on its last frame. Now the same world is resumed inline from its last autosave
+  // (HOST.autosaveSeconds old at most), which is the best copy of it there is.
+  let lastWorldAsk = null;
+  let recovering = false;
   let fallback = null;
   let readyTimer = null;
 
@@ -59,6 +65,7 @@ export async function createSimHost({ onMessage, WorkerCtor = globalThis.Worker,
     mode: 'worker',
     worker,
     send(msg, transfer) {
+      if (msg.type === 'init' || msg.type === 'newWorld') lastWorldAsk = msg;
       if (fallback) { fallback.send(msg); return; }
       if (!ready && msg.type !== 'recycle') {
         sent.push(msg);
@@ -83,9 +90,20 @@ export async function createSimHost({ onMessage, WorkerCtor = globalThis.Worker,
     }
     onMessage(e.data);
   };
+  const recoverAfterCrash = async (why) => {
+    if (fallback || recovering) return;
+    recovering = true;
+    say(`sim worker crashed after start (${why}) — resuming the last autosave on the main thread`);
+    onMessage({ type: 'error', where: 'worker-crash', message: why });
+    try { worker.terminate(); } catch { /* already gone */ }
+    fallback = await inline();
+    host.mode = 'inline';
+    fallback.send({ ...(lastWorldAsk ?? { seed: 0 }), type: 'init', resume: true });
+  };
   worker.onerror = (err) => {
     say(`sim worker error: ${err?.message ?? err}`);
     if (readyTimer !== null) { clearTimeout(readyTimer); readyTimer = null; }
+    if (ready) return recoverAfterCrash(String(err?.message ?? err));
     return giveUpOnWorker(`error: ${err?.message ?? err}`);
   };
   return host;

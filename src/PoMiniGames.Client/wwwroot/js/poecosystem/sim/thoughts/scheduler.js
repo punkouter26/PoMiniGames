@@ -28,6 +28,23 @@ export function createThoughtScheduler() {
       }
       return NONE;
     },
+    /**
+     * Up to `n` thinkers at once, for the batched cloud path. Same round-robin and the same
+     * one-time preemption for a newly selected creature; nothing is marked pending, because
+     * the runtime tracks the one batch in flight itself.
+     */
+    take(e, selected, n) {
+      const out = [];
+      if (selected !== NONE && selected !== servedSelected && e.resolve(selected) !== NONE) { servedSelected = selected; out.push(selected); }
+      for (let scanned = 0; scanned < e.cap && out.length < n && e.count > 0; scanned++) {
+        const i = cursor;
+        cursor = (cursor + 1) % e.cap;
+        if (!e.alive[i]) continue;
+        const h = e.handle(i);
+        if (!out.includes(h)) out.push(h);
+      }
+      return out;
+    },
     complete(handle) { if (handle === pending) pending = NONE; },
     cancel() { pending = NONE; },
     getState() { return { cursor, servedSelected }; },

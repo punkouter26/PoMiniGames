@@ -15,7 +15,7 @@
             {
                 <h2>@Detail.Name <button type="button" class="poeco-icon-btn poeco-icon-btn--inline" title="Give this creature a name" aria-label="Rename" @onclick="() => { _newName = Detail.Name; _renaming = true; }">✎</button></h2>
             }
-            <p>@Detail.SpeciesName · @Detail.AgeYears.ToString("0.0") y · @Stage @Sex</p>
+            <p>@Detail.SpeciesName · @Detail.AgeYears.ToString("0.0") y · @Stage @Sex@if (Detail.Sick) { <span class="poeco-badge poeco-badge--sick" title="Sick: losing health while it lasts, then immune for a while">sick</span> }</p>
         </div>
         <button type="button" class="poeco-pill" @onclick="OnFollow" aria-label="Follow this creature">Follow <kbd>T</kbd></button>
         <button type="button" class="poeco-icon-btn" @onclick="OnClose" aria-label="Close">✕</button>

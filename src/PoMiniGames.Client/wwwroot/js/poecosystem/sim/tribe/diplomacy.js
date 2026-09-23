@@ -4,10 +4,15 @@
 import { TRIBE_DIPLOMACY, CARAVAN_STATUS } from './contracts.js';
 import { TRIBES } from '../core/config.js';
 
-export function createDiplomacyManager() {
+// 2026-09-23: every chance below used Math.random, which sim/core/prng.js forbids — and the
+// caravan timer and id were never saved, so a restored world dispatched its caravans on a
+// different beat than the one it was saved from. Both were part of why a resumed island
+// diverged. Draws now come from the `tribes` stream (passed in by the store).
+export function createDiplomacyManager(rng = null) {
   const caravans = [];
   let nextCaravanId = 1;
   let caravanTimer = 0;
+  const chance = () => (rng ? rng.next() : 0.5);
 
   return {
     caravans,
@@ -31,7 +36,7 @@ export function createDiplomacyManager() {
             const highCasualtiesA = tribeA.casualtyCount >= Math.max(1, tribeA.population * TRIBES.warCasualtyThreshold);
             const highCasualtiesB = tribeB.casualtyCount >= Math.max(1, tribeB.population * TRIBES.warCasualtyThreshold);
 
-            if (highCasualtiesA || highCasualtiesB || (tribeA.warCooldownTicks === 0 && Math.random() < 0.005)) {
+            if (highCasualtiesA || highCasualtiesB || (tribeA.warCooldownTicks === 0 && chance() < 0.005)) {
               // Conclude peace treaty
               tribeA.relations[tribeB.id] = TRIBE_DIPLOMACY.NEUTRAL;
               tribeB.relations[tribeA.id] = TRIBE_DIPLOMACY.NEUTRAL;
@@ -51,7 +56,9 @@ export function createDiplomacyManager() {
                 reason: 'casualty armistice and resource depletion',
               };
               events.push(event);
-              if (log) log.push({ tick, kind: 'diplomacy', text: event.text });
+              // The log entry carries the pair and the moment, so the page can ask the
+              // Chieftain Council (/api/ecosystem/treaty) what the peace actually says.
+              if (log) log.push({ tick, kind: 'diplomacy', action: 'peace', tribeA: tribeA.id, tribeB: tribeB.id, reason: event.reason, text: event.text });
             }
           }
           // 2. If NEUTRAL or RIVAL: check if war triggers
@@ -78,7 +85,7 @@ export function createDiplomacyManager() {
                 text: `${tribeA.name} declared war on ${tribeB.name} over disputed borders`,
               };
               events.push(event);
-              if (log) log.push({ tick, kind: 'diplomacy', text: event.text });
+              if (log) log.push({ tick, kind: 'diplomacy', action: 'war', tribeA: tribeA.id, tribeB: tribeB.id, reason: 'disputed borders and scarcity', text: event.text });
             }
           }
         }
@@ -172,7 +179,7 @@ export function createDiplomacyManager() {
             if (enemy.id !== from.id && enemy.id !== to.id) {
               if (enemy.relations[from.id] === TRIBE_DIPLOMACY.WAR || enemy.relations[to.id] === TRIBE_DIPLOMACY.WAR) {
                 const distToEnemy = Math.hypot(c.x - enemy.centerX, c.z - enemy.centerZ);
-                if (distToEnemy < enemy.territoryRadius && Math.random() < 0.015) {
+                if (distToEnemy < enemy.territoryRadius && chance() < 0.015) {
                   // Ambush!
                   if (c.cargoKind === 'wood') enemy.wood += c.amount;
                   else if (c.cargoKind === 'stone') enemy.stone += c.amount;
@@ -216,10 +223,10 @@ export function createDiplomacyManager() {
             else if (c.returnKind === 'stone') from.stone += c.returnAmount;
 
             // Successful trade pact milestone
-            if (from.relations[to.id] === TRIBE_DIPLOMACY.NEUTRAL && Math.random() < 0.25) {
+            if (from.relations[to.id] === TRIBE_DIPLOMACY.NEUTRAL && chance() < 0.25) {
               from.relations[to.id] = TRIBE_DIPLOMACY.ALLIED;
               to.relations[from.id] = TRIBE_DIPLOMACY.ALLIED;
-              if (log) log.push({ tick, kind: 'diplomacy', text: `${from.name} and ${to.name} formed an official Alliance through prosperous trade` });
+              if (log) log.push({ tick, kind: 'diplomacy', action: 'alliance', tribeA: from.id, tribeB: to.id, text: `${from.name} and ${to.name} formed an official Alliance through prosperous trade` });
             }
 
             caravans.splice(k, 1);
@@ -243,13 +250,17 @@ export function createDiplomacyManager() {
     },
 
     getState() {
-      return caravans.map(c => ({ ...c }));
+      return { caravans: caravans.map(c => ({ ...c })), nextCaravanId, caravanTimer };
     },
 
     setState(s) {
       caravans.length = 0;
-      if (Array.isArray(s)) {
-        for (const c of s) caravans.push({ ...c });
+      // Saves from before 2026-09-23 stored the bare caravan array.
+      const list = Array.isArray(s) ? s : s?.caravans;
+      if (Array.isArray(list)) for (const c of list) caravans.push({ ...c });
+      if (s && !Array.isArray(s)) {
+        nextCaravanId = Number.isInteger(s.nextCaravanId) ? s.nextCaravanId : nextCaravanId;
+        caravanTimer = Number.isInteger(s.caravanTimer) ? s.caravanTimer : caravanTimer;
       }
     },
   };

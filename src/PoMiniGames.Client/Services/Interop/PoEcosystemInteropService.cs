@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.JSInterop;
+using PoMiniGames.Shared.Games.PoEcosystem;
 using PoMiniGamesClient.Games.PoEcosystem.Models;
 
 using PoMiniGamesClient.Services.Auth;
@@ -45,6 +46,10 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     public event Action<string, byte[]>? SnapshotExported;
     /// <summary>A creature wants a cloud thought (handle, system prompt, user prompt).</summary>
     public event Func<int, string, string, Task<string?>>? CloudThoughtRequested;
+    /// <summary>Up to eight creatures want cloud thoughts in one server call; answered with the reply.</summary>
+    public event Func<EcoThoughtPromptItem[], Task<EcoThoughtBatchReply?>>? CloudThoughtBatchRequested;
+    /// <summary>The timeline grew (a landmark or a year row was added).</summary>
+    public event Action<EcoHistory>? HistoryReceived;
 
     /// <summary>Is there a world in IndexedDB to resume?</summary>
     public async ValueTask<EcoSaveInfo> ProbeSaveAsync()
@@ -110,6 +115,67 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     public ValueTask ExportSnapshotAsync(string slot) => SafeInvokeAsync("PoEcosystem.exportSnapshot", slot);
     /// <summary>Boot a world from gzip'd snapshot bytes. Ephemeral worlds never autosave over the local one.</summary>
     public ValueTask ImportSnapshotAsync(byte[] bytes, bool ephemeral) => SafeInvokeAsync("PoEcosystem.importSnapshot", bytes, ephemeral);
+
+    // ── council · lore · camera ──────────────────────────────────────────
+    /// <summary>Hand the sim a Chieftain Council answer to apply (the tribe store bounds it).</summary>
+    public ValueTask ApplyTreatyAsync(int tribeA, int tribeB, EcoTreatyReply reply) =>
+        SafeInvokeAsync("PoEcosystem.applyTreaty", new
+        {
+            tribeA,
+            tribeB,
+            action = reply.Action,
+            resource = reply.DemandedResource,
+            amount = reply.ResourceAmount,
+            peaceYears = reply.PeaceYears,
+            title = reply.Title,
+            narrative = reply.Narrative,
+        });
+    /// <summary>Record a line of lore on the island's timeline (kind "legend").</summary>
+    public ValueTask NoteAsync(string kind, string text, int tile = -1) => SafeInvokeAsync("PoEcosystem.note", kind, text, tile);
+    public ValueTask FlyToAsync(double x, double z) => SafeInvokeAsync("PoEcosystem.flyTo", x, z);
+    /// <summary>Keep the auto-director off while something (the tour) needs the camera still.</summary>
+    public ValueTask HoldDirectorAsync(bool on) => SafeInvokeAsync("PoEcosystem.holdDirector", on);
+
+    // ── viewing settings (engine-owned prefs) ────────────────────────────
+    public async ValueTask<EcoSettings?> SettingsAsync()
+    {
+        if (!_started) return null;
+        try
+        {
+            var json = await _js.InvokeAsync<string?>("JSON.stringify", await _js.InvokeAsync<object?>("PoEcosystem.settings"));
+            return string.IsNullOrWhiteSpace(json) ? null : Deserialize(json, EcoJsonContext.Default.EcoSettings);
+        }
+        catch (JSException) { return null; }
+        catch (JSDisconnectedException) { return null; }
+    }
+
+    public ValueTask SetQualityAsync(string tier) => SafeInvokeAsync("PoEcosystem.setQuality", tier);
+    public ValueTask SetPaletteAsync(string palette) => SafeInvokeAsync("PoEcosystem.setPalette", palette);
+    public ValueTask SetReducedMotionAsync(bool on) => SafeInvokeAsync("PoEcosystem.setReducedMotion", on);
+    public ValueTask SetBindingAsync(string action, string code) => SafeInvokeAsync("PoEcosystem.setBinding", action, code);
+    public ValueTask ResetBindingsAsync() => SafeInvokeAsync("PoEcosystem.resetBindings");
+
+    /// <summary>The next key the player presses (KeyboardEvent.code), or null on Escape / timeout.</summary>
+    public async ValueTask<string?> CaptureKeyAsync()
+    {
+        if (!_started) return null;
+        try { return await _js.InvokeAsync<string?>("PoEcosystem.captureKey"); }
+        catch (JSException) { return null; }
+        catch (JSDisconnectedException) { return null; }
+    }
+
+    /// <summary>Field-guide cards for the four species (iNaturalist + Wikipedia, cached a week).</summary>
+    public async ValueTask<EcoSpeciesCard[]> SpeciesInfoAsync()
+    {
+        try
+        {
+            if (!await LoadEngineAsync()) return [];
+            var json = await _js.InvokeAsync<string?>("PoEcosystem.speciesInfo");
+            return string.IsNullOrWhiteSpace(json) ? [] : Deserialize(json, EcoJsonContext.Default.EcoSpeciesCardArray) ?? [];
+        }
+        catch (JSException) { return []; }
+        catch (JSDisconnectedException) { return []; }
+    }
 
     // ── cloud thoughts ───────────────────────────────────────────────────
     /// <summary>Hand a server-side answer back to the creature that asked for it.</summary>
@@ -200,6 +266,28 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     [JSInvokable] public void OnSaved(int tick, string reason) => Saved?.Invoke(tick, reason);
     [JSInvokable] public void OnEngineError(string where, string message) => EngineError?.Invoke(where, message);
     [JSInvokable] public void OnSnapshotBytes(string slot, byte[] bytes) => SnapshotExported?.Invoke(slot, bytes);
+
+    [JSInvokable]
+    public void OnHistory(string json)
+    {
+        var history = Deserialize(json, EcoJsonContext.Default.EcoHistory);
+        if (history is not null) HistoryReceived?.Invoke(history);
+    }
+
+    /// <summary>A batch of creatures for the cloud model; returns the reply as JSON (null when refused).</summary>
+    [JSInvokable]
+    public async Task<string?> OnCloudThoughtBatch(string itemsJson)
+    {
+        var handler = CloudThoughtBatchRequested;
+        var items = Deserialize(itemsJson, EcoJsonContext.Default.EcoThoughtPromptItemArray);
+        if (handler is null || items is not { Length: > 0 }) return null;
+        try
+        {
+            var reply = await handler(items);
+            return reply is null ? null : JsonSerializer.Serialize(reply, EcoJsonContext.Default.EcoThoughtBatchReply);
+        }
+        catch { return null; }
+    }
 
     /// <summary>
     /// A creature's cloud-thought request. Answered by whoever subscribed (the viewer, which

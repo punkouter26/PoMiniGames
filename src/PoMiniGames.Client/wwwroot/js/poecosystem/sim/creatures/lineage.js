@@ -13,6 +13,10 @@ export function createLineage({ cap = 6000 } = {}) {
   let records = new Map();      // handle → record, insertion order = birth order
   let children = new Map();     // parent handle → [child handles]
   let dead = 0;
+  // Deepest generation ever born (founders are 0). Kept incrementally on each birth — the
+  // tree walk in tree() is per-creature, and the milestones want the island-wide record.
+  let maxGeneration = 0;
+  const genOf = (h) => (h === NONE || h === undefined ? -1 : records.get(h)?.g ?? 0);
 
   const link = (parent, child) => {
     if (parent === NONE || parent === undefined) return;
@@ -32,9 +36,12 @@ export function createLineage({ cap = 6000 } = {}) {
 
   const api = {
     get count() { return records.size; },
+    get maxGeneration() { return maxGeneration; },
     born({ handle, name, species, sex, mother, father, tick }) {
-      records.set(handle, { h: handle, name, species, sex, mother: mother ?? NONE, father: father ?? NONE, born: tick, died: -1, cause: '' });
+      const g = Math.max(genOf(mother), genOf(father)) + 1;
+      records.set(handle, { h: handle, name, species, sex, mother: mother ?? NONE, father: father ?? NONE, born: tick, died: -1, cause: '', g });
       link(mother, handle); link(father, handle);
+      if (g > maxGeneration) maxGeneration = g;
     },
     died(handle, tick, cause) {
       const r = records.get(handle);
@@ -92,11 +99,15 @@ export function createLineage({ cap = 6000 } = {}) {
     },
     getState() { return { records: [...records.values()].map(r => ({ ...r })), dead }; },
     setState(s) {
-      records = new Map(); children = new Map(); dead = 0;
+      records = new Map(); children = new Map(); dead = 0; maxGeneration = 0;
       for (const r of s?.records ?? []) {
-        records.set(r.h, { ...r });
+        // Records saved before generations were kept get theirs from the parents, which
+        // insertion (birth) order guarantees are already in the map.
+        const g = Number.isInteger(r.g) ? r.g : Math.max(genOf(r.mother), genOf(r.father)) + 1;
+        records.set(r.h, { ...r, g });
         link(r.mother, r.h); link(r.father, r.h);
         if (r.died >= 0) dead++;
+        if (g > maxGeneration) maxGeneration = g;
       }
     },
   };

@@ -19,9 +19,11 @@ public static class EcoSpeciesInfo
 
     public static readonly string[] Plural = ["Rabbits", "Deer", "Wolves", "Humans"];
 
+    // Read through tokens (poecosystem.css), so the colour-blind palette in Settings can
+    // re-point all four without touching a component.
     public static readonly string[] Colour =
     [
-        "var(--accent-warning)", "var(--accent-success)", "var(--accent-danger)", "var(--accent)",
+        "var(--poeco-species-0)", "var(--poeco-species-1)", "var(--poeco-species-2)", "var(--poeco-species-3)",
     ];
 
     /// <summary>The five heritable traits, in the sim's index order (sim/core/config.js TRAITS).</summary>
@@ -61,7 +63,44 @@ public sealed record EcoStats(
     BuildingStateDto[]? Buildings = null,
     TradeCaravanDto[]? Caravans = null,
     int Season = 0,
-    double SeasonProgress = 0.0);
+    double SeasonProgress = 0.0,
+    EcoWeather? Weather = null,
+    int[]? Sick = null,
+    EcoVariety[]? Varieties = null,
+    int MaxGeneration = 0,
+    EcoBiodiversity? Biodiversity = null,
+    EcoTreaty[]? Treaties = null);
+
+/// <summary>The island's weather (sim/events/weather.js). Kind: 0 clear · 1 rain · 2 storm · 3 drought · 4 snow.</summary>
+public sealed record EcoWeather(int Kind, string Name, double Intensity, double Wetness, int[]? Counts);
+
+/// <summary>A named variety: a species whose mean personality drifted far enough to earn a name.</summary>
+public sealed record EcoVariety(int Species, string Name, int Year);
+
+/// <summary>Shannon diversity H', Pielou evenness J and species richness S.</summary>
+public sealed record EcoBiodiversity(double Shannon, double Evenness, int Richness);
+
+/// <summary>A pact the Chieftain Council wrote and the tribe store applied.</summary>
+public sealed record EcoTreaty(int Tick, int TribeA, int TribeB, string Action, string Title, string Narrative, int Paid, string Resource, int Years);
+
+/// <summary>One timeline marker: an event worth remembering, where it happened (tile, -1 if nowhere).</summary>
+public sealed record EcoLandmark(int Id, int Tick, int Year, string Kind, string Text, int Tile);
+
+/// <summary>The timeline's data: landmarks plus one row per year [year, rabbits, deer, wolves, humans, tech, H'×1000].</summary>
+public sealed record EcoHistory(EcoLandmark[] Landmarks, int[][] Years);
+
+/// <summary>A field-guide card for the Almanac (host/naturalist.js: iNaturalist + Wikipedia).</summary>
+public sealed record EcoSpeciesCard(int Species, string CommonName, string ScientificName, string PhotoUrl, string Attribution, string License, string Url, int Observations, string Summary);
+
+/// <summary>The engine-owned viewing preferences the Settings panel edits.</summary>
+public sealed record EcoSettings(
+    string Quality,
+    string Palette,
+    bool ReducedMotion,
+    Dictionary<string, string[]> Bindings,
+    Dictionary<string, string[]> Defaults,
+    string[] Bindable,
+    bool Gamepad);
 
 /// <summary>
 /// Lifetime world counters for the dashboard's almanac panel (sim/world.js). Stages is the
@@ -95,7 +134,10 @@ public sealed record EcoNaturalEvents(int Lightning, int Rockslide, int Eruption
 /// One line in the world log / HUD toasts. Births carry the child (Creature) and both
 /// parents; deaths carry the creature — that is what lets the watch-list react.
 /// </summary>
-public sealed record EcoEvent(int Id, int Tick, string Kind, string Text, int? Species, string? Cause, int? Creature = null, int? Mother = null, int? Father = null, int? Level = null);
+public sealed record EcoEvent(int Id, int Tick, string Kind, string Text, int? Species, string? Cause, int? Creature = null, int? Mother = null, int? Father = null, int? Level = null,
+    // Diplomacy entries carry the pair and the moment (sim/tribe/diplomacy.js) so the page can
+    // ask the council what the peace or the war actually says; weather entries carry the kind.
+    string? Action = null, int? TribeA = null, int? TribeB = null, string? Reason = null, int? Tile = null, int? Weather = null);
 
 /// <summary>Everything the inspector popover shows about the creature under the crosshair.</summary>
 public sealed record EcoDetail(
@@ -123,7 +165,8 @@ public sealed record EcoDetail(
     bool Watched = false,
     int Children = 0,
     int Descendants = 0,
-    int Generation = 0);
+    int Generation = 0,
+    bool Sick = false);
 
 public sealed record EcoNudge(string Trait, double Delta);
 
@@ -165,5 +208,11 @@ public sealed record EcoSaveInfo(bool Exists, int Seed, int Tick, int Year, long
 [JsonSerializable(typeof(BuildingStateDto))]
 [JsonSerializable(typeof(TradeCaravanDto[]))]
 [JsonSerializable(typeof(TradeCaravanDto))]
+[JsonSerializable(typeof(EcoHistory))]
+[JsonSerializable(typeof(EcoSettings))]
+[JsonSerializable(typeof(EcoSpeciesCard[]))]
+[JsonSerializable(typeof(EcoThoughtPromptItem[]))]
+[JsonSerializable(typeof(EcoThoughtBatchReply))]
+[JsonSerializable(typeof(EcoTreatyReply))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true)]
 internal sealed partial class EcoJsonContext : System.Text.Json.Serialization.JsonSerializerContext;

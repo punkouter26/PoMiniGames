@@ -1,0 +1,211 @@
+@using System.Globalization
+@* The island's history (feature #9, 2026-09-23). One row per year from the sim (populations,
+   the tribe's tier and Shannon diversity), with the landmarks — tech, wars and pacts, storms
+   and droughts, outbreaks, extinctions, new varieties — as markers along the top. A window
+   (start year + span) scrubs through it; clicking a landmark that happened somewhere flies
+   the camera there. Native SVG: the rows are at most two thousand, which a polyline draws
+   without help, and the no-heavy-libraries rule stands. *@
+<div class="poeco-timeline">
+    @if (Rows.Length < 2)
+    {
+        <p class="poeco-note">The timeline fills in as the years pass — one row per year, from the island's first.</p>
+    }
+    else
+    {
+        <div class="poeco-timeline-controls">
+            <label class="poeco-field">
+                <span>From year @WindowStart</span>
+                <input type="range" min="@MinYear" max="@Math.Max(MinYear, MaxYear - 1)" value="@WindowStart" @oninput="OnStart" aria-label="First year shown" />
+            </label>
+            <label class="poeco-field">
+                <span>Span</span>
+                <select value="@_span" @onchange="OnSpan">
+                    @foreach (var span in Spans)
+                    {
+                        <option value="@span">@(span == 0 ? "All years" : $"{span} years")</option>
+                    }
+                </select>
+            </label>
+            <label class="poeco-switch">
+                <input type="checkbox" checked="@_follow" @onchange="e => _follow = e.Value is true" />
+                <span>Follow the present</span>
+            </label>
+        </div>
+
+        <svg viewBox="0 0 @W @H" preserveAspectRatio="none" class="poeco-chart poeco-timeline-chart" role="img" aria-label="@Summary">
+            <line x1="0" y1="@(H - 1)" x2="@W" y2="@(H - 1)" class="poeco-chart-axis" />
+            @foreach (var (x, year) in YearTicks)
+            {
+                <line x1="@F(x)" y1="@MarkTop" x2="@F(x)" y2="@H" class="poeco-timeline-grid" />
+                @* Razor reserves <text>, so the SVG label is emitted as markup. *@
+                @((MarkupString)$"<text x=\"{F(x + 3)}\" y=\"{H - 4}\" class=\"poeco-timeline-label\">Y{year}</text>")
+            }
+            @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
+            {
+                var pts = SeriesPoints(s + 1);
+                if (pts.Length > 0)
+                {
+                    <polyline class="poeco-chart-line" style="stroke: @EcoSpeciesInfo.ColourOf(s)" points="@pts" />
+                }
+            }
+            @if (_showDiversity)
+            {
+                <polyline class="poeco-chart-line poeco-timeline-diversity" points="@DiversityPoints" />
+            }
+            @foreach (var lm in VisibleLandmarks)
+            {
+                var x = XOf(lm.Year + FractionOfYear(lm));
+                <g class="poeco-timeline-mark poeco-mark--@KindClass(lm.Kind)" @onclick="() => SelectAsync(lm)">
+                    <title>Y@(lm.Year) · @lm.Text</title>
+                    <line x1="@F(x)" y1="0" x2="@F(x)" y2="@MarkTop" />
+                    <circle cx="@F(x)" cy="5" r="@(lm.Id == _selected?.Id ? 4.5 : 3)" />
+                </g>
+            }
+        </svg>
+
+        <div class="poeco-chart-legend">
+            @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
+            {
+                <div class="poeco-legend-item" style="border-left: 3px solid @EcoSpeciesInfo.ColourOf(s);">
+                    <span class="poeco-legend-label">@EcoSpeciesInfo.PluralOf(s)</span>
+                </div>
+            }
+            <label class="poeco-legend-item poeco-timeline-diversity-key">
+                <input type="checkbox" checked="@_showDiversity" @onchange="e => _showDiversity = e.Value is true" />
+                <span class="poeco-legend-label" title="Shannon diversity H′ (0 = one species, 1.39 = all four equally common)">Diversity H′</span>
+            </label>
+        </div>
+
+        <div class="poeco-timeline-filters" role="group" aria-label="Landmark kinds">
+            @foreach (var (kind, label) in Kinds)
+            {
+                var on = !_hidden.Contains(kind);
+                <button type="button" class="poeco-pill poeco-mark--@kind @(on ? "poeco-pill--on" : "")" aria-pressed="@(on ? "true" : "false")"
+                        @onclick="() => Toggle(kind)">@label</button>
+            }
+        </div>
+
+        @if (_selected is { } sel)
+        {
+            <p class="poeco-timeline-selected">
+                <strong>Year @sel.Year</strong> · @sel.Text
+                @if (sel.Tile >= 0)
+                {
+                    <button type="button" class="poeco-btn poeco-btn--sm" @onclick="() => OnFly.InvokeAsync(sel.Tile)">Fly there</button>
+                }
+            </p>
+        }
+
+        <ol class="poeco-log poeco-timeline-list">
+            @foreach (var lm in VisibleLandmarks.AsEnumerable().Reverse().Take(80))
+            {
+                <li class="@(lm.Tile >= 0 ? "poeco-timeline-item--place" : "")" @onclick="() => SelectAsync(lm)">
+                    <span class="poeco-log-tick">Y@(lm.Year)</span> <i class="poeco-timeline-dot poeco-mark--@KindClass(lm.Kind)" aria-hidden="true"></i> @lm.Text
+                </li>
+            }
+        </ol>
+    }
+</div>
+
+@code {
+    private const int W = 640;
+    private const int H = 210;
+    private const int MarkTop = 12;
+    private static readonly int[] Spans = [10, 25, 50, 100, 0];
+    private static readonly (string Kind, string Label)[] Kinds =
+    [
+        ("tech", "Tech"), ("diplomacy", "Diplomacy"), ("weather", "Weather"), ("outbreak", "Outbreaks"),
+        ("extinction", "Extinctions"), ("variety", "Varieties"), ("eruption", "Eruptions"), ("legend", "Legends"),
+    ];
+    private static readonly double MaxShannon = Math.Log(4);
+
+    [Parameter] public EcoHistory? History { get; set; }
+    [Parameter] public int TicksPerYear { get; set; } = 600;
+    [Parameter] public EventCallback<int> OnFly { get; set; }
+
+    private int _span = 25;
+    private int _start;
+    private bool _follow = true;
+    private bool _showDiversity = true;
+    private EcoLandmark? _selected;
+    private readonly HashSet<string> _hidden = [];
+
+    private int[][] Rows => History?.Years is { Length: > 0 } y ? y : [];
+    private int MinYear => Rows.Length > 0 ? Rows[0][0] : 0;
+    private int MaxYear => Rows.Length > 0 ? Rows[^1][0] : 0;
+    private int Span => _span == 0 ? Math.Max(1, MaxYear - MinYear) : _span;
+    private int WindowStart => _follow ? Math.Max(MinYear, MaxYear - Span) : Math.Clamp(_start, MinYear, Math.Max(MinYear, MaxYear - 1));
+    private int WindowEnd => Math.Min(MaxYear, WindowStart + Span);
+
+    private IEnumerable<int[]> WindowRows => Rows.Where(r => r[0] >= WindowStart && r[0] <= WindowEnd);
+
+    private double XOf(double year) => WindowEnd == WindowStart ? 0 : (year - WindowStart) / (WindowEnd - WindowStart) * W;
+
+    private int PeakCount => Math.Max(1, WindowRows.SelectMany(r => r.Skip(1).Take(EcoSpeciesInfo.Count)).DefaultIfEmpty(1).Max());
+
+    private string SeriesPoints(int column)
+    {
+        var peak = PeakCount;
+        var top = MarkTop + 4; var bottom = H - 14;
+        return string.Join(' ', WindowRows.Select(r =>
+            $"{F(XOf(r[0]))},{F(bottom - (bottom - top) * (double)r[column] / peak)}"));
+    }
+
+    private string DiversityPoints
+    {
+        get
+        {
+            var top = MarkTop + 4; var bottom = H - 14;
+            return string.Join(' ', WindowRows.Where(r => r.Length > 6).Select(r =>
+                $"{F(XOf(r[0]))},{F(bottom - (bottom - top) * Math.Min(1, r[6] / 1000.0 / MaxShannon))}"));
+        }
+    }
+
+    private IEnumerable<(double X, int Year)> YearTicks
+    {
+        get
+        {
+            var span = WindowEnd - WindowStart;
+            var step = span <= 12 ? 2 : span <= 30 ? 5 : span <= 60 ? 10 : span <= 150 ? 25 : 50;
+            for (var y = (WindowStart + step - 1) / step * step; y <= WindowEnd; y += step)
+                yield return (XOf(y), y);
+        }
+    }
+
+    private List<EcoLandmark> VisibleLandmarks => (History?.Landmarks ?? [])
+        .Where(l => l.Year >= WindowStart && l.Year <= WindowEnd && !_hidden.Contains(KindClass(l.Kind)))
+        .ToList();
+
+    // Landmarks carry the year they fell in; the tick places them inside it.
+    private double FractionOfYear(EcoLandmark lm) => TicksPerYear <= 0 ? 0 : (lm.Tick % TicksPerYear) / (double)TicksPerYear;
+
+    // Treaties and wars read as one family on the chart.
+    private static string KindClass(string kind) => kind == "treaty" ? "diplomacy" : kind;
+
+    private string Summary => Rows.Length < 2 ? "No history yet"
+        : $"Years {WindowStart} to {WindowEnd}: {VisibleLandmarks.Count} landmarks. Latest counts " +
+          string.Join(", ", Enumerable.Range(0, EcoSpeciesInfo.Count).Select(s => $"{Rows[^1][s + 1]} {EcoSpeciesInfo.PluralOf(s).ToLowerInvariant()}"));
+
+    private void OnStart(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var v)) { _start = v; _follow = false; }
+    }
+
+    private void OnSpan(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var v)) { _span = v; _start = WindowStart; }
+    }
+
+    private void Toggle(string kind)
+    {
+        if (!_hidden.Remove(kind)) _hidden.Add(kind);
+    }
+
+    private async Task SelectAsync(EcoLandmark lm)
+    {
+        _selected = lm;
+        if (lm.Tile >= 0) await OnFly.InvokeAsync(lm.Tile);
+    }
+
+    private static string F(double v) => v.ToString("0.#", CultureInfo.InvariantCulture);
+}

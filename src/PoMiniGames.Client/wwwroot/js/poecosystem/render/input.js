@@ -5,15 +5,55 @@
 //
 // Mouse look has TWO paths on purpose. Pointer lock is the good one (infinite travel, no
 // cursor), but it only exists after a click the browser accepts as a gesture, and it is
-// dropped by every Esc — closing the dashboard, dismissing the decree console — after
+// dropped by every Esc — closing the dashboard, closing a panel — after
 // which Chrome refuses to re-lock for about a second. Until 2026-09-16 that was the only
 // path, so a player who simply moved the mouse, or clicked during the re-lock cooldown,
 // saw a camera that ignored them entirely (reported as "the mouse is not moving the
 // camera view"). Left-drag now looks as well: it needs no lock, no gesture budget and no
 // permission, and a press that never travels past DRAG_SLOP still falls through to the
 // lock request, so the old click-to-free-look gesture is unchanged.
-export function createInput(canvas, { onAction = () => {}, onLook = () => {} } = {}) {
+//
+// 2026-09-23: keys are bindings, not literals — every held and one-shot action maps to one
+// or more KeyboardEvent.code values (Settings → Controls rebinds the first of each), and a
+// gamepad is polled in consume() (left stick moves, right stick looks). Tab, Escape
+// and the speed digits stay fixed: they are the HUD's own shortcuts and the page's docs.
+export const DEFAULT_BINDINGS = Object.freeze({
+  forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
+  run: ['ShiftLeft', 'ShiftRight'], rise: ['Space'], sink: ['ControlLeft', 'ControlRight'],
+  fly: ['KeyF'], inspect: ['KeyE'], follow: ['KeyT'], director: ['KeyC'], pip: ['KeyP'],
+});
+export const BINDABLE = Object.freeze(Object.keys(DEFAULT_BINDINGS));
+const ONE_SHOT = Object.freeze(['fly', 'inspect', 'follow', 'director', 'pip']);
+const FIXED = new Set(['Tab', 'Escape', 'Digit0', 'Digit1', 'Digit2', 'Digit3']);
+
+/** Defaults with the player's overrides laid over them (unknown actions and fixed keys ignored). */
+export function mergeBindings(overrides) {
+  const out = {};
+  for (const a of BINDABLE) out[a] = DEFAULT_BINDINGS[a].slice();
+  if (overrides && typeof overrides === 'object') {
+    for (const [a, codes] of Object.entries(overrides)) {
+      if (!out[a] || !Array.isArray(codes)) continue;
+      const clean = codes.filter(c => typeof c === 'string' && c && !FIXED.has(c)).slice(0, 3);
+      if (clean.length) out[a] = clean;
+    }
+  }
+  return out;
+}
+
+// Gamepad (standard mapping): A inspect, B float/walk, X follow, Y dashboard, LB/RB sink/rise,
+// triggers run, Start cinematic.
+const PAD = Object.freeze({ A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, START: 9, UP: 12, DOWN: 13 });
+const PAD_DEADZONE = 0.18;
+const PAD_LOOK_PX = 13;   // pixels of mouse-look per frame at full stick deflection
+
+export function createInput(canvas, { onAction = () => {}, onLook = () => {}, bindings = null } = {}) {
   const keys = new Set();
+  let binds = mergeBindings(bindings);
+  let codeToAction = new Map();
+  const reindex = () => { codeToAction = new Map(); for (const a of BINDABLE) for (const c of binds[a]) codeToAction.set(c, a); };
+  reindex();
+  const held = (action) => binds[action].some(c => keys.has(c));
+  const pad = { buttons: [], look: false };
   const intent = { forward: 0, right: 0, run: false, jump: false, up: 0 };
   const touch = { active: false, moveId: null, lookId: null, mx: 0, mz: 0, lastX: 0, lastY: 0 };
   // Left-button drag-look. `moved` latches once the press travels past the slop, which is
@@ -30,11 +70,36 @@ export function createInput(canvas, { onAction = () => {}, onLook = () => {} } =
   };
 
   function refresh() {
-    intent.forward = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
-    intent.right = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
-    intent.run = keys.has('ShiftLeft') || keys.has('ShiftRight');
-    intent.up = (keys.has('Space') ? 1 : 0) - (keys.has('ControlLeft') || keys.has('ControlRight') ? 1 : 0);
+    intent.forward = (held('forward') ? 1 : 0) - (held('back') ? 1 : 0);
+    intent.right = (held('right') ? 1 : 0) - (held('left') ? 1 : 0);
+    intent.run = held('run');
+    intent.up = (held('rise') ? 1 : 0) - (held('sink') ? 1 : 0);
     if (touch.active) { intent.forward = touch.mz; intent.right = touch.mx; }
+  }
+
+  /**
+   * Poll the first connected gamepad. Folded into the intent only while a stick or button is
+   * actually in use, so a pad resting on the desk never fights the keyboard.
+   */
+  function pollPad() {
+    const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : null;
+    let gp = null;
+    if (pads) for (const p of pads) if (p && p.connected) { gp = p; break; }
+    if (!gp) return;
+    const axis = (k) => { const v = gp.axes[k] ?? 0; return Math.abs(v) < PAD_DEADZONE ? 0 : v; };
+    const btn = (k) => { const b = gp.buttons[k]; return !!b && (b.pressed || b.value > 0.5); };
+    const edge = (k) => { const now = btn(k); const was = !!pad.buttons[k]; pad.buttons[k] = now; return now && !was; };
+    const lx = axis(0); const ly = axis(1); const rx = axis(2); const ry = axis(3);
+    if (lx || ly) { intent.right = lx; intent.forward = -ly; }
+    if (btn(PAD.LT) || btn(PAD.RT)) intent.run = true;
+    const up = (btn(PAD.RB) || btn(PAD.UP) ? 1 : 0) - (btn(PAD.LB) || btn(PAD.DOWN) ? 1 : 0);
+    if (up) intent.up = up;
+    if (rx || ry) onLook(rx * PAD_LOOK_PX, ry * PAD_LOOK_PX);
+    if (edge(PAD.A)) onAction('inspect');
+    if (edge(PAD.B)) onAction('fly');
+    if (edge(PAD.X)) onAction('follow');
+    if (edge(PAD.Y)) onAction('dashboard');
+    if (edge(PAD.START)) onAction('director');
   }
 
   // Digit keys map to the speed ladder; note 3 selects 4×.
@@ -45,22 +110,16 @@ export function createInput(canvas, { onAction = () => {}, onLook = () => {} } =
     const c = code(e);
     if (c === 'Tab') { e.preventDefault(); onAction('dashboard'); return; }
     if (c === 'Escape') { onAction('escape'); return; }
-    // Slash summons the Divine Decree console (and never types into it — the input's own
-    // isTyping guard stops this handler while it is focused, so Slash only ever opens).
-    if (c === 'Slash') { e.preventDefault(); onAction('decree'); return; }
     if (keys.has(c)) return;
     keys.add(c);
-    if (c === 'Space') { e.preventDefault(); intent.jump = true; }
-    if (c === 'KeyF') onAction('fly');
-    if (c === 'KeyE') onAction('inspect');
-    if (c === 'KeyT') onAction('follow');
-    if (c === 'KeyM') onAction('map');
-    if (c === 'KeyC') onAction('director');
-    if (c === 'KeyP') onAction('pip');
+    const action = codeToAction.get(c);
+    if (action === 'rise') { e.preventDefault(); intent.jump = true; }
+    if (action && ONE_SHOT.includes(action)) onAction(action);
+    if (c === 'KeyM' && !action) onAction('map');
     if (c in SPEED_KEYS) onAction('speed', SPEED_KEYS[c]);
     refresh();
   };
-  const onKeyUp = (e) => { keys.delete(code(e)); if (code(e) === 'Space') intent.jump = false; refresh(); };
+  const onKeyUp = (e) => { keys.delete(code(e)); if (codeToAction.get(code(e)) === 'rise') intent.jump = false; refresh(); };
   const onBlur = () => { keys.clear(); drag.active = false; drag.moved = false; refresh(); };
 
   // Both mouse paths land here. While locked the browser hands us movementX/Y directly;
@@ -154,8 +213,16 @@ export function createInput(canvas, { onAction = () => {}, onLook = () => {} } =
   return {
     intent,
     get locked() { return locked; },
-    /** Jump is edge-triggered: the controller consumes it once. */
-    consume() { const snapshot = { ...intent }; intent.jump = false; return snapshot; },
+    /** Jump is edge-triggered: the controller consumes it once. The gamepad is read here. */
+    consume() {
+      refresh();
+      pollPad();
+      const snapshot = { ...intent };
+      intent.jump = false;
+      return snapshot;
+    },
+    get bindings() { return mergeBindings(binds); },
+    setBindings(b) { binds = mergeBindings(b); reindex(); keys.clear(); refresh(); },
     setTouchVector(x, z) { touch.active = true; touch.mx = x; touch.mz = z; refresh(); },
     releaseTouch() { touch.active = false; touch.mx = 0; touch.mz = 0; refresh(); },
     dispose() {

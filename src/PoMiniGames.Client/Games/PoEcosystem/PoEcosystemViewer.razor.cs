@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using PoMiniGames.Shared.Games.PoEcosystem;
+using PoMiniGamesClient.Games.PoEcosystem.Components;
 using PoMiniGamesClient.Games.PoEcosystem.Models;
 using PoMiniGamesClient.Games.PoEcosystem.Services;
 using PoMiniGamesClient.Services.Auth;
@@ -25,6 +26,14 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     // Cloud thoughts spend the caller's daily AI allowance, so a session gets a fixed
     // number and then falls back to instinct templates (see thoughtBridge.js 'cloud').
     private const int CloudThoughtsPerSession = 60;
+    // The Chieftain Council and the Herald are server model calls too. They are the clans'
+    // own voice (the viewer never asks for them), but each spends the viewer's allowance,
+    // so a session gets a handful and a minimum spacing.
+    private const int TreatiesPerSession = 6;
+    private const int LegendsPerSession = 8;
+    private static readonly TimeSpan TreatySpacing = TimeSpan.FromSeconds(30);
+    private const string TourDoneKey = "poeco:tourDone";
+    private const int TicksPerYear = 600;   // YEAR_SECONDS / TICK_SECONDS in sim/core/config.js
 
     [Parameter] public bool IsDemo { get; set; }
 
@@ -37,7 +46,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
     private static readonly (string Key, string What)[] KeyLegend =
     [
-        ("WASD", "move"), ("Shift", "run"), ("Space/Ctrl", "rise/sink"), ("F", "float/walk"), ("E", "inspect"), ("C", "cinematic"), ("/", "decree"), ("Tab", "dashboard"),
+        ("WASD", "move"), ("Shift", "run"), ("Space/Ctrl", "rise/sink"), ("F", "float/walk"), ("E", "inspect"), ("C", "cinematic"), ("Tab", "dashboard"),
     ];
 
     private readonly List<EcoEvent> _log = new(LogCapacity);
@@ -77,13 +86,26 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private int _chronicledToYear;          // the last year a saga covered (or was offered for)
     private int _chronicleOfferYear = -1;   // a decade rolled over and no saga was written yet
     private HashSet<int> _watched = [];
-    private string _decreeInput = "";
-    private bool _decreeBusy;
-    private string? _decreeFeedback;
-    private bool _decreeOpen;                       // the decree console is summoned, not parked
-    private ElementReference _decreeInputRef;
     private bool _lockHintSeen;                     // the drag/free-look hint shows once per browser
     private List<EcoCultureProfile> _cultures = [];
+
+    // ── 2026-09-23: timeline, field notes, council/herald, tour, viewing settings ──
+    private EcoHistory? _history;
+    private readonly EcoMilestoneTracker _milestones = new();
+    private EcoSpeciesCard[] _cards = [];
+    private bool _cardsRequested;
+    private readonly List<(int Year, string Epithet, string Legend)> _legends = [];
+    private int _treatiesAsked;
+    private int _legendsAsked;
+    private DateTimeOffset _lastTreatyAt = DateTimeOffset.MinValue;
+    private EcoSettings? _viewSettings;
+    private string? _capturing;                     // the action whose key is being rebound
+    private bool _tourActive;
+    private int _tourStep;
+    private bool _tourStepDone;
+
+    /// <summary>The shared seed of the day (UTC), so everyone can study the same island.</summary>
+    private static string DailySeed => $"daily-{DateTime.UtcNow:yyyy-MM-dd}";
 
     protected override void OnInitialized()
     {
@@ -102,6 +124,8 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         Interop.EngineError += OnEngineError;
         Interop.SnapshotExported += OnSnapshotExported;
         Interop.CloudThoughtRequested += OnCloudThoughtAsync;
+        Interop.CloudThoughtBatchRequested += OnCloudThoughtBatchAsync;
+        Interop.HistoryReceived += OnHistory;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -143,7 +167,9 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             demo: IsDemo);
         if (!ok) _error = "The island engine could not start. Your browser may not support WebGL2.";
         _sound = await Interop.SoundEnabledAsync();
+        _viewSettings = await Interop.SettingsAsync();
         _ = HideKeysLaterAsync();
+        StartTourIfNew();
         await InvokeAsync(StateHasChanged);
     }
 
@@ -165,6 +191,9 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         _chronicles.Clear();
         _chronicledToYear = 0;
         _chronicleOfferYear = -1;
+        _history = null;
+        _legends.Clear();
+        _milestones.ResetWorld();
         _ = LoadCultureAsync();
         InvokeAsync(StateHasChanged);
     }
@@ -189,7 +218,24 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             _chronicleOfferYear = decade;
             Toasts.Show($"Year {decade}: a decade has passed. Open the dashboard to write its chronicle.");
         }
+        AnnounceNotes(_milestones.Observe(stats));
         InvokeAsync(StateHasChanged);
+    }
+
+    private void OnHistory(EcoHistory history)
+    {
+        _history = history;
+        if (_dashboardOpen) InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>A field note was witnessed: a toast and a soft chime, never more.</summary>
+    private void AnnounceNotes(List<EcoMilestones.Milestone> notes)
+    {
+        foreach (var m in notes)
+        {
+            Toasts.Show($"{m.Icon} Field note: {m.Title} — {m.What}", ToastType.Success);
+            _ = Feedback.CrystalPingAsync().AsTask();
+        }
     }
 
     private void OnEvents(IReadOnlyList<EcoEvent> events)
@@ -202,10 +248,56 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             // tribe climbing a tier is worth one for everybody.
             if (ev.Kind == "death" && ev.Creature is { } dead && _watched.Contains(dead)) Toasts.Show(ev.Text, ToastType.Warning);
             else if (ev.Kind == "birth" && ((ev.Mother is { } m && _watched.Contains(m)) || (ev.Father is { } f && _watched.Contains(f)))) Toasts.Show(ev.Text, ToastType.Success);
-            else if (ev.Kind == "tech") Toasts.Show(ev.Text, ToastType.Success);
+            else if (ev.Kind == "tech") { Toasts.Show(ev.Text, ToastType.Success); _ = RecordLegendAsync(ev); }
+            else if (ev.Kind == "outbreak" || ev.Kind == "variety" || ev.Kind == "extinction") Toasts.Show(ev.Text, ToastType.Info);
+            else if (ev.Kind == "diplomacy" && ev.Action is "war" or "peace") _ = ConveneCouncilAsync(ev);
+            else if (ev.Kind == "treaty") Toasts.Show(ev.Text, ToastType.Info);
         }
+        AnnounceNotes(_milestones.Observe(events));
         InvokeAsync(StateHasChanged);
     }
+
+    // ── the Chieftain Council and the Herald (server models; the clans' voice, not ours) ──
+    /// <summary>
+    /// A war or a peace just happened between two clans: ask the council what the pact says
+    /// and hand the answer to the sim, which bounds and applies it. The viewer never starts
+    /// this — the sim's own diplomacy does — so the island stays unsteered.
+    /// </summary>
+    private async Task ConveneCouncilAsync(EcoEvent ev)
+    {
+        if (!Auth.IsAuthenticated || _visiting || _treatiesAsked >= TreatiesPerSession) return;
+        if (DateTimeOffset.UtcNow - _lastTreatyAt < TreatySpacing) return;
+        if (ev.TribeA is not { } a || ev.TribeB is not { } b || _stats?.Tribes is not { } tribes) return;
+        var ta = tribes.FirstOrDefault(t => t.Id == a);
+        var tb = tribes.FirstOrDefault(t => t.Id == b);
+        if (ta is null || tb is null) return;
+        _treatiesAsked++;
+        _lastTreatyAt = DateTimeOffset.UtcNow;
+        var recent = _log.TakeLast(12).Where(e => e.Kind is "diplomacy" or "trade" or "treaty").Select(e => e.Text).ToList();
+        var reply = await Api.NegotiateTreatyAsync(new EcoTreatyRequest(Seed, _stats.Year, ta, tb, ev.Reason ?? ev.Text, recent));
+        if (reply is null) return;
+        await Interop.ApplyTreatyAsync(a, b, reply);
+    }
+
+    /// <summary>The tribe climbed a tier: the Herald names the moment, and it joins the timeline.</summary>
+    private async Task RecordLegendAsync(EcoEvent ev)
+    {
+        if (!Auth.IsAuthenticated || _visiting || _legendsAsked >= LegendsPerSession || _stats is null) return;
+        _legendsAsked++;
+        var tribe = ev.Text.Contains(" advanced to ", StringComparison.Ordinal) ? ev.Text[..ev.Text.IndexOf(" advanced to ", StringComparison.Ordinal)] : _stats.Tech?.Tribe ?? "The tribe";
+        var milestone = ev.Level is { } level ? TechName(level) : "Advancement";
+        var lore = await Api.GenerateMilestoneLoreAsync(new EcoMilestoneLoreRequest(Seed, _stats.Year, milestone, tribe, ev.Text));
+        if (lore is null) return;
+        _legends.Insert(0, (_stats.Year, lore.Epithet, lore.OralLegend));
+        if (_legends.Count > 20) _legends.RemoveAt(_legends.Count - 1);
+        await Interop.NoteAsync("legend", $"{lore.Epithet} — {lore.OralLegend}", ev.Tile ?? -1);
+        Toasts.Show($"📜 {lore.Epithet}", ToastType.Info);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string TechName(int level) => level switch { 1 => "Fire", 2 => "Palisade", 3 => "Farming", 4 => "Watchtower", _ => "Camp" };
+
+    private int Seed => int.TryParse(_seedInput, out var s) ? s : 0;
 
     private void OnThoughts(IReadOnlyList<EcoThought> thoughts)
     {
@@ -217,6 +309,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private void OnDetail(EcoDetail? detail)
     {
         _detail = detail;
+        if (detail is not null) TourSignal("inspect");
         InvokeAsync(StateHasChanged);
     }
 
@@ -250,17 +343,18 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     {
         switch (action)
         {
-            case "dashboard": _dashboardOpen = !_dashboardOpen; break;
-            case "decree":
-                _decreeOpen = !_decreeOpen;
-                if (_decreeOpen) _ = FocusDecreeInputAsync();
+            case "dashboard":
+                _dashboardOpen = !_dashboardOpen;
+                if (_dashboardOpen) TourSignal("dashboard");
                 break;
             case "escape":
                 if (_lineageOpen) _lineageOpen = false;
                 else if (_dashboardOpen) _dashboardOpen = false;
-                else if (_decreeOpen) CloseDecree();
                 else _detail = null;
                 break;
+            case "tour": if (value is not null) TourSignal(value); break;
+            case "contextLost": Toasts.Show("The graphics driver reset — restoring the view…", ToastType.Warning); break;
+            case "contextRestored": Toasts.Show("View restored.", ToastType.Success); break;
             case "pointerLock":
                 _pointerLocked = value == "True" || value == "true";
                 // The lock hint retires itself after the very first successful lock.
@@ -277,6 +371,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
     private void OnDirector(bool on, string caption)
     {
+        if (on && !_directorOn) TourSignal("director");
         _directorOn = on;
         _directorCaption = caption;
         InvokeAsync(StateHasChanged);
@@ -292,6 +387,11 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     {
         // Physics or model failures degrade the world; they never take the page down.
         if (where is "physics" or "cannon") return;
+        if (where == "worker-crash")
+        {
+            Toasts.Show("The simulation stopped unexpectedly and was resumed from its last autosave.", ToastType.Warning);
+            return;
+        }
         _error = $"{where}: {message}";
         InvokeAsync(StateHasChanged);
     }
@@ -373,33 +473,34 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private async Task SetCameraPresetAsync(CameraPreset preset)
     {
         await Feedback.CueAsync("poecosystem", "godFinger");
-        switch (preset)
+        if (preset == CameraPreset.IslandOverview)
         {
-            case CameraPreset.IslandOverview:
-                await Interop.SetCameraPoseAsync(100, 110, 200, -0.85, 0);
-                break;
-            case CameraPreset.AmberClan:
-                await Interop.SetCameraPoseAsync(50, 45, 90, -0.65, 0);
-                break;
-            case CameraPreset.CobaltClan:
-                await Interop.SetCameraPoseAsync(140, 45, 90, -0.65, 0);
-                break;
-            case CameraPreset.VerdantClan:
-                await Interop.SetCameraPoseAsync(100, 45, 140, -0.65, 0);
-                break;
+            await Interop.SetCameraPoseAsync(100, 110, 200, -0.85, 0);
+            return;
         }
+        // Tribe ids are 0-based in the sim (Amber 0, Cobalt 1, Verdant 2).
+        await FocusTribeByIdAsync((int)preset - 1);
     }
 
+    /// <summary>
+    /// Fly to a clan's actual camp. The clans are placed per seed (sim/tribe/tribeStore.js),
+    /// so the camera reads their centre from the stats; the fixed poses this replaced sent
+    /// every island's "Amber Clan" button to the same empty field, and mapped the sim's
+    /// 0-based ids one clan off.
+    /// </summary>
     private async Task FocusTribeByIdAsync(int tribeId)
     {
-        var preset = tribeId switch
-        {
-            1 => CameraPreset.AmberClan,
-            2 => CameraPreset.CobaltClan,
-            3 => CameraPreset.VerdantClan,
-            _ => CameraPreset.IslandOverview,
-        };
-        await SetCameraPresetAsync(preset);
+        var tribe = _stats?.Tribes?.FirstOrDefault(t => t.Id == tribeId);
+        if (tribe is null) { await Interop.SetCameraPoseAsync(100, 110, 200, -0.85, 0); return; }
+        await Interop.FlyToAsync(tribe.CenterX, tribe.CenterZ);
+    }
+
+    private Task FlyToTileAsync(int tile)
+    {
+        if (tile < 0) return Task.CompletedTask;
+        const int size = 200;   // WORLD_SIZE in sim/core/config.js
+        _dashboardOpen = false;
+        return Interop.FlyToAsync(tile % size + 0.5, tile / size + 0.5).AsTask();
     }
 
     private async Task ToggleDashboard()
@@ -407,6 +508,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         _dashboardOpen = !_dashboardOpen;
         if (_dashboardOpen)
         {
+            TourSignal("dashboard");
             await Feedback.GlassResonateAsync();
             _ = RefreshCloudAsync(quiet: true);
         }
@@ -578,6 +680,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         if (saga is null) Toasts.Show("The chronicler is unavailable right now.", ToastType.Warning);
         else
         {
+            if (_milestones.Grant("chronicle") is { } note) AnnounceNotes([note]);
             _chronicles.Insert(0, saga);
             if (_chronicles.Count > 12) _chronicles.RemoveAt(_chronicles.Count - 1);
             _chronicledToYear = toYear;
@@ -602,6 +705,109 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             _ = Interop.SetLlmAsync(false, null);
         }
         return text;
+    }
+
+    /// <summary>
+    /// Batched cloud thoughts: eight creatures per server call, paced by the sim runtime. Counts
+    /// against the same per-session cap as single thoughts — one call, one unit.
+    /// </summary>
+    private async Task<EcoThoughtBatchReply?> OnCloudThoughtBatchAsync(EcoThoughtPromptItem[] items)
+    {
+        if (!_cloudThoughts || _cloudThoughtsSpent >= CloudThoughtsPerSession) return null;
+        _cloudThoughtsSpent++;
+        var reply = await Api.ThinkBatchAsync(new EcoThoughtBatchRequest(items));
+        if (_cloudThoughtsSpent == CloudThoughtsPerSession)
+        {
+            Toasts.Show("Cloud thoughts for this session are used up; creatures are back on instinct.");
+            _cloudThoughts = false;
+            _ = Interop.SetLlmAsync(false, null);
+        }
+        return reply;
+    }
+
+    // ── dashboard tabs · today's island ──────────────────────────────────
+    private async Task OnDashboardTabAsync(string tab)
+    {
+        if (tab == "island" && !_cardsRequested)
+        {
+            _cardsRequested = true;
+            _cards = await Interop.SpeciesInfoAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private Task TodaysIslandAsync()
+    {
+        _seedInput = DailySeed;
+        Toasts.Show("Today's island: everyone watching it sees the same world unfold.");
+        return NewWorldAsync(DailySeed);
+    }
+
+    // ── viewing settings ─────────────────────────────────────────────────
+    private async Task SetQualityAsync(string tier) { await Interop.SetQualityAsync(tier); _viewSettings = await Interop.SettingsAsync(); }
+    private async Task SetPaletteAsync(string palette) { await Interop.SetPaletteAsync(palette); _viewSettings = await Interop.SettingsAsync(); }
+    private async Task SetReducedMotionAsync(bool on) { await Interop.SetReducedMotionAsync(on); _viewSettings = await Interop.SettingsAsync(); }
+    private async Task ResetBindingsAsync() { await Interop.ResetBindingsAsync(); _viewSettings = await Interop.SettingsAsync(); }
+
+    private async Task RebindAsync(string action)
+    {
+        if (_capturing is not null) return;
+        _capturing = action;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var code = await Interop.CaptureKeyAsync();
+            if (!string.IsNullOrEmpty(code)) await Interop.SetBindingAsync(action, code);
+            _viewSettings = await Interop.SettingsAsync();
+        }
+        finally
+        {
+            _capturing = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // ── first-visit tour ─────────────────────────────────────────────────
+    private void StartTourIfNew()
+    {
+        string? done = null;
+        try { done = LocalStorageService.GetItem<string>(TourDoneKey); } catch { /* storage off: show it */ }
+        if (done == "1") return;
+        _tourActive = true;
+        _tourStep = 0;
+        _tourStepDone = false;
+        _ = Interop.HoldDirectorAsync(true);
+    }
+
+    private void TourSignal(string signal)
+    {
+        if (!_tourActive || TourOverlay.Steps[_tourStep].Signal != signal || _tourStepDone) return;
+        _tourStepDone = true;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task NextTourStepAsync()
+    {
+        if (_tourStep >= TourOverlay.Steps.Length - 1) { await EndTourAsync(); return; }
+        _tourStep++;
+        _tourStepDone = false;
+        // The last step is the director: release the hold so pressing C (or waiting) works.
+        if (TourOverlay.Steps[_tourStep].Signal == "director") await Interop.HoldDirectorAsync(false);
+    }
+
+    private async Task EndTourAsync()
+    {
+        _tourActive = false;
+        try { LocalStorageService.SetItem(TourDoneKey, "1"); } catch { /* best effort */ }
+        await Interop.HoldDirectorAsync(false);
+    }
+
+    private async Task ReplayTourAsync()
+    {
+        try { LocalStorageService.SetItem(TourDoneKey, "0"); } catch { /* best effort */ }
+        _dashboardOpen = false;
+        StartTourIfNew();
+        await InvokeAsync(StateHasChanged);
     }
 
     // ── touch move pad ───────────────────────────────────────────────────
@@ -641,35 +847,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             : $"{(int)span.TotalDays} d ago";
     }
 
-    private async Task HandleDecreeKeyDownAsync(KeyboardEventArgs e)
-    {
-        if (e.Key == "Enter")
-        {
-            await SendDecreeAsync();
-        }
-        else if (e.Key == "Escape")
-        {
-            // input.js' own Escape handling is suppressed while an input is focused, so the
-            // console closes itself here.
-            CloseDecree();
-        }
-    }
-
-    private Task OpenDecreeAsync()
-    {
-        _decreeOpen = true;
-        return FocusDecreeInputAsync();
-    }
-
-    private void CloseDecree() => _decreeOpen = false;
-
-    private async Task FocusDecreeInputAsync()
-    {
-        await InvokeAsync(StateHasChanged);   // the input must exist before it can be focused
-        try { await _decreeInputRef.FocusAsync(); }
-        catch (InvalidOperationException) { /* the console was toggled shut again mid-render */ }
-    }
-
     /// <summary>
     /// The minimap is the camera control: click near a tribe's camp to fly to it, anywhere
     /// else falls through to the island overview. The canvas is a 200×200 bitmap over the
@@ -684,51 +861,16 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         var worldX = Math.Clamp(e.OffsetX, 0, cssWidth) * worldSize / cssWidth;
         var worldZ = Math.Clamp(e.OffsetY, 0, cssWidth) * worldSize / cssWidth;
 
-        // Camp anchors mirror SetCameraPresetAsync's poses (x, z pairs).
-        (int Id, double X, double Z)[] camps = [(1, 50, 90), (2, 140, 90), (3, 100, 140)];
-        var nearest = camps
-            .Select(c => (c.Id, Dist: Math.Sqrt((c.X - worldX) * (c.X - worldX) + (c.Z - worldZ) * (c.Z - worldZ))))
+        // The clans' real camps (per seed), not fixed anchors.
+        var nearest = (_stats?.Tribes ?? [])
+            .Select(t => (t.Id, Dist: Math.Sqrt((t.CenterX - worldX) * (t.CenterX - worldX) + (t.CenterZ - worldZ) * (t.CenterZ - worldZ))))
             .OrderBy(c => c.Dist)
-            .First();
-        if (nearest.Dist <= 40)
-            await SetCameraPresetAsync((CameraPreset)nearest.Id);
+            .FirstOrDefault((Id: -1, Dist: double.MaxValue));
+        await Feedback.CueAsync("poecosystem", "godFinger");
+        if (nearest.Id >= 0 && nearest.Dist <= 40)
+            await FocusTribeByIdAsync(nearest.Id);
         else
-            await SetCameraPresetAsync(CameraPreset.IslandOverview);
-    }
-
-    private async Task SendDecreeAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_decreeInput) || _decreeBusy) return;
-        _decreeBusy = true;
-        _decreeFeedback = null;
-        StateHasChanged();
-
-        try
-        {
-            var seed = int.TryParse(_seedInput, out var s) ? s : 1;
-            var req = new EcoDecreeRequest(seed, _stats?.Year ?? 1, _decreeInput, null);
-            var reply = await Api.InterpretDecreeAsync(req);
-            if (reply is not null)
-            {
-                _decreeFeedback = $"{reply.DivineMessage} ({reply.Intent}: {reply.ActionType})";
-                _decreeInput = "";
-                Toasts.Show(reply.DivineMessage, ToastType.Success);
-                await Feedback.CueAsync("poecosystem", "shockwave");
-            }
-            else
-            {
-                _decreeFeedback = "The heavens were silent.";
-            }
-        }
-        catch
-        {
-            _decreeFeedback = "The decree was lost to the winds.";
-        }
-        finally
-        {
-            _decreeBusy = false;
-            StateHasChanged();
-        }
+            await Interop.SetCameraPoseAsync(100, 110, 200, -0.85, 0);
     }
 
     private async Task LoadCultureAsync()
@@ -765,6 +907,8 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         Interop.EngineError -= OnEngineError;
         Interop.SnapshotExported -= OnSnapshotExported;
         Interop.CloudThoughtRequested -= OnCloudThoughtAsync;
+        Interop.CloudThoughtBatchRequested -= OnCloudThoughtBatchAsync;
+        Interop.HistoryReceived -= OnHistory;
         await Interop.DisposeAsync();
     }
 }

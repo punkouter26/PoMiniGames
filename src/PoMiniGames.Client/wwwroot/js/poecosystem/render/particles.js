@@ -49,6 +49,10 @@ const PRESETS = {
   firefly: { pool: 'glow', life: [4.0, 8.0], size: [0.14, 0.28], speed: [0.4, 1.2], spread: 1.8, drag: 0.35, gravity: 0.03, growth: 0.2, alpha: 0.95, sparkle: 1, colors: [0x66ff99, 0xaaff55, 0x33eebb, 0x88ffdd] },
   // Bioluminescent spores float upward around settlements and ancient trees
   spore: { pool: 'glow', life: [5.0, 9.5], size: [0.09, 0.20], speed: [0.3, 0.9], spread: 1.4, drag: 0.3, gravity: 0.08, growth: 0.4, alpha: 0.88, sparkle: 1, colors: [0x77ccff, 0x99eeff, 0xbbffff] },
+  // Weather (sim/events/weather.js). Emitted in a column above the god, pointed down, so
+  // the drops are always where the camera is rather than spread thin over the island.
+  rain: { pool: 'soft', life: [0.9, 1.3], size: [0.05, 0.08], speed: [14, 19], spread: 0.08, drag: 0.05, gravity: -9.0, growth: 0, alpha: 0.42, colors: [0xb8c8d8, 0x9fb4c8, 0xd0dce8] },
+  snow: { pool: 'soft', life: [5.0, 8.0], size: [0.08, 0.16], speed: [0.8, 1.6], spread: 0.6, drag: 0.6, gravity: -0.7, growth: 0, alpha: 0.85, colors: [0xffffff, 0xeef4ff, 0xdfe8f5] },
 };
 
 const VERT = `

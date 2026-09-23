@@ -37,6 +37,11 @@ export const RNG_SALT = Object.freeze({
   events: 0x4e6a8dbf,
   names: 0x5f7b9ed1,
   cosmetic: 0x6a8cafe3,
+  // Added 2026-09-23. New keys never shift the six above (each stream is seeded from its
+  // own salt), and a snapshot written before they existed simply leaves them at their seed.
+  weather: 0x7b9dc1f5,
+  tribes: 0x8cae02a7,     // diplomacy + caravans: they called Math.random until now
+  ecology: 0x9dbf1339,    // disease outbreaks and spread
 });
 
 // ── Physics props (frame propKind = kind * 8 + sizeIndex) ────────────────
@@ -195,6 +200,55 @@ export const EVENTS = Object.freeze({
   burntSeconds: 60,          // burnt tiles recover to normal after this long
 });
 
+// ── Weather (events/weather.js) ──────────────────────────────────────────
+// A spell of one kind lasts `spellSeconds`, then the next is rolled from the season's
+// weights. A year is only 30 s and a season 6-9 s, so spells are short, and a season
+// change ends any natural spell the new season gives no weight (no snow in spring).
+// Every multiplier is eased in and out by the spell's intensity, so a drought tightens
+// over a few seconds rather than switching on. Order: clear, rain, storm, drought, snow.
+export const WEATHER = Object.freeze({
+  spellSeconds: Object.freeze([10, 24]),
+  easeSeconds: 3,
+  seasonWeights: Object.freeze([
+    Object.freeze([5, 4, 1, 0, 0]),   // spring
+    Object.freeze([6, 2, 1, 3, 0]),   // summer
+    Object.freeze([5, 3, 2, 1, 0]),   // autumn
+    Object.freeze([4, 1, 0, 0, 5]),   // winter
+  ]),
+  grassGrowth: Object.freeze([1, 1.8, 1.5, 0.35, 0.15]),
+  bushRipen: Object.freeze([1, 1.3, 1.2, 0.6, 0.3]),
+  thirst: Object.freeze([1, 0.75, 0.8, 1.35, 0.9]),
+  fireBurnout: Object.freeze([1, 3, 4, 0.7, 4]),   // >1 burns a tile out faster
+  fireSpread: Object.freeze([1, 0.35, 0.3, 1.6, 0.2]),
+  wetnessPerSecond: Object.freeze([0, 0.02, 0.03, -0.025, 0.01]),
+  stormStrikeChancePerSecond: 0.04,
+});
+
+// ── Disease (creatures/disease.js) ───────────────────────────────────────
+// The population brake the island never had: a crowded species can catch a sickness that
+// spreads by contact, drains health and leaves survivors immune for a while.
+export const DISEASE = Object.freeze({
+  checkEverySeconds: 30,
+  outbreakDensity: Object.freeze([110, 55, 24, 40]),   // by species id
+  outbreakChance: 0.35,
+  spreadRadius: 2.5,
+  spreadChancePerSecond: 0.12,
+  sickSeconds: 40,
+  immuneSeconds: 240,
+  damagePerSecond: 0.012,
+});
+
+// ── Varieties (world.js sampleTraits) ────────────────────────────────────
+// When a species' mean personality drifts this far (euclidean, five traits) from the mean
+// its last variety was named at, the island names a new variety after the biggest shift.
+// The founders are random, so the first few years always drift fast as they die off: the
+// baseline is only taken once `settleYears` have passed, and a species waits
+// `cooldownYears` between varieties.
+export const VARIETY = Object.freeze({ drift: 0.26, minCount: 6, max: 40, settleYears: 4, cooldownYears: 15 });
+
+// ── Timeline (dashboard) ─────────────────────────────────────────────────
+export const HISTORY = Object.freeze({ landmarksMax: 300, yearsMax: 2000 });
+
 // ── Thoughts (SPEC §7.8) ─────────────────────────────────────────────────
 export const THOUGHTS = Object.freeze({
   maxPromptChars: 600,
@@ -211,4 +265,6 @@ export const HOST = Object.freeze({
   detailEveryTicks: 5,       // inspector refresh for the selected creature
   tilesEveryTicks: 20,       // tile state / grass / tree state sync once per second
   autosaveSeconds: 10,
+  thoughtBatchSize: 8,       // cloud thoughts: creatures per server call (the endpoint takes 8)
+  thoughtBatchEveryMs: 20000,
 });

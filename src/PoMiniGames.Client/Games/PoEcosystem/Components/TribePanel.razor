@@ -27,6 +27,36 @@
         <DiplomacyWeb Tribes="@Stats.Tribes" Caravans="@Stats.Caravans" OnFocusTribe="@OnFocusTribe" />
     }
 
+    <h3>Council pacts</h3>
+    @if (Stats?.Treaties is { Length: > 0 } pacts)
+    {
+        <ul class="poeco-pacts">
+            @foreach (var t in pacts.Reverse().Take(8))
+            {
+                <li>
+                    <strong>@t.Title</strong> <span class="poeco-badge">@ActionLabel(t.Action)</span>
+                    <span class="poeco-note">@TribeName(t.TribeA) · @TribeName(t.TribeB)@(t.Paid > 0 ? $" · {t.Paid} {t.Resource} paid" : "")</span>
+                    @if (!string.IsNullOrWhiteSpace(t.Narrative)) { <p>@t.Narrative</p> }
+                </li>
+            }
+        </ul>
+    }
+    else
+    {
+        <p class="poeco-note">When clans make peace or go to war, the Chieftain Council (a server model) decides what the pact says: tribute, armistice, or a war that goes on. It needs sign-in, and it is the clans' decision, not yours.</p>
+    }
+
+    @if (Legends.Count > 0)
+    {
+        <h3>Legends</h3>
+        <ul class="poeco-legends">
+            @foreach (var l in Legends)
+            {
+                <li><strong>@l.Epithet</strong> <span class="poeco-note">year @l.Year</span><p>@l.Legend</p></li>
+            }
+        </ul>
+    }
+
     <h3>Chronicle</h3>
     <div class="poeco-chronicle-actions">
         <button type="button" class="poeco-btn poeco-btn--primary" disabled="@(Busy || Stats is null || Stats.Year <= FromYear)" @onclick="HandleWriteAsync">
@@ -70,6 +100,14 @@
     [Parameter] public int FromYear { get; set; }
     [Parameter] public EventCallback OnWrite { get; set; }
     [Parameter] public EventCallback<int> OnFocusTribe { get; set; }
+    [Parameter] public IReadOnlyList<(int Year, string Epithet, string Legend)> Legends { get; set; } = [];
+
+    private string TribeName(int id) => Stats?.Tribes?.FirstOrDefault(t => t.Id == id)?.Name ?? $"Clan {id + 1}";
+
+    private static string ActionLabel(string action) => action switch
+    {
+        "PeaceTreaty" => "peace", "Armistice" => "armistice", "DemandTribute" => "tribute", "WarDeclaration" => "war", _ => action,
+    };
 
     private async Task HandleWriteAsync()
     {

@@ -49,7 +49,7 @@ export const hasWebGpuSupport = async () => {
 
 export function createThoughtBridge({
   WorkerCtor = globalThis.Worker, workerUrl = null, hasWebGpu = hasWebGpuSupport,
-  onResult = () => {}, onState = () => {}, cloud = null, cloudBatch = null, now = () => Date.now(),
+  onResult = () => {}, onState = () => {}, cloud = null, now = () => Date.now(),
 } = {}) {
   let worker = null;
   let cloudMode = false;
@@ -143,36 +143,8 @@ export function createThoughtBridge({
       return true;
     },
 
-    /** Send a batch of creature prompts; optimizes throughput when using cloud thoughts. */
-    requestBatch(items) {
-      if (state !== LLM_STATE.READY || inFlight || !items || items.length === 0) return false;
-      if (cloudMode && cloudBatch) {
-        const t = now();
-        if (t - lastCloudAt < CLOUD_MIN_INTERVAL_MS) return false;
-        lastCloudAt = t;
-        const requestId = nextId++;
-        inFlight = { requestId, handle: items[0].handle };
-        stats.requested += items.length;
-        Promise.resolve(cloudBatch(items))
-          .then((batchResult) => {
-            inFlight = null;
-            if (batchResult && Array.isArray(batchResult.results)) {
-              for (const r of batchResult.results) {
-                stats.answered++;
-                onResult(r.id, JSON.stringify({ thought: r.thought, trait: r.trait, delta: r.delta }));
-              }
-            }
-            emit();
-          })
-          .catch(() => {
-            inFlight = null;
-            stats.failed += items.length;
-            emit();
-          });
-        return true;
-      }
-      return bridge.request(items[0]);
-    },
+    /** True while the cloud "model" is the active one (batched thoughts go through it). */
+    get cloudReady() { return cloudMode && state === LLM_STATE.READY; },
 
     cancel() { inFlight = null; },
 

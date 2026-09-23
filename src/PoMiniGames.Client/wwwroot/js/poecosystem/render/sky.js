@@ -181,6 +181,13 @@ export function createSky(scene, { tier = 'high' } = {}) {
   }
 
   const zenith = new THREE.Color();
+  const WHITE = new THREE.Color(0xffffff);
+  const SLATE = new THREE.Color(0x6b7a8c);
+  const STORM = new THREE.Color(0x4a5360);
+  // Weather: 0 = the usual scattered clouds, 1 = a closed storm deck. Eased per frame so
+  // a spell rolls in rather than switching the sky.
+  let overcast = 0;
+  let overcastTarget = 0;
   const DAY_ZENITH = new THREE.Color(0x2f6fd0);
   const NIGHT_ZENITH = new THREE.Color(0x0b1326);
   const DUSK_ZENITH = new THREE.Color(0x4a3a7a);
@@ -194,9 +201,13 @@ export function createSky(scene, { tier = 'high' } = {}) {
      * @param {{x:number, z:number}} player
      * @param {number} time seconds
      */
+    /** 0..1 cloud deck from the weather (renderer.js). */
+    setOvercast(v) { overcastTarget = Math.max(0, Math.min(1, v)); },
+    get overcast() { return overcast; },
     update(sky, player, time) {
       const u = domeMat.uniforms;
-      zenith.copy(NIGHT_ZENITH).lerp(DAY_ZENITH, sky.day).lerp(DUSK_ZENITH, sky.dusk * 0.6);
+      overcast += (overcastTarget - overcast) * 0.02;
+      zenith.copy(NIGHT_ZENITH).lerp(DAY_ZENITH, sky.day).lerp(DUSK_ZENITH, sky.dusk * 0.6).lerp(STORM, overcast * 0.6);
       u.uZenith.value.copy(zenith);
       u.uHorizon.value.copy(sky.sky);
       u.uSunColor.value.copy(sky.sunColour);
@@ -210,8 +221,9 @@ export function createSky(scene, { tier = 'high' } = {}) {
         c.uTime.value = time;
         c.uNight.value = sky.night;
         // The lit side takes the sun's colour, so dusk clouds go pink without a special case.
-        c.uLit.value.copy(sky.sunColour).lerp(new THREE.Color(0xffffff), 0.35);
-        c.uShade.value.copy(sky.sky).lerp(new THREE.Color(0x6b7a8c), 0.45);
+        c.uLit.value.copy(sky.sunColour).lerp(WHITE, 0.35).lerp(SLATE, overcast * 0.55);
+        c.uShade.value.copy(sky.sky).lerp(SLATE, 0.45).lerp(STORM, overcast * 0.6);
+        c.uCover.value = 0.45 + overcast * 0.45;
         clouds.plane.position.set(player.x, CLOUD_Y, player.z);
       }
     },

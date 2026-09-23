@@ -4,7 +4,7 @@
 // Determinism contract (SPEC §13 criterion 4): every rule below reads only sim state
 // and the seeded streams. `physics` is write-only — the world tells it about deaths,
 // felled trees and rocks and reads back prop poses for the frame, never for a rule.
-import { BEHAVIOR, CREATURE_CAP, EVENTS, FLORA, POPULATION, TECH, THOUGHTS, TICK_SECONDS, TRAITS, WORLD } from './core/config.js';
+import { BEHAVIOR, CREATURE_CAP, EVENTS, FLORA, HISTORY, POPULATION, TECH, THOUGHTS, TICK_SECONDS, TRAITS, VARIETY, WORLD } from './core/config.js';
 import { createClock } from './core/clock.js';
 import { NONE, createEntities } from './core/entities.js';
 import { createBus, createEventLog } from './core/events.js';
@@ -41,6 +41,8 @@ import { THOUGHT_SOURCE, applyThought } from './thoughts/nudges.js';
 import { createLedger } from './telemetry/ledger.js';
 import { nullPhysics } from './physics/world.js';
 import { createTribeStore } from './tribe/tribeStore.js';
+import { WEATHER_NAMES, createWeather, getWeatherState, setWeatherState, stepWeather, weatherTelemetry } from './events/weather.js';
+import { isSick, stepDisease } from './creatures/disease.js';
 
 export { nullPhysics };   // re-exported: createWorld's default physics lives beside it
 
@@ -134,6 +136,35 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   const traitHistory = [];
   const tribe = tribeName(seed);
 
+  // ── 2026-09-23 additions: weather, disease, varieties, the timeline ──
+  // All of it is the island's own doing. PoEcosystem is observed, never steered: nothing
+  // here takes input from the page, and a world stays deterministic per seed.
+  const weather = createWeather();
+  let sick = [0, 0, 0, 0];
+  // Varieties (speciation, bookkeeping only): the trait mean each species' current
+  // variety was named at, and every variety the island has named.
+  const varietyBase = [null, null, null, null];
+  const varieties = [];
+  // Landmarks: the events worth a marker on the timeline, kept apart from the 200-entry
+  // log so a century of births cannot push the first campfire off the end. yearHistory is
+  // one row per year — [year, rabbits, deer, wolves, humans, tech] — the coarse series the
+  // timeline draws once the per-second popHistory (30 min) has scrolled past.
+  const landmarks = createEventLog(HISTORY.landmarksMax);
+  const yearHistory = [];
+  let lastYearSampled = -1;
+  // Every module logs through log.push (the tribe store, lightning, tech…), so the one
+  // place to catch a landmark without touching each of them is the push itself. Weather
+  // only counts when it is news — a storm or a drought.
+  const LANDMARK_KINDS = new Set(['tech', 'extinction', 'eruption', 'diplomacy', 'treaty', 'variety', 'outbreak', 'legend', 'weather']);
+  const pushLog = log.push;
+  log.push = (ev) => {
+    const entry = pushLog(ev);
+    if (LANDMARK_KINDS.has(ev.kind) && (ev.kind !== 'weather' || ev.weather === 2 || ev.weather === 3)) {
+      landmarks.push({ tick: entry.tick, year: clock.year(), kind: ev.kind, text: ev.text, tile: ev.tile ?? NONE });
+    }
+    return entry;
+  };
+
   const tileOf = (i) => tileIndex(e.x[i], e.z[i], size);
   const centre = (t) => [tileX(t, size) + 0.5, tileZ(t, size) + 0.5];
   const dist = (i, x, z) => Math.hypot(e.x[i] - x, e.z[i] - z);
@@ -174,6 +205,52 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     for (let s = 0; s < 4; s++) for (let k = 0; k < TRAITS.length; k++) row[s * TRAITS.length + k] = n[s] ? sum[s * TRAITS.length + k] / n[s] : -1;
     traitHistory.push(row);
     if (traitHistory.length > WORLD.traitHistoryMax) traitHistory.shift();
+    noteVarieties(row, n);
+  }
+
+  // Adjectives for a trait that rose / fell, in TRAITS order.
+  const VARIETY_WORDS = [['Bold', 'Timid'], ['Gregarious', 'Solitary'], ['Curious', 'Wary'], ['Greedy', 'Frugal'], ['Diligent', 'Idle']];
+  /** Name a new variety when a species' mean personality has drifted far from its last one. */
+  function noteVarieties(row, n) {
+    const year = clock.year();
+    if (year < VARIETY.settleYears) return;
+    for (let s = 0; s < 4; s++) {
+      if (n[s] < VARIETY.minCount) continue;
+      const mean = Array.from(row.subarray(s * TRAITS.length, (s + 1) * TRAITS.length));
+      const base = varietyBase[s];
+      if (!base) { varietyBase[s] = mean; continue; }
+      const last = varieties.findLast(v => v.species === s);
+      if (last && year - last.year < VARIETY.cooldownYears) continue;
+      let d2 = 0; let big = 0; let bigDelta = 0;
+      for (let k = 0; k < TRAITS.length; k++) {
+        const d = mean[k] - base[k]; d2 += d * d;
+        if (Math.abs(d) > Math.abs(bigDelta)) { big = k; bigDelta = d; }
+      }
+      if (Math.sqrt(d2) < VARIETY.drift) continue;
+      varietyBase[s] = mean;
+      const name = `${VARIETY_WORDS[big][bigDelta > 0 ? 0 : 1]} ${SPECIES[s].plural}`;
+      varieties.push({ species: s, name, tick: clock.tick, year: clock.year(), traits: mean.map(v => Math.round(v * 100) / 100) });
+      if (varieties.length > VARIETY.max) varieties.shift();
+      log.push({ tick: clock.tick, kind: 'variety', species: s, text: `A new variety has emerged: ${name}` });
+    }
+  }
+
+  /**
+   * Biodiversity: Shannon diversity H' = −Σ pᵢ ln pᵢ over the four species, and Pielou's
+   * evenness J = H' / ln S (S = species alive). H' tops out at ln 4 ≈ 1.39 when all four are
+   * equally common; J reads 1 for a perfectly even island and falls as one species takes over.
+   */
+  function biodiversity() {
+    const total = counts[0] + counts[1] + counts[2] + counts[3];
+    let h = 0; let alive = 0;
+    for (let s = 0; s < 4; s++) {
+      if (counts[s] <= 0) continue;
+      alive++;
+      const p = counts[s] / total;
+      h -= p * Math.log(p);
+    }
+    const evenness = alive > 1 ? h / Math.log(alive) : 0;
+    return { shannon: Math.round(h * 1000) / 1000, evenness: Math.round(evenness * 1000) / 1000, richness: alive };
   }
 
   const campfireXZ = () => { const t = settlement.campfireTile; return t === NONE ? null : centre(t); };
@@ -623,8 +700,9 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   function step() {
     clock.step();
     const dt = TICK_SECONDS; const tick = clock.tick;
-    stepGrass(grass, terrain, tileState, dt);
-    stepBushes(bushes, dt, TECH.fieldRipenMultiplier);
+    stepGrass(grass, terrain, tileState, dt * weather.effects.grass);
+    stepBushes(bushes, dt * weather.effects.bush, TECH.fieldRipenMultiplier);
+    const thirstExtra = weather.effects.thirst - 1;
     stepTrees(trees, tileState, dt);
     spatial.rebuild(e);
     const hearth = settlement.campfireTile !== NONE && isNight(clock.dayFraction());
@@ -633,6 +711,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       if (!e.alive[i]) continue;
       const sp = SPECIES[e.species[i]];
       stepDrives(e, i, sp, dt);
+      if (thirstExtra !== 0) { const th = e.thirst[i] + sp.thirstRate * dt * thirstExtra; e.thirst[i] = th < 0 ? 0 : th > 1 ? 1 : th; }
       if (isOrphan(e, i)) e.hunger[i] = Math.min(1, e.hunger[i] + sp.hungerRate * dt * (BEHAVIOR.orphanHungerMultiplier - 1));
       updateLifeStage(e, i, sp);
       if (e.age[i] > almanac.oldestAge) { almanac.oldestAge = e.age[i]; almanac.oldestName = nameOf(i); almanac.oldestSpecies = sp.id; }
@@ -640,7 +719,11 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       // Warmth: a villager by the fire at night heals (behavior/tech.js FIRE).
       else if (hearth && sp.builds && campfireDistance(world, e.x[i], e.z[i]) <= TECH.campfireWarmRadius) e.health[i] = Math.min(1, e.health[i] + TECH.campfireRegenPerSecond * dt);
       const vital = checkVitals(e, i);
-      if (vital) { kill(i, tileState[tileOf(i)] === TILE_STATE.LAVA ? DEATH_CAUSE.ERUPTION : tileState[tileOf(i)] === TILE_STATE.FIRE ? DEATH_CAUSE.FIRE : vital); continue; }
+      if (vital) {
+        const here = tileState[tileOf(i)];
+        kill(i, here === TILE_STATE.LAVA ? DEATH_CAUSE.ERUPTION : here === TILE_STATE.FIRE ? DEATH_CAUSE.FIRE : isSick(e, i, tick) ? DEATH_CAUSE.DISEASE : vital);
+        continue;
+      }
       const oldAge = oldAgeDeathChance(e, i, sp, dt);
       if (oldAge > 0 && streams.behavior.next() < oldAge) { kill(i, DEATH_CAUSE.OLD_AGE); continue; }
       if (e.gestationEndTick[i] !== NONE && tick >= e.gestationEndTick[i]) giveBirth(i);
@@ -708,6 +791,21 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       }
       if (maintainWorks(world)) rebuildShoreField();
 
+      // Weather and disease: once a second, each on its own stream.
+      if (stepWeather(world) === 'strike') {
+        const t = pickStrikeTile(terrain, streams.weather);
+        if (t >= 0) strikeLightning(world, t, streams.weather);
+      }
+      sick = stepDisease(world, counts);
+
+      // One coarse row per year for the timeline: [year, rabbits, deer, wolves, humans, tech, H'×1000].
+      const year = clock.year();
+      if (year !== lastYearSampled) {
+        lastYearSampled = year;
+        yearHistory.push([year, counts[0], counts[1], counts[2], counts[3], settlement.tech, Math.round(biodiversity().shannon * 1000)]);
+        if (yearHistory.length > HISTORY.yearsMax) yearHistory.shift();
+      }
+
       if (tribeStore) {
         if (tribeStore.stepDiplomacy) tribeStore.stepDiplomacy(log, tick);
         if (tribeStore.stepTech) tribeStore.stepTech(log, tick);
@@ -744,7 +842,19 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       tribes: tribeStore ? tribeStore.toTelemetry() : null,
       buildings: tribeStore?.getBuildingsTelemetry ? tribeStore.getBuildingsTelemetry() : [],
       caravans: tribeStore?.getCaravansTelemetry ? tribeStore.getCaravansTelemetry() : [],
+      treaties: tribeStore?.treatyTelemetry ? tribeStore.treatyTelemetry() : [],
+      weather: weatherTelemetry(weather),
+      sick: sick.slice(),
+      varieties: varieties.map(v => ({ species: v.species, name: v.name, year: v.year })),
+      maxGeneration: lineage.maxGeneration,
+      biodiversity: biodiversity(),
+      landmarkCount: landmarks.count, landmarkLastId: landmarks.recent(1)[0]?.id ?? 0, yearCount: yearHistory.length,
     };
+  }
+
+  /** The timeline's data: every landmark and the per-year rows (sent only when they change). */
+  function history() {
+    return { landmarks: landmarks.all(), years: yearHistory.map(r => r.slice()) };
   }
 
   /** The watch-list as the HUD shows it: living entries first, then the fallen. */
@@ -811,6 +921,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       traits, baseTraits, nudge, goal: GOAL_NAMES[e.goal[i]] ?? 'Idle', goalSince: e.goalSince[i],
       lastThought: e.lastThought[i], lastThoughtSource: e.lastThoughtSource[i],
       mother: parentName(e.mother[i]), father: parentName(e.father[i]), x: e.x[i], y: e.y[i], z: e.z[i],
+      sick: isSick(e, i, tick),
     };
   }
 
@@ -878,6 +989,9 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       },
       telemetry: ledger.getState(),
       tribes: tribeStore.getState(),
+      weather: getWeatherState(weather),
+      varieties: varieties.map(v => ({ ...v, traits: v.traits.slice() })), varietyBase: varietyBase.map(b => (b ? b.slice() : null)),
+      landmarks: landmarks.getState(), yearHistory: yearHistory.map(r => r.slice()), lastYearSampled,
       lava: world.lava ? { front: world.lava.front.slice(), tiles: world.lava.tiles.slice(), endTick: world.lava.endTick, nextCreep: world.lava.nextCreep } : null,
     };
   }
@@ -897,6 +1011,12 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     }
     if (s.telemetry) ledger.setState(s.telemetry);
     if (s.tribes) tribeStore.setState(s.tribes);
+    setWeatherState(weather, s.weather);
+    varieties.length = 0; for (const v of s.varieties ?? []) varieties.push({ ...v, traits: (v.traits ?? []).slice() });
+    for (let k = 0; k < 4; k++) varietyBase[k] = s.varietyBase?.[k] ? s.varietyBase[k].slice() : null;
+    if (s.landmarks) landmarks.setState(s.landmarks);
+    yearHistory.length = 0; for (const r of s.yearHistory ?? []) yearHistory.push(r.slice());
+    lastYearSampled = Number.isInteger(s.lastYearSampled) ? s.lastYearSampled : -1;
     popHistory.length = 0; for (const r of s.popHistory) popHistory.push(r.slice());
     tileState.set(s.tileState); fear.set(s.fear);
     grass.biomass.set(s.grass.biomass); grass.cursor = s.grass.cursor | 0;
@@ -917,7 +1037,12 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     lineage.setState(s.lineage);
     watched.clear(); for (const h of s.watched ?? []) watched.add(h);
     traitHistory.length = 0; for (const r of s.traitHistory ?? []) traitHistory.push(Float32Array.from(r));
-    for (const c of ENTITY_COLS) e[c].set(s.entities.cols[c]);
+    // A column added after the snapshot was written (sickUntil, immuneUntil) restores to its
+    // reset value rather than refusing the whole save.
+    for (const c of ENTITY_COLS) {
+      if (s.entities.cols[c]) e[c].set(s.entities.cols[c]);
+      else e[c].fill(e[c] instanceof Int32Array || e[c] instanceof Int8Array ? NONE : 0);
+    }
     e.high = s.entities.high; e.count = s.entities.count; e.setFreeList(s.entities.free);
     for (let i = 0; i < e.cap; i++) { e.names[i] = s.entities.names[i] ?? ''; e.lastThought[i] = s.entities.lastThought[i] ?? ''; }
     for (let i = 0; i < e.cap; i++) { const p = plans[i]; for (const k of Object.keys(p)) delete p[k]; if (s.plans[i]) Object.assign(p, s.plans[i]); }
@@ -962,6 +1087,34 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       },
       cancel() { thoughtScheduler.cancel(); },
       /**
+       * The batched cloud path (/api/ecosystem/thoughts/batch): up to `n` creatures as the
+       * structured items the endpoint takes. Each answer comes back through apply(), so a
+       * batched thought is validated and nudged exactly like a single one.
+       */
+      batch(n, selected = NONE) {
+        const out = [];
+        for (const h of thoughtScheduler.take(e, selected, n)) {
+          const i = e.resolve(h);
+          if (i === NONE) continue;
+          const c = perceive(i);
+          const near = [];
+          if (c.threatDist !== Infinity) near.push(`danger ${Math.round(c.threatDist)} m away`);
+          if (c.preyDist !== Infinity) near.push(`prey ${Math.round(c.preyDist)} m away`);
+          if (c.foodDist !== Infinity) near.push(`${c.foodKind === 'bush' ? 'berries' : c.foodKind || 'food'} ${Math.round(c.foodDist)} m away`);
+          if (c.mateDist !== Infinity) near.push('a mate close by');
+          if (isSick(e, i, clock.tick)) near.push('feeling sick');
+          near.push(c.night ? 'night' : 'day');
+          if (weather.kind !== 0) near.push(WEATHER_NAMES[weather.kind].toLowerCase());
+          out.push({
+            handle: h, species: SPECIES[e.species[i]].name, name: nameOf(i),
+            hunger: Math.round(e.hunger[i] * 100) / 100, thirst: Math.round(e.thirst[i] * 100) / 100, health: Math.round(e.health[i] * 100) / 100,
+            goal: GOAL_NAMES[e.goal[i]] ?? 'Idle', nearby: near.join(', '),
+          });
+        }
+        thoughtStats.requested += out.length;
+        return out;
+      },
+      /**
        * Give one creature a template thought now. The rotation takes minutes to reach
        * everyone, so the inspector would otherwise open on an empty quote for a creature
        * that has not had its turn. Never overwrites a live LLM thought.
@@ -975,6 +1128,15 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     },
     step, stats, detail, debug, applyCommand, kill, spawn, getState, setState,
     lineageOf, rename, setWatched, tribeStore,
+    weather, history, biodiversity,
+    /** A council's answer to a diplomatic moment (the /treaty endpoint), applied by the tribe store. */
+    applyTreaty: (t) => (tribeStore?.applyTreaty ? tribeStore.applyTreaty(t, log, clock.tick) : false),
+    /** A line of lore the page earned from the server (milestone legends): logged, and so kept on the timeline. */
+    note(kind, text, tile = NONE) {
+      if (kind !== 'legend' || typeof text !== 'string' || !text.trim()) return false;
+      log.push({ tick: clock.tick, kind, tile, text: text.trim().slice(0, 300) });
+      return true;
+    },
   };
   return world;
 }

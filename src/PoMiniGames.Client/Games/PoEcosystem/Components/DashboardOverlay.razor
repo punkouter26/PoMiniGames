@@ -19,7 +19,7 @@
         <nav class="poeco-tabs" role="tablist" aria-label="Dashboard sections">
             @foreach (var (id, label) in Tabs)
             {
-                <button type="button" role="tab" class="poeco-tab @(_tab == id ? "poeco-tab--on" : "")" aria-selected="@(_tab == id ? "true" : "false")" @onclick="() => _tab = id">@label</button>
+                <button type="button" role="tab" class="poeco-tab @(_tab == id ? "poeco-tab--on" : "")" aria-selected="@(_tab == id ? "true" : "false")" @onclick="() => SelectTab(id)">@label</button>
             }
         </nav>
 
@@ -35,6 +35,24 @@
                 <section class="poeco-panel poeco-panel--wide">
                     <h3>Civilization Overview</h3>
                     <TribeComparisonGrid Tribes="@Stats?.Tribes" Buildings="@Stats?.Buildings" OnSelectTribe="@OnFocusTribe" />
+                </section>
+            </div>
+        }
+        else if (_tab == "timeline")
+        {
+            <div class="poeco-overlay-grid">
+                <section class="poeco-panel poeco-panel--wide">
+                    <h3>Timeline</h3>
+                    <TimelinePanel History="@History" OnFly="@OnFlyToTile" />
+                </section>
+            </div>
+        }
+        else if (_tab == "notes")
+        {
+            <div class="poeco-overlay-grid">
+                <section class="poeco-panel poeco-panel--wide">
+                    <h3>Field notes</h3>
+                    <MilestonesPanel Unlocked="@Milestones" />
                 </section>
             </div>
         }
@@ -78,7 +96,7 @@
 
                 <section class="poeco-panel poeco-panel--almanac">
                     <h3>Almanac</h3>
-                    <AlmanacPanel Stats="@Stats" />
+                    <AlmanacPanel Stats="@Stats" Cards="@Cards" />
                     <button type="button" class="poeco-btn" @onclick="OnExportTelemetry"
                             title="Download every recorded life: lifespans, causes, movement, predation">
                         Export telemetry (JSON)
@@ -108,7 +126,7 @@
         {
             <div class="poeco-overlay-grid">
                 <section class="poeco-panel poeco-panel--wide">
-                    <TribePanel Stats="@Stats" Chronicles="@Chronicles" Busy="@ChronicleBusy" FromYear="@ChronicleFromYear" OnWrite="@OnWriteChronicle" OnFocusTribe="@OnFocusTribe" />
+                    <TribePanel Stats="@Stats" Chronicles="@Chronicles" Busy="@ChronicleBusy" FromYear="@ChronicleFromYear" OnWrite="@OnWriteChronicle" OnFocusTribe="@OnFocusTribe" Legends="@Legends" />
                 </section>
             </div>
         }
@@ -170,7 +188,11 @@
                         <span>Seed</span>
                         <input type="text" value="@Seed" @oninput="e => SeedChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
                     </label>
-                    <button type="button" class="poeco-btn poeco-btn--primary" @onclick="() => OnNewWorld.InvokeAsync(Seed)">New world</button>
+                    <div class="poeco-world-actions">
+                        <button type="button" class="poeco-btn poeco-btn--primary" @onclick="() => OnNewWorld.InvokeAsync(Seed)">New world</button>
+                        <button type="button" class="poeco-btn" @onclick="OnTodaysIsland" title="Everyone who opens today's island watches the same world unfold">Today's island</button>
+                    </div>
+                    <p class="poeco-note">Today's island is the same seed for everyone (<code>@DailySeed</code>), so its history can be compared and discussed. The island is deterministic: the same seed tells the same story.</p>
 
                     <h3>Speed</h3>
                     <div class="poeco-speed">
@@ -180,8 +202,12 @@
                         }
                     </div>
 
-                    <h3>Keys</h3>
-                    <p class="poeco-note"><kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd>/<kbd>Ctrl</kbd> rise/sink · <kbd>F</kbd> float/walk · <kbd>E</kbd> inspect · <kbd>T</kbd> follow · <kbd>C</kbd> cinematic · <kbd>P</kbd> pop out · <kbd>Tab</kbd> dashboard · <kbd>0-3</kbd> speed</p>
+                    <h3>Tour</h3>
+                    <button type="button" class="poeco-btn poeco-btn--sm" @onclick="OnReplayTour">Show the getting-started tour again</button>
+                </section>
+                <section class="poeco-panel poeco-panel--settings">
+                    <ViewSettingsPanel Settings="@ViewSettings" Capturing="@Capturing" OnQuality="@OnQuality" OnPalette="@OnPalette"
+                                       OnReducedMotion="@OnReducedMotion" OnRebind="@OnRebind" OnResetBindings="@OnResetBindings" />
                 </section>
             </div>
         }
@@ -191,7 +217,8 @@
 @code {
     private static readonly (string Id, string Label)[] Tabs =
     [
-        ("analytics", "Analytics"), ("island", "Island"), ("life", "Life"), ("tribe", "Tribe & chronicle"), ("cloud", "Cloud"), ("settings", "Settings"),
+        ("analytics", "Analytics"), ("timeline", "Timeline"), ("island", "Island"), ("life", "Life"), ("tribe", "Tribe & chronicle"),
+        ("notes", "Field notes"), ("cloud", "Cloud"), ("settings", "Settings"),
     ];
 
     private ElementReference _root;
@@ -233,6 +260,23 @@
     [Parameter] public EventCallback<string> OnCloudDelete { get; set; }
     [Parameter] public EventCallback<(string Slot, bool Public)> OnCloudShare { get; set; }
     [Parameter] public EventCallback<string> OnVisit { get; set; }
+    [Parameter] public EcoHistory? History { get; set; }
+    [Parameter] public EventCallback<int> OnFlyToTile { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, string> Milestones { get; set; } = new Dictionary<string, string>();
+    [Parameter] public IReadOnlyList<EcoSpeciesCard> Cards { get; set; } = [];
+    [Parameter] public IReadOnlyList<(int Year, string Epithet, string Legend)> Legends { get; set; } = [];
+    [Parameter] public EcoSettings? ViewSettings { get; set; }
+    [Parameter] public string? Capturing { get; set; }
+    [Parameter] public string DailySeed { get; set; } = "";
+    [Parameter] public EventCallback OnTodaysIsland { get; set; }
+    [Parameter] public EventCallback OnReplayTour { get; set; }
+    [Parameter] public EventCallback<string> OnQuality { get; set; }
+    [Parameter] public EventCallback<string> OnPalette { get; set; }
+    [Parameter] public EventCallback<bool> OnReducedMotion { get; set; }
+    [Parameter] public EventCallback<string> OnRebind { get; set; }
+    [Parameter] public EventCallback OnResetBindings { get; set; }
+    /// <summary>Raised when a tab opens, so the viewer can load what that tab needs (field guide).</summary>
+    [Parameter] public EventCallback<string> OnTab { get; set; }
 
     private bool LlmOn => Llm is not null && Llm.State is "loading" or "ready" && Llm.ModelId != "cloud";
     private string SelectedModel => Llm?.ModelId is { } id && id != "cloud" ? id : Models.FirstOrDefault()?.Id ?? "";
@@ -252,7 +296,13 @@
     private Task ToggleCloud(ChangeEventArgs e) => OnLlmToggle.InvokeAsync((e.Value is true, "cloud"));
     private Task ChangeModel(ChangeEventArgs e) => OnLlmToggle.InvokeAsync((true, e.Value?.ToString()));
 
-    private Task OnKeyDown(KeyboardEventArgs e) => e.Key == "Escape" ? OnClose.InvokeAsync() : Task.CompletedTask;
+    private Task OnKeyDown(KeyboardEventArgs e) => e.Key == "Escape" && Capturing is null ? OnClose.InvokeAsync() : Task.CompletedTask;
+
+    private Task SelectTab(string id)
+    {
+        _tab = id;
+        return OnTab.InvokeAsync(id);
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

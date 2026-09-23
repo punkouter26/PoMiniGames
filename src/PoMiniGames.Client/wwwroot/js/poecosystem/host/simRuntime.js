@@ -3,11 +3,12 @@
 // runs it inline when workers fail, and Vitest drives it with a fake `post`.
 //
 // In:  probe · init · newWorld · setSpeed · pause · resume · select · setLlmEnabled ·
-//      thoughtResult · thoughtCancel · saveNow · recycle · debug · exportTelemetry ·
-//      lineage · rename · watch · exportSnapshot · importSnapshot · dispose
+//      thoughtResult · thoughtBatchResult · thoughtCancel · saveNow · recycle · debug ·
+//      exportTelemetry · lineage · rename · watch · exportSnapshot · importSnapshot ·
+//      applyTreaty · note · dispose
 // Out: probeResult · ready · terrain · frame (transferred) · tiles · stats · events ·
-//      thoughts · detail · thoughtRequest · saved · debugResult · telemetry · lineage ·
-//      snapshotBytes (transferred) · error
+//      thoughts · detail · thoughtRequest · thoughtBatchRequest · saved · debugResult ·
+//      telemetry · lineage · snapshotBytes (transferred) · history · error
 import { CREATURE_CAP, HOST, LOW_END_CREATURE_CAP, PROP_CAP } from '../sim/core/config.js';
 import { NONE } from '../sim/core/entities.js';
 import { createFrameBuffer, encodeFrame, FRAME } from '../sim/frame.js';
@@ -41,6 +42,16 @@ export function createSimRuntime(post, deps = {}) {
   let lastBushCount = -1;   // the tiles message carries the bush list only when it changed
   // A visited (shared) world is ephemeral: it runs, but never autosaves over the local one.
   let ephemeral = false;
+  // Cloud thoughts answer in batches (setLlmEnabled { batch }): one server call voices up to
+  // HOST.thoughtBatchSize creatures. The runtime paces the batches itself — offering one on
+  // every tick, as the single-thought path does, would build eight prompts twenty times a
+  // second only for the bridge to refuse them.
+  let batchSize = 0;
+  let batchInFlight = false;
+  let lastBatchAt = -Infinity;
+  // The timeline ('history') is re-sent only when a landmark or a year row was added.
+  let sentLandmarkId = -1;
+  let sentYearCount = -1;
 
   // One island per world: the heightfield and the simulation share the same terrain
   // object rather than generating it twice (~28 ms each).
@@ -70,9 +81,11 @@ export function createSimRuntime(post, deps = {}) {
     pool = [];
     for (let k = 0; k < HOST.frameBuffers; k++) pool.push(createFrameBuffer(world.entities.cap, PROP_CAP));
     selected = NONE;
+    batchInFlight = false;
+    sentLandmarkId = -1; sentYearCount = -1;
     lastBushCount = world.bushes.count;   // the terrain payload just carried the list
     lastWall = now(); lastSaveWall = now();
-    post({ type: 'ready', seed: world.seed, tick: world.clock.tick, resumed, terrainHash: world.terrain.hash, cap: world.entities.cap, physics: world.physics.kind });
+    post({ type: 'ready', seed: world.seed, tick: world.clock.tick, resumed, terrainHash: world.terrain.hash, cap: world.entities.cap, physics: world.physics.kind, alive: world.entities.count });
     terrainPayload();
     postStats(); postTiles();
     if (!timer && !disposed) timer = schedule(loop, HOST.loopMs);
@@ -102,6 +115,10 @@ export function createSimRuntime(post, deps = {}) {
     for (let k = 0; k < s.traitHistory.length; k++) traits.set(s.traitHistory[k], k * 20);
     const { popHistory: _ph, traitHistory: _th, ...rest } = s;
     post({ type: 'stats', stats: { ...rest, llm: world.thoughts.stats(), llmEnabled, simLag, popHistory: history, traitHistory: traits } }, [history.buffer, traits.buffer]);
+    if (s.landmarkLastId !== sentLandmarkId || s.yearCount !== sentYearCount) {
+      sentLandmarkId = s.landmarkLastId; sentYearCount = s.yearCount;
+      post({ type: 'history', ...world.history() });
+    }
   }
   function postEvents() {
     const events = world.log.drain();
@@ -156,7 +173,13 @@ export function createSimRuntime(post, deps = {}) {
       simLag = (now() - t0) / steps;
       postFrame();
     }
-    if (llmEnabled) {
+    if (llmEnabled && batchSize > 1) {
+      const t = now();
+      if (!batchInFlight && t - lastBatchAt >= HOST.thoughtBatchEveryMs) {
+        const items = world.thoughts.batch(batchSize, selected);
+        if (items.length) { batchInFlight = true; lastBatchAt = t; post({ type: 'thoughtBatchRequest', items }); }
+      }
+    } else if (llmEnabled) {
       const req = world.thoughts.next(selected);
       if (req) post({ type: 'thoughtRequest', handle: req.handle, prompt: req.prompt, system: SYSTEM_PROMPT });
     }
@@ -213,9 +236,20 @@ export function createSimRuntime(post, deps = {}) {
         case 'pause': paused = true; return;
         case 'resume': paused = false; lastWall = now(); return;
         case 'select': selected = msg.handle ?? NONE; if (world) postDetail(); return;
-        case 'setLlmEnabled': llmEnabled = !!msg.enabled; if (!llmEnabled && world) world.thoughts.cancel(); return;
+        case 'setLlmEnabled':
+          llmEnabled = !!msg.enabled;
+          batchSize = llmEnabled ? Math.max(0, Math.min(HOST.thoughtBatchSize, msg.batch | 0)) : 0;
+          batchInFlight = false;
+          if (!llmEnabled && world) world.thoughts.cancel();
+          return;
         case 'thoughtResult': if (world) world.thoughts.apply(msg.handle, msg.text); return;
-        case 'thoughtCancel': world?.thoughts.cancel(); return;
+        case 'thoughtBatchResult':
+          batchInFlight = false;
+          if (world) for (const r of msg.results ?? []) world.thoughts.apply(r.handle, r.text);
+          return;
+        case 'thoughtCancel': world?.thoughts.cancel(); batchInFlight = false; return;
+        case 'applyTreaty': if (world && world.applyTreaty(msg.treaty ?? {})) { postStats(); postEvents(); } return;
+        case 'note': if (world && world.note(msg.kind, msg.text, msg.tile ?? NONE)) postEvents(); return;
         case 'saveNow': lastSaveWall = now(); save(msg.reason ?? 'manual'); return;
         case 'recycle': if (msg.buffer && pool.length < HOST.frameBuffers) pool.push(msg.buffer); return;
         case 'debug': if (world) post({ type: 'debugResult', op: msg.op, result: world.debug(msg.op, msg.arg ?? {}) }); return;

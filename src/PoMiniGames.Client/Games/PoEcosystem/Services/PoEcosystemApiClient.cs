@@ -134,17 +134,6 @@ public sealed class PoEcosystemApiClient
         catch { return null; }
     }
 
-    public async Task<EcoDecreeReply?> InterpretDecreeAsync(EcoDecreeRequest request, CancellationToken ct = default)
-    {
-        try
-        {
-            using var response = await _http.PostAsJsonAsync("/api/ecosystem/decree", request, EcoApiJsonContext.Default.EcoDecreeRequest, ct);
-            if (!response.IsSuccessStatusCode) return null;
-            return await response.Content.ReadFromJsonAsync(EcoApiJsonContext.Default.EcoDecreeReply, ct);
-        }
-        catch { return null; }
-    }
-
     public async Task<EcoMilestoneLoreReply?> GenerateMilestoneLoreAsync(EcoMilestoneLoreRequest request, CancellationToken ct = default)
     {
         try
@@ -180,8 +169,6 @@ public sealed class PoEcosystemApiClient
 [JsonSerializable(typeof(EcoThoughtBatchReply))]
 [JsonSerializable(typeof(EcoTreatyRequest))]
 [JsonSerializable(typeof(EcoTreatyReply))]
-[JsonSerializable(typeof(EcoDecreeRequest))]
-[JsonSerializable(typeof(EcoDecreeReply))]
 [JsonSerializable(typeof(EcoMilestoneLoreRequest))]
 [JsonSerializable(typeof(EcoMilestoneLoreReply))]
 [JsonSerializable(typeof(EcoCultureProfile))]

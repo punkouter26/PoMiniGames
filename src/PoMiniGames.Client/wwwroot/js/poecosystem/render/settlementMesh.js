@@ -4,7 +4,14 @@
 import * as THREE from 'three';
 import { BUILDING_KIND } from '../sim/tribe/contracts.js';
 
-export function createSettlementMeshes(scene, heightAt = () => 0) {
+// Okabe–Ito picks for the colour-blind palette (Settings): orange / blue / bluish green stay
+// apart under all three common dichromacies, where amber and verdant green did not.
+const PALETTES = Object.freeze({
+  default: Object.freeze({ 0: 0xd48806, 1: 0x096dd9, 2: 0x389e0d }),
+  cb: Object.freeze({ 0: 0xe69f00, 1: 0x0072b2, 2: 0x009e73 }),
+});
+
+export function createSettlementMeshes(scene, heightAt = () => 0, palette = 'default') {
   const group = new THREE.Group();
   group.name = 'settlement_structures';
   scene.add(group);
@@ -17,11 +24,7 @@ export function createSettlementMeshes(scene, heightAt = () => 0) {
   const stoneMat = new THREE.MeshLambertMaterial({ color: 0x7a8288 });
   const scaffoldMat = new THREE.MeshBasicMaterial({ color: 0xb8860b, wireframe: true });
 
-  const BANNER_COLORS = {
-    0: 0xd48806, // Amber
-    1: 0x096dd9, // Cobalt
-    2: 0x389e0d, // Verdant
-  };
+  const BANNER_COLORS = PALETTES[palette] ?? PALETTES.default;   // Amber, Cobalt, Verdant
 
   function buildStructureObject(b) {
     const root = new THREE.Group();

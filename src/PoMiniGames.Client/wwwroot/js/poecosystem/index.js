@@ -4,7 +4,10 @@
 // the engine object when present.
 import { createSimHost } from './host/simHost.js';
 import { CLOUD_MODEL_ID, LLM_STATE, MODELS, createThoughtBridge } from './host/thoughtBridge.js';
+import { fetchSpeciesInfo } from './host/naturalist.js';
 import { createRenderer } from './render/renderer.js';
+import { BINDABLE, DEFAULT_BINDINGS, mergeBindings } from './render/input.js';
+import { HOST } from './sim/core/config.js';
 import { createAudio } from './render/audio.js';
 import { createMusic } from './render/music.js';
 import { openWorldStore, loadWorldMeta } from './sim/persistence/idb.js';
@@ -55,13 +58,33 @@ function createEngine(container, dotnetRef, opts) {
     state.msgCounts[msg.type] = (state.msgCounts[msg.type] ?? 0) + 1;
     switch (msg.type) {
       case 'ready':
-        state.ready = true; state.seed = msg.seed;
+        // The living count rides on ready: the first stats message follows the terrain,
+        // whose mesh build can take a while, and until then the engine reported 0.
+        state.ready = true; state.seed = msg.seed; state.creatureCount = msg.alive ?? state.creatureCount;
         invoke('OnReady', msg.seed, msg.tick, msg.resumed, msg.physics);
         return;
       case 'terrain':
         state.terrain = msg;
         state.renderer?.setTerrain(msg);
         return;
+      case 'history':
+        // The timeline: every landmark and the per-year rows, sent only when they grew.
+        invoke('OnHistory', JSON.stringify({ landmarks: msg.landmarks, years: msg.years }));
+        return;
+      case 'thoughtBatchRequest': {
+        // Cloud thoughts, eight creatures per server call. Always answered — an empty result
+        // is what releases the runtime's one batch in flight.
+        const done = (results) => state.host?.send({ type: 'thoughtBatchResult', results });
+        if (!dotnetRef || !state.thoughts?.cloudReady) { done([]); return; }
+        const items = (msg.items ?? []).map(it => ({ id: it.handle, species: it.species, name: it.name, hunger: it.hunger, thirst: it.thirst, health: it.health, goal: it.goal, nearby: it.nearby }));
+        dotnetRef.invokeMethodAsync('OnCloudThoughtBatch', JSON.stringify(items))
+          .then((json) => {
+            const reply = json ? JSON.parse(json) : null;
+            done((reply?.results ?? []).map(r => ({ handle: r.id, text: JSON.stringify({ thought: r.thought, trait: r.trait, delta: r.delta }) })));
+          })
+          .catch(() => done([]));
+        return;
+      }
       case 'frame':
         state.frames++;
         if (state.renderer) state.renderer.acceptFrame(msg.buffer, (buf) => state.host.send({ type: 'recycle', buffer: buf }, [buf]));
@@ -88,10 +111,12 @@ function createEngine(container, dotnetRef, opts) {
         return;
       case 'events':
         for (const ev of msg.events) {
-          // A tech unlock is a cut for the director, not a stinger or a shake.
-          if (ev.kind === 'tech') { state.renderer?.onEvent(ev); continue; }
-          if (ev.kind === 'war_declared') { state.audio?.warHorn(); }
-          else if (ev.kind === 'peace_treaty') { state.audio?.tribalDrum(null, false); }
+          // A tech unlock or an outbreak is a cut for the director, not a stinger or a shake.
+          if (ev.kind === 'tech' || ev.kind === 'outbreak') { state.renderer?.onEvent(ev); continue; }
+          // Diplomacy logs as kind 'diplomacy' with an action; the old checks here looked
+          // for 'war_declared' / 'peace_treaty', which no log entry ever carried.
+          if (ev.kind === 'diplomacy' && ev.action === 'war') { state.audio?.warHorn(); }
+          else if ((ev.kind === 'diplomacy' && ev.action === 'peace') || ev.kind === 'treaty') { state.audio?.tribalDrum(null, false); }
           if (ev.kind !== 'lightning' && ev.kind !== 'rockslide' && ev.kind !== 'eruption') continue;
           state.eventPressure = Math.min(1, state.eventPressure + (ev.kind === 'eruption' ? 0.8 : 0.45));
           // The renderer owns the whole reaction — particles, camera trauma, and the
@@ -193,12 +218,38 @@ function createEngine(container, dotnetRef, opts) {
       for (const t of state.hudIdle.events) window.addEventListener(t, state.hudIdle.wake, { passive: true });
       state.hudIdle.wake();
       if (container) {
-        state.renderer = createRenderer(container, {
+        state.renderer = buildRenderer();
+        state.renderer.setPose(prefs.get('player'));
+        state.poseTimer = setInterval(() => { if (state.renderer) prefs.set('player', state.renderer.player); }, 5000);
+      }
+      if (typeof document !== 'undefined') applyPalette(prefs.get('palette'));
+      await startHost();
+    },
+  };
+
+  // Add members to the api object. Object.assign would copy each getter's value once and
+  // leave a frozen data property behind (creatureCount stuck at 0, mode at 'starting'), so
+  // the descriptors are copied instead.
+  function extend(target, members) { Object.defineProperties(target, Object.getOwnPropertyDescriptors(members)); return target; }
+
+  /**
+   * The renderer is built here (and rebuilt by setQuality / setPalette / a lost GL context)
+   * from the prefs the Settings panel writes. A rebuild replays the cached terrain, tiles and
+   * stats, so the island reappears exactly as it was without asking the worker for anything.
+   */
+  function buildRenderer() {
+    const prefs = state.prefs;
+    const quality = prefs.get('quality');
+    return createRenderer(container, {
           minimapCanvas: opts.minimapId ? document.getElementById(opts.minimapId) : null,
-          quality: { lowEnd: !!opts.lowEnd },
+          quality: { lowEnd: !!opts.lowEnd, tier: quality === 'auto' ? null : quality },
+          palette: prefs.get('palette'),
+          reducedMotion: prefs.get('reducedMotion'),
+          bindings: prefs.get('bindings'),
           audio: state.audio,
           onPick: (handle) => { api.select(handle); invoke('OnPick', handle); },
           onAction: (action, value) => {
+            if (action === 'contextRestored') { rebuildRenderer(); invoke('OnAction', 'contextRestored', null); return; }
             if (action === 'speed') { api.setSpeed(value); invoke('OnSpeed', value); return; }
             // Follow whatever the camera is actually on: the director's subject while it
             // holds the camera, otherwise the creature the player inspected.
@@ -215,9 +266,88 @@ function createEngine(container, dotnetRef, opts) {
           },
           directorIdleSeconds: opts.demo ? 4 : 150,
         });
-        state.renderer.setPose(prefs.get('player'));
-        state.poseTimer = setInterval(() => prefs.set('player', state.renderer.player), 5000);
-      }
+  }
+
+  function rebuildRenderer() {
+    if (!container || !state.renderer) return;
+    const pose = state.renderer.player;
+    const tint = state.renderer.tint ?? -1;
+    const held = state.directorHeld;
+    state.renderer.dispose();
+    state.renderer = buildRenderer();
+    if (state.terrain) state.renderer.setTerrain(state.terrain);
+    if (state.lastTiles) state.renderer.setTiles(state.lastTiles);
+    if (state.stats) state.renderer.setStats(state.stats);
+    if (pose) state.renderer.setPose(pose);
+    if (tint >= 0) state.renderer.setTint(tint);
+    if (held) state.renderer.holdDirector(true);
+  }
+
+  /** Chart and chip colours follow a data attribute (poecosystem.css defines both palettes). */
+  function applyPalette(palette) {
+    if (typeof document === 'undefined') return;
+    if (palette === 'cb') document.documentElement.setAttribute('data-poeco-palette', 'cb');
+    else document.documentElement.removeAttribute('data-poeco-palette');
+  }
+
+  const settingsSnapshot = () => ({
+    quality: state.prefs?.get('quality') ?? 'auto',
+    palette: state.prefs?.get('palette') ?? 'default',
+    reducedMotion: !!state.prefs?.get('reducedMotion'),
+    bindings: mergeBindings(state.prefs?.get('bindings')),
+    defaults: DEFAULT_BINDINGS,
+    bindable: BINDABLE,
+    gamepad: typeof navigator !== 'undefined' && !!navigator.getGamepads && [...(navigator.getGamepads() ?? [])].some(p => p?.connected),
+  });
+
+  extend(api, {
+    applyTreaty(treaty) {
+      const t = typeof treaty === 'string' ? JSON.parse(treaty) : treaty;
+      state.host?.send({ type: 'applyTreaty', treaty: t });
+    },
+    note: (kind, text, tile) => state.host?.send({ type: 'note', kind, text, tile: Number.isInteger(tile) ? tile : -1 }),
+    flyTo: (x, z) => state.renderer?.flyTo(x, z),
+    holdDirector(on) { state.directorHeld = !!on; state.renderer?.holdDirector(!!on); },
+    settings: () => settingsSnapshot(),
+    setQuality(tier) {
+      const t = ['auto', 'high', 'medium', 'low'].includes(tier) ? tier : 'auto';
+      state.prefs?.set('quality', t);
+      rebuildRenderer();
+    },
+    setPalette(palette) {
+      const p = palette === 'cb' ? 'cb' : 'default';
+      state.prefs?.set('palette', p);
+      applyPalette(p);
+      rebuildRenderer();   // tribe banners are baked into their materials
+    },
+    setReducedMotion(on) { state.prefs?.set('reducedMotion', !!on); state.renderer?.setReducedMotion(!!on); },
+    setBinding(action, code) {
+      if (!BINDABLE.includes(action) || typeof code !== 'string' || !code) return settingsSnapshot();
+      const current = mergeBindings(state.prefs?.get('bindings'));
+      // The new key becomes the primary; any other action that used it loses it, so one key
+      // never drives two things.
+      for (const a of BINDABLE) current[a] = current[a].filter(c => c !== code);
+      current[action] = [code, ...current[action].slice(1)].slice(0, 3);
+      for (const a of BINDABLE) if (!current[a].length) current[a] = DEFAULT_BINDINGS[a].filter(c => !Object.values(current).flat().includes(c)).slice(0, 1);
+      state.prefs?.set('bindings', current);
+      state.renderer?.setBindings(current);
+      return settingsSnapshot();
+    },
+    resetBindings() { state.prefs?.set('bindings', null); state.renderer?.setBindings(null); return settingsSnapshot(); },
+    /** The next key pressed (its KeyboardEvent.code), or null on Escape / after 8 s. Swallowed. */
+    captureKey() {
+      return new Promise((resolve) => {
+        let settled = false;
+        const finish = (v) => { if (settled) return; settled = true; window.removeEventListener('keydown', onKey, true); resolve(v); };
+        const onKey = (e) => { e.preventDefault(); e.stopImmediatePropagation(); finish(e.code === 'Escape' ? null : e.code); };
+        window.addEventListener('keydown', onKey, true);
+        setTimeout(() => finish(null), 8000);
+      });
+    },
+    speciesInfo: () => fetchSpeciesInfo(),
+  });
+
+  async function startHost() {
       state.thoughts = createThoughtBridge({
         onResult: (handle, text) => state.host?.send({ type: 'thoughtResult', handle, text }),
         onState: (s) => { state.llmState = s; invoke('OnLlmState', JSON.stringify(s)); },
@@ -246,7 +376,9 @@ function createEngine(container, dotnetRef, opts) {
         };
         document.addEventListener('visibilitychange', state.onVisibility);
       }
-    },
+  }
+
+  extend(api, {
     send: (msg, transfer) => state.host?.send(msg, transfer),
     setSpeed: (speed) => state.host?.send({ type: 'setSpeed', speed }),
     select(handle) {
@@ -258,7 +390,10 @@ function createEngine(container, dotnetRef, opts) {
     follow: (handle) => state.renderer?.follow(handle ?? state.selected),
     newWorld: (seed) => state.host?.send({ type: 'newWorld', seed: hashString(seed ?? '') }),
     async setLlm(enabled, modelId) {
-      state.host?.send({ type: 'setLlmEnabled', enabled: !!enabled });
+      // The cloud model answers eight creatures per call (the runtime batches and paces them);
+      // an in-browser model answers one at a time as fast as the GPU allows.
+      const target = modelId ?? state.thoughts?.modelId;
+      state.host?.send({ type: 'setLlmEnabled', enabled: !!enabled, batch: enabled && target === CLOUD_MODEL_ID ? HOST.thoughtBatchSize : 0 });
       // Always release the sim's in-flight slot: start() tears the worker down, so any
       // request already handed to the model will never be answered, and the sim would
       // otherwise wait for that creature forever.
@@ -321,7 +456,7 @@ function createEngine(container, dotnetRef, opts) {
     get soundEnabled() { return state.sound; },
     get llm() { return { sim: state.llm, bridge: state.llmState ?? { state: LLM_STATE.OFF }, models: MODELS }; },
     get player() { return state.renderer?.player ?? null; },
-  };
+  });
   return api;
 }
 
@@ -353,6 +488,18 @@ const PoEcosystem = {
   exportSnapshot: (slot) => engine?.exportSnapshot(slot),
   importSnapshot: (bytes, ephemeral) => engine?.importSnapshot(bytes, ephemeral),
   cloudModelId: () => CLOUD_MODEL_ID,
+  applyTreaty: (json) => engine?.applyTreaty(json),
+  note: (kind, text, tile) => engine?.note(kind, text, tile),
+  flyTo: (x, z) => engine?.flyTo(x, z),
+  holdDirector: (on) => engine?.holdDirector(on),
+  settings: () => engine?.settings() ?? null,
+  setQuality: (tier) => engine?.setQuality(tier),
+  setPalette: (palette) => engine?.setPalette(palette),
+  setReducedMotion: (on) => engine?.setReducedMotion(on),
+  setBinding: (action, code) => engine?.setBinding(action, code) ?? null,
+  resetBindings: () => engine?.resetBindings() ?? null,
+  captureKey: () => engine?.captureKey() ?? Promise.resolve(null),
+  async speciesInfo() { try { return JSON.stringify(await (engine ? engine.speciesInfo() : fetchSpeciesInfo())); } catch { return '[]'; } },
   rename: (handle, name) => engine?.rename(handle, name),
   watch: (handle, on) => engine?.watch(handle, on),
   setTint: (traitIndex) => engine?.setTint(traitIndex),

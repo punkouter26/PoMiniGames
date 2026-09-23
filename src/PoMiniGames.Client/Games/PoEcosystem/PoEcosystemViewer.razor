@@ -78,30 +78,8 @@
                 <p class="poeco-lock-hint">Drag to look around · click for free-look</p>
             }
 
-            @if (!_decreeOpen)
-            {
-                <button type="button" class="poeco-pill poeco-decree-summon" title="Issue a Divine Decree (/)"
-                        @onclick="OpenDecreeAsync">⚡ <kbd>/</kbd></button>
-            }
-            else
-            {
-                <div class="poeco-decree-dock" role="form" aria-label="Divine Decree Console">
-                    <span class="poeco-decree-icon" aria-hidden="true">⚡</span>
-                    <input type="text" class="poeco-decree-input" @ref="_decreeInputRef" @bind="_decreeInput" @bind:event="oninput" @onkeydown="HandleDecreeKeyDownAsync"
-                           placeholder="Issue Divine Decree (e.g. 'Bless Amber with food', 'Summon rain')… (Esc to close)"
-                           disabled="@_decreeBusy" />
-                    <button type="button" class="poeco-btn poeco-btn--sm poeco-btn--primary" @onclick="SendDecreeAsync" disabled="@(_decreeBusy || string.IsNullOrWhiteSpace(_decreeInput))">
-                        @(_decreeBusy ? "..." : "Decree")
-                    </button>
-                </div>
-            }
-
-            @if (!string.IsNullOrWhiteSpace(_decreeFeedback))
-            {
-                <div class="poeco-decree-feedback" role="status">
-                    <span>✨ @_decreeFeedback</span>
-                </div>
-            }
+            @* The Divine Decree console lived here until 2026-09-23. PoEcosystem is observed and
+               studied, never steered, so nothing on the HUD can change the world. *@
 
             @if (_narrow)
             {
@@ -136,6 +114,11 @@
         @if (_banner is not null)
         {
             <EndBanner Text="@_banner" OnRestart="() => NewWorldAsync(null)" />
+        }
+
+        @if (_tourActive && !_dashboardOpen)
+        {
+            <TourOverlay Step="_tourStep" Done="_tourStepDone" OnNext="NextTourStepAsync" OnSkip="EndTourAsync" />
         }
 
         @if (_dashboardOpen)
@@ -175,7 +158,23 @@
                               OnCloudLoad="LoadFromCloudAsync"
                               OnCloudDelete="DeleteFromCloudAsync"
                               OnCloudShare="t => ShareAsync(t.Slot, t.Public)"
-                              OnVisit="VisitAsync" />
+                              OnVisit="VisitAsync"
+                              History="_history"
+                              OnFlyToTile="FlyToTileAsync"
+                              Milestones="_milestones.Unlocked"
+                              Cards="_cards"
+                              Legends="_legends"
+                              ViewSettings="_viewSettings"
+                              Capturing="@_capturing"
+                              DailySeed="@DailySeed"
+                              OnTodaysIsland="TodaysIslandAsync"
+                              OnReplayTour="ReplayTourAsync"
+                              OnQuality="SetQualityAsync"
+                              OnPalette="SetPaletteAsync"
+                              OnReducedMotion="SetReducedMotionAsync"
+                              OnRebind="RebindAsync"
+                              OnResetBindings="ResetBindingsAsync"
+                              OnTab="OnDashboardTabAsync" />
         }
     }
 

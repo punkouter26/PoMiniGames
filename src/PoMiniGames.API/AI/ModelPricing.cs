@@ -4,7 +4,7 @@ namespace PoMiniGames.AI;
 /// <summary>
 /// USD price-per-million-tokens for one model deployment. Sourced from the
 /// provider's published list price at startup; surfaced in <c>/api/health/ai</c>
-/// and <c>/api/health/jev</c> as the cost basis the host uses for diagnostics.
+/// as the cost basis the host uses for diagnostics.
 ///
 /// <para>
 /// <b>Why pinned in code?</b> The pricing the host applies to a call MUST match
@@ -44,7 +44,6 @@ public sealed record DeploymentPricing(
             ["Phi-4-mini-instruct"] = new("Phi-4-mini-instruct", "azure", "Azure AI Foundry phi-4 mini", 0.07, 0.28),
 
             // ── OpenAI-compatible — OpenRouter ────────────────────────────
-            ["typesafe/jev-1.13"] = new("typesafe/jev-1.13", "openrouter", "TypeSafe Jev 1.13 on OpenRouter — input only, $0 output", 0.042, 0.0),
         };
 
     /// <summary>Fallback for any deployment not in <see cref="Catalog"/>.</summary>

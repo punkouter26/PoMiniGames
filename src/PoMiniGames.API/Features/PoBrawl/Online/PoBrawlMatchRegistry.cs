@@ -22,13 +22,27 @@ public sealed class PoBrawlMatchRegistry : IAsyncDisposable
         _loggerFactory = loggerFactory;
     }
 
-    public async Task<PoBrawlMatchService> GetOrCreateAsync(string code, IReadOnlyList<PoBrawlLobbyPlayer> roster)
+    /// <summary>
+    /// A lobby start (a full roster) ALWAYS creates a fresh match; a join (empty roster) only
+    /// ever finds the running one, or null when there is none.
+    /// </summary>
+    /// <remarks>
+    /// 2026-09-23: a start used to return any running match with the same code, and every
+    /// lobby uses the one global code. So a pair who started within 60 s of an abandoned fight
+    /// were handed the GHOST: their principals were not on its roster, nothing pinned them to a
+    /// side, every input was refused, and they watched it time out as a draw. And a join with
+    /// no match running constructed one from the empty roster, which throws on Roster[0].
+    /// </remarks>
+    public async Task<PoBrawlMatchService?> GetOrCreateAsync(string code, IReadOnlyList<PoBrawlLobbyPlayer> roster)
     {
         var log = _loggerFactory.CreateLogger<PoBrawlMatchRegistry>();
         log.LogInformation("GetOrCreateAsync code={Code} rosterSize={Size} current={Current}", code, roster.Count, _currentMatch?.MatchId ?? "null");
-        lock (_createLock)
+        if (roster.Count < 2)
         {
-            if (_currentMatch is { } existing && existing.GameCode == code) return existing;
+            lock (_createLock)
+            {
+                return _currentMatch is { } existing && existing.GameCode == code ? existing : null;
+            }
         }
         var matchId = Guid.NewGuid().ToString("N");
         var match = new PoBrawlMatchService(matchId, code, roster);

@@ -15,38 +15,86 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// Determinism vs. fairness. The HP / damage model is server-authoritative:
 /// the server is the only place HP totals are mutated, and the server only
 /// listens to inputs from the side the connection was pinned to at JoinMatch.
-/// A client cannot fabricate a hit because every damage event is gated by the
-/// server's RNG (which uses a deterministic per-match seed so the two clients
-/// see the same outcome).
+/// A client cannot fabricate a hit because every damage event is resolved here,
+/// with the server's RNG (a deterministic per-match seed, so a replay of the same
+/// inputs gives the same fight).
 /// </para>
 /// <para>
-/// Physics stays client-side. The server never sees positions or animation
-/// states; clients render their own fighter smoothly from local interpolation
-/// and reconcile HP / energy from the snapshot. This is a deliberate trade —
-/// the alternative (porting the entire JS engine to C#) is out of scope for
-/// this slice, and HP / energy are the only numbers the result depends on.
+/// <b>Spacing is server-authoritative too (2026-09-23).</b> This used to resolve every
+/// attack as a hit unless the defender was blocking: the server never knew where
+/// anyone stood, so a jab thrown from across the ring landed. It also held each side's
+/// LAST action live on every tick, and the client only sends key-downs — one tap of
+/// punch therefore punched ten times a second until another key was pressed, a KO in
+/// under two seconds. Now:
+/// </para>
+/// <list type="bullet">
+///   <item>The ring is one dimension: each corner has an X on [-<see cref="RingHalf"/>,
+///   <see cref="RingHalf"/>], P1 always left of P2, never closer than <see cref="MinGap"/>
+///   (the local engine's MIN_SEPARATION). Walking and blocking are HELD states; the client
+///   sends the new held state on every key-down and key-up.</item>
+///   <item>Punch / kick / special are one-shot PRESSES, buffered one deep, fired when that
+///   corner's cooldown allows, and they land only when the start-of-tick gap is inside
+///   that attack's reach. Both corners' swings resolve against the same start-of-tick gap,
+///   so neither side's knockback can move the other out of range first.</item>
+///   <item>A landed hit shoves the defender back (half as far through a guard), which is
+///   what makes spacing a fight rather than a formality.</item>
+/// </list>
+/// <para>
+/// This is still not the local engine: no capsules, no charge, no personalities. Those
+/// stay client-side for the local modes. What the server owns is exactly what the
+/// result depends on — HP, energy, spacing — plus enough of the engine's numbers (walk
+/// speeds, separation, ring size) that the two feel alike.
 /// </para>
 /// </remarks>
 public sealed class PoBrawlMatchService : IAsyncDisposable
 {
     /// <summary>
     /// Tick rate. 10 Hz matches the client UI's interpolation cadence; faster would
-    /// burn CPU on input aggregation for no visible benefit (HP only changes on
-    /// landed hits, which are sparse).
+    /// burn CPU on input aggregation for no visible benefit.
     /// </summary>
     public const int TickHz = 10;
 
     /// <summary>Round length, seconds. Matches the 2P local round.</summary>
     public const double MatchDurationSeconds = 60.0;
 
-    /// <summary>Punch base damage. Varied per hit by ±20% in MatchLogic.</summary>
+    /// <summary>Punch base damage. Varied per hit by ±20%.</summary>
     public const int PunchBaseDamage = 6;
     public const int KickBaseDamage = 10;
     public const int SpecialBaseDamage = 18;
 
-    /// <summary>Energy gain per landed hit, and per-tick regen when idle.</summary>
+    /// <summary>Energy gain per landed hit.</summary>
     public const int EnergyOnLandHit = 6;
     public const int EnergyRegenPerTick = 1;
+
+    // ── Spacing (mirrors the local engine; see the remarks) ──────────────────
+    /// <summary>Half-width of the ring, metres (arena.js RING_HALF).</summary>
+    public const double RingHalf = PoBrawlOnlineRules.RingHalf;
+    /// <summary>Spawn distance from centre (game.js SPAWN_X_BY_SIDE), so the fight opens 3.2 m apart.</summary>
+    public const double SpawnX = 1.6;
+    /// <summary>Closest the two corners can stand (game.js MIN_SEPARATION).</summary>
+    public const double MinGap = 0.95;
+    /// <summary>Walk speeds, m/s — forward is faster than back, as in the local engine.</summary>
+    public const double WalkInPerSecond = 2.4;
+    public const double WalkOutPerSecond = 1.9;
+
+    /// <summary>Largest gap, metres, at which each attack still connects.</summary>
+    public const double PunchReach = PoBrawlOnlineRules.PunchReach;
+    public const double KickReach = PoBrawlOnlineRules.KickReach;
+    public const double SpecialReach = PoBrawlOnlineRules.SpecialReach;
+
+    /// <summary>Ticks after a swing before that corner can swing again.</summary>
+    public const int PunchCooldownTicks = 3;
+    public const int KickCooldownTicks = 5;
+    public const int SpecialCooldownTicks = 8;
+
+    /// <summary>How far a landed hit shoves the defender, metres (halved through a guard).</summary>
+    public const double PunchKnockback = 0.15;
+    public const double KickKnockback = 0.45;
+    public const double SpecialKnockback = 0.9;
+
+    /// <summary>Energy each swing costs when it fires (the special instead needs and spends a full bar).</summary>
+    public const int PunchEnergyCost = 3;
+    public const int KickEnergyCost = 6;
 
     public string MatchId { get; }
     public string GameCode { get; }
@@ -57,25 +105,31 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
     private readonly PoBrawlLobbyPlayer _p2;
     private readonly object _stateLock = new();
 
-    private int _p1Hp = 100;
-    private int _p2Hp = 100;
-    private int _p1Energy;
-    private int _p2Energy;
+    /// <summary>One side's mutable state. Guarded by <see cref="_stateLock"/>.</summary>
+    private sealed class Corner(double x)
+    {
+        public int Hp = 100;
+        public int Energy;
+        public double X = x;
+        /// <summary>Idle / MoveForward / MoveBack / Block — what the player is holding.</summary>
+        public PoBrawlMatchAction Held = PoBrawlMatchAction.Idle;
+        /// <summary>A pressed attack waiting for the cooldown, buffered one deep (latest press wins).</summary>
+        public PoBrawlMatchAction? Pending;
+        public int Cooldown;
+        public long LastSequence = long.MinValue;
+    }
+
+    private readonly Corner _c1 = new(-SpawnX);
+    private readonly Corner _c2 = new(SpawnX);
     private double _elapsedSeconds;
     private bool _finished;
     private string _lastEvent = "";
     private PoBrawlSide? _winner;
 
-    // Most-recent input per side, plus its sequence for stale-rejection.
-    private PoBrawlMatchInput? _lastP1Input;
-    private PoBrawlMatchInput? _lastP2Input;
-    private long _p1LastAppliedSeq;
-    private long _p2LastAppliedSeq;
-
-    // RNG seeded deterministically from match id so the two clients see identical
-    // damage rolls. Random.Shared would diverge between hosts in a multi-instance
-    // deployment and even single-instance it has process-global state — a per-match
-    // seed makes replays and dispute resolution reproducible.
+    // RNG seeded deterministically from match id so a given input script always
+    // produces the same damage rolls. Random.Shared would diverge between hosts in a
+    // multi-instance deployment and even single-instance it has process-global state —
+    // a per-match seed makes replays and dispute resolution reproducible.
     private readonly Random _rng;
 
     /// <summary>Connection-id keyed map. Set by the match hub at JoinMatch.</summary>
@@ -114,6 +168,13 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
         _connections[connectionId] = side;
 
     /// <summary>
+    /// Every match-hub connection pinned to a side. The pump sends each its own result
+    /// from this — NOT from <see cref="Roster"/>, whose connection ids belong to the lobby
+    /// hub and do not exist on the match hub at all, so a result sent there reached nobody.
+    /// </summary>
+    public IReadOnlyCollection<string> ConnectionIds => _connections.Keys.ToArray();
+
+    /// <summary>
     /// Pin a connection by the player's lobby-side principal id. The match hub
     /// and the lobby hub allocate separate connection ids, so we re-resolve the
     /// side by walking the roster instead of relying on the lobby connection id
@@ -137,10 +198,14 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
 
     public void UnregisterConnection(string connectionId) => _connections.TryRemove(connectionId, out _);
 
+    private static bool IsAttack(PoBrawlMatchAction a) =>
+        a is PoBrawlMatchAction.Punch or PoBrawlMatchAction.Kick or PoBrawlMatchAction.Special;
+
     /// <summary>
-    /// Submit the caller's current input for this tick. Server overrides the
-    /// <see cref="PoBrawlMatchInput.ActorSide"/> with the connection's pinned
-    /// side so a malicious client cannot claim to be the other side.
+    /// Submit the caller's input. Server overrides the <see cref="PoBrawlMatchInput.ActorSide"/>
+    /// with the connection's pinned side so a malicious client cannot claim to be the other
+    /// side. An attack is buffered as a press; anything else replaces the held state. An input
+    /// older than the newest one already seen from that side is ignored.
     /// </summary>
     public bool SubmitInput(string connectionId, PoBrawlMatchInput input)
     {
@@ -150,27 +215,19 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
         lock (_stateLock)
         {
             if (_finished) return false;
-            if (pinned == PoBrawlSide.Player1)
-            {
-                if (_lastP1Input is null || input.Sequence >= _p1LastAppliedSeq)
-                {
-                    _lastP1Input = input;
-                }
-            }
-            else
-            {
-                if (_lastP2Input is null || input.Sequence >= _p2LastAppliedSeq)
-                {
-                    _lastP2Input = input;
-                }
-            }
+            var corner = pinned == PoBrawlSide.Player1 ? _c1 : _c2;
+            if (input.Sequence < corner.LastSequence) return true; // stale — reordered in flight
+            corner.LastSequence = input.Sequence;
+            if (!Enum.IsDefined(input.Action)) return true;
+            if (IsAttack(input.Action)) corner.Pending = input.Action;
+            else corner.Held = input.Action;
         }
         return true;
     }
 
     /// <summary>
     /// Run one simulation tick. Returns the broadcastable snapshot, or null when
-    /// the tick decided the match had ended. The pump calls this every 100 ms.
+    /// the match had already ended. The pump calls this every 100 ms.
     /// </summary>
     public PoBrawlMatchState? Tick()
     {
@@ -179,37 +236,26 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
         {
             if (_finished) return null;
             _elapsedSeconds += 1.0 / TickHz;
-            ApplyInputsLocked();
+            ApplyTickLocked();
             // Timer-end: tie goes to the higher-HP side; exact tie is a draw.
-            if (_elapsedSeconds >= MatchDurationSeconds)
-            {
-                _finished = true;
-                _winner = _p1Hp > _p2Hp ? PoBrawlSide.Player1
-                    : _p2Hp > _p1Hp ? PoBrawlSide.Player2
-                    : (PoBrawlSide?)null;
-                _lastEvent = _winner is null ? "time-up-draw" : "time-up";
-            }
-            else if (_p1Hp <= 0)
+            if (_c1.Hp <= 0)
             {
                 _finished = true; _winner = PoBrawlSide.Player2; _lastEvent = "ko";
             }
-            else if (_p2Hp <= 0)
+            else if (_c2.Hp <= 0)
             {
                 _finished = true; _winner = PoBrawlSide.Player1; _lastEvent = "ko";
             }
-
-            snapshot = new PoBrawlMatchState
+            else if (_elapsedSeconds >= MatchDurationSeconds)
             {
-                MatchId = MatchId,
-                ElapsedSeconds = _elapsedSeconds,
-                Player1Hp = _p1Hp,
-                Player2Hp = _p2Hp,
-                Player1Energy = _p1Energy,
-                Player2Energy = _p2Energy,
-                LastEvent = _lastEvent,
-                Finished = _finished,
-                Winner = _winner,
-            };
+                _finished = true;
+                _winner = _c1.Hp > _c2.Hp ? PoBrawlSide.Player1
+                    : _c2.Hp > _c1.Hp ? PoBrawlSide.Player2
+                    : (PoBrawlSide?)null;
+                _lastEvent = _winner is null ? "time-up-draw" : "time-up";
+            }
+
+            snapshot = SnapshotLocked();
             // Clear last-event after one tick so the sound / shake on the client
             // fires once per occurrence and not every frame.
             _lastEvent = "";
@@ -217,93 +263,145 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
         return snapshot;
     }
 
-    private void ApplyInputsLocked()
+    private PoBrawlMatchState SnapshotLocked() => new()
     {
-        var p1 = _lastP1Input?.Action ?? PoBrawlMatchAction.Idle;
-        var p2 = _lastP2Input?.Action ?? PoBrawlMatchAction.Idle;
-
-        // Energy regen — idle and movement only; blocking interrupts regen briefly
-        // by halving it so blocking reads as a trade-off.
-        _p1Energy = Math.Min(100, _p1Energy + EnergyFromAction(p1));
-        _p2Energy = Math.Min(100, _p2Energy + EnergyFromAction(p2));
-
-        // Resolve attacks. A punch lands if the opponent is not actively blocking;
-        // block cuts damage to 1, kick to 0. Special is unblockable but requires
-        // full energy (consumed on use).
-        ResolveAttack(p1, blocking: p2 == PoBrawlMatchAction.Block, isP1: true);
-        ResolveAttack(p2, blocking: p1 == PoBrawlMatchAction.Block, isP1: false);
-
-        if (_lastP1Input is not null) _p1LastAppliedSeq = _lastP1Input.Sequence;
-        if (_lastP2Input is not null) _p2LastAppliedSeq = _lastP2Input.Sequence;
-    }
-
-    private static int EnergyFromAction(PoBrawlMatchAction a) => a switch
-    {
-        PoBrawlMatchAction.Idle => EnergyRegenPerTick * 2,
-        PoBrawlMatchAction.MoveForward or PoBrawlMatchAction.MoveBack => EnergyRegenPerTick,
-        PoBrawlMatchAction.Block => EnergyRegenPerTick / 2,
-        // Attacking drains more energy than idle regains; net-zero per landed hit
-        // because EnergyOnLandHit tops the bar up on a successful connect.
-        PoBrawlMatchAction.Punch or PoBrawlMatchAction.Kick => -2,
-        PoBrawlMatchAction.Special => -10,
-        _ => 0,
+        MatchId = MatchId,
+        ElapsedSeconds = _elapsedSeconds,
+        Player1Hp = _c1.Hp,
+        Player2Hp = _c2.Hp,
+        Player1Energy = _c1.Energy,
+        Player2Energy = _c2.Energy,
+        Player1X = Math.Round(_c1.X, 3),
+        Player2X = Math.Round(_c2.X, 3),
+        LastEvent = _lastEvent,
+        Finished = _finished,
+        Winner = _winner,
     };
 
-    private void ResolveAttack(PoBrawlMatchAction action, bool blocking, bool isP1)
+    private void ApplyTickLocked()
     {
-        int baseDmg; int energyCost;
-        switch (action)
+        // 1. Swings, both against the START-of-tick gap (see the remarks).
+        var gap = _c2.X - _c1.X;
+        var a1 = TakeSwing(_c1);
+        var a2 = TakeSwing(_c2);
+        // Swinging drops the guard for the tick: you cannot attack and block at once.
+        var p1Guarding = a1 is null && _c1.Held == PoBrawlMatchAction.Block;
+        var p2Guarding = a2 is null && _c2.Held == PoBrawlMatchAction.Block;
+        if (a1 is { } s1) ResolveSwing(s1, _c1, _c2, p2Guarding, gap, isP1: true);
+        if (a2 is { } s2) ResolveSwing(s2, _c2, _c1, p1Guarding, gap, isP1: false);
+
+        // 2. Footwork. A guard plants you; a swing roots you for its tick.
+        Walk(_c1, a1 is null, direction: +1);
+        Walk(_c2, a2 is null, direction: -1);
+        EnforceSpacing();
+
+        // 3. Energy regen from what is held, and the cooldown clocks.
+        foreach (var c in new[] { _c1, _c2 })
         {
-            case PoBrawlMatchAction.Punch:
-                baseDmg = PunchBaseDamage; energyCost = 0; break;
-            case PoBrawlMatchAction.Kick:
-                baseDmg = KickBaseDamage; energyCost = 0; break;
-            case PoBrawlMatchAction.Special:
-                if ((isP1 ? _p1Energy : _p2Energy) < 100) return; // not charged
-                baseDmg = SpecialBaseDamage; energyCost = 100; break;
-            default:
-                return;
+            c.Energy = Math.Min(100, c.Energy + c.Held switch
+            {
+                PoBrawlMatchAction.Idle => EnergyRegenPerTick * 2,
+                PoBrawlMatchAction.MoveForward or PoBrawlMatchAction.MoveBack => EnergyRegenPerTick,
+                _ => 0,
+            });
+            if (c.Cooldown > 0) c.Cooldown--;
+        }
+    }
+
+    /// <summary>The buffered press, if this corner may swing this tick; consumes it and starts the cooldown.</summary>
+    private static PoBrawlMatchAction? TakeSwing(Corner c)
+    {
+        if (c.Pending is not { } swing || c.Cooldown > 0) return null;
+        c.Pending = null;
+        // A special without a full bar is simply refused; the press is spent.
+        if (swing == PoBrawlMatchAction.Special && c.Energy < 100) return null;
+        c.Cooldown = swing switch
+        {
+            PoBrawlMatchAction.Punch => PunchCooldownTicks,
+            PoBrawlMatchAction.Kick => KickCooldownTicks,
+            _ => SpecialCooldownTicks,
+        };
+        c.Energy = swing switch
+        {
+            PoBrawlMatchAction.Punch => Math.Max(0, c.Energy - PunchEnergyCost),
+            PoBrawlMatchAction.Kick => Math.Max(0, c.Energy - KickEnergyCost),
+            _ => 0,
+        };
+        return swing;
+    }
+
+    private void ResolveSwing(PoBrawlMatchAction swing, Corner attacker, Corner defender, bool guarded, double gap, bool isP1)
+    {
+        var (baseDmg, reach, knockback) = swing switch
+        {
+            PoBrawlMatchAction.Punch => (PunchBaseDamage, PunchReach, PunchKnockback),
+            PoBrawlMatchAction.Kick => (KickBaseDamage, KickReach, KickKnockback),
+            _ => (SpecialBaseDamage, SpecialReach, SpecialKnockback),
+        };
+        var tag = isP1 ? "p1" : "p2";
+        if (gap > reach)
+        {
+            _lastEvent = $"{tag}-whiff";
+            return;
         }
 
-        // ±20% damage variance — deterministic per-match via _rng so both clients
-        // see the same hit number when the server broadcasts the snapshot.
+        // ±20% damage variance, deterministic per match via _rng.
         var variance = 1.0 + (_rng.NextDouble() * 0.4 - 0.2);
         var damage = (int)Math.Round(baseDmg * variance, MidpointRounding.AwayFromZero);
 
         // Block cuts damage. Punch is negated entirely (defensive read on a jab),
-        // kick chips 1 (you can still push them back), special is unblockable.
-        if (blocking)
+        // kick chips 1/4 (you can still push them back), special is unblockable.
+        if (guarded)
         {
-            damage = action switch
+            damage = swing switch
             {
                 PoBrawlMatchAction.Punch => 0,
                 PoBrawlMatchAction.Kick => Math.Max(1, damage / 4),
                 _ => damage,
             };
+            knockback *= 0.5;
         }
 
-        if (damage > 0)
-        {
-            if (isP1)
-            {
-                _p2Hp = Math.Max(0, _p2Hp - damage);
-                _p1Energy = Math.Min(100, _p1Energy + EnergyOnLandHit);
-            }
-            else
-            {
-                _p1Hp = Math.Max(0, _p1Hp - damage);
-                _p2Energy = Math.Min(100, _p2Energy + EnergyOnLandHit);
-            }
-            _lastEvent = isP1
-                ? (action == PoBrawlMatchAction.Special ? "p1-special" : "p1-hit")
-                : (action == PoBrawlMatchAction.Special ? "p2-special" : "p2-hit");
-        }
+        // Shove the defender away from the attacker (P1 is always the left corner).
+        defender.X += isP1 ? knockback : -knockback;
+        EnforceSpacing();
 
-        if (energyCost > 0)
+        if (damage <= 0)
         {
-            if (isP1) _p1Energy = Math.Max(0, _p1Energy - energyCost);
-            else _p2Energy = Math.Max(0, _p2Energy - energyCost);
+            _lastEvent = $"{tag}-blocked";
+            return;
         }
+        defender.Hp = Math.Max(0, defender.Hp - damage);
+        attacker.Energy = Math.Min(100, attacker.Energy + EnergyOnLandHit);
+        _lastEvent = swing == PoBrawlMatchAction.Special ? $"{tag}-special" : $"{tag}-hit";
+    }
+
+    private static void Walk(Corner c, bool free, int direction)
+    {
+        if (!free) return;
+        var step = c.Held switch
+        {
+            PoBrawlMatchAction.MoveForward => WalkInPerSecond / TickHz,
+            PoBrawlMatchAction.MoveBack => -WalkOutPerSecond / TickHz,
+            _ => 0.0,
+        };
+        c.X += direction * step;
+    }
+
+    /// <summary>Ring clamp, then the minimum gap, split between the corners (a corner pinned on the rope yields nothing).</summary>
+    private void EnforceSpacing()
+    {
+        _c1.X = Math.Clamp(_c1.X, -RingHalf, RingHalf - MinGap);
+        _c2.X = Math.Clamp(_c2.X, -RingHalf + MinGap, RingHalf);
+        var deficit = MinGap - (_c2.X - _c1.X);
+        if (deficit <= 0) return;
+        var p1Room = _c1.X + RingHalf;   // how far P1 can still back up
+        var p2Room = RingHalf - _c2.X;
+        var p1Share = Math.Min(p1Room, deficit / 2);
+        var p2Share = Math.Min(p2Room, deficit - p1Share);
+        p1Share = Math.Min(p1Room, deficit - p2Share);
+        _c1.X -= p1Share;
+        _c2.X += p2Share;
     }
 
     /// <summary>
@@ -314,23 +412,12 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
     public PoBrawlMatchResult BuildResultFor(string connectionId)
     {
         PoBrawlMatchState snapshot;
-        PoBrawlLobbyPlayer localPlayer;
-        PoBrawlLobbyPlayer opponent;
         lock (_stateLock)
         {
-            snapshot = new PoBrawlMatchState
-            {
-                MatchId = MatchId,
-                ElapsedSeconds = _elapsedSeconds,
-                Player1Hp = _p1Hp,
-                Player2Hp = _p2Hp,
-                Finished = _finished,
-                Winner = _winner,
-            };
-            localPlayer = SideFor(connectionId) == PoBrawlSide.Player1 ? _p1 : _p2;
-            opponent = SideFor(connectionId) == PoBrawlSide.Player1 ? _p2 : _p1;
+            snapshot = SnapshotLocked();
         }
         var localSide = SideFor(connectionId);
+        var opponent = localSide == PoBrawlSide.Player1 ? _p2 : _p1;
         var outcome = !snapshot.Finished ? PoBrawlOutcome.Draw
             : snapshot.Winner is null ? PoBrawlOutcome.Draw
             : snapshot.Winner == localSide ? PoBrawlOutcome.Win

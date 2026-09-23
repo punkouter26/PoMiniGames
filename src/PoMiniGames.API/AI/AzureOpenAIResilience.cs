@@ -151,6 +151,7 @@ public static class AzureOpenAIResilience
         AIFoundryOptions.Games.FunQuiz,
         AIFoundryOptions.Games.Joker,
         AIFoundryOptions.Games.Ecosystem,
+        AIFoundryOptions.Games.PoBrawl,
     ];
 
     /// <summary>Pipeline name for one game's partition.</summary>

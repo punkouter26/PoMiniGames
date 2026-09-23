@@ -7,15 +7,19 @@ namespace PoMiniGames.Unit.Features.PoBrawl;
 
 /// <summary>
 /// Server-side simulation tests for the live 1v1 match service. Side pinning,
-/// per-tick damage resolution, deterministic damage rolls, finish conditions,
+/// range-gated damage resolution, deterministic damage rolls, finish conditions,
 /// and the result payload shape per recipient.
 /// </summary>
 /// <remarks>
 /// Bundled into a handful of <c>[Fact]</c>s so the Unit tier stays under its
 /// 100-method ceiling. Each test covers one observable behaviour of the resolver.
+/// Since 2026-09-23 the ring has spacing: the corners open 3.2 m apart, out of every
+/// attack's reach, so each test that wants a hit walks in first (<see cref="CloseIn"/>).
 /// </remarks>
 public class PoBrawlMatchServiceTests
 {
+    private long _seq;
+
     private static PoBrawlLobbyPlayer NewPlayer(string connId, string principal, string name, PoBrawlFighter fighter) =>
         new(connId, principal, name, IsGuest: false, IsReady: true, fighter);
 
@@ -29,6 +33,36 @@ public class PoBrawlMatchServiceTests
         return match;
     }
 
+    private void Send(PoBrawlMatchService match, string conn, PoBrawlMatchAction action, PoBrawlSide claimed = PoBrawlSide.Player1) =>
+        match.SubmitInput(conn, new PoBrawlMatchInput { ActorSide = claimed, Action = action, Sequence = ++_seq });
+
+    /// <summary>Walk <paramref name="conn"/> forward until the gap is inside punch reach, then stop.</summary>
+    private PoBrawlMatchState CloseIn(PoBrawlMatchService match, string conn)
+    {
+        Send(match, conn, PoBrawlMatchAction.MoveForward);
+        PoBrawlMatchState snap = match.Tick()!;
+        for (var i = 0; i < 40 && snap.Player2X - snap.Player1X > PoBrawlOnlineRules.PunchReach - 0.1; i++)
+            snap = match.Tick()!;
+        Send(match, conn, PoBrawlMatchAction.Idle);
+        return snap;
+    }
+
+    /// <summary>Close in, then press <paramref name="attack"/> every tick until the match ends.</summary>
+    private PoBrawlMatchState? FightToKo(PoBrawlMatchService match, string conn, PoBrawlMatchAction attack)
+    {
+        CloseIn(match, conn);
+        PoBrawlMatchState? snap = null;
+        for (var tick = 0; tick < 600; tick++)
+        {
+            // Knockback opens the gap, so keep walking back into range between swings.
+            Send(match, conn, PoBrawlMatchAction.MoveForward);
+            Send(match, conn, attack);
+            snap = match.Tick();
+            if (snap is { Finished: true }) break;
+        }
+        return snap;
+    }
+
     [Fact]
     public void SideFor_ReturnsPinnedSide()
     {
@@ -38,49 +72,47 @@ public class PoBrawlMatchServiceTests
     }
 
     [Fact]
-    public void Tick_DecrementsHp_OnLandedPunch_AndBlockNegatesPunch()
+    public void Tick_LandsOnlyInRange_OncePerPress_AndBlockNegatesPunch()
     {
-        // Two cases in one test (would be two Facts without the ceiling pressure):
-        // P1+P2 both punch → both take damage. P1 blocks while P2 punches → P1 stays at 100.
-        var a = StartedMatch("attack");
-        for (var i = 0; i < 20; i++)
-        {
-            a.SubmitInput("conn-1", new PoBrawlMatchInput { ActorSide = PoBrawlSide.Player1, Action = PoBrawlMatchAction.Punch, Sequence = 1 + i });
-            a.SubmitInput("conn-2", new PoBrawlMatchInput { ActorSide = PoBrawlSide.Player2, Action = PoBrawlMatchAction.Punch, Sequence = 1 + i });
-        }
-        var attackSnap = a.Tick()!;
-        attackSnap.Player1Hp.Should().BeLessThan(100);
-        attackSnap.Player2Hp.Should().BeLessThan(100);
+        // Three behaviours in one test (would be three Facts without the ceiling pressure).
+        // 1. Out of range: the fight opens 3.2 m apart, so a punch from spawn whiffs.
+        var far = StartedMatch("far");
+        Send(far, "conn-1", PoBrawlMatchAction.Punch);
+        var whiff = far.Tick()!;
+        whiff.Player2Hp.Should().Be(100, "a jab thrown from across the ring must not land");
+        whiff.LastEvent.Should().Be("p1-whiff");
 
-        var b = StartedMatch("block");
-        for (var i = 0; i < 20; i++)
-        {
-            b.SubmitInput("conn-1", new PoBrawlMatchInput { ActorSide = PoBrawlSide.Player1, Action = PoBrawlMatchAction.Block, Sequence = 1 + i });
-            b.SubmitInput("conn-2", new PoBrawlMatchInput { ActorSide = PoBrawlSide.Player2, Action = PoBrawlMatchAction.Punch, Sequence = 1 + i });
-        }
-        var blockSnap = b.Tick()!;
-        blockSnap.Player1Hp.Should().Be(100, "punch is fully negated by a block");
+        // 2. In range, a single press lands exactly once — the old model kept the last
+        //    action live and punched ten times a second off one key-down.
+        var near = StartedMatch("near");
+        CloseIn(near, "conn-1");
+        Send(near, "conn-1", PoBrawlMatchAction.Punch);
+        var landed = near.Tick()!;
+        landed.Player2Hp.Should().BeLessThan(100);
+        var afterOne = landed.Player2Hp;
+        for (var i = 0; i < 10; i++) near.Tick();
+        near.Tick()!.Player2Hp.Should().Be(afterOne, "one press is one swing");
+
+        // 3. A held guard negates a punch in range.
+        var guard = StartedMatch("guard");
+        CloseIn(guard, "conn-1");
+        Send(guard, "conn-2", PoBrawlMatchAction.Block);
+        Send(guard, "conn-1", PoBrawlMatchAction.Punch);
+        var blocked = guard.Tick()!;
+        blocked.Player2Hp.Should().Be(100, "punch is fully negated by a block");
+        blocked.LastEvent.Should().Be("p1-blocked");
     }
 
     [Fact]
     public void SubmitInput_OverridesActorWithPinnedSide()
     {
         var match = StartedMatch();
-        // Malicious: conn-1 (P1) claims to be P2 in its ActorSide. Server overwrites.
-        match.SubmitInput("conn-1", new PoBrawlMatchInput
-        {
-            ActorSide = PoBrawlSide.Player2,
-            Action = PoBrawlMatchAction.Punch,
-            Sequence = 1,
-        });
-        // P1 now stores a Punch; P2 also P2-punches. After enough ticks P2 must KO P1.
-        for (var tick = 0; tick < 30; tick++)
-        {
-            match.SubmitInput("conn-2", new PoBrawlMatchInput { ActorSide = PoBrawlSide.Player2, Action = PoBrawlMatchAction.Punch, Sequence = 10 + tick });
-            if (match.Tick() is { Finished: true }) break;
-        }
-        match.BuildResultFor("conn-1").Outcome.Should().Be(PoBrawlOutcome.Loss,
-            "P2's punches must land on P1 — only possible if the server overwrote the malicious ActorSide");
+        // Malicious: conn-1 (P1) claims to be P2 and walks. The server pins it to P1, so
+        // it is P1's corner that moves — P2's must not budge.
+        Send(match, "conn-1", PoBrawlMatchAction.MoveForward, claimed: PoBrawlSide.Player2);
+        var snap = match.Tick()!;
+        snap.Player1X.Should().BeGreaterThan(-1.6, "the pinned side (P1) walked");
+        snap.Player2X.Should().Be(1.6, "the claimed side (P2) must be untouched");
     }
 
     [Fact]
@@ -88,28 +120,30 @@ public class PoBrawlMatchServiceTests
     {
         var first = StartedMatch("dup-match");
         var second = StartedMatch("dup-match");
-        for (var i = 0; i < 5; i++)
+        var hp = new List<int>();
+        foreach (var m in new[] { first, second })
         {
-            first.SubmitInput("conn-1", new PoBrawlMatchInput { ActorSide = PoBrawlSide.Player1, Action = PoBrawlMatchAction.Punch, Sequence = 1 + i });
-            second.SubmitInput("conn-1", new PoBrawlMatchInput { ActorSide = PoBrawlSide.Player1, Action = PoBrawlMatchAction.Punch, Sequence = 1 + i });
+            CloseIn(m, "conn-1");
+            for (var i = 0; i < 5; i++)
+            {
+                Send(m, "conn-1", PoBrawlMatchAction.Punch);
+                for (var t = 0; t < PoBrawlMatchService.PunchCooldownTicks; t++) m.Tick();
+            }
+            hp.Add(m.Tick()!.Player2Hp);
         }
-        first.Tick()!.Player2Hp.Should().Be(second.Tick()!.Player2Hp);
+        hp[0].Should().BeLessThan(100);
+        hp[0].Should().Be(hp[1], "same match id + same inputs must roll the same damage");
     }
 
     [Fact]
     public void Tick_FinishesByKo_ThenReturnsNull_AndRejectsFurtherInputs()
     {
         var match = StartedMatch();
-        PoBrawlMatchState? final = null;
-        for (var tick = 0; tick < 30; tick++)
-        {
-            match.SubmitInput("conn-2", new PoBrawlMatchInput { ActorSide = PoBrawlSide.Player2, Action = PoBrawlMatchAction.Punch, Sequence = 1 + tick });
-            final = match.Tick();
-            if (final is { Finished: true }) break;
-        }
+        var final = FightToKo(match, "conn-2", PoBrawlMatchAction.Kick);
         final.Should().NotBeNull();
         final!.Finished.Should().BeTrue();
         final.Winner.Should().Be(PoBrawlSide.Player2);
+        final.LastEvent.Should().Be("ko");
         // Once finished, subsequent ticks must report null so the pump stops broadcasting.
         match.Tick().Should().BeNull();
         // Post-finish: SubmitInput is a no-op so a stale client cannot keep firing hits.
@@ -121,11 +155,7 @@ public class PoBrawlMatchServiceTests
     public void BuildResultFor_ShapesOutcomePerConnection()
     {
         var match = StartedMatch();
-        for (var tick = 0; tick < 30; tick++)
-        {
-            match.SubmitInput("conn-2", new PoBrawlMatchInput { ActorSide = PoBrawlSide.Player2, Action = PoBrawlMatchAction.Punch, Sequence = 1 + tick });
-            if (match.Tick() is { Finished: true }) break;
-        }
+        FightToKo(match, "conn-2", PoBrawlMatchAction.Punch);
         var p1Result = match.BuildResultFor("conn-1");
         var p2Result = match.BuildResultFor("conn-2");
         p1Result.LocalSide.Should().Be(PoBrawlSide.Player1);
@@ -134,5 +164,7 @@ public class PoBrawlMatchServiceTests
         p2Result.Outcome.Should().Be(PoBrawlOutcome.Win);
         p1Result.OpponentId.Should().Be("bob");
         p2Result.OpponentId.Should().Be("alice");
+        // The pump sends results to these, not to the lobby roster's connection ids.
+        match.ConnectionIds.Should().BeEquivalentTo(new[] { "conn-1", "conn-2" });
     }
 }

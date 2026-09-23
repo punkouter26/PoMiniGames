@@ -83,19 +83,6 @@ internal static class GameServicesExtensions
             });
         services.AddSingleton<AIFoundryClientFactory>();
         services.AddSingleton<AIFoundryChatClientCache>();
-        // ─── Jev decision client (System One) ────────────────────────────────
-        // Jev does not fit the OpenAI ChatClient decorator chain (no token stream,
-        // typed primitives only) — see IJevClient for why. A typed HttpClient keeps
-        // the timeout, the bearer header, and the JSON contract in one place; the
-        // telemetry decorator wraps the inner client so the dev-facing
-        // /api/health/jev endpoint sees every branch, including pre-flight bypasses.
-        services.AddOptions<JevOptions>().BindConfiguration(JevOptions.SectionName);
-        services.AddSingleton<JevUsageAccumulator>();
-        services.AddHttpClient<IJevClient, JevHttpClient>();
-        services.AddSingleton<JevTelemetryDecorator>();
-        // Register the telemetry decorator under the same interface so callers
-        // resolve the decorated client without remembering to ask for it.
-        services.AddSingleton<IJevClient>(sp => sp.GetRequiredService<JevTelemetryDecorator>());
         // §3: register the resilience pipeline (retry + circuit breaker + outer timeout)
         // used by every AI Foundry consumer. Idempotent — safe to call multiple times.
         // Consumed by ResilientChatClient, which every keyed game chat client is wrapped in;
@@ -150,6 +137,7 @@ internal static class GameServicesExtensions
         services.AddGameChatClient(AIFoundryOptions.Games.FunQuiz);
         services.AddGameChatClient(AIFoundryOptions.Games.Joker);
         services.AddGameChatClient(AIFoundryOptions.Games.Ecosystem);
+        services.AddGameChatClient(AIFoundryOptions.Games.PoBrawl);
         // /health gains an AI check, and /api/health/ai exposes the usage read-model that
         // AiUsageAccumulator has been filling with no reader.
         services.AddHealthChecks()
@@ -288,6 +276,8 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlLobbyService>();
         services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchRegistry>();
         services.AddHostedService<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchPump>();
+        // The post-fight press-conference line (one cheap model call per shown result modal).
+        services.AddSingleton<PoMiniGames.Features.PoBrawl.IPoBrawlPresserService, PoMiniGames.Features.PoBrawl.PoBrawlPresserService>();
 
         // ConnectFive + TicTacToe online — turn-based 1v1 over SignalR. One shared
         // TurnMatchService<THub> per hub holds that game's quick-match queue and every

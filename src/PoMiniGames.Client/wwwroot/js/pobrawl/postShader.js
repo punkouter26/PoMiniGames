@@ -50,6 +50,16 @@ export const CAVignetteShader = {
     // held up through the super cinematic.
     uSpeed: { value: 0 },
     uSpeedTint: { value: [1.0, 0.97, 0.88] },
+    // ── Danger edge (GFX/SOUND #4, 2026-09-23) ──────────────────────
+    // A red tint creeping in from the screen edge on the SIDE of a fighter
+    // near a KO (0..1 each), pulsing on the heartbeat game.js plays. Edge-only
+    // and capped well short of opaque: the flicker passes removed every
+    // whole-frame luminance change, and this is built not to be one — the
+    // centre of the frame, where the fighters are, is never touched. Calm mode
+    // pins uHeart at a constant, so the tint holds still.
+    uDangerL: { value: 0 },
+    uDangerR: { value: 0 },
+    uHeart: { value: 0 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -72,6 +82,9 @@ export const CAVignetteShader = {
     uniform float uTime;
     uniform float uSpeed;
     uniform vec3 uSpeedTint;
+    uniform float uDangerL;
+    uniform float uDangerR;
+    uniform float uHeart;
     varying vec2 vUv;
     // Cheap hash for the film grain — no texture fetch.
     float hash21(vec2 p) {
@@ -168,6 +181,16 @@ export const CAVignetteShader = {
 
       float d = distance(vUv, vec2(0.5));
       col *= 1.0 - smoothstep(0.55, 0.95, d) * uVignette;
+
+      // Danger edge: skipped outright unless a fighter is in the red.
+      if (uDangerL + uDangerR > 0.003) {
+        float edge = (1.0 - smoothstep(0.0, 0.3, vUv.x)) * uDangerL
+                   + smoothstep(0.7, 1.0, vUv.x) * uDangerR;
+        // Strongest at mid-height, easing off into the corners the vignette owns.
+        edge *= 0.55 + 0.45 * (1.0 - abs(vUv.y - 0.5) * 2.0);
+        float m = clamp(edge * (0.62 + 0.38 * uHeart), 0.0, 1.0) * 0.5;
+        col = mix(col, col * vec3(1.2, 0.6, 0.56) + vec3(0.045, 0.0, 0.004), m);
+      }
 
       // Film grain (idea #10): animated monochrome noise, strongest in the
       // shadows (where sensor noise actually lives) and fading out of the

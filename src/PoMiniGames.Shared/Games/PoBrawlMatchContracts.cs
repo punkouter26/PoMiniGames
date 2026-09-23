@@ -9,16 +9,17 @@ namespace PoMiniGames.Shared.Games;
 // Scope note: PoBrawl's existing JS engine owns all physics, hitbox math, and
 // animation. Porting that whole pipeline to C# in one shot is out of scope, so
 // the server-authoritative boundary is the *combat outcome*: HP totals, damage
-// applied per landed hit, and the eventual winner. Movement interpolation stays
-// client-side (each client renders its own fighter smoothly); the server only
-// sees input events, not positions. A client that reports a hit it didn't land
-// just doesn't get the HP credit on the server — the visible game state on the
-// opponent's screen reflects the server's HP, not the cheating client's claim.
+// applied per landed hit, spacing, and the eventual winner. Since 2026-09-23 the
+// server also owns a one-dimensional ring (each corner's X), because an outcome
+// that ignores distance is not an outcome: attacks land only inside their reach.
+// A client never reports a hit at all — it reports inputs, and the server decides.
 
 /// <summary>
-/// One input event a client sends to the server during a match. Either side of
-/// the 1v1 can submit one of these on every input change (button-down / button-up).
-/// The server aggregates the most recent inputs from each side per tick.
+/// One input event a client sends to the server during a match, on every input change.
+/// <see cref="PoBrawlMatchAction.Punch"/>, <see cref="PoBrawlMatchAction.Kick"/> and
+/// <see cref="PoBrawlMatchAction.Special"/> are PRESSES (buffered one deep, fired once);
+/// every other action is the new HELD state, so the client must send one on key-up too
+/// (usually <see cref="PoBrawlMatchAction.Idle"/>) or the fighter keeps walking.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -42,6 +43,21 @@ public sealed class PoBrawlMatchInput
     public long Sequence { get; set; }
 }
 
+/// <summary>
+/// The online ring's geometry, shared so the server that resolves a swing and the page that
+/// draws the range read the same numbers. The walk speeds, cooldowns and knockback live on
+/// the server (PoBrawlMatchService) because nothing client-side needs them.
+/// </summary>
+public static class PoBrawlOnlineRules
+{
+    /// <summary>Half-width of the ring, metres (the local engine's arena.js RING_HALF).</summary>
+    public const double RingHalf = 5.2;
+    /// <summary>Largest gap, metres, at which each attack still connects.</summary>
+    public const double PunchReach = 1.5;
+    public const double KickReach = 1.75;
+    public const double SpecialReach = 1.75;
+}
+
 public enum PoBrawlSide
 {
     Player1 = 0,
@@ -54,7 +70,7 @@ public enum PoBrawlMatchAction
     MoveForward = 1,
     MoveBack = 2,
     Block = 3,
-    /// <summary>Punch. Lands a hit on the opponent if the server resolves them in range this tick.</summary>
+    /// <summary>Punch (a press). Lands only if the gap is inside punch reach when it fires.</summary>
     Punch = 4,
     /// <summary>Kick. Higher damage, slower cadence.</summary>
     Kick = 5,
@@ -79,7 +95,14 @@ public sealed class PoBrawlMatchState
     public int Player1Energy { get; set; }
     /// <summary>P2's energy meter, 0..100.</summary>
     public int Player2Energy { get; set; }
-    /// <summary>Last event the server resolved this tick (or empty). Used for sound + screen-shake on the client.</summary>
+    /// <summary>P1's position on the one-dimensional ring, metres from centre (negative = left).</summary>
+    public double Player1X { get; set; } = -1.6;
+    /// <summary>P2's position; always at least the minimum gap to the right of P1.</summary>
+    public double Player2X { get; set; } = 1.6;
+    /// <summary>
+    /// Last event the server resolved this tick (or empty): <c>p1-hit</c>, <c>p1-special</c>,
+    /// <c>p1-blocked</c>, <c>p1-whiff</c> (and the p2 forms), <c>ko</c>, <c>time-up</c>, <c>time-up-draw</c>.
+    /// </summary>
     public string LastEvent { get; set; } = "";
     /// <summary>True when the match is over (a side at 0 HP, or the timer ran out).</summary>
     public bool Finished { get; set; }

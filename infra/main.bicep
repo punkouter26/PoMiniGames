@@ -30,9 +30,6 @@ param microsoftAuthApiClientId string = ''
 @description('Entra ID tenant id used to compose the authority URL (defaults to the deploying tenant)')
 param microsoftAuthTenantId string = tenant().tenantId
 
-@description('OpenRouter API key for the Jev System One pre-call gate (PoMiniGames__Jev__ApiKey). Override via `azd env set PoMiniGamesJevApiKey <key>`. Empty by default; a missing value leaves the Jev gate in bypass mode (the documented safe-default).')
-param jevApiKey string = ''
-
 var tags = {
   'azd-env-name': name
 }
@@ -91,7 +88,6 @@ module kvSecrets './kv-secrets.bicep' = {
     keyVaultName: sharedKeyVaultName
     storageAccountName: resources.outputs.STORAGE_ACCOUNT_NAME
     aiFoundryEndpoint: resources.outputs.AI_FOUNDRY_ENDPOINT
-    jevApiKey: jevApiKey
   }
 }
 

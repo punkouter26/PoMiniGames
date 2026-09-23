@@ -48,6 +48,8 @@ public sealed class PoBrawlMatchHub : Hub
         // Calling GetOrCreateAsync with an empty roster is a no-op if the lobby
         // already created the match — the registry returns the existing match.
         var match = await _registry.GetOrCreateAsync(code, Array.Empty<PoBrawlLobbyPlayer>());
+        // No match running (it ended, or nobody started one): nothing to join.
+        if (match is null) return null;
         // The lobby and match hubs allocate separate connection ids, so we
         // pin THIS connection to a side by re-resolving its identity through
         // the roster rather than trusting the lobby's connection id.

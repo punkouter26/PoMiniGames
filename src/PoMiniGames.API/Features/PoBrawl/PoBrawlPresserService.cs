@@ -1,0 +1,255 @@
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Options;
+using PoMiniGames.AI;
+using PoMiniGames.Domain.Primitives;
+using PoMiniGames.Features.Shared;
+using PoMiniGames.Shared.Games;
+
+namespace PoMiniGames.Features.PoBrawl;
+
+/// <summary>The post-fight press conference: one line in the speaker's voice.</summary>
+public interface IPoBrawlPresserService
+{
+    /// <summary>The line, or <c>null</c> when either fighter id is not on the roster.</summary>
+    Task<PoBrawlPresserReply?> AskAsync(PoBrawlPresserRequest request, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Writes the single press-conference line shown (and spoken) on PoBrawl's result modal.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Cost shape.</b> One bounded-text call on the cheap <c>pobrawl.presser</c> task deployment,
+/// behind the per-identity token budget (automatic, through
+/// <see cref="BudgetedChatClient"/>) and the <c>ai-generation</c> rate limit. The client asks
+/// only when the modal is shown — a 1P ladder win rolls straight into the next rung with no
+/// modal, and demo mode never asks — so a kiosk left running spends nothing.
+/// </para>
+/// <para>
+/// <b>Every failure is a canned line, never an error, in every environment.</b> The other AI
+/// slices rethrow in Production so a broken model is loud; this one is pure flavour on a
+/// screen that already carries the real result, so a 500 there would cost the player the
+/// modal's calm for nothing. Failures are still logged (EventId 4702).
+/// </para>
+/// <para>
+/// <b>Only real replies are cached.</b> The factory throws on a failed or empty call, and
+/// HybridCache does not store a faulted factory, so a canned line is never pinned in the cache
+/// for 24 h in place of the real one.
+/// </para>
+/// </remarks>
+public sealed class PoBrawlPresserService : IPoBrawlPresserService
+{
+    /// <summary>Longest line the modal will render.</summary>
+    public const int MaxChars = 220;
+
+    private const int MaxTokens = 120;
+
+    /// <summary>
+    /// Ceiling on the whole call. The modal is already on screen; a line that takes longer than
+    /// this is worth less than the canned one, and the request must not hold its slot open.
+    /// </summary>
+    private static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(12);
+
+    private const string SystemPrompt =
+        "You write the one line a fighter says at the press conference after a bout in PoBrawl, a slapstick cartoon " +
+        "boxing game where caricatures of U.S. presidents and an everyman named BOB trade punches. " +
+        "Rules: one or two sentences, at most 35 words; first person, spoken by the named speaker in their famous public " +
+        "speaking style; playful, good-natured and PG; make fun of the fight itself using the numbers given. Never mention " +
+        "real-world politics, policies, parties, elections, scandals, health, age or appearance, and never invent real events. " +
+        "No profanity. Output only the line itself, with no quotation marks and no speaker label.";
+
+    private readonly IConfiguration _configuration;
+    private readonly IHostEnvironment _environment;
+    private readonly ILogger<PoBrawlPresserService> _logger;
+    private readonly GameChatClientFactory _clients;
+    private readonly IOptionsMonitor<AIFoundryOptions> _foundry;
+    private readonly IAiDecisionOptionsCache _options;
+    private readonly HybridCache _cache;
+
+    public PoBrawlPresserService(
+        IConfiguration configuration,
+        IHostEnvironment environment,
+        ILogger<PoBrawlPresserService> logger,
+        GameChatClientFactory clients,
+        IOptionsMonitor<AIFoundryOptions> foundry,
+        IAiDecisionOptionsCache options,
+        HybridCache cache)
+    {
+        _configuration = configuration;
+        _environment = environment;
+        _logger = logger;
+        _clients = clients;
+        _foundry = foundry;
+        _options = options;
+        _cache = cache;
+    }
+
+    private bool UseMock => AiMockFallback.ShouldUseMock(_environment, _configuration.GetValue<bool>("PoBrawl:Features:UseMockAI"));
+
+    /// <summary>A request with both names resolved server-side and every number clamped.</summary>
+    private sealed record Bout(
+        string SpeakerName, string OpponentName, PoBrawlOutcome Outcome, bool Knockout,
+        int Hits, int OpponentHits, int Blocks, int BestCombo, int BiggestHit, int Seconds);
+
+    public async Task<PoBrawlPresserReply?> AskAsync(PoBrawlPresserRequest request, CancellationToken ct = default)
+    {
+        var bout = Resolve(request);
+        if (bout is null) return null;
+
+        var deployment = _clients.DeploymentFor(AIFoundryOptions.Tasks.PoBrawlPresser);
+        if (UseMock)
+        {
+            _logger.PresserMockEnabled(_environment.EnvironmentName);
+            return Canned(bout);
+        }
+        var client = _foundry.CurrentValue.IsConfigured
+            ? _clients.ForDeployment(AIFoundryOptions.Tasks.PoBrawlPresser, deployment)
+            : null;
+        if (client is null) return Canned(bout);
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(CallTimeout);
+        try
+        {
+            // Carried into the factory explicitly: HybridCache may run it on a pooled
+            // thread where the request's AsyncLocal budget identity is not flowing.
+            var identity = AiUsageScope.CurrentIdentity;
+            var text = await _cache.GetOrCreateAsync(
+                "pobrawl:presser:" + Fingerprint(bout),
+                (Service: this, Bout: bout, Client: client, Deployment: deployment, Identity: identity),
+                static async (state, token) =>
+                {
+                    using var scope = AiUsageScope.Restore(state.Identity);
+                    return await state.Service.CallModelAsync(state.Client, state.Deployment, state.Bout, token);
+                },
+                new HybridCacheEntryOptions
+                {
+                    Expiration = TimeSpan.FromHours(24),
+                    LocalCacheExpiration = TimeSpan.FromHours(1),
+                },
+                cancellationToken: timeout.Token);
+            return new PoBrawlPresserReply(bout.SpeakerName, text, Mock: false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.PresserFailed(new TimeoutException($"Presser call exceeded {CallTimeout.TotalSeconds:0} s."));
+            return Canned(bout);
+        }
+        catch (Exception ex)
+        {
+            _logger.PresserFailed(ex);
+            return Canned(bout);
+        }
+    }
+
+    private async Task<string> CallModelAsync(IChatClient client, string deployment, Bout bout, CancellationToken ct)
+    {
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, SystemPrompt),
+            new(ChatRole.User, Describe(bout)),
+        };
+        var options = _options.GetOrBuildText(
+            AIFoundryOptions.Tasks.PoBrawlPresser, deployment, _clients.CapabilityOverrides, MaxTokens,
+            (d, ov) => AiDecisionChatOptions.ForBoundedText(MaxTokens, d ?? string.Empty, ov));
+        var response = await client.GetResponseAsync(messages, options, ct);
+        var text = Clean(response.Text);
+        // An empty reply is a failure, not a line: throwing keeps it out of the cache.
+        return text.Length == 0 ? throw new InvalidOperationException("Empty presser reply.") : text;
+    }
+
+    /// <summary>Resolve both fighters from the roster and clamp every number, or null.</summary>
+    private static Bout? Resolve(PoBrawlPresserRequest r)
+    {
+        var speaker = NameFor(r.SpeakerId);
+        var opponent = NameFor(r.OpponentId);
+        if (speaker is null || opponent is null) return null;
+        var outcome = Enum.IsDefined(r.Outcome) ? r.Outcome : PoBrawlOutcome.Draw;
+        static int Clamp(int v, int max) => Math.Clamp(v, 0, max);
+        return new Bout(
+            speaker, opponent, outcome, r.Knockout && outcome != PoBrawlOutcome.Draw,
+            Clamp(r.Hits, 999), Clamp(r.OpponentHits, 999), Clamp(r.Blocks, 999),
+            Clamp(r.BestCombo, 99), Clamp(r.BiggestHit, 999), Clamp(r.Seconds, 600));
+    }
+
+    private static string? NameFor(string? id)
+    {
+        if (string.Equals(id, PoBrawlRoster.Bob.Id, StringComparison.OrdinalIgnoreCase)) return PoBrawlRoster.Bob.Name;
+        var canonical = PoBrawlRoster.Canonicalize(id);
+        return canonical is null ? null : PoBrawlRoster.DisplayName(canonical);
+    }
+
+    private static string Describe(Bout b)
+    {
+        var result = (b.Outcome, b.Knockout) switch
+        {
+            (PoBrawlOutcome.Win, true) => "won by knockout",
+            (PoBrawlOutcome.Win, false) => "won on points at the bell",
+            (PoBrawlOutcome.Loss, true) => "lost by knockout",
+            (PoBrawlOutcome.Loss, false) => "lost on points at the bell",
+            _ => "fought to a draw",
+        };
+        var who = b.SpeakerName == PoBrawlRoster.Bob.Name
+            ? "BOB, a mild-mannered office worker who wandered into the ring"
+            : $"{b.SpeakerName}, the cartoon president";
+        return $"Speaker: {who}. Opponent: {b.OpponentName}. The speaker {result} after {b.Seconds} seconds. " +
+               $"Speaker landed {b.Hits} hits, blocked {b.Blocks}, best combo {b.BestCombo}, biggest hit {b.BiggestHit} damage. " +
+               $"Opponent landed {b.OpponentHits} hits.";
+    }
+
+    private static string Clean(string? raw)
+    {
+        var text = (raw ?? string.Empty).Trim().Trim('"', '“', '”').Trim();
+        return text.Length > MaxChars ? text[..MaxChars].TrimEnd() + "…" : text;
+    }
+
+    private static string Fingerprint(Bout b)
+    {
+        var text = $"{b.SpeakerName}|{b.OpponentName}|{b.Outcome}|{b.Knockout}|{b.Hits}|{b.OpponentHits}|{b.Blocks}|{b.BestCombo}|{b.BiggestHit}|{b.Seconds}";
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..32];
+    }
+
+    /// <summary>Deterministic stand-in: mock mode, an unconfigured foundry, a timeout, or any failure.</summary>
+    private static PoBrawlPresserReply Canned(Bout b)
+    {
+        var opp = b.OpponentName;
+        string[] lines = (b.Outcome, b.Knockout) switch
+        {
+            (PoBrawlOutcome.Win, true) =>
+            [
+                $"{b.Hits} clean shots and {opp} is taking a nap. I'd call that a mandate.",
+                $"I said it would end early. {opp} didn't get the memo.",
+                $"A {b.BestCombo}-hit combo. Frankly, the canvas owes me a thank-you note.",
+            ],
+            (PoBrawlOutcome.Win, false) =>
+            [
+                $"The judges saw it, the crowd saw it. {b.Hits} hits don't lie.",
+                $"{opp} is tough, I'll give them that. Just not sixty-seconds-of-me tough.",
+            ],
+            (PoBrawlOutcome.Loss, true) =>
+            [
+                "I'd like to see the replay. Then I'd like to never see it again.",
+                $"{opp} got lucky. {b.OpponentHits} times, apparently.",
+            ],
+            (PoBrawlOutcome.Loss, false) =>
+            [
+                $"We lost the decision, not the argument. I want a recount of those {b.OpponentHits} hits.",
+                "Sixty seconds wasn't enough. Give me sixty-one next time.",
+            ],
+            _ =>
+            [
+                $"A draw. {opp} and I finally agree on something: nobody won.",
+                "Even on the cards. I'll take the rematch any day of the week.",
+            ],
+        };
+        var index = (int)(uint.Parse(Fingerprint(b)[..8], System.Globalization.NumberStyles.HexNumber) % (uint)lines.Length);
+        return new PoBrawlPresserReply(b.SpeakerName, lines[index], Mock: true);
+    }
+}

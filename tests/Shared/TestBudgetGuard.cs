@@ -37,6 +37,7 @@ public static class TestBudgetGuard
         ["PoCoupleQuiz:Features:UseMockAI"] = "true",
         ["PoJoker:Features:UseMockAI"] = "true",
         ["PoEcosystem:Features:UseMockAI"] = "true",
+        ["PoBrawl:Features:UseMockAI"] = "true",
         ["KeyVault:Uri"] = "",
 
         // ── Browser-side guard ────────────────────────────────────────────

@@ -72,15 +72,6 @@ public sealed class PoMiniGamesE2EFixture : WebApplicationFactory<Program>
             services.AddSingleton(_ => new TableServiceClient(AzuriteConnectionString));
             services.AddSingleton(_ => new BlobServiceClient(AzuriteConnectionString));
 
-            // §Jev: pin the decision client to the in-process stub so no live
-            // tokens can be spent even if a real OpenRouter key sits in
-            // appsettings.Development.json. Bypass-by-default keeps the gate
-            // transparent for the rest of the suite; gate-specific tests can
-            // Resolve<StubJevClient>() and override RespondNoul.
-            services.RemoveAll<IJevClient>();
-            services.AddSingleton<IJevClient, StubJevClient>();
-            services.AddSingleton<StubJevClient>(sp => (StubJevClient)sp.GetRequiredService<IJevClient>());
-
             // The canonical harness for header-driven FakeAuth identity is
             // TestWebApplicationFactory in the integration-test project. The e2e
             // suite is intentionally lighter — it asserts the BFF contract

@@ -1,0 +1,52 @@
+@namespace PoMiniGamesClient.Components
+@using Microsoft.AspNetCore.SignalR.Client
+
+@* ─────────────────────────────────────────────────────────────────────────
+   ConnectionStateStrip — the one hub readout for the multiplayer surfaces.
+
+   The lobby card and the online fight page each hand-rolled a "Status: <pill>"
+   paragraph under two different pill vocabularies (lobby-pill / po-pill — the
+   latter was defined nowhere and rendered as bare text), and the lobby added a
+   second "Connecting to the lobby hub…" line at the bottom of the same card:
+   three surfaces answering one question, drifting independently. This strip is
+   the single answer: muted "connecting…" while the hub does not exist yet,
+   green "connected", or the raw hub state in warning amber. Styling lives in
+   game-shell.css (.conn-*) beside the rest of the shared chrome, so every
+   consumer reads identically.
+   ───────────────────────────────────────────────────────────────────────── *@
+<p class="conn-strip">
+    <span class="conn-strip__label">@Label</span>
+    @if (Pending || State is null)
+    {
+        <span class="conn-pill conn-pill--muted">connecting…</span>
+    }
+    else if (State == HubConnectionState.Connected)
+    {
+        <span class="conn-pill conn-pill--ok">connected</span>
+    }
+    else
+    {
+        <span class="conn-pill conn-pill--warn">@State.Value.ToString().ToLowerInvariant()</span>
+    }
+    @if (!string.IsNullOrEmpty(Detail))
+    {
+        <span class="conn-strip__detail">@Detail</span>
+    }
+</p>
+
+@code {
+    /// <summary>The hub's current state. Null renders the muted "connecting…" pill.</summary>
+    [Parameter] public HubConnectionState? State { get; set; }
+
+    /// <summary>
+    /// True while the page has not even created its hub — renders "connecting…"
+    /// regardless of <see cref="State"/>. (LobbyPanel: no first lobby state yet.)
+    /// </summary>
+    [Parameter] public bool Pending { get; set; }
+
+    /// <summary>Leading label. The default keeps the old "Status:" wording.</summary>
+    [Parameter] public string Label { get; set; } = "Status";
+
+    /// <summary>Optional trailing context — e.g. "waiting for a fight…".</summary>
+    [Parameter] public string? Detail { get; set; }
+}

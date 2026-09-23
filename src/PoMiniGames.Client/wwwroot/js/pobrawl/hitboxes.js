@@ -105,6 +105,28 @@ function capsuleEndpoints(joints, cap, forwardDir) {
   return { a: _vA.clone(), b: _vB.clone() };
 }
 
+/**
+ * World-space endpoints of one capsule on a live rig, sampled exactly the way the
+ * hit test samples it (a striker's `forwardReach` pad included). Exists for the
+ * training room's hitbox overlay, which must draw the capsule the test is using,
+ * not an approximation of it. Writes into `outA` / `outB`; false when the rig is
+ * missing one of the capsule's joints.
+ */
+export function sampleCapsule(rig, cap, outA, outB) {
+  let fwd = null;
+  if (cap.forwardReach) {
+    rig.root.getWorldDirection(_fwd);
+    _fwd.y = 0;
+    if (_fwd.lengthSq() < 1e-6) _fwd.set(0, 0, 1);
+    fwd = _fwd.normalize().clone();
+  }
+  const ends = capsuleEndpoints(rig.joints, cap, fwd);
+  if (!ends) return false;
+  outA.copy(ends.a);
+  outB.copy(ends.b);
+  return true;
+}
+
 // Closest points between two line segments in 3D, plus the distance between
 // them. Returns { d, pa, pb } where pa/pb are the closest points on each
 // segment, or null if the segments are degenerate.

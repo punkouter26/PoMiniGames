@@ -82,8 +82,8 @@ export class KeyboardController {
       if (Object.values(this.map).includes(e.code)) e.preventDefault();
       if (e.repeat) return;
       this.down.add(e.code);
-      if (e.code === this.map.punch) this.punchQueued = true;
-      else if (e.code === this.map.kick) this.kickQueued = true;
+      if (e.code === this.map.punch) this._pressAttack('punch');
+      else if (e.code === this.map.kick) this._pressAttack('kick');
     };
     this._onUp = (e) => {
       this.down.delete(e.code);
@@ -127,6 +127,11 @@ export class KeyboardController {
     this.punchQueued = false;
     this.kickQueued = false;
     return intent;
+  }
+
+  // An attack press.
+  _pressAttack(name) {
+    this[name + 'Queued'] = true;
   }
 
   dispose() {

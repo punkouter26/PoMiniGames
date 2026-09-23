@@ -54,10 +54,6 @@ internal static class EndpointRouteExtensions
         // gate because it is a diagnostics surface, and it reports no other identity's spend — only
         // aggregate per-game counters plus the caller's own allowance.
         app.MapAiUsageEndpoints();
-        // §Jev: runtime read-model of what Jev is thinking and the impact its
-        // decisions are having. Same shape as /api/health/ai but covers the
-        // System One surface (noul/choice/score, bypass reasons, recent traces).
-        app.MapJevEndpoints();
         app.MapDiagEndpoints();
         // MapPoGalleryEndpoints removed 2026-09-11: /api/diag/gallery and
         // /api/gallery/upload existed only to feed Pages/PoGallery.razor, a dev-only
@@ -116,6 +112,7 @@ internal static class EndpointRouteExtensions
         gameApi.MapGetAllPlayerStatistics();
         gameApi.MapMarbleRaceHighScoresEndpoints();
         gameApi.MapPoBrawlLeaderboardEndpoints();
+        gameApi.MapPoBrawlPresserEndpoints();
         gameApi.MapMatchHistoryEndpoints();
         // MapCoupleQuizEndpoints removed 2026-09-11: it mapped no routes at all. Its last
         // one (GET /runtime/status) went on 2026-08-31, leaving a method that built an

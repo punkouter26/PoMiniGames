@@ -19,7 +19,7 @@ public class PerformanceSettings
     /// <para>
     /// 8 (the prior default) raced against the Azure chat pipeline's retry/circuit-breaker
     /// budget on the shared account — first calls consistently took 10-30 s, and the orchestrator's
-    /// cancel cascaded through the Jev gate before it could record a bypass trace, which is why
+    /// cancel fired before the verdict arrived, which is why
     /// every joke rendered as "the jester has nothing to add". 20 aligns with the server-side
     /// <c>AiJesterService._timeoutSeconds=30</c> with headroom for the chat pipeline.
     /// </para>

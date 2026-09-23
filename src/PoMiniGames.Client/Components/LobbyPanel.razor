@@ -7,24 +7,15 @@
    this (status pill, "Players · N/M" roster with host/guest/ready pills, Ready / Start /
    Leave) under three different class vocabularies; the Brawl copy borrowed Racer's
    scoped class names and so rendered unstyled. A game supplies its start label, its
-   gate, and optionally a picker section and per-player badges — nothing else. *@
+   gate, and optionally a picker section and per-player badges — nothing else.
+
+   The hub readout is ConnectionStateStrip (review #7): the status pill here and the
+   old "Connecting to the lobby hub…" line at the bottom of the card both answered
+   "is the hub up?" and could disagree while doing it. The strip plus the roster's
+   "Loading players…" spinner say it once. *@
 <div class="sp-page">
     <div class="sp-card lobby">
-        <p class="sp-subtitle lobby__status">
-            Status:
-            @if (ConnectionState == HubConnectionState.Connected)
-            {
-                <span class="lobby-pill lobby-pill--ok">connected</span>
-            }
-            else if (ConnectionState == HubConnectionState.Disconnected && State is null)
-            {
-                <span class="lobby-pill lobby-pill--muted">connecting…</span>
-            }
-            else
-            {
-                <span class="lobby-pill lobby-pill--warn">@ConnectionState.ToString().ToLowerInvariant()</span>
-            }
-        </p>
+        <ConnectionStateStrip State="ConnectionState" Pending="State is null" />
 
         <p class="lobby__hint">@Hint</p>
 
@@ -94,11 +85,7 @@
         }
 
         <section class="lobby__actions">
-            @if (State is null)
-            {
-                <p class="lobby__hint">Connecting to the lobby hub…</p>
-            }
-            else
+            @if (State is not null)
             {
                 @if (IsHost && !EffectiveCanStart)
                 {
@@ -116,6 +103,8 @@
                 }
                 <button type="button" class="sp-btn-secondary" @onclick="OnLeave">Leave</button>
             }
+            @* State null: the strip above already says "connecting…" — rendering a
+               second copy here was the drift the strip exists to kill. *@
         </section>
 
         @if (State is not null)

@@ -530,6 +530,31 @@ public class ApiService
         }
     }
 
+    // ─── PoBrawl post-fight press conference ─────────────────────────────
+
+    /// <summary>
+    /// One press-conference line for the result modal, or null when it could not be fetched
+    /// (signed out, rate-limited, offline). Never retried or queued: it is flavour for a modal
+    /// that is already showing the real result, and a line arriving after the modal closed
+    /// would have nowhere to go.
+    /// </summary>
+    public async Task<PoMiniGames.Shared.Games.PoBrawlPresserReply?> GetPoBrawlPresserAsync(
+        PoMiniGames.Shared.Games.PoBrawlPresserRequest request)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync(
+                "/api/pobrawl/presser", request, ApiJsonContext.Default.PoBrawlPresserRequest);
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoBrawlPresserReply)
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     // ─── PoBrawl demo-mode fighter Elo ───────────────────────────────────
 
 

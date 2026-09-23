@@ -122,7 +122,7 @@ public sealed class AIFoundryOptions
 
     /// <summary>
     /// Game → deployment allowlist. Recognised game keys: <c>couplequiz</c>, <c>funquiz</c>,
-    /// <c>face</c>, <c>joker</c>. Populated either from a nested configuration
+    /// <c>face</c>, <c>joker</c>, <c>ecosystem</c>, <c>pobrawl</c> (plus <c>game.task</c> keys, see <see cref="Tasks"/>). Populated either from a nested configuration
     /// section (<c>PoMiniGames:AI:Deployments:joker</c>) or from the flat Key Vault secret
     /// <c>PoMiniGames--AI--Deployments</c> in the form <c>game=deployment,game=deployment</c>
     /// (parsed in <c>GameServicesExtensions</c>).
@@ -188,6 +188,8 @@ public sealed class AIFoundryOptions
         public const string Joker = "joker";
         /// <summary>PoEcosystem: the decade chronicle (and, via a task key, cloud thoughts).</summary>
         public const string Ecosystem = "ecosystem";
+        /// <summary>PoBrawl: only the post-fight press conference, via <see cref="Tasks.PoBrawlPresser"/>.</summary>
+        public const string PoBrawl = "pobrawl";
     }
 
     /// <summary>
@@ -226,6 +228,9 @@ public sealed class AIFoundryOptions
 
         /// <summary>PoEcosystem: historical oral legends commemorating civilization milestones.</summary>
         public const string EcosystemMilestoneLore = "ecosystem.lore";
+
+        /// <summary>PoBrawl: the one-line post-fight press conference. A cheap-model job.</summary>
+        public const string PoBrawlPresser = "pobrawl.presser";
     }
 
     /// <summary>

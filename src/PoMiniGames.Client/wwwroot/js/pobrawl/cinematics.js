@@ -169,9 +169,45 @@ class CinematicsMethods {
         p2BiggestHit: Math.round(this.fighters[1].stats.biggestHit),
       }).catch(() => {});
     }
+    // GFX/SOUND #9 / #10 — the Breaking News lower third and the KO clip.
+    this._presentResult();
   }
 
   // ── presentation ────────────────────────────────────────────────────────
+
+  // Review #9 — portrait-aware framing. The camera's FOV is VERTICAL, so a tall
+  // narrow container (portrait phone; the host is ~86% of the viewport there)
+  // maps the fighters into the bottom of a mostly-dark frame: the backdrop
+  // void above them is the arena's dead space. Two knobs, both derived from
+  // the container aspect and both no-ops at 1.1 and above (landscape/square
+  // keep the tuning they were shot for):
+  //   • _framingDistance pulls the boom in as the frame narrows, so the
+  //     fighters keep filling the width instead of shrinking toward dots.
+  //   • _framingHeightBias drops the look point, which slides the visible band
+  //     DOWN the world — trading backdrop void for ring floor, so the action
+  //     reads as centred in the tall frame rather than hugging its bottom.
+  // _snapCameraToFraming and the spring's normal branch must stay in lockstep
+  // (see the note there), so both read these helpers instead of the old inline
+  // constants.
+  _framingDistance(sep) {
+    const base = THREE.MathUtils.clamp(2.2 + sep * 0.31, 2.5, 5);
+    const el = this.container;
+    if (!el || !el.clientHeight) return base;
+    const aspect = el.clientWidth / el.clientHeight;
+    if (aspect >= 1.1) return base;
+    // 1.1 → no change; ~0.4 → 0.62× base. The 1.9 floor keeps the boom from
+    // pushing inside the ropes, where the spring's own z-clamp would fight it.
+    const zoom = THREE.MathUtils.clamp(0.62 + (aspect / 1.1) * 0.38, 0.62, 1);
+    return Math.max(base * zoom, 1.9);
+  }
+
+  _framingHeightBias() {
+    const el = this.container;
+    if (!el || !el.clientHeight) return 1;
+    const aspect = el.clientWidth / el.clientHeight;
+    if (aspect >= 1.1) return 1;
+    return THREE.MathUtils.clamp(0.72 + (aspect / 1.1) * 0.28, 0.72, 1);
+  }
 
   // Place the boom exactly where the spring camera would settle, on the +Z
   // side of the ring, with zero velocity. Used at countdown time: the old
@@ -192,10 +228,10 @@ class CinematicsMethods {
     const perp = new THREE.Vector3(axis.z, 0, -axis.x);
     if (perp.z < 0) perp.negate();
     // Must match the framing maths in _updateCamera's normal branch.
-    const distance = THREE.MathUtils.clamp(2.2 + sep * 0.31, 2.5, 5);
+    const distance = this._framingDistance(sep);
     this.camera.position.copy(mid).addScaledVector(perp, distance);
     this.camera.position.y = 1.55 + sep * 0.06;
-    this.camera.lookAt(mid.x, mid.y + 1, mid.z);
+    this.camera.lookAt(mid.x, mid.y + 1 * this._framingHeightBias(), mid.z);
     this._camVel.set(0, 0, 0);
     this.fovPunch = 0;
     this.shakeT = 0;
@@ -218,10 +254,12 @@ class CinematicsMethods {
     // Tight action framing (~80% zoom-in vs. the original 4.5-9 range): the
     // camera rides at a bit over half the old distance so the fighters fill
     // the frame, still pulling back with separation so both stay in shot.
-    let distance = THREE.MathUtils.clamp(2.2 + sep * 0.31, 2.5, 5);
+    // Both the distance and the look-point bias are portrait-aware — see
+    // _framingDistance / _framingHeightBias above.
+    let distance = this._framingDistance(sep);
     let height = 1.55 + sep * 0.06;
     let lookAt = mid.clone();
-    lookAt.y += 1;
+    lookAt.y += 1 * this._framingHeightBias();
 
     // 2026-07-26 browser audit #3: keep the camera on the audience side of
     // the ring. Without this clamp a fighter ragdolled hard past the
@@ -331,6 +369,9 @@ class CinematicsMethods {
     // branches: it drives the FOV itself as part of the push-in, and letting a
     // punch overwrite it — or the relax branch drag it back to base — would
     // undo the long-lens compression mid-shot.
+    // Calm mode (app-wide reduced motion) drops the punch and the shake outright: both move
+    // the whole frame, which is exactly what a photosensitive player asked us not to do.
+    if (this._calm()) { this.fovPunch = 0; this.shakeT = 0; }
     if (this.fovPunch > 0.01 && this.cameraMode !== 'super') {
       this.camera.fov = this.fovBase + this.fovPunch;
       this.camera.updateProjectionMatrix();

@@ -25,13 +25,13 @@
 
 @* 2026-08-08 audit #6: this card sits between the player and every 1-player
    game, so dismissing it must not require aiming. Keyboard users already had
-   Enter/Space/Escape (HandleKey); pointer users had only the OK button, a
-   112x38 target on a phone. The overlay itself now dismisses on tap for the
-   modes where the card is purely informational.
-
-   NOT applied to TwoPlayer: that card carries character selection, so a stray
-   tap would start the match before both players have chosen. Demo is included —
-   it is already auto-starting on a timer, so a tap only skips the wait. *@
+   Enter/Space/Escape (HandleKey); pointer users had the OK button plus
+   tap-to-dismiss on the BACKDROP — the whole screen outside the card, still a
+   generous target. Card taps stopped dismissing when the card grew its first
+   interactive control (PoBrawl's "Training first" checkbox, 2026-09-23): card
+   clicks bubble to the overlay's handler, so a tap meant to tick the box
+   started the game instead. The card now stops propagation in every mode,
+   which is also what TwoPlayer always did for its character select. *@
 @* _skipDecision: null = the localStorage check has not landed yet (render
    nothing for a beat rather than flash the card and yank it away); false =
    show the card; true = the player opted out — auto-started, render nothing. *@
@@ -42,7 +42,7 @@
      @onclick="HandleOverlayClick"
      @onkeydown="HandleKey" @onkeydown:preventDefault="CaptureKeys">
     <div class="gps-intro-card gps-intro-card--@ModeClass"
-        @onclick:stopPropagation="@(Mode == IntroMode.TwoPlayer)">
+        @onclick:stopPropagation="true">
         @if (Title != null)
         {
             <div class="gps-intro-title">@Title</div>
@@ -298,9 +298,11 @@
     }
 
     /// <summary>
-    /// Tap-anywhere dismissal for the informational cards (audit #6). TwoPlayer
-    /// opts out because its card carries character selection — a stray tap there
-    /// would start the match before both players have chosen.
+    /// Tap-on-backdrop dismissal for the informational cards (audit #6). The
+    /// CARD stops propagation in every mode — it carries interactive controls
+    /// in some games (TwoPlayer's character select, PoBrawl's Training-first
+    /// checkbox) that a stray tap must not dismiss past — so the dismiss
+    /// surface is the screen outside the card, plus Escape/Enter.
     /// </summary>
     private async Task HandleOverlayClick()
     {

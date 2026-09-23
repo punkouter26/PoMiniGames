@@ -96,15 +96,6 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
                 options.DefaultScheme = FakeAuthHandler.SchemeName;
             })
             .AddScheme<AuthenticationSchemeOptions, FakeAuthHandler>(FakeAuthHandler.SchemeName, _ => { });
-
-            // §Jev: pin the decision client to the in-process stub so no live
-            // tokens can be spent even if a real OpenRouter key sits in
-            // appsettings.Development.json. Bypass-by-default keeps the gate
-            // transparent; gate-specific tests can Resolve<StubJevClient>() and
-            // override RespondNoul to exercise the skip / pass branches.
-            services.RemoveAll<IJevClient>();
-            services.AddSingleton<IJevClient, StubJevClient>();
-            services.AddSingleton<StubJevClient>(sp => (StubJevClient)sp.GetRequiredService<IJevClient>());
         });
     }
 

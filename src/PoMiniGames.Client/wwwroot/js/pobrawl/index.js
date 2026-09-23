@@ -6,7 +6,10 @@ let game = null;
 let initGeneration = 0;
 
 window.PoBrawl = {
-  /** options: { mode: '1p'|'2p'|'demo', p1Character, p2Character, difficulty } */
+  /**
+   * options: { mode: '1p'|'2p'|'demo', p1Character, p2Character, difficulty,
+   *            training?: { dummy, hitboxes, infiniteEnergy } (1P only) }
+   */
   async init(containerId, dotnetRef, options) {
     const generation = ++initGeneration;
     if (game) { game.dispose(); game = null; }
@@ -52,6 +55,15 @@ window.PoBrawl = {
     game.resetMatch(false);
   },
   setMuted(muted) { if (game) game.setMuted(muted); },
+  /** Save or share the last KO clip (GFX/SOUND #10). Resolves false when there is none. */
+  saveClip() { return game ? game.saveClip() : Promise.resolve(false); },
+  /**
+   * Training-room controls (training.js). No-op outside a training session.
+   * key: 'dummy' ('stand'|'guard'|'punisher'|'cpu') · 'hitboxes' · 'infiniteEnergy' · 'reset'
+   */
+  training(key, value) { if (game) game.setTrainingOption(key, value); },
+  /** Say a line through the PA announcer (the post-fight press conference). */
+  say(text) { if (game && text) game.audio?.announce(String(text).slice(0, 280), { rate: 1.0, pitch: 0.9, duckSec: 0.5 }); },
   destroy() {
     ++initGeneration;
     if (game) { game.dispose(); game = null; }

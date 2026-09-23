@@ -35,8 +35,16 @@ public class PoBrawlOnlineContractTests
         rows!.Should().NotBeNull();
     }
 
-    [Fact]
-    public async Task PostPoBrawlOnlineMatch_Anonymous_Returns401()
+    /// <summary>
+    /// Every PoBrawl game-data POST must answer an anonymous caller with 401. One theory over
+    /// the routes rather than a method each — the E2E-API tier sits at its 25-method ceiling.
+    /// The presser row (2026-09-23) also proves the route is on the authenticated group: mapped
+    /// on <c>app</c> by mistake it would have answered 400/200 here instead.
+    /// </summary>
+    [Theory]
+    [InlineData("/api/pobrawl/matches")]
+    [InlineData("/api/pobrawl/presser")]
+    public async Task PostPoBrawlRoutes_Anonymous_Return401(string path)
     {
         using var client = _factory.CreateClient();
         var payload = new PoMiniGames.Shared.Games.PoBrawlMatchResultDto
@@ -49,7 +57,7 @@ public class PoBrawlOnlineContractTests
             Outcome = PoMiniGames.Shared.Games.PoBrawlOutcome.Win,
             DurationSeconds = 30,
         };
-        var response = await client.PostAsJsonAsync("/api/pobrawl/matches", payload);
+        var response = await client.PostAsJsonAsync(path, payload);
 
         // §CSRF: 401 (not 403) for an anonymous caller — the request is
         // rejected before the antiforgery middleware sees it. 403 would

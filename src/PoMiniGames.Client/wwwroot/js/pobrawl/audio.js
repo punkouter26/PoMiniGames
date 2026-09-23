@@ -353,8 +353,11 @@ class AudioBus {
       const Ctor = window.AudioContext || window.webkitAudioContext;
       if (!Ctor) { this._ensureFailed = true; return false; }
       // Shared context (js/audioBus.js) — one AudioContext for the whole app.
-      const ctx = (window.PoAudioBus && window.PoAudioBus.contextSync()) || new Ctor();
+      const shared = window.PoAudioBus && window.PoAudioBus.contextSync();
+      const ctx = shared || new Ctor();
       this.ctx = ctx;
+      // Only a context we made is ours to close — see close().
+      this._ownsCtx = !shared;
 
       this.master = ctx.createGain();
       this.master.gain.value = 0.85;
@@ -378,6 +381,9 @@ class AudioBus {
 
       this.master.connect(comp).connect(limiter).connect(
         (window.PoAudioBus && window.PoAudioBus.busSync('sfx')) || ctx.destination);
+      // The finished mix, post-limiter — what tapStream() hands the KO clip
+      // recorder (clip.js) so a saved clip sounds like the fight did.
+      this.out = limiter;
 
       this.sfxGain = ctx.createGain();
       this.sfxGain.gain.value = 1.0;
@@ -412,7 +418,14 @@ class AudioBus {
       // Two stages, two owners, no interference.
       this.musicDuck = ctx.createGain();
       this.musicDuck.gain.value = 1.0;
-      this.musicGain.connect(this.musicDuck).connect(this.master);
+      // Danger lowpass (GFX/SOUND #4). A third stage with a third owner:
+      // setDanger() closes it as a fighter nears a KO, so the music sinks under
+      // the heartbeat. Wide open (and so inaudible) the rest of the time.
+      this.musicLP = ctx.createBiquadFilter();
+      this.musicLP.type = 'lowpass';
+      this.musicLP.frequency.value = SFX_FILTER_OPEN;
+      this.musicLP.Q.value = 0.0001;
+      this.musicGain.connect(this.musicLP).connect(this.musicDuck).connect(this.master);
 
       // Crowd bed bus (#6). Sits outside sfxGain so impacts can duck/swell it
       // independently, and outside musicGain so the music tension curve does
@@ -1432,17 +1445,267 @@ class AudioBus {
     this.introNodes = null;
   }
 
+  // ══ Combo melody (GFX/SOUND #3, 2026-09-23) ══════════════════════════
+  // Each landed hit in a run rings one step further up A minor pentatonic —
+  // the scale the music loop's bass line walks (startMusic: A1 A1 D2 C2) — so a
+  // combo plays a rising phrase in the song's own key instead of the same crack
+  // eight times. A mallet voice (fundamental + an inharmonic 2.76× partial) sits
+  // ON the impact, never replacing it: the hit still sounds like a hit.
+  //
+  // Not quantised to the beat grid on purpose. A cue that waits up to half a
+  // beat for the downbeat would lag the fist it belongs to, and the whole point
+  // of hit audio is that it lands on the frame of contact.
+  comboNote(n, worldPos = null) {
+    if (n < 2 || !this._ensure() || this.muted) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const PENTA = [0, 3, 5, 7, 10];               // A C D E G
+    const deg = Math.min(n - 2, 11);              // tops out two octaves up
+    const semis = PENTA[deg % 5] + 12 * Math.floor(deg / 5);
+    const f0 = 440 * Math.pow(2, semis / 12);
+    const spat = this._connectSpat(this._spatializer(worldPos));
+    const voice = (hz, peak, decay) => {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = hz;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.linearRampToValueAtTime(peak, now + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0008, now + decay);
+      o.connect(g).connect(spat);
+      o.start(now); o.stop(now + decay + 0.03);
+      return [o, g];
+    };
+    // Later steps ring a touch louder — the phrase should build, not plateau.
+    const lift = Math.min(1, 0.55 + deg * 0.06);
+    const [o1, g1] = voice(f0, 0.07 * lift, 0.42);
+    const [o2, g2] = voice(f0 * 2.76, 0.022 * lift, 0.16);
+    autoDisconnect(o2, [o2, g2]);
+    // The longer fundamental owns tearing down the shared spatializer.
+    autoDisconnect(o1, [o1, g1, spat, spat.output].filter(Boolean));
+  }
+
+  // A cashed-in run of 4+: a quick rising Am(add9) arpeggio that resolves the
+  // phrase the combo notes started. Fires when the run expires, not on the last
+  // hit, so it reads as the crowd's "ooh" rather than as another impact.
+  comboFinisher(n) {
+    if (n < 4 || !this._ensure() || this.muted) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const notes = [220, 261.63, 329.63, 493.88, 440];  // A3 C4 E4 B4 A4
+    const peak = Math.min(0.075, 0.04 + n * 0.004);
+    notes.forEach((hz, i) => {
+      const t0 = now + i * 0.055;
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.value = hz;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(peak, t0 + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0008, t0 + 0.7);
+      o.connect(g).connect(this.sfxGain);
+      o.start(t0); o.stop(t0 + 0.75);
+      autoDisconnect(o, [o, g]);
+    });
+    this.crowdSwell(0.5);
+  }
+
+  // ══ Danger state (GFX/SOUND #4, 2026-09-23) ══════════════════════════
+  // One lub-dub. game.js owns the tempo (it also drives the screen-edge pulse
+  // off the same beat), so this only has to make the sound.
+  heartbeat(strength = 1) {
+    if (!this._ensure() || this.muted) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const s = clamp(strength, 0, 1);
+    const thump = (t0, peak) => {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(62, t0);
+      o.frequency.exponentialRampToValueAtTime(38, t0 + 0.12);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(peak, t0 + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0008, t0 + 0.2);
+      // Straight to master, NOT the SFX bus: the concussion lowpass sits on that
+      // bus, and the heartbeat is exactly the sound that should survive it.
+      o.connect(g).connect(this.master);
+      o.start(t0); o.stop(t0 + 0.22);
+      autoDisconnect(o, [o, g]);
+    };
+    thump(now, 0.3 * s);
+    thump(now + 0.17, 0.2 * s);
+  }
+
+  /** 0..1 — how close the nearer fighter is to a KO. Sinks the music under a lowpass. */
+  setDanger(level) {
+    if (!this.musicLP || !this.ctx) return;
+    const d = clamp(level, 0, 1);
+    // Exponential in frequency so the sweep sounds even: 20 kHz → ~700 Hz.
+    const hz = d < 0.01 ? SFX_FILTER_OPEN : 700 * Math.pow(SFX_FILTER_OPEN / 700, 1 - d);
+    this.musicLP.frequency.setTargetAtTime(hz, this.ctx.currentTime, 0.25);
+  }
+
+  // ══ VS splash sting (GFX/SOUND #8, 2026-09-23) ═══════════════════════
+  // A reversed-cymbal riser into a sub boom and a metallic clang, timed so the
+  // boom lands as the two name cards meet (the splash CSS slams them in at ~0.45 s).
+  vsSting() {
+    // Running-only: the first splash plays before any gesture has unlocked the
+    // context, and nodes scheduled on a suspended context fire whenever it is
+    // finally resumed — a VS boom arriving in the middle of the fight.
+    if (!this._ensure() || this.muted || this.ctx.state !== 'running') return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const hitAt = now + 0.45;
+
+    const riseDur = 0.45;
+    const rise = this._noiseSource(riseDur);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.setValueAtTime(900, now);
+    hp.frequency.exponentialRampToValueAtTime(5200, hitAt);
+    const rg = ctx.createGain();
+    rg.gain.setValueAtTime(0.0001, now);
+    rg.gain.exponentialRampToValueAtTime(0.14, hitAt - 0.01);
+    rg.gain.linearRampToValueAtTime(0.0001, hitAt + 0.02);
+    rise.connect(hp).connect(rg).connect(this.sfxGain);
+    rise.start(now, rise._offset); rise.stop(hitAt + 0.03);
+    autoDisconnect(rise, [rise, hp, rg]);
+
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(120, hitAt);
+    sub.frequency.exponentialRampToValueAtTime(34, hitAt + 0.5);
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.0001, hitAt);
+    sg.gain.linearRampToValueAtTime(0.5, hitAt + 0.015);
+    sg.gain.exponentialRampToValueAtTime(0.0008, hitAt + 0.8);
+    sub.connect(sg).connect(this.sfxGain);
+    sub.start(hitAt); sub.stop(hitAt + 0.85);
+    autoDisconnect(sub, [sub, sg]);
+
+    // Clang: three inharmonic square partials through a bandpass — a bell struck
+    // with a hammer, not a note.
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1400;
+    bp.Q.value = 2.2;
+    const cg = ctx.createGain();
+    cg.gain.setValueAtTime(0.0001, hitAt);
+    cg.gain.linearRampToValueAtTime(0.06, hitAt + 0.005);
+    cg.gain.exponentialRampToValueAtTime(0.0008, hitAt + 0.9);
+    bp.connect(cg).connect(this.sfxGain);
+    for (const hz of [311, 523, 887]) {
+      const o = ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.value = hz;
+      o.connect(bp);
+      o.start(hitAt); o.stop(hitAt + 0.95);
+      autoDisconnect(o, [o]);
+    }
+    const last = ctx.createConstantSource();
+    last.start(hitAt); last.stop(hitAt + 1.0);
+    autoDisconnect(last, [last, bp, cg]);
+    this._pulse(0.6);
+  }
+
+  // ══ Breaking-news sting (GFX/SOUND #9, 2026-09-23) ═══════════════════
+  // The cable-news "da-da-da-DAAA": three bright brass stabs climbing to a held
+  // fifth, over a timpani roll that swells into the last hit.
+  newsSting() {
+    if (!this._ensure() || this.muted || this.ctx.state !== 'running') return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime + 0.02;
+    const stab = (t0, freqs, dur, peak) => {
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(900, t0);
+      lp.frequency.exponentialRampToValueAtTime(4200, t0 + 0.05);
+      lp.frequency.exponentialRampToValueAtTime(1600, t0 + dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(peak, t0 + 0.012);
+      g.gain.setValueAtTime(peak, t0 + dur * 0.6);
+      g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
+      lp.connect(g).connect(this.sfxGain);
+      for (const hz of freqs) {
+        for (const cents of [-6, 6]) {
+          const o = ctx.createOscillator();
+          o.type = 'sawtooth';
+          o.frequency.value = hz;
+          o.detune.value = cents;
+          o.connect(lp);
+          o.start(t0); o.stop(t0 + dur + 0.02);
+          autoDisconnect(o, [o]);
+        }
+      }
+      const end = ctx.createConstantSource();
+      end.start(t0); end.stop(t0 + dur + 0.05);
+      autoDisconnect(end, [end, lp, g]);
+    };
+    const e = 0.16;
+    stab(now, [440, 659.25], 0.12, 0.05);              // A4 + E5
+    stab(now + e, [440, 659.25], 0.12, 0.05);
+    stab(now + e * 2, [493.88, 739.99], 0.12, 0.055);  // B4 + F#5
+    stab(now + e * 3, [587.33, 880], 1.1, 0.065);      // D5 + A5, held
+
+    // Timpani roll: rapid low sine hits swelling into the downbeat.
+    for (let i = 0; i < 8; i++) {
+      const t0 = now + i * (e * 3 / 8);
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(98, t0);
+      o.frequency.exponentialRampToValueAtTime(72, t0 + 0.08);
+      const g = ctx.createGain();
+      const pk = 0.05 + i * 0.025;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(pk, t0 + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0008, t0 + (i === 7 ? 0.9 : 0.12));
+      o.connect(g).connect(this.sfxGain);
+      o.start(t0); o.stop(t0 + (i === 7 ? 0.95 : 0.14));
+      autoDisconnect(o, [o, g]);
+    }
+  }
+
+  /**
+   * The finished mix as a MediaStream, for the KO clip recorder. Null until the
+   * context exists (no gesture yet) — clip.js asks again on each recorder restart.
+   */
+  tapStream() {
+    if (!this.ctx || !this.out || this._ensureFailed) return null;
+    if (!this._tap) {
+      try {
+        this._tap = this.ctx.createMediaStreamDestination();
+        this.out.connect(this._tap);
+      } catch { this._tap = null; return null; }
+    }
+    return this._tap.stream;
+  }
+
   close() {
     this.stopMusic();
     this.stopIntroTheme();
     this.stopCrowd();
     this.stopAnnounce();
     if (this.ctx) {
-      try { this.ctx.close(); } catch { /* */ }
+      // The shared bus context is the whole app's (js/audioBus.js): closing it here killed
+      // audio for every game visited afterwards, and handed the NEXT PoBrawl engine — a
+      // training-room toggle re-inits one in place — a dead context whose second close()
+      // rejected ("Cannot close a closed AudioContext"). Our nodes are disconnected by the
+      // stop* calls above; only a private fallback context is ours to close.
+      if (this._ownsCtx && this.ctx.state !== 'closed') {
+        this.ctx.close().catch(() => { /* already closing */ });
+      } else {
+        // On the shared context, cut our master chain loose so a re-init does not leave
+        // a dead graph hanging off the app's bus.
+        try { this.master?.disconnect(); } catch { /* already disconnected */ }
+      }
       this.ctx = null;
     }
+    if (this._tap) { try { this.out?.disconnect(this._tap); } catch { /* */ } this._tap = null; }
     this.master = this.sfxGain = this.musicGain = this.reverbGain = this.introGain = null;
-    this.sfxFilter = this.musicDuck = this.crowdGain = this.crowdDuck = null;
+    this.sfxFilter = this.musicDuck = this.musicLP = this.crowdGain = this.crowdDuck = null;
+    this.out = null;
     this.noiseBuf = null;
   }
 }

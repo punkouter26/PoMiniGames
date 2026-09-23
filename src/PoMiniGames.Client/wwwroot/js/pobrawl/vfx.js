@@ -14,6 +14,8 @@ import { stepWorld } from './physics.js';
 // Scratch vector, reused so the trail sampler allocates nothing per frame.
 // Module-local: nothing outside this file reads it.
 const _trailPos = new THREE.Vector3();
+// Scratch colour for particle spawns (the old pool allocated one per particle).
+const _pColor = new THREE.Color();
 
 class VfxMethods {
   _initImpactFrames() {
@@ -87,6 +89,7 @@ class VfxMethods {
 
   /** Arm the afterimage pass for `secs` at `amount` (0..1 feedback damp). */
   _smear(secs, amount) {
+    if (this._calm()) return; // afterimage smear is full-frame motion — reduced motion drops it
     this._smearT = Math.max(this._smearT || 0, secs);
     this._smearAmt = Math.max(this._smearAmt || 0, Math.min(0.92, amount));
   }
@@ -111,6 +114,9 @@ class VfxMethods {
   // Flash one pooled PointLight at a world position (hit sparks, KO).
   _flashImpactLight(point, peak, color = 0xffa050, dur = 0.15) {
     if (!this._impactLights) return;
+    // Calm mode (app-wide reduced motion): a third of the peak. These relight real geometry, so
+    // at full strength a flurry makes the whole arena pulse.
+    if (this._calm()) peak *= 0.35;
     const slot = this._impactLights[this._impactCursor++ % this._impactLights.length];
     slot.light.color.setHex(color);
     slot.light.position.set(point.x, point.y + 0.2, point.z);
@@ -206,16 +212,44 @@ class VfxMethods {
     t.mesh.visible = true;
   }
 
-  // ── GPU particles ────────────────────────────────────────────────────
-  // Fixed pool behind one Points mesh. Free slots are a stack of indices;
-  // dead particles park at color black (invisible under additive blending).
+  // ── GPU particles (GFX/SOUND #6, rebuilt 2026-09-23) ─────────────────
+  // One Points draw call, and now no per-frame CPU work either. The old pool
+  // integrated every live particle in JS each frame and re-uploaded the whole
+  // position and colour buffers; at 320 slots that capped how much could fly.
+  //
+  // Now a particle is written ONCE, at spawn: start position, velocity, colour,
+  // birth time, life, gravity, drag and size. The vertex shader evaluates the
+  // closed-form trajectory at `uTime` —
+  //     p(t) = p0 + v * (1 - e^(-k*t)) / k  +  0.5 * g * t^2      (k -> 0: p0 + v*t)
+  // — fades it over its life, and parks it off-screen once dead. The CPU's only
+  // per-frame job is to advance one uniform and upload the slots written since
+  // the last frame (addUpdateRange), so the pool can be six times larger for
+  // less than the old loop cost. Slots are a ring: the oldest recycles first,
+  // which at this size is always long dead.
+  //
+  // `uTime` runs on the RENDER clock (it advances in _updateEffects, like the
+  // old integrator did), so sparks keep flying through hitstop the way they
+  // always have.
   _initParticles() {
-    const N = this._particleMax = 320;
-    this._particlesLive = [];
-    this._particleFree = Array.from({ length: N }, (_, i) => N - 1 - i);
+    const N = this._particleMax = 2048;
+    this._pCursor = 0;
+    this._pClock = 0;
+    this._pLo = Infinity;
+    this._pHi = -1;
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+    const attr = (name, size) => {
+      const a = new THREE.BufferAttribute(new Float32Array(N * size), size);
+      a.setUsage(THREE.DynamicDrawUsage);
+      geo.setAttribute(name, a);
+      return a;
+    };
+    this._pPos = attr('position', 3);   // spawn point
+    this._pVel = attr('aVel', 3);
+    this._pCol = attr('aColor', 3);
+    this._pMeta = attr('aMeta', 4);     // birth, life, gravity, drag
+    this._pSize = attr('aSize', 1);
+    // Every slot starts long dead.
+    for (let i = 0; i < N; i++) this._pMeta.array[i * 4] = -1e6;
     // Soft round sprite so points don't render as squares.
     const c = document.createElement('canvas');
     c.width = c.height = 32;
@@ -226,54 +260,116 @@ class VfxMethods {
     grad.addColorStop(1, 'rgba(255,255,255,0)');
     g.fillStyle = grad;
     g.fillRect(0, 0, 32, 32);
-    this._particlePoints = new THREE.Points(geo, new THREE.PointsMaterial({
-      size: 0.11, map: new THREE.CanvasTexture(c), vertexColors: true,
-      transparent: true, blending: THREE.AdditiveBlending,
-      depthWrite: false, sizeAttenuation: true, fog: false,
-    }));
+    this._pSprite = new THREE.CanvasTexture(c);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        // Pixels per world unit at distance 1 — half the drawing-buffer height,
+        // the same factor PointsMaterial's sizeAttenuation uses. Set per frame.
+        uScale: { value: 300 },
+        uMap: { value: this._pSprite },
+      },
+      vertexShader: /* glsl */`
+        attribute vec3 aVel;
+        attribute vec3 aColor;
+        attribute vec4 aMeta;
+        attribute float aSize;
+        uniform float uTime;
+        uniform float uScale;
+        varying vec3 vColor;
+        void main() {
+          float age = uTime - aMeta.x;
+          if (age < 0.0 || age > aMeta.y) {
+            // Dead or not yet born: outside the clip volume, zero size.
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            gl_PointSize = 0.0;
+            vColor = vec3(0.0);
+            return;
+          }
+          float k = aMeta.w;
+          float travel = k > 0.001 ? (1.0 - exp(-k * age)) / k : age;
+          vec3 p = position + aVel * travel;
+          p.y += 0.5 * aMeta.z * age * age;
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          gl_Position = projectionMatrix * mv;
+          // Linear fade to black over the life: additive blending, so black is gone.
+          vColor = aColor * (1.0 - age / aMeta.y);
+          gl_PointSize = aSize * uScale / max(0.05, -mv.z);
+        }`,
+      fragmentShader: /* glsl */`
+        uniform sampler2D uMap;
+        varying vec3 vColor;
+        void main() {
+          float a = texture2D(uMap, gl_PointCoord).a;
+          if (a < 0.01) discard;
+          gl_FragColor = vec4(vColor, a);
+        }`,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false,
+    });
+    this._particlePoints = new THREE.Points(geo, mat);
     this._particlePoints.frustumCulled = false;
     this._particlePoints.renderOrder = 3;
     this.scene.add(this._particlePoints);
   }
 
-  _spawnParticle(x, y, z, vx, vy, vz, color, life, gravity = -8) {
-    const i = this._particleFree.pop();
-    if (i === undefined) return; // pool exhausted — drop, never grow
-    const pos = this._particlePoints.geometry.attributes.position.array;
-    pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z;
-    const col = new THREE.Color(color);
-    this._particlesLive.push({
-      i, life, maxLife: life, vx, vy, vz, gravity, r: col.r, g: col.g, b: col.b,
-    });
+  /**
+   * Write one particle. `size` is world metres (the old PointsMaterial used 0.11
+   * for everything); `drag` is an exponential velocity damping rate, 0 = none.
+   */
+  _spawnParticle(x, y, z, vx, vy, vz, color, life, gravity = -8, size = 0.11, drag = 0) {
+    if (!this._particlePoints) return;
+    const i = this._pCursor;
+    this._pCursor = (i + 1) % this._particleMax;
+    const i3 = i * 3, i4 = i * 4;
+    const pos = this._pPos.array, vel = this._pVel.array, col = this._pCol.array, meta = this._pMeta.array;
+    pos[i3] = x; pos[i3 + 1] = y; pos[i3 + 2] = z;
+    vel[i3] = vx; vel[i3 + 1] = vy; vel[i3 + 2] = vz;
+    _pColor.set(color);
+    col[i3] = _pColor.r; col[i3 + 1] = _pColor.g; col[i3 + 2] = _pColor.b;
+    meta[i4] = this._pClock; meta[i4 + 1] = life; meta[i4 + 2] = gravity; meta[i4 + 3] = drag;
+    this._pSize.array[i] = size;
+    if (i < this._pLo) this._pLo = i;
+    if (i > this._pHi) this._pHi = i;
   }
 
   _updateParticles(dt) {
     if (!this._particlePoints) return;
-    const live = this._particlesLive;
-    if (!live.length) return;
-    const posAttr = this._particlePoints.geometry.attributes.position;
-    const colAttr = this._particlePoints.geometry.attributes.color;
-    const pos = posAttr.array, col = colAttr.array;
-    for (let n = live.length - 1; n >= 0; n--) {
-      const p = live[n];
-      p.life -= dt;
-      const i3 = p.i * 3;
-      if (p.life <= 0) {
-        col[i3] = col[i3 + 1] = col[i3 + 2] = 0; // additive black = gone
-        this._particleFree.push(p.i);
-        live[n] = live[live.length - 1];
-        live.pop();
-        continue;
-      }
-      p.vy += p.gravity * dt;
-      pos[i3] += p.vx * dt;
-      pos[i3 + 1] += p.vy * dt;
-      pos[i3 + 2] += p.vz * dt;
-      const f = p.life / p.maxLife;
-      col[i3] = p.r * f; col[i3 + 1] = p.g * f; col[i3 + 2] = p.b * f;
+    this._pClock += dt;
+    const u = this._particlePoints.material.uniforms;
+    u.uTime.value = this._pClock;
+    // Composer targets match the drawing buffer, so its height is the right scale.
+    u.uScale.value = this.renderer.domElement.height * 0.5;
+    if (this._pHi < 0) return;
+    // Upload only the slots written since last frame. A ring wrap inside one
+    // frame makes the span the whole buffer, which is still just one upload.
+    const lo = this._pLo, count = this._pHi - lo + 1;
+    for (const a of [this._pPos, this._pVel, this._pCol, this._pMeta, this._pSize]) {
+      a.clearUpdateRanges();
+      a.addUpdateRange(lo * a.itemSize, count * a.itemSize);
+      a.needsUpdate = true;
     }
-    posAttr.needsUpdate = true;
-    colAttr.needsUpdate = true;
+    this._pLo = Infinity;
+    this._pHi = -1;
+  }
+
+  // Canvas dust kicked up where a body hits the mat, or feet skid under a heavy
+  // shove: fat, dim, slow particles with heavy drag, so they bloom outward and
+  // hang in the spotlights instead of flying. Additive like everything else in
+  // the pool, so "dim warm grey" reads as lit haze rather than as a grey cloud.
+  _spawnDust(x, z, power = 1) {
+    const n = Math.round(10 + 14 * Math.min(1.5, power));
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = (0.9 + Math.random() * 1.6) * (0.6 + 0.4 * power);
+      this._spawnParticle(
+        x + Math.cos(a) * 0.15, 0.06 + Math.random() * 0.12, z + Math.sin(a) * 0.15,
+        Math.cos(a) * sp, 0.35 + Math.random() * 0.7, Math.sin(a) * sp,
+        0x3a342e, 0.9 + Math.random() * 0.8, -0.25,
+        0.28 + Math.random() * 0.34, 2.6);
+    }
   }
 
   _spawnSparks(pos, color, count = 6, power = 1.0) {
@@ -289,7 +385,19 @@ class VfxMethods {
         pos.y + 1.0 + (Math.random() - 0.5) * 0.3,
         pos.z + (Math.random() - 0.5) * spread,
         dir.x, dir.y, dir.z,
-        color, 0.35 + Math.random() * 0.15, -8);
+        color, 0.35 + Math.random() * 0.15, -8, 0.08 + Math.random() * 0.06);
+    }
+    // Embers: the pool can afford them now. A few slow, tiny, long-lived motes
+    // that drift down off the contact point after the sparks have gone — they
+    // are what makes the hit feel like it happened in air, not on a screen.
+    const embers = Math.round(count * 0.6);
+    for (let i = 0; i < embers; i++) {
+      this._spawnParticle(
+        pos.x + (Math.random() - 0.5) * spread,
+        pos.y + 1.0 + (Math.random() - 0.5) * 0.3,
+        pos.z + (Math.random() - 0.5) * spread,
+        (Math.random() - 0.5) * 2.2, Math.random() * 1.6, (Math.random() - 0.5) * 2.2,
+        color, 0.9 + Math.random() * 0.7, -1.2, 0.035 + Math.random() * 0.03, 2.2);
     }
   }
 
@@ -533,6 +641,8 @@ class VfxMethods {
         (Math.random() - 0.5) * 3.2, 1.2 + Math.random() * 1.6, (Math.random() - 0.5) * 3.2,
         0xbfd8ff, 0.4 + Math.random() * 0.2, -9);
     }
+    // ...and it lands: the droplets darken the vinyl and dry off (matWear.js, #7).
+    this.matWear?.sweat(headPos.x, headPos.z, 0.55, count);
   }
 
   // Celebration confetti glitter over the ring at the K.O.
@@ -543,7 +653,7 @@ class VfxMethods {
         (Math.random() - 0.5) * 7, 5.5 + Math.random() * 2.5, (Math.random() - 0.5) * 7,
         (Math.random() - 0.5) * 0.8, -0.4 - Math.random() * 0.5, (Math.random() - 0.5) * 0.8,
         colors[(Math.random() * colors.length) | 0],
-        2.2 + Math.random() * 1.4, -0.35);
+        2.2 + Math.random() * 1.4, -0.35, 0.09 + Math.random() * 0.07);
     }
   }
 }

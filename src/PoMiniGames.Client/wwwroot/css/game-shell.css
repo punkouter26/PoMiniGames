@@ -759,6 +759,65 @@ button.gps-intro-roster-item:focus-visible {
   border-color: rgba(34, 197, 94, 0.55);
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   ConnectionStateStrip (review #7) — the shared hub readout for the
+   multiplayer surfaces, rendered by Components/ConnectionStateStrip.razor and
+   consumed by LobbyPanel (all lobby games) and the Brawl online fight page.
+   Previously each surface spelled its own "Status: <pill>" in a different
+   pill vocabulary — and the fight page's `po-pill` classes were defined
+   NOWHERE, so its status pills rendered as bare text. One component, one
+   vocabulary, styled here where the rest of the shared chrome lives.
+   ───────────────────────────────────────────────────────────────────────── */
+.conn-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0 0 0.6rem;
+}
+
+.conn-strip__label {
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.conn-strip__detail {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.conn-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.55rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.conn-pill--ok {
+  color: var(--accent-success-ink);
+  border-color: var(--accent-success);
+  background: var(--accent-success-soft);
+}
+
+.conn-pill--warn {
+  color: var(--accent-warning-ink);
+  border-color: var(--accent-warning);
+  background: var(--accent-warning-soft);
+}
+
+.conn-pill--muted {
+  color: var(--color-text-secondary);
+  background: var(--surface-2);
+}
+
 @media (max-width: 640px) {
   .gps-intro-card--twoplayer {
     width: min(97vw, 560px);

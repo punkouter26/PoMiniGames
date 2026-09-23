@@ -51,10 +51,14 @@ public static class PoBrawlOnlineMatchEndpoints
                     errors[nameof(dto.MatchId)] = ["MatchId is required."];
                 if (dto.DurationSeconds is <= 0 or > 600)
                     errors[nameof(dto.DurationSeconds)] = ["Match duration must be between 0 and 600 seconds."];
-                if (!PoBrawlRoster.IsRateable(dto.OwnerFighter.Id))
-                    errors[nameof(dto.OwnerFighter)] = ["OwnerFighter is not a rateable PoBrawl fighter."];
-                if (!PoBrawlRoster.IsRateable(dto.OpponentFighter.Id))
-                    errors[nameof(dto.OpponentFighter)] = ["OpponentFighter is not a rateable PoBrawl fighter."];
+                // Any PICKABLE fighter, BOB included: the lobby offers him, and this board rates
+                // players, not fighters — the ids are only sanity-checked, never stored. Requiring
+                // a rateable president here rejected every match a BOB player finished (2026-09-23:
+                // it never surfaced before because the result broadcast never reached a client).
+                if (!IsPickable(dto.OwnerFighter.Id))
+                    errors[nameof(dto.OwnerFighter)] = ["OwnerFighter is not a PoBrawl fighter."];
+                if (!IsPickable(dto.OpponentFighter.Id))
+                    errors[nameof(dto.OpponentFighter)] = ["OpponentFighter is not a PoBrawl fighter."];
                 if (errors.Count > 0)
                 {
                     return Results.ValidationProblem(errors);
@@ -162,6 +166,10 @@ public static class PoBrawlOnlineMatchEndpoints
     /// (lowercased + trimmed) so a write at this endpoint lands on the same
     /// partition the lobby-side state machine wrote to.
     /// </summary>
+    private static bool IsPickable(string? fighterId) =>
+        PoBrawlRoster.IsRateable(fighterId)
+        || string.Equals(fighterId, PoBrawlRoster.Bob.Id, StringComparison.OrdinalIgnoreCase);
+
     private static string NormalisePrincipal(string raw) =>
         string.IsNullOrWhiteSpace(raw) ? "anon" : raw.Trim().ToLowerInvariant();
 }

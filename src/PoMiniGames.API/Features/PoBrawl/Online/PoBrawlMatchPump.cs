@@ -76,10 +76,17 @@ public sealed class PoBrawlMatchPump : BackgroundService
         // Use the lobby roster as the source of truth for "who was in this match",
         // because a connection might have dropped but the player is still entitled
         // to see the result when they reconnect.
-        foreach (var player in match.Roster)
+        //
+        // 2026-09-23: that roster is the LOBBY's, and its ConnectionIds are lobby-hub
+        // connections. This hub context cannot address them, and BuildResultFor had no side
+        // pinned for them either (so both would have read as Player1). Every result went
+        // nowhere, the online page never received matchFinished, and no online match was
+        // ever submitted to the Elo board. Send to the match-hub connections the service
+        // actually pinned at JoinMatch instead.
+        foreach (var connectionId in match.ConnectionIds)
         {
-            var result = match.BuildResultFor(player.ConnectionId);
-            await _hubContext.Clients.Client(player.ConnectionId)
+            var result = match.BuildResultFor(connectionId);
+            await _hubContext.Clients.Client(connectionId)
                 .SendAsync("matchFinished", result, ct);
         }
     }

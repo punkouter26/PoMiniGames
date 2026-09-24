@@ -76,7 +76,7 @@ public sealed class PoCabinetRaceHubContractTests(PoMiniGamesE2EFixture fixture)
                 Name = "Player " + i,
                 OfficialId = i == 0 ? "player" : new[] { "sean-s", "steve-b", "bill-b", "mike-p" }[i % 4],
                 Color = "#3470d8",
-                ColorDark = "#1f3a78",
+                AckSeq = 123_456,
                 X = 12 + i * 1.7,
                 Y = -8 + i * 0.5,
                 Heading = Math.PI / 2 - i * 0.04,

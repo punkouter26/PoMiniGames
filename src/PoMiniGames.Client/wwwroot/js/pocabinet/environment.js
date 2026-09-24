@@ -7,7 +7,7 @@
 //     and a warm headlight SpotLight parented to the cockpit camera
 //   • rain  — a camera-attached LineSegments streak field (recycled in a small
 //     box ahead of the player), fog pulled in, plus (solo races only) a grip
-//     penalty the practice ticker applies server-side-symmetrically
+//     penalty race.js applies (online stays dry: prediction must run the server numbers)
 //
 // "auto" resolution:
 //   • timeOfDay auto — the player's local clock (dawn/dusk ramps)
@@ -29,7 +29,7 @@ const RAIN_CODES = new Set([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 
 
 let current = { night: 0, raining: false, source: 'default' };
 
-/** Environment of the most recent mount — practice.js reads this for rain grip. */
+/** Environment of the most recent mount — race.js reads this for solo rain grip. */
 export function currentEnvironment() {
     return current;
 }

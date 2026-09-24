@@ -49,6 +49,16 @@
         ("Gold",     "#d4af37"),
     };
 
+    /// <summary>Hex for a paint name — what the car mesh, minimap and the server grid use.</summary>
+    public static string HexFor(string? name)
+    {
+        foreach (var (n, hex) in COLORS)
+        {
+            if (string.Equals(n, name, StringComparison.OrdinalIgnoreCase)) return hex;
+        }
+        return COLORS[0].Hex;
+    }
+
     private string _selectedLivery = "Stripe";
     private string _selectedColor = "Indigo";
 

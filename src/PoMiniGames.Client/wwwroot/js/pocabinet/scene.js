@@ -1,89 +1,64 @@
 // pocabinet/scene.js
 //
-// Three.js scene base for PoCabinet. Owns:
-//   • scene, camera, fog, ambient + directional lights
-//   • ground plane tinted from atmosphere.GroundHex
-//   • a track ribbon (extruded shape from the spline) tinted from atmosphere.AccentHex
+// Three.js scene for PoCabinet. Owns the renderer, camera, fog, lights and the
+// static track meshes, all built from the static world the page hands over
+// (PoCabinetTrackGeometry.BuildStaticWorld — the same centerline the physics
+// runs on, client and server):
+//   • ground plane sized to the track bounds, tinted atmosphere.groundHex
+//   • asphalt road ribbon (atmosphere.roadHex), TrackWidth wide
+//   • low barriers at the run-off edge (atmosphere.accentHex) — exactly where
+//     physics.js stops a car
+//   • a chequered start line at distance 0
+//   • an optional racing-line overlay coloured by corner speed (assist)
 //
-// Trim-audit safety (ADR-9): geometry is allocated once via GEOMETRY_CACHE and reused
-// per-track; materials are shared singletons; no reflection-based dispatch. Lambert
-// material follows the PoEcosystem chunk-order rule — `normal_fragment_begin` runs
-// BEFORE `color_fragment`, so any normal-dependent shader code must hook the earlier
-// chunk. We do not inject any custom shader code yet (T1 ships plain Lambert).
+// World mapping: sim (x, y) → three (x / 10, 0, y / 10). Everything that places
+// objects (cars.js, the camera helpers below) uses that one rule.
+//
+// Camera modes: 'cockpit' (the live default — the cockpit group rides the
+// camera), 'chase' (behind and above a car) and 'tv' (a trackside camera that
+// hands off along the lap). The camera is added to the scene graph so its
+// children — cockpit, headlight, rain field — actually render; before
+// 2026-09-23 it was not, and none of them ever appeared.
 //
 // API surface:
-//   const handle = await scene.mount(canvas, atmosphere, centerline);
-//   scene.unmount(handle);
-//   handle.setTrack(atmosphere, centerline);
+//   const handle = await mount(canvas, world);
+//   handle.setView({ x, y, heading, mode, speed }); handle.setRacingLine(bool);
+//   unmount(handle);
 
 import * as THREE from 'three';
+import { buildTrack } from './track.js';
+import { RUN_OFF, GRIP_ACCEL } from './physics.js';
 
-// ──────────────────────────────────────────────────────────────────────────
-//  Cached geometry. Pre-allocated once per process; never re-built per mount.
-//  The trim analyzer requires no per-mount allocations of BufferGeometry.
-// ──────────────────────────────────────────────────────────────────────────
+export const WORLD_SCALE = 10;
+const EYE_HEIGHT = 1.35;
 
-const GEOMETRY_CACHE = {
-    groundPlane: null,        // 100×100 plane, reused per mount (just translated/scaled)
-    trackRibbon: null,        // empty; rebuilt when a new centerline arrives
-};
-
-// ──────────────────────────────────────────────────────────────────────────
-//  Shared materials. Constructed lazily on first mount; reused across tracks.
-// ──────────────────────────────────────────────────────────────────────────
-
-const MATERIAL_CACHE = {
-    ground: null,
-    track: null,
-};
-
-function getOrCreateGroundMaterial() {
-    if (!MATERIAL_CACHE.ground) {
-        MATERIAL_CACHE.ground = new THREE.MeshLambertMaterial({ color: 0xc8c2b3, side: THREE.DoubleSide });
-    }
-    return MATERIAL_CACHE.ground;
-}
-
-function getOrCreateTrackMaterial() {
-    if (!MATERIAL_CACHE.track) {
-        MATERIAL_CACHE.track = new THREE.MeshLambertMaterial({ color: 0xd4af37, side: THREE.DoubleSide });
-    }
-    return MATERIAL_CACHE.track;
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-//  Per-mount state. A handle tracks everything that needs teardown so the
-//  renderer can swap tracks mid-session without leaking GPU resources.
-// ──────────────────────────────────────────────────────────────────────────
-
-/**
- * Centerline points arrive either as [x, y] arrays (C# double[][] via
- * IJSRuntime) or {X, Y} objects — accept both. The wire shape drifted at some
- * point and the ribbon silently produced NaN vertices for one of them.
- */
-function pointOf(p) {
-    if (Array.isArray(p)) return { x: Number(p[0]) || 0, y: Number(p[1]) || 0 };
-    return { x: Number(p?.X) || 0, y: Number(p?.Y) || 0 };
+function hex(value, fallback) {
+    try { return new THREE.Color(value || fallback); } catch { return new THREE.Color(fallback); }
 }
 
 class SceneHandle {
-    constructor(renderer, scene, camera, ambient, sun, groundMesh, trackMesh, canvas) {
+    constructor(renderer, scene, camera, ambient, sun, canvas) {
         this.renderer = renderer;
         this.scene = scene;
         this.camera = camera;
         this.ambient = ambient;
         this.sun = sun;
-        this.groundMesh = groundMesh;
-        this.trackMesh = trackMesh;
         this.canvas = canvas;
         this.disposed = false;
+        this.track = null;
+        this.trackGroup = null;
+        this.racingLine = null;
+        this.groundMesh = null;
         // Atmosphere the track was mounted with (unmodified) — environment.js
         // derives night/rain lighting from this baseline.
         this.baseAtmosphere = null;
-        // Per-frame callbacks (environment rain field, future FX). Registration
-        // is ref-counted so dispose() always unwinds cleanly.
         this._frameCbs = new Set();
         this._raf = null;
+        this._tvIndex = -1;
+        this._chase = new THREE.Vector3();
+        this._chaseInit = false;
+        this._onResize = () => this.resize();
+        window.addEventListener('resize', this._onResize);
     }
 
     /** Register a per-frame callback (receives a DOMHighResTimeStamp). */
@@ -116,26 +91,55 @@ class SceneHandle {
     }
 
     /**
-     * Cockpit camera follow: place the eye at the player's car and face its
-     * heading. Called per snapshot — the RAF loop renders whatever the last
-     * view was, so latency stays invisible.
-     * Server X → world X, server Y → world Z (÷10 scene scale, cars.js rule).
+     * Place the camera for a car pose. mode: 'cockpit' | 'chase' | 'tv'.
+     * Car forward = (cos h, 0, sin h); the camera looks down -Z by default, so
+     * yaw = -h - π/2 lines the view up with the car (cars.js convention).
      */
-    updatePlayerView(p) {
+    setView(p) {
         if (this.disposed || !p) return;
-        const x = (Number(p.x) || 0) / 10;
-        const z = (Number(p.y) || 0) / 10;
+        const x = (Number(p.x) || 0) / WORLD_SCALE;
+        const z = (Number(p.y) || 0) / WORLD_SCALE;
         const heading = Number(p.heading) || 0;
-        this.camera.position.set(x, 4, z);
-        // Car forward = (cos h, 0, sin h); camera default forward = -Z, so
-        // yaw = -h - π/2 aligns the view with the body (cars.js convention).
-        this.camera.rotation.set(0, -heading - Math.PI / 2, 0);
+        const mode = p.mode || 'cockpit';
+        if (mode === 'cockpit') {
+            this._chaseInit = false;
+            this.camera.position.set(x, EYE_HEIGHT, z);
+            this.camera.rotation.set(0, -heading - Math.PI / 2, 0);
+            return;
+        }
+        if (mode === 'chase') {
+            const back = 9, up = 3.6;
+            const target = new THREE.Vector3(x - Math.cos(heading) * back, up, z - Math.sin(heading) * back);
+            // Lagged follow so the car swings in frame through corners; time-based so the
+            // lag is the same at 30 fps as at 144.
+            const k = Number(p.dt) > 0 ? 1 - Math.exp(-Number(p.dt) * 10) : 0.18;
+            if (!this._chaseInit || p.snap) { this._chase.copy(target); this._chaseInit = true; }
+            else this._chase.lerp(target, k);
+            this.camera.position.copy(this._chase);
+            this.camera.lookAt(x + Math.cos(heading) * 3, 0.8, z + Math.sin(heading) * 3);
+            return;
+        }
+        // TV: fixed trackside cameras every eighth of the lap, handing off as the car passes.
+        const t = this.track;
+        if (!t) return;
+        const along = Number(p.along) || 0;
+        const idx = Math.floor(((along % t.length) + t.length) % t.length / (t.length / 8) + 0.5) % 8;
+        if (idx !== this._tvIndex || !this._tvPos) {
+            this._tvIndex = idx;
+            const q = t.pointAt(idx * (t.length / 8) + 40);
+            const side = t.halfWidth + RUN_OFF + 30;
+            this._tvPos = new THREE.Vector3((q.x - q.ty * side) / WORLD_SCALE, 7, (q.y + q.tx * side) / WORLD_SCALE);
+        }
+        this.camera.position.copy(this._tvPos);
+        this.camera.lookAt(x, 0.6, z);
     }
 
-    /**
-     * Apply player view preferences — pixel-ratio cap multiplier + FOV.
-     * Called from the settings facade; both values are clamped defensively.
-     */
+    /** Legacy cockpit follow (kept for callers that only have a pose). */
+    updatePlayerView(p) {
+        this.setView({ ...p, mode: 'cockpit' });
+    }
+
+    /** Apply player view preferences — pixel-ratio cap multiplier + FOV. */
     applyView(opts) {
         if (this.disposed) return;
         const o = opts && typeof opts === 'object' ? opts : {};
@@ -146,41 +150,77 @@ class SceneHandle {
             this.camera.fov = fov;
             this.camera.updateProjectionMatrix();
         }
+        this.setRacingLine(!!o.racingLine);
+        this.resize();
     }
 
-    /**
-     * Swap the active track's atmosphere + centerline. Called when the player
-     * switches tracks in the selector or when /pocabinet/{mode} loads a non-default
-     * track via the URL.
-     */
-    setTrack(atmosphere, centerline) {
+    /** Show or hide the racing-line assist overlay. */
+    setRacingLine(visible) {
+        if (this.racingLine) this.racingLine.visible = !!visible;
+    }
+
+    /** Build (or rebuild) every track mesh for a static world. */
+    setTrack(world) {
         if (this.disposed) return;
-
-        // Keep the pristine baseline for environment.js night/rain math.
+        const atmosphere = world.atmosphere || {};
         this.baseAtmosphere = { ...atmosphere };
+        this.scene.background = hex(atmosphere.skyHex, '#14233f');
+        this.scene.fog = new THREE.Fog(hex(atmosphere.fogHex, '#14233f').getHex(),
+            Number(atmosphere.fogStart) || 220, Number(atmosphere.fogEnd) || 900);
+        this.ambient.intensity = Number(atmosphere.ambientIntensity) || 0.5;
+        this.sun.intensity = Math.max(0.3, this.ambient.intensity + 0.2);
 
-        // Atmosphere: sky color, fog, ambient intensity.
-        this.scene.background = new THREE.Color(atmosphere.skyHex);
-        this.scene.fog = new THREE.Fog(
-            new THREE.Color(atmosphere.fogHex).getHex(),
-            atmosphere.fogStart,
-            atmosphere.fogEnd,
-        );
-        this.ambient.intensity = atmosphere.ambientIntensity;
-        this.sun.intensity = Math.max(0.3, atmosphere.ambientIntensity + 0.2);
+        this.disposeTrackMeshes();
+        this.track = buildTrack(world);
+        const group = new THREE.Group();
+        group.name = 'pocabinet-track';
 
-        // Ground tint from atmosphere.
-        getOrCreateGroundMaterial().color.set(atmosphere.groundHex);
+        // Ground: one plane covering the bounds plus a generous margin.
+        const minX = Number(world.minX) || 0, maxX = Number(world.maxX) || 0;
+        const minY = Number(world.minY) || 0, maxY = Number(world.maxY) || 0;
+        const margin = 600;
+        const w = (maxX - minX + margin * 2) / WORLD_SCALE, d = (maxY - minY + margin * 2) / WORLD_SCALE;
+        const groundGeom = new THREE.PlaneGeometry(w, d);
+        groundGeom.rotateX(-Math.PI / 2);
+        const ground = new THREE.Mesh(groundGeom, new THREE.MeshLambertMaterial({ color: hex(atmosphere.groundHex, '#2a3a24') }));
+        ground.position.set((minX + maxX) / 2 / WORLD_SCALE, 0, (minY + maxY) / 2 / WORLD_SCALE);
+        group.add(ground);
+        this.groundMesh = ground;
 
-        // Track ribbon rebuild. Track ribbon is the only geometry that legitimately
-        // changes per track; we dispose the previous mesh's geometry before swapping.
-        if (this.trackMesh && this.trackMesh.geometry) {
-            this.trackMesh.geometry.dispose();
-        }
-        const ribbonGeom = buildTrackRibbonGeometry(centerline);
-        const ribbonMat = getOrCreateTrackMaterial();
-        ribbonMat.color.set(atmosphere.accentHex);
-        this.trackMesh.geometry = ribbonGeom;
+        const hw = this.track.halfWidth;
+        group.add(new THREE.Mesh(ribbon(this.track, -hw, hw, 0.02),
+            new THREE.MeshLambertMaterial({ color: hex(atmosphere.roadHex, '#393b42'), side: THREE.DoubleSide })));
+
+        // Edge lines on the tarmac, then the barriers where physics puts the wall.
+        const lineMat = new THREE.MeshLambertMaterial({ color: 0xe8e8e8, side: THREE.DoubleSide });
+        group.add(new THREE.Mesh(ribbon(this.track, -hw, -hw + 2.2, 0.03), lineMat));
+        group.add(new THREE.Mesh(ribbon(this.track, hw - 2.2, hw, 0.03), lineMat));
+        // physics.js stops a car's centre at hw + RUN_OFF - CAR_RADIUS/2; its flank is
+        // half a car width further out, so that is where the barrier face belongs.
+        const wallLat = hw + RUN_OFF;
+        const barrierMat = new THREE.MeshLambertMaterial({ color: hex(atmosphere.accentHex, '#c6a35a'), side: THREE.DoubleSide });
+        group.add(new THREE.Mesh(wall(this.track, -wallLat, 0.55), barrierMat));
+        group.add(new THREE.Mesh(wall(this.track, wallLat, 0.55), barrierMat));
+
+        group.add(startLine(this.track));
+
+        this.racingLine = racingLineMesh(this.track);
+        this.racingLine.visible = false;
+        group.add(this.racingLine);
+
+        this.scene.add(group);
+        this.trackGroup = group;
+    }
+
+    disposeTrackMeshes() {
+        if (!this.trackGroup) return;
+        this.scene.remove(this.trackGroup);
+        this.trackGroup.traverse(o => {
+            if (o.geometry) o.geometry.dispose();
+            if (o.material) o.material.dispose();
+        });
+        this.trackGroup = null;
+        this.racingLine = null;
     }
 
     /** Match the canvas size to its CSS box; called on resize + after mount. */
@@ -196,80 +236,108 @@ class SceneHandle {
     dispose() {
         if (this.disposed) return;
         this.disposed = true;
+        window.removeEventListener('resize', this._onResize);
         this.stopLoop();
         this._frameCbs.clear();
-        // Materials and ground geometry are cached and reused — do NOT dispose them.
-        // Only dispose the per-track ribbon geometry.
-        if (this.trackMesh && this.trackMesh.geometry) {
-            this.trackMesh.geometry.dispose();
-        }
+        this.disposeTrackMeshes();
         this.renderer.dispose();
     }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-//  Geometry builders.
+//  Geometry builders. Lateral offsets are sim units (+ = right of travel).
 // ──────────────────────────────────────────────────────────────────────────
 
-function getOrCreateGroundGeometry() {
-    if (!GEOMETRY_CACHE.groundPlane) {
-        // 100×100 ground plane; sits at y=0. The track ribbon floats slightly above it.
-        const g = new THREE.PlaneGeometry(100, 100);
-        g.rotateX(-Math.PI / 2);
-        GEOMETRY_CACHE.groundPlane = g;
-    }
-    return GEOMETRY_CACHE.groundPlane;
-}
-
-/**
- * Build a thin extruded ribbon from the centerline points. Centerlines arrive as
- * flat 2D points (Vec2 X/Y from the server); we treat X as world-X and Y as
- * world-Z so the ribbon lies flat on the ground plane.
- *
- * Trim-safety note: BufferGeometry is allocated per track switch (necessary
- * because the ribbon shape genuinely differs), but disposed by the handle on
- * swap. No reflection / dynamic lookup involved.
- */
-function buildTrackRibbonGeometry(centerline) {
-    if (!centerline || centerline.length < 2) {
-        return new THREE.BufferGeometry();
-    }
-
-    const halfWidth = 6.0; // ~half of TrackWidth=220 in server units, scaled to scene
+function ribbon(track, fromLat, toLat, height) {
     const positions = [];
-
-    for (let i = 0; i < centerline.length; i++) {
-        const a = pointOf(centerline[i]);
-        const b = pointOf(centerline[(i + 1) % centerline.length]);
-        // World-X = server X / 10 ; World-Z = server Y / 10 (scale down for screen)
-        const ax = a.x / 10, az = a.y / 10;
-        const bx = b.x / 10, bz = b.y / 10;
-        const dx = bx - ax, dz = bz - az;
-        const len = Math.hypot(dx, dz) || 1;
-        const nx = -dz / len, nz = dx / len; // 90° CCW normal
-
-        // Two vertices per centerline point: left edge and right edge.
+    const n = track.count;
+    for (let i = 0; i < n; i++) {
+        const nx = -track.ty[i], ny = track.tx[i];
+        const x = track.x[i], y = track.y[i];
         positions.push(
-            ax + nx * halfWidth, 0.01, az + nz * halfWidth,
-            ax - nx * halfWidth, 0.01, az - nz * halfWidth,
+            (x + nx * fromLat) / WORLD_SCALE, height, (y + ny * fromLat) / WORLD_SCALE,
+            (x + nx * toLat) / WORLD_SCALE, height, (y + ny * toLat) / WORLD_SCALE,
         );
     }
+    return strip(positions, n);
+}
 
+function wall(track, lateral, height) {
+    const positions = [];
+    const n = track.count;
+    for (let i = 0; i < n; i++) {
+        const px = (track.x[i] + -track.ty[i] * lateral) / WORLD_SCALE;
+        const pz = (track.y[i] + track.tx[i] * lateral) / WORLD_SCALE;
+        positions.push(px, 0, pz, px, height, pz);
+    }
+    return strip(positions, n);
+}
+
+function strip(positions, n) {
     const geom = new THREE.BufferGeometry();
-    const posAttr = new THREE.Float32BufferAttribute(positions, 3);
-    geom.setAttribute('position', posAttr);
-
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     const indices = [];
-    for (let i = 0; i < centerline.length; i++) {
-        const j = (i + 1) % centerline.length;
-        const a0 = i * 2, a1 = i * 2 + 1;
-        const b0 = j * 2, b1 = j * 2 + 1;
-        // Two triangles per quad.
-        indices.push(a0, b0, a1, a1, b0, b1);
+    for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const a0 = i * 2, a1 = i * 2 + 1, b0 = j * 2, b1 = j * 2 + 1;
+        indices.push(a0, a1, b0, a1, b1, b0);
     }
     geom.setIndex(indices);
     geom.computeVertexNormals();
     return geom;
+}
+
+/** Chequered strip across the road at distance 0 (the lap line). */
+function startLine(track) {
+    const group = new THREE.Group();
+    const p = track.pointAt(0);
+    const cols = 12, rows = 2, hw = track.halfWidth;
+    const cell = (hw * 2) / cols;
+    const geom = new THREE.PlaneGeometry(cell / WORLD_SCALE, cell / WORLD_SCALE);
+    geom.rotateX(-Math.PI / 2);
+    const white = new THREE.MeshLambertMaterial({ color: 0xf5f5f5 });
+    const black = new THREE.MeshLambertMaterial({ color: 0x111111 });
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const lat = -hw + cell * (c + 0.5);
+            const fwd = (r - 0.5) * cell;
+            const m = new THREE.Mesh(geom, (r + c) % 2 === 0 ? white : black);
+            m.position.set(
+                (p.x + -p.ty * lat + p.tx * fwd) / WORLD_SCALE,
+                0.035,
+                (p.y + p.tx * lat + p.ty * fwd) / WORLD_SCALE);
+            m.rotation.y = -Math.atan2(p.ty, p.tx);
+            group.add(m);
+        }
+    }
+    return group;
+}
+
+/**
+ * Racing-line assist: a thin line down the centre coloured by the speed the
+ * curvature allows — green flat out, amber lift, red brake. Same curvature and
+ * grip numbers the AI and the auto-brake use, so the colours never lie.
+ */
+function racingLineMesh(track) {
+    const positions = [];
+    const colors = [];
+    const green = new THREE.Color('#2ecc71'), amber = new THREE.Color('#f1c40f'), red = new THREE.Color('#e74c3c');
+    const c = new THREE.Color();
+    for (let i = 0; i <= track.count; i++) {
+        const k = i % track.count;
+        positions.push(track.x[k] / WORLD_SCALE, 0.05, track.y[k] / WORLD_SCALE);
+        let kappa = 0;
+        for (let j = 0; j < 8; j++) kappa = Math.max(kappa, track.curvatureAt((k + j) % track.count));
+        const vMax = Math.sqrt(GRIP_ACCEL * 0.9 / Math.max(kappa, 1e-5));
+        const t = Math.min(1, Math.max(0, (vMax - 80) / 50)); // ≤80 u/s brake … ≥130 flat out
+        if (t > 0.5) c.copy(amber).lerp(green, (t - 0.5) * 2);
+        else c.copy(red).lerp(amber, t * 2);
+        colors.push(c.r, c.g, c.b);
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    return new THREE.Line(geom, new THREE.LineBasicMaterial({ vertexColors: true }));
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -277,88 +345,50 @@ function buildTrackRibbonGeometry(centerline) {
 // ──────────────────────────────────────────────────────────────────────────
 
 /**
- * Mount the scene on a canvas element.
- *
+ * Mount the scene on a canvas.
  * @param {HTMLCanvasElement|string} canvas the element, or its DOM id — Blazor's
- *        IJSRuntime does not marshal ElementReference as a live element, so the
- *        id-string path is the reliable one.
- * @param {{ skyHex: string, fogStart: number, fogEnd: number, fogHex: string,
- *           ambientIntensity: number, groundHex: string, accentHex: string }} atmosphere
- * @param {Array<{X: number, Y: number}>} centerline
- * @returns {Promise<SceneHandle>}
+ *        IJSRuntime does not marshal ElementReference as a live element.
+ * @param {{ atmosphere: object, centerXY: number[], trackWidth: number,
+ *           minX: number, minY: number, maxX: number, maxY: number }} world
  */
-export async function mount(canvas, atmosphere, centerline) {
+export async function mount(canvas, world) {
     if (typeof canvas === 'string') canvas = document.getElementById(canvas);
     if (!canvas) throw new Error('pocabinet/scene: canvas element is required');
-    if (!atmosphere) throw new Error('pocabinet/scene: atmosphere is required');
+    if (!world || !world.atmosphere) throw new Error('pocabinet/scene: world is required');
 
-    // Renderer
-    const renderer = new THREE.WebGLRenderer({
-        canvas,
-        antialias: true,
-        alpha: false,
-    });
+    // preserveDrawingBuffer so the clip recorder and the result card can read frames back.
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
-    // Scene
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(atmosphere.skyHex);
-    scene.fog = new THREE.Fog(
-        new THREE.Color(atmosphere.fogHex).getHex(),
-        atmosphere.fogStart,
-        atmosphere.fogEnd,
-    );
-
-    // Camera — first-person cockpit. We sit slightly above the track; the cockpit
-    // interior is mounted by cockpit.js (T2).
     const camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.1, 5000);
-    camera.position.set(0, 4, 0);
-    camera.lookAt(0, 0, -10);
+    camera.position.set(0, EYE_HEIGHT, 0);
+    scene.add(camera);
 
-    // Lights
-    const ambient = new THREE.AmbientLight(0xffffff, atmosphere.ambientIntensity);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambient);
-    const sun = new THREE.DirectionalLight(0xffffff, Math.max(0.3, atmosphere.ambientIntensity + 0.2));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.7);
     sun.position.set(50, 80, 30);
     scene.add(sun);
 
-    // Ground
-    const groundMesh = new THREE.Mesh(getOrCreateGroundGeometry(), getOrCreateGroundMaterial());
-    scene.add(groundMesh);
-
-    // Track ribbon
-    const ribbonGeom = buildTrackRibbonGeometry(centerline || []);
-    const trackMesh = new THREE.Mesh(ribbonGeom, getOrCreateTrackMaterial());
-    scene.add(trackMesh);
-
-    const handle = new SceneHandle(renderer, scene, camera, ambient, sun, groundMesh, trackMesh, canvas);
-    handle.baseAtmosphere = {
-        skyHex: atmosphere.skyHex,
-        fogHex: atmosphere.fogHex,
-        fogStart: atmosphere.fogStart,
-        fogEnd: atmosphere.fogEnd,
-        ambientIntensity: atmosphere.ambientIntensity,
-        groundHex: atmosphere.groundHex,
-        accentHex: atmosphere.accentHex,
-    };
+    const handle = new SceneHandle(renderer, scene, camera, ambient, sun, canvas);
+    handle.setTrack(world);
+    const start = handle.track.pointAt(-40);
+    handle.setView({ x: start.x, y: start.y, heading: Math.atan2(start.ty, start.tx), mode: 'cockpit' });
     handle.resize();
     handle.startLoop();
     return handle;
 }
 
-/**
- * Tear down a mounted scene. Disposes per-track ribbon geometry but keeps the
- * shared material/ground caches warm for the next mount.
- */
 export function unmount(handle) {
     if (!handle) return;
     handle.dispose();
 }
 
-// Diagnostic hook — exposed for the E2E-UI smoke in T7.
+// Diagnostic hook for E2E smoke tests.
 export function sceneApi() {
     return {
         isMounted: (handle) => handle && !handle.disposed,
-        version: 'pocabinet-scene@1.0.0',
+        version: 'pocabinet-scene@2.0.0',
     };
 }

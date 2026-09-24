@@ -1,184 +1,258 @@
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.SignalR;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoCabinet;
 
 /// <summary>
-/// Owns every in-progress PoCabinet race on this host. One
-/// <see cref="PoCabinetSim"/> per <c>gameCode</c>, ticked at 30 Hz by a single
-/// shared timer, with per-connection input stored as a thread-local dictionary
-/// the sim reads. Hub callers attach / detach without ever holding the sim lock.
+/// Owns every running PoCabinet multiplayer race on this host: one <see cref="PoCabinetSim"/>
+/// per lobby code, ticked at 30 Hz by one shared timer, broadcasting a snapshot to the
+/// <c>race:{code}</c> group after every tick.
 ///
 /// <para>
-/// The 30 Hz timer reads <see cref="PoCabinetSim.Tick(double, IReadOnlyDictionary{string, PoCabinetInput})"/>
-/// and broadcasts the resulting <see cref="PoCabinetRaceSnapshot"/> over the
-/// <c>race:{gameCode}</c> SignalR group. Sessions that finish naturally or
-/// reach the safety cap are disposed; abandoned connections fall out of the
-/// input dictionary and the next snapshot simply reports no progress for them.
+/// <b>Inputs are queued, one consumed per tick.</b> Each client runs its own car on a fixed
+/// 30 Hz step and sends one numbered input per step; the server applies them in order and
+/// echoes the last applied number as <see cref="PoCabinetCarState.AckSeq"/>. That is what
+/// lets the client replay only the inputs the server has not seen yet. When the network
+/// delivers nothing, the last input repeats; when a burst arrives, the queue is trimmed to
+/// three so a lag spike cannot turn into permanent input delay.
+/// </para>
+/// <para>
+/// Seats bind to the caller's claim id (<see cref="Join"/>), so a reconnect resumes the same
+/// car. Anyone else who joins the group spectates: they get snapshots and no car. When a race
+/// ends the result is broadcast as <c>RaceFinished</c> and the lobby reopens for a rematch.
 /// </para>
 /// </summary>
 public sealed class PoCabinetRaceRegistry : IAsyncDisposable
 {
     private const int TickHz = 30;
+    private const double CountdownSeconds = 3;
+    private const int MaxQueuedInputs = 3;
+    private static readonly TimeSpan AbandonAfter = TimeSpan.FromSeconds(45);
 
-    private readonly Dictionary<string, SimSession> _sessions = new(StringComparer.OrdinalIgnoreCase);
-    private readonly IHubContext<PoCabinetRaceHub> _hub;
-    private readonly Timer _timer;
+    private readonly ConcurrentDictionary<string, RaceSession> _races = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Binding> _connections = new(StringComparer.Ordinal);
+    private readonly IHubContext<PoCabinetRaceHub> _raceHub;
+    private readonly IHubContext<PoCabinetLobbyHub> _lobbyHub;
+    private readonly PoCabinetLobbyService _lobbies;
     private readonly ILogger<PoCabinetRaceRegistry> _logger;
-    private readonly object _createLock = new();
+    private readonly TimeProvider _time;
+    private readonly ITimer _timer;
+    private int _ticking;
     private bool _disposed;
 
     public PoCabinetRaceRegistry(
-        IHubContext<PoCabinetRaceHub> hub,
-        ILogger<PoCabinetRaceRegistry> logger)
+        IHubContext<PoCabinetRaceHub> raceHub,
+        IHubContext<PoCabinetLobbyHub> lobbyHub,
+        PoCabinetLobbyService lobbies,
+        ILogger<PoCabinetRaceRegistry> logger,
+        TimeProvider? time = null)
     {
-        _hub = hub;
+        _raceHub = raceHub;
+        _lobbyHub = lobbyHub;
+        _lobbies = lobbies;
         _logger = logger;
-        _timer = new Timer(_ => TickAll(), null, TimeSpan.FromMilliseconds(1000 / TickHz), TimeSpan.FromMilliseconds(1000 / TickHz));
+        _time = time ?? TimeProvider.System;
+        var period = TimeSpan.FromSeconds(1.0 / TickHz);
+        _timer = _time.CreateTimer(_ => TickAll(), null, period, period);
     }
 
-    /// <summary>Create (if absent) a race session bound to <paramref name="gameCode"/>.</summary>
-    public void EnsureSession(string gameCode, string trackId, IReadOnlyList<PoCabinetDriver> drivers)
+    public static string RaceGroup(string code) => $"race:{code.ToUpperInvariant()}";
+
+    public static string LobbyGroup(string code) => $"lobby:{code.ToUpperInvariant()}";
+
+    /// <summary>Start a race for <paramref name="code"/>, replacing any finished one.</summary>
+    public void Create(string code, string trackId, IReadOnlyList<PoCabinetDriver> drivers)
     {
-        lock (_createLock)
+        var sim = new PoCabinetSim(trackId, seed: Random.Shared.Next(), drivers)
         {
-            if (_sessions.ContainsKey(gameCode)) return;
-            var sim = new PoCabinetSim(trackId, seed: Environment.TickCount, drivers);
-            _sessions[gameCode] = new SimSession(sim);
-            _logger.LogInformation("PoCabinet race {Code} created with {Count} drivers on {Track}",
-                gameCode, drivers.Count, trackId);
+            CountdownSeconds = CountdownSeconds,
+        };
+        var session = new RaceSession(code, sim, _time.GetUtcNow());
+        foreach (var d in drivers.Where(d => d.IsPlayer)) session.Queues[d.OwnerId] = new Queue<PoCabinetInput>();
+        _races[code] = session;
+        _logger.LogInformation("PoCabinet race {Code} created with {Count} cars on {Track}", code, drivers.Count, trackId);
+    }
+
+    public bool IsRunning(string code) => _races.ContainsKey(code);
+
+    /// <summary>
+    /// Bind a connection to a race and return the join snapshot: current state plus the static
+    /// world and, for a seated player, their car id. Null when no such race is running.
+    /// </summary>
+    public PoCabinetRaceSnapshot? Join(string code, string connectionId, string playerId)
+    {
+        if (!_races.TryGetValue(code, out var session)) return null;
+        lock (session.Gate)
+        {
+            int? carId = session.Sim.CarIdForOwner(playerId);
+            _connections[connectionId] = new Binding(session.Code, carId is null ? null : playerId);
+            session.ConnectionCount++;
+            session.LastSeen = _time.GetUtcNow();
+            var snap = BuildSnapshot(session, dialogue: null);
+            snap.Static = PoCabinetTrackGeometry.BuildStaticWorld(session.Sim.TrackId);
+            snap.LocalCarId = carId;
+            return snap;
         }
     }
 
-    public void AttachConnection(string gameCode, string connectionId)
+    public void Leave(string connectionId)
     {
-        if (!_sessions.TryGetValue(gameCode, out var session)) return;
-        session.Connections[connectionId] = DateTimeOffset.UtcNow;
-    }
-
-    public void DetachConnection(string connectionId)
-    {
-        foreach (var (_, session) in _sessions)
+        if (!_connections.TryRemove(connectionId, out var binding)) return;
+        if (_races.TryGetValue(binding.Code, out var session))
         {
-            session.Connections.Remove(connectionId);
-            session.Inputs.Remove(connectionId);
+            lock (session.Gate)
+            {
+                session.ConnectionCount = Math.Max(0, session.ConnectionCount - 1);
+                session.LastSeen = _time.GetUtcNow();
+            }
         }
     }
 
-    public void SubmitIntent(string gameCode, string connectionId, PoCabinetInput input)
+    /// <summary>Queue one tick of input from a seated connection. Spectators and strangers are ignored.</summary>
+    public void SubmitInput(string connectionId, PoCabinetInput input)
     {
-        if (!_sessions.TryGetValue(gameCode, out var session)) return;
-        session.Inputs[connectionId] = input;
-    }
-
-    public async Task SendSnapshotAsync(string gameCode, string connectionId)
-    {
-        if (!_sessions.TryGetValue(gameCode, out var session)) return;
-        var snap = BuildSnapshot(session, connectionId);
-        await _hub.Clients.Client(connectionId).SendAsync("RaceSnapshot", snap);
+        if (input is null) return;
+        if (!_connections.TryGetValue(connectionId, out var binding) || binding.PlayerId is null) return;
+        if (!_races.TryGetValue(binding.Code, out var session)) return;
+        lock (session.Gate)
+        {
+            if (!session.Queues.TryGetValue(binding.PlayerId, out var queue)) return;
+            queue.Enqueue(input);
+            // A queue this deep is a burst after a stall — keep the newest few.
+            while (queue.Count > MaxQueuedInputs * 2) queue.Dequeue();
+            session.LastSeen = _time.GetUtcNow();
+        }
     }
 
     private void TickAll()
     {
-        if (_disposed) return;
-        // Snapshot the session list under the lock so a Start/Dispose racing us doesn't
-        // trip the "Collection was modified" InvalidOperationException.
-        List<(string code, SimSession session)>? snapshot = null;
-        lock (_createLock)
+        if (_disposed || Interlocked.Exchange(ref _ticking, 1) == 1) return;
+        try
         {
-            if (_sessions.Count == 0) return;
-            snapshot = _sessions.Select(kv => (kv.Key, kv.Value)).ToList();
-        }
-        foreach (var (code, session) in snapshot!)
-        {
-            try
+            foreach (var session in _races.Values)
             {
-                var dt = 1.0 / TickHz;
-                session.Sim.Tick(dt, session.Inputs);
-                if (session.Sim.IsFinished)
+                try
                 {
-                    _logger.LogInformation("PoCabinet race {Code} finished; disposing", code);
-                    _ = _hub.Clients.Group($"race:{code}").SendAsync("RaceFinished", code);
-                    lock (_createLock) { _sessions.Remove(code); }
-                    continue;
+                    TickOne(session);
                 }
-                // Broadcast the snapshot to the whole group; clients that haven't joined
-                // receive nothing (they're not in the group).
-                var snapshotDto = BuildSnapshot(session, localCarId: null);
-                _ = _hub.Clients.Group($"race:{code}").SendAsync("RaceSnapshot", snapshotDto);
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "PoCabinet tick for {Code} failed", session.Code);
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "PoCabinet tick for {Code} failed", code);
-            }
+        }
+        finally
+        {
+            Volatile.Write(ref _ticking, 0);
         }
     }
 
-    private static PoCabinetRaceSnapshot BuildSnapshot(SimSession session, string? localCarId)
+    private void TickOne(RaceSession session)
     {
-        var cars = session.Sim.SnapshotCars().Select(c => new PoCabinetCarState
+        PoCabinetRaceSnapshot snapshot;
+        PoCabinetFinalResult? result = null;
+        bool abandoned;
+        lock (session.Gate)
+        {
+            foreach (var (playerId, queue) in session.Queues)
+            {
+                while (queue.Count > MaxQueuedInputs) queue.Dequeue();
+                if (queue.Count > 0) session.Applied[playerId] = queue.Dequeue();
+            }
+            session.Sim.Tick(1.0 / TickHz, session.Applied);
+            snapshot = BuildSnapshot(session, session.Sim.TakeDialogue());
+            abandoned = session.ConnectionCount == 0 && _time.GetUtcNow() - session.LastSeen > AbandonAfter;
+            if (session.Sim.IsFinished) result = session.Sim.BuildResult(session.Code);
+        }
+
+        var group = _raceHub.Clients.Group(RaceGroup(session.Code));
+        _ = group.SendAsync("RaceSnapshot", snapshot);
+
+        if (result is null && !abandoned) return;
+        if (!_races.TryRemove(new KeyValuePair<string, RaceSession>(session.Code, session))) return;
+        foreach (var (connectionId, binding) in _connections)
+        {
+            if (string.Equals(binding.Code, session.Code, StringComparison.OrdinalIgnoreCase))
+                _connections.TryRemove(connectionId, out _);
+        }
+        if (result is not null)
+        {
+            _logger.LogInformation("PoCabinet race {Code} finished", session.Code);
+            _ = group.SendAsync("RaceFinished", result);
+        }
+        else
+        {
+            _logger.LogInformation("PoCabinet race {Code} abandoned", session.Code);
+        }
+        _lobbies.MarkRaceFinished(session.Code);
+        var view = _lobbies.View(session.Code);
+        if (view is not null) _ = _lobbyHub.Clients.Group(LobbyGroup(session.Code)).SendAsync("LobbyState", view);
+    }
+
+    private static PoCabinetRaceSnapshot BuildSnapshot(RaceSession session, PoCabinetDialogueEvent? dialogue)
+    {
+        var sim = session.Sim;
+        // Rounded on purpose: 30 Hz × 8 cars of full-precision doubles blew the 2 KB frame
+        // budget in practice, and a hundredth of a unit is far below one pixel.
+        var cars = sim.SnapshotCars().Select(c => new PoCabinetCarState
         {
             Id = c.Id,
             Name = c.Name,
-            OfficialId = OfficialIdFor(c.OwnerId),
+            OfficialId = c.OfficialId,
             Color = c.Color,
-            ColorDark = c.Color, // sim doesn't carry ColorDark; client tints locally
-            X = c.Pos.X,
-            Y = c.Pos.Y,
-            Heading = c.Heading,
-            SpeedKmh = c.Speed * 3.6, // server stores world units / s; client wants km/h
+            X = Math.Round(c.X, 2),
+            Y = Math.Round(c.Y, 2),
+            Heading = Math.Round(c.Heading, 4),
+            SpeedKmh = Math.Round(c.Speed * PoCabinetPhysics.KmhPerUnit, 1),
             Lap = c.Lap,
-            LapProgress = c.DistanceAlongTrack,
-            Position = c.Id + 1, // computed properly by client-side rank; placeholder
+            LapProgress = Math.Round(LapFraction(c.Distance, sim.Track.Length), 4),
+            Position = c.Position,
             IsPlayer = c.IsPlayer,
-            Finished = c.Lap > session.Sim.TotalLaps,
+            Finished = c.Finished,
+            AckSeq = c.AckSeq,
         }).ToList();
 
         return new PoCabinetRaceSnapshot
         {
-            GameCode = session.Sim.TrackId, // populated client-side from static world
+            GameCode = session.Code,
+            ServerTimeMs = (long)Math.Round((sim.ElapsedRaceTime + sim.CountdownSeconds) * 1000),
+            ElapsedRaceTime = Math.Round(Math.Max(0, sim.ElapsedRaceTime), 3),
+            Started = sim.Started,
+            CountdownSeconds = sim.CountdownRemaining,
+            Finished = sim.IsFinished,
             Cars = cars,
-            Started = true,
-            Finished = session.Sim.IsFinished,
-            LocalCarId = localCarId is null ? null : session.Sim.CarIdForOwner(localCarId),
+            LatestDialogue = dialogue,
         };
     }
 
-    /// <summary>Reverse-lookup of an AI official's id from the seeded connection id (bot-N).</summary>
-    private static string OfficialIdFor(string ownerId)
+    /// <summary>Fraction of the current lap in [0, 1); the grid (negative distance) reads as the end of a lap.</summary>
+    private static double LapFraction(double distance, double length)
     {
-        // Driver rows use "bot-0" .. "bot-3" for the four officials, matching the order
-        // the racing service spawns them. The racing service (T7) is responsible for
-        // constructing the drivers list; this is the contract that links them.
-        return ownerId switch
-        {
-            "bot-0" => "sean-s",
-            "bot-1" => "steve-b",
-            "bot-2" => "bill-b",
-            "bot-3" => "mike-p",
-            _ => "player",
-        };
+        double f = distance / length % 1;
+        return f < 0 ? f + 1 : f;
     }
 
-    private sealed class SimSession
+    public ValueTask DisposeAsync()
     {
-        public SimSession(PoCabinetSim sim)
-        {
-            Sim = sim;
-            Connections = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
-            Inputs = new Dictionary<string, PoCabinetInput>(StringComparer.Ordinal);
-        }
-        public PoCabinetSim Sim { get; }
-        public Dictionary<string, DateTimeOffset> Connections { get; }
-        public Dictionary<string, PoCabinetInput> Inputs { get; }
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_disposed) return;
+        if (_disposed) return ValueTask.CompletedTask;
         _disposed = true;
-        await _timer.DisposeAsync();
-        foreach (var session in _sessions.Values) session.Sim.SnapshotCars(); // no-op dispose
-        _sessions.Clear();
+        _timer.Dispose();
+        _races.Clear();
+        _connections.Clear();
+        return ValueTask.CompletedTask;
+    }
+
+    private sealed record Binding(string Code, string? PlayerId);
+
+    private sealed class RaceSession(string code, PoCabinetSim sim, DateTimeOffset createdAt)
+    {
+        public string Code { get; } = code;
+        public PoCabinetSim Sim { get; } = sim;
+        public object Gate { get; } = new();
+        public Dictionary<string, Queue<PoCabinetInput>> Queues { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, PoCabinetInput> Applied { get; } = new(StringComparer.Ordinal);
+        public int ConnectionCount { get; set; }
+        public DateTimeOffset LastSeen { get; set; } = createdAt;
     }
 }

@@ -26,6 +26,14 @@ export const DEFAULT_SETTINGS = Object.freeze({
     colorSafe: false,      // Okabe-Ito palette on the minimap markers
     weather: 'auto',       // auto | clear | rain  (auto = open-meteo, DC)
     timeOfDay: 'auto',     // auto | day | night   (auto = player's local clock)
+    // Controls + driver aids (input.js / physics.assistControls). Aids only
+    // shape the player's input, so they work online without server support.
+    touchControls: 'auto', // auto (coarse pointer or first touch) | on | off
+    steerMode: 'pad',      // pad (on-screen steer pad) | tilt (device orientation)
+    steerSensitivity: 1,   // 0.5..1.5 multiplier on every steering source
+    steeringAssist: 'off', // off | light | strong — blend toward the centre line
+    autoBrake: false,      // lift + brake for the next corner
+    racingLine: false,     // corner-speed coloured line on the road
 });
 
 let settings = { ...DEFAULT_SETTINGS };
@@ -48,6 +56,12 @@ function sanitize(raw) {
     s.colorSafe = !!src.colorSafe;
     if (['auto', 'clear', 'rain'].includes(src.weather)) s.weather = src.weather;
     if (['auto', 'day', 'night'].includes(src.timeOfDay)) s.timeOfDay = src.timeOfDay;
+    if (['auto', 'on', 'off'].includes(src.touchControls)) s.touchControls = src.touchControls;
+    if (['pad', 'tilt'].includes(src.steerMode)) s.steerMode = src.steerMode;
+    s.steerSensitivity = clamp(src.steerSensitivity, 0.5, 1.5, s.steerSensitivity);
+    if (['off', 'light', 'strong'].includes(src.steeringAssist)) s.steeringAssist = src.steeringAssist;
+    s.autoBrake = !!src.autoBrake;
+    s.racingLine = !!src.racingLine;
     return s;
 }
 

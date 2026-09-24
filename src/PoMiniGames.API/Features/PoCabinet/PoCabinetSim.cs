@@ -1,42 +1,38 @@
-using System.Diagnostics;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoCabinet;
 
 /// <summary>
-/// Server-authoritative PoCabinet simulation engine. No SignalR, no Blazor, no JS —
-/// the racing service drives it on a timer and broadcasts the snapshot. T2 ships
-/// the physics tick + lap/finish detection; T3 wires AI personalities on top of
-/// the same tick via <see cref="PoCabinetAiDriver"/>; T4 adds the wire DTOs.
+/// Server-authoritative PoCabinet race. No SignalR, no Blazor, no JS: the
+/// <see cref="PoCabinetRaceRegistry"/> ticks it at 30 Hz and broadcasts what it reports.
 ///
 /// <para>
-/// The math is intentionally close to PoRacerSim (reusing the same projection,
-/// collision, and lap-detection logic) so multiplayer code reviewed against
-/// PoRacer's server-authoritative pattern carries over. The differences are
-/// scoped: PoCabinet uses 4 cars by default (extensible to 8 for multiplayer),
-/// 3 laps per race (matches <see cref="PoCabinetCatalog.TotalLaps"/>), and no
-/// boost pads or sand zones for v1.
+/// Until 2026-09-23 this class changed each car's speed and heading but never moved it, and
+/// nothing constructed one for a real lobby, so multiplayer could not have run. Movement,
+/// walls and grass are now <see cref="PoCabinetPhysics.Step"/>, the same model the browser runs
+/// for solo races and for predicting its own car online.
+/// </para>
+/// <para>
+/// Time is the sum of the <c>dt</c> values passed to <see cref="Tick"/> — no wall clock — so a
+/// race replays identically from the same inputs. Lap and finish times are interpolated to
+/// the moment the car's race distance crossed the line inside the tick, not rounded to it.
 /// </para>
 /// </summary>
 public sealed class PoCabinetSim
 {
-    private const double CarRadius = 14;
-    private const double MaxSpeedKmh = 280;
-    private const int DefaultLaps = PoCabinetCatalog.TotalLaps;
-    private const double StopAfterMs = 180_000;
-    private const double FinishGraceMs = 5_000;
+    /// <summary>After the first car finishes, the rest have this long to cross the line.</summary>
+    private const double FinishGraceSeconds = 15;
+    /// <summary>A race that is still running this long after GO is called off (stuck/abandoned).</summary>
+    private const double SafetyCutoffSeconds = 300;
 
-    private readonly PoCabinetTrackData _track;
-    private readonly List<Vec2> _centerline = new();
-    private readonly List<(Vec2 a, Vec2 b)> _walls = new();
-    private readonly double _trackWidth;
-
+    private readonly PoCabinetTrack _track;
     private readonly List<SimCar> _cars = new();
     private readonly Dictionary<string, SimCar> _byOwnerId = new(StringComparer.Ordinal);
-    private readonly Stopwatch _wallClock = Stopwatch.StartNew();
-    private long _startElapsedMs;
-    private double _leaderFinishMs = -1;
     private readonly Random _rng;
+    private double _clock;
+    private double _firstFinishAt = -1;
+    private int _tickCount;
+    private int _finishOrder;
 
     public PoCabinetSim(string? trackId, int seed, IReadOnlyList<PoCabinetDriver> drivers)
     {
@@ -45,317 +41,242 @@ public sealed class PoCabinetSim
         if (drivers.Count > PoCabinetCatalog.CarCount)
             throw new ArgumentException($"max {PoCabinetCatalog.CarCount} drivers", nameof(drivers));
 
-        _track = PoCabinetTrackRegistry.GetTrack(trackId);
-        _trackWidth = _track.TrackWidth;
-        _centerline.AddRange(_track.Centerline);
-        _walls.AddRange(_track.Walls);
+        _track = PoCabinetTrack.Get(trackId);
         _rng = new Random(seed);
-
-        // Spawn grid: 2 cols × N rows along the first segment direction.
-        var startA = _centerline[0];
-        var startB = _centerline[1];
-        var dx = startB.X - startA.X; var dy = startB.Y - startA.Y;
-        var dlen = Math.Sqrt(dx * dx + dy * dy);
-        var tx = dx / dlen; var ty = dy / dlen;
-        var nrm = new Vec2(-ty, tx);
 
         for (int i = 0; i < drivers.Count; i++)
         {
             var d = drivers[i];
-            int row = i / 2;
-            int col = i % 2;
-            double fwdOffset = 60 + row * 38;
-            double sideOffset = (col == 0 ? -28.0 : 28.0) - (row * 4);
-            var pos = new Vec2(
-                startA.X + tx * fwdOffset + nrm.X * sideOffset,
-                startA.Y + ty * fwdOffset + nrm.Y * sideOffset);
-
-            _cars.Add(new SimCar
+            var car = new SimCar
             {
                 Id = i,
                 OwnerId = d.OwnerId,
                 Name = d.Name,
                 IsPlayer = d.IsPlayer,
                 Color = d.Color,
+                OfficialId = d.OfficialId,
                 Personality = d.Personality,
-                Pos = pos,
-                Heading = Math.Atan2(ty, tx),
                 MaxSpeed = d.MaxSpeed,
-                Acceleration = d.Acceleration,
-                Handling = d.Handling,
                 CorneringSkill = d.CorneringSkill,
-                Lap = 1,
-                LastCheckpoint = 0,
-                CheckpointT = 0,
-                DistanceAlongTrack = 0,
-            });
-            if (d.IsPlayer) _byOwnerId[d.OwnerId] = _cars[^1];
-        }
-
-        _startElapsedMs = _wallClock.ElapsedMilliseconds; // countdown handled by the racing service
-        foreach (var car in _cars)
-        {
-            Project(car);
-            UpdateRaceProgress(car);
+                Position = i + 1,
+            };
+            PoCabinetPhysics.GridSlot(_track, car, i);
+            _cars.Add(car);
+            if (d.IsPlayer) _byOwnerId[d.OwnerId] = car;
         }
     }
 
-    /// <summary>Track this sim is running on (id is the registry key).</summary>
+    /// <summary>Track this sim is running on (id is the geometry key).</summary>
     public string TrackId => _track.Id;
 
+    public PoCabinetTrack Track => _track;
+
     /// <summary>Total laps configured for this race.</summary>
-    public int TotalLaps { get; init; } = DefaultLaps;
+    public int TotalLaps { get; init; } = PoCabinetCatalog.TotalLaps;
+
+    /// <summary>Grid countdown before GO. 0 = cars move on the first tick (tests, demos).</summary>
+    public double CountdownSeconds { get; init; }
+
+    /// <summary>Weather grip factor. Multiplayer always races dry: the rain in the browser is
+    /// cosmetic online, because prediction must run the server's numbers.</summary>
+    public double Grip { get; init; } = 1;
 
     public int CarCount => _cars.Count;
     public bool IsFinished { get; private set; }
 
+    /// <summary>Seconds since GO; negative during the countdown.</summary>
+    public double ElapsedRaceTime => _clock - CountdownSeconds;
+
+    public bool Started => ElapsedRaceTime >= 0;
+
+    /// <summary>Whole seconds left on the countdown, as the HUD shows them (3, 2, 1, then 0).</summary>
+    public int CountdownRemaining => Started ? 0 : (int)Math.Ceiling(-ElapsedRaceTime);
+
+    /// <summary>Dialogue raised since the registry last took it (null = nothing new).</summary>
+    public PoCabinetDialogueEvent? PendingDialogue { get; private set; }
+
     public int? CarIdForOwner(string ownerId) => _byOwnerId.TryGetValue(ownerId, out var car) ? car.Id : null;
 
+    public PoCabinetDialogueEvent? TakeDialogue()
+    {
+        var d = PendingDialogue;
+        PendingDialogue = null;
+        return d;
+    }
+
     /// <summary>
-    /// Apply one physics tick. Pure C#, deterministic given identical inputs +
-    /// identical RNG state. The racing service calls this on a 30 Hz timer and
-    /// emits a snapshot over SignalR after every successful tick.
+    /// Advance the race by <paramref name="dt"/>. <paramref name="inputs"/> is keyed by driver
+    /// <c>OwnerId</c>; a human with no entry coasts. Each applied input's <c>Seq</c> is recorded
+    /// as that car's <see cref="SimCar.AckSeq"/>, during the countdown too, so the client's
+    /// prediction history drains even before GO.
     /// </summary>
     public void Tick(double dt, IReadOnlyDictionary<string, PoCabinetInput> inputs)
     {
         if (IsFinished) return;
-        if (_wallClock.ElapsedMilliseconds < _startElapsedMs) return;
+        _tickCount++;
+        double before = ElapsedRaceTime;
+        _clock += dt;
 
-        // 1. Player inputs.
         foreach (var (ownerId, car) in _byOwnerId)
         {
-            if (car.Lap > TotalLaps) continue;
-            inputs.TryGetValue(ownerId, out var inp);
-            ApplyControl(car, dt, inp?.Up ?? false, inp?.Down ?? false, inp?.Left ?? false, inp?.Right ?? false);
+            if (inputs.TryGetValue(ownerId, out var inp) && inp is not null && inp.Seq > car.AckSeq)
+                car.AckSeq = inp.Seq;
         }
-        // 2. AI ticks (populated in T3 via PoCabinetAiDriver; no-op when no personality).
-        foreach (var c in _cars)
-        {
-            if (c.IsPlayer) continue;
-            if (c.Lap > TotalLaps) continue;
-            if (c.Personality is null) continue;
-            ApplyAi(c, dt);
-        }
-        // 3. Car-car collisions.
-        ResolveCarCollisions();
-        // 4. Speed safety clamp.
-        foreach (var c in _cars) c.Speed = Math.Clamp(c.Speed, -c.MaxSpeed, c.MaxSpeed);
-        // 5. Project onto centerline.
-        foreach (var c in _cars) Project(c);
-        // 6. Wall collisions.
-        foreach (var c in _cars) ResolveWallCollision(c);
-        // 7. Lap detection.
-        foreach (var c in _cars) UpdateRaceProgress(c);
 
-        // Race-end bookkeeping.
-        var leader = _cars.OrderByDescending(c => c.Lap * 1_000_000 + c.DistanceAlongTrack).First();
-        if (leader.Lap > TotalLaps && _leaderFinishMs < 0)
+        if (_tickCount == 1) Say(DialogueKind.PreRace, BotAt(_rng.Next(Math.Max(1, _cars.Count))));
+        if (!Started) return;
+
+        double tickStart = Math.Max(0, before);
+        double stepDt = ElapsedRaceTime - tickStart;
+        if (stepDt <= 0) return;
+
+        foreach (var car in _cars)
         {
-            _leaderFinishMs = _wallClock.ElapsedMilliseconds;
-        }
-        var raceWallMs = _wallClock.ElapsedMilliseconds;
-        var anyStillRacing = _cars.Any(c => c.Lap <= TotalLaps);
-        var graceExpired = _leaderFinishMs > 0 && raceWallMs - _leaderFinishMs > FinishGraceMs;
-        var safetyHit = raceWallMs > StopAfterMs;
-        if (!anyStillRacing || graceExpired || safetyHit)
-        {
-            foreach (var c in _cars)
+            car.PrevDistance = car.Distance;
+            PoCabinetControls controls;
+            if (car.Finished || !car.IsPlayer)
             {
-                if (c.Lap <= TotalLaps) c.Lap = TotalLaps + 1; // mark all as finished
+                // Finished humans roll a cool-down lap on autopilot so they never park on the line.
+                var persona = car.Personality ?? PoCabinetPersonality.Officials.BillB;
+                controls = PoCabinetAiDriver.Decide(_track, car, persona, car.Finished ? car.MaxSpeed * 0.6 : car.MaxSpeed,
+                    car.CorneringSkill, _cars, Grip);
             }
+            else
+            {
+                inputs.TryGetValue(car.OwnerId, out var inp);
+                controls = PoCabinetControls.From(inp);
+            }
+            PoCabinetPhysics.Step(_track, car, controls, stepDt, Grip);
+        }
+        PoCabinetPhysics.ResolveContacts(_cars);
+
+        foreach (var car in _cars)
+        {
+            if (car.Finished) continue;
+            while (car.Distance >= (car.LapsDone + 1) * _track.Length)
+            {
+                double boundary = (car.LapsDone + 1) * _track.Length;
+                double span = car.Distance - car.PrevDistance;
+                double frac = span > 1e-9 ? Math.Clamp((boundary - car.PrevDistance) / span, 0, 1) : 1;
+                double crossedAt = tickStart + frac * stepDt;
+                double lapTime = crossedAt - car.LapStartTime;
+                car.LapStartTime = crossedAt;
+                car.LastLapSeconds = lapTime;
+                if (car.BestLapSeconds <= 0 || lapTime < car.BestLapSeconds) car.BestLapSeconds = lapTime;
+                car.LapsDone++;
+                if (car.LapsDone >= TotalLaps)
+                {
+                    car.Finished = true;
+                    car.FinishTime = crossedAt;
+                    car.FinishOrder = ++_finishOrder;
+                    if (_firstFinishAt < 0)
+                    {
+                        _firstFinishAt = ElapsedRaceTime;
+                        if (!car.IsPlayer) Say(DialogueKind.RaceFinish, car);
+                    }
+                    break;
+                }
+                if (!car.IsPlayer && Rank(car) == 1) Say(DialogueKind.LapFinish, car);
+            }
+        }
+
+        var order = Standings();
+        for (int i = 0; i < order.Count; i++) order[i].Position = i + 1;
+
+        bool humansDone = _byOwnerId.Count > 0 && _byOwnerId.Values.All(c => c.Finished);
+        bool everyoneDone = _cars.All(c => c.Finished);
+        bool graceOver = _firstFinishAt >= 0 && ElapsedRaceTime - _firstFinishAt > FinishGraceSeconds;
+        if (humansDone || everyoneDone || graceOver || ElapsedRaceTime > SafetyCutoffSeconds)
+        {
             IsFinished = true;
         }
     }
 
-    /// <summary>Snapshot the sim state for the wire DTO (added in T4).</summary>
+    /// <summary>Finishers by finish order, then everyone else by race distance.</summary>
+    public List<SimCar> Standings() =>
+        _cars.OrderBy(c => c.Finished ? 0 : 1)
+             .ThenBy(c => c.Finished ? c.FinishOrder : 0)
+             .ThenByDescending(c => c.Finished ? 0 : c.Distance)
+             .ThenBy(c => c.Id)
+             .ToList();
+
+    /// <summary>Final result for the <c>RaceFinished</c> broadcast.</summary>
+    public PoCabinetFinalResult BuildResult(string gameCode) => new(
+        gameCode,
+        Standings().Select((c, i) => new PoCabinetFinalEntry(
+            Position: i + 1,
+            Name: c.Name,
+            OfficialId: c.OfficialId,
+            IsPlayer: c.IsPlayer,
+            Finished: c.Finished,
+            TotalTimeSeconds: c.Finished ? Math.Round(c.FinishTime, 3) : -1,
+            BestLapSeconds: c.BestLapSeconds > 0 ? Math.Round(c.BestLapSeconds, 3) : -1,
+            CarId: c.Id)).ToList(),
+        DateTimeOffset.UtcNow);
+
     public IReadOnlyList<SimCar> SnapshotCars() => _cars;
 
-    /// <summary>Current world centerline (for the client scene).</summary>
-    public IReadOnlyList<Vec2> Centerline() => _centerline;
+    private int Rank(SimCar car) => Standings().IndexOf(car) + 1;
 
-    // ──────────────────────────────────────────────────────────────────────
-    //  Internals
-    // ──────────────────────────────────────────────────────────────────────
-
-    private void ApplyControl(SimCar car, double dt, bool up, bool down, bool left, bool right)
+    private SimCar? BotAt(int index)
     {
-        double accel = 0;
-        if (up) accel += car.Acceleration;
-        if (down) accel -= car.Acceleration * 0.8;
-        car.Speed += accel * dt;
-
-        // Steering — only takes effect when the car is moving (PoRacer pattern).
-        if (car.Speed > 1.0 || car.Speed < -1.0)
-        {
-            double turnRate = 2.4 * car.Handling * (car.Speed >= 0 ? 1 : -1);
-            if (left) car.Heading -= turnRate * dt;
-            if (right) car.Heading += turnRate * dt;
-        }
+        var bots = _cars.Where(c => !c.IsPlayer).ToList();
+        return bots.Count == 0 ? null : bots[index % bots.Count];
     }
 
-    private void ApplyAi(SimCar car, double dt)
+    private void Say(DialogueKind kind, SimCar? speaker)
     {
-        if (car.Personality is null) return;
-        PoCabinetAiDriver.Step(_centerline, car, car.Personality, dt);
+        if (speaker is null || speaker.IsPlayer) return;
+        PendingDialogue = new PoCabinetDialogueEvent
+        {
+            OfficialId = speaker.OfficialId,
+            Kind = kind.ToString(),
+            Text = PoCabinetDialogue.PickLine(speaker.OfficialId, kind, _tickCount),
+            RaceTick = _tickCount,
+        };
     }
 
-    private void ResolveCarCollisions()
-    {
-        for (int i = 0; i < _cars.Count; i++)
-        {
-            for (int j = i + 1; j < _cars.Count; j++)
-            {
-                var a = _cars[i]; var b = _cars[j];
-                double dx = b.Pos.X - a.Pos.X, dy = b.Pos.Y - a.Pos.Y;
-                double d = Math.Sqrt(dx * dx + dy * dy);
-                double min = CarRadius * 2;
-                if (d > 0 && d < min)
-                {
-                    double push = (min - d) * 0.5;
-                    double nx = dx / d;
-                    double ny = dy / d;
-                    a.Pos = new Vec2(a.Pos.X - nx * push, a.Pos.Y - ny * push);
-                    b.Pos = new Vec2(b.Pos.X + nx * push, b.Pos.Y + ny * push);
-                    // Soft speed transfer.
-                    double avg = (a.Speed + b.Speed) * 0.5;
-                    a.Speed = avg * 0.95;
-                    b.Speed = avg * 0.95;
-                }
-            }
-        }
-    }
-
-    private void Project(SimCar car)
-    {
-        // Find the closest centerline segment to the car, store its t in [0..1] and the
-        // segment index in CheckpointT / LastCheckpoint. Used for both steering (T3 AI)
-        // and lap detection (UpdateRaceProgress).
-        double bestD2 = double.MaxValue;
-        int bestIdx = 0;
-        double bestT = 0;
-        for (int i = 0; i < _centerline.Count; i++)
-        {
-            var a = _centerline[i];
-            var b = _centerline[(i + 1) % _centerline.Count];
-            double t = ProjectOnSegment(car.Pos, a, b, out double d2);
-            if (d2 < bestD2) { bestD2 = d2; bestIdx = i; bestT = t; }
-        }
-        car.LastCheckpoint = bestIdx;
-        car.CheckpointT = bestT;
-    }
-
-    private static double ProjectOnSegment(Vec2 p, Vec2 a, Vec2 b, out double distanceSquared)
-    {
-        double dx = b.X - a.X, dy = b.Y - a.Y;
-        double len2 = dx * dx + dy * dy;
-        if (len2 < 1e-9) { distanceSquared = (p.X - a.X) * (p.X - a.X) + (p.Y - a.Y) * (p.Y - a.Y); return 0; }
-        double t = ((p.X - a.X) * dx + (p.Y - a.Y) * dy) / len2;
-        t = Math.Clamp(t, 0, 1);
-        double projX = a.X + t * dx, projY = a.Y + t * dy;
-        double ex = p.X - projX, ey = p.Y - projY;
-        distanceSquared = ex * ex + ey * ey;
-        return t;
-    }
-
-    private void ResolveWallCollision(SimCar car)
-    {
-        // Soft wall pushback: nudge the car back to the centerline if it has drifted
-        // further than trackWidth/2 from any segment.
-        double maxOffset = _trackWidth * 0.5 - CarRadius;
-        for (int i = 0; i < _walls.Count; i += 2)
-        {
-            var leftWall = _walls[i];
-            var rightWall = _walls[i + 1];
-            // Distance from car to wall midpoint is a cheap proxy; for production we'd
-            // compute distance-to-segment. v1 keeps it simple.
-            var mid = new Vec2((leftWall.a.X + leftWall.b.X) * 0.5, (leftWall.a.Y + leftWall.b.Y) * 0.5);
-            double dx = car.Pos.X - mid.X, dy = car.Pos.Y - mid.Y;
-            double d = Math.Sqrt(dx * dx + dy * dy);
-            if (d > maxOffset && d > 0)
-            {
-                double push = d - maxOffset;
-                car.Pos = new Vec2(car.Pos.X - (dx / d) * push * 0.5, car.Pos.Y - (dy / d) * push * 0.5);
-                car.Speed *= 0.85; // soft braking on wall contact
-            }
-        }
-    }
-
-    private void UpdateRaceProgress(SimCar car)
-    {
-        // Distance along track: weighted by completed centerline segments + current segment t.
-        int n = _centerline.Count;
-        double segLen = 0;
-        for (int i = 0; i < n; i++)
-        {
-            var a = _centerline[i];
-            var b = _centerline[(i + 1) % n];
-            segLen += Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y));
-        }
-        double avgSeg = segLen / n;
-        double along = (car.LastCheckpoint + car.CheckpointT) * avgSeg;
-
-        // Lap increment: when the car crosses back to checkpoint 0 after a forward sweep.
-        if (car.LastCheckpoint == 0 && car.CheckpointT < 0.1 && car.PreviousCheckpointT > 0.9)
-        {
-            if (car.DistanceAlongTrack > avgSeg * 2) // ignore wrap-around at the start
-                car.Lap += 1;
-        }
-        // Wrap-around guard: if the car teleports (e.g. marshal rescue in T3), reset lap.
-        if (car.DistanceAlongTrack > 0 && Math.Abs(along - car.DistanceAlongTrack) > avgSeg * 5)
-        {
-            car.Lap = Math.Max(1, car.Lap);
-        }
-        car.DistanceAlongTrack = along;
-        car.PreviousCheckpointT = car.CheckpointT;
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    //  SimCar: server-side per-car state. Public so the wire DTO can read it.
-    // ──────────────────────────────────────────────────────────────────────
-
-    public sealed class SimCar
+    /// <summary>Per-car race state on top of the physical body. Public so the wire DTO can read it.</summary>
+    public sealed class SimCar : PoCabinetCarBody
     {
         public int Id { get; init; }
         public required string OwnerId { get; init; }
         public required string Name { get; init; }
         public required bool IsPlayer { get; init; }
         public required string Color { get; init; }
+        public string OfficialId { get; init; } = "player";
         public PoCabinetPersonality? Personality { get; init; }
         public double MaxSpeed { get; init; }
-        public double Acceleration { get; init; }
-        public double Handling { get; init; }
         public double CorneringSkill { get; init; }
-        public Vec2 Pos { get; set; }
-        public double Heading { get; set; }
-        public double Speed { get; set; }
-        public int Lap { get; set; }
-        public int LastCheckpoint { get; set; }
-        public double CheckpointT { get; set; }
-        public double PreviousCheckpointT { get; set; }
-        public double DistanceAlongTrack { get; set; }
+        public int LapsDone { get; set; }
+        /// <summary>Current lap (1-based). Reads TotalLaps + 1 once finished, as it always has.</summary>
+        public int Lap => LapsDone + 1;
+        public double LapStartTime { get; set; }
+        public double LastLapSeconds { get; set; }
+        public double BestLapSeconds { get; set; }
+        public bool Finished { get; set; }
+        public double FinishTime { get; set; }
+        public int FinishOrder { get; set; }
+        public int AckSeq { get; set; }
+        public int Position { get; set; }
+        internal double PrevDistance { get; set; }
     }
 }
 
-/// <summary>Driver row passed into <see cref="PoCabinetSim"/> at construction time.</summary>
+/// <summary>Driver row passed into <see cref="PoCabinetSim"/> at construction time; list order is grid order.</summary>
 public sealed record PoCabinetDriver(
     string OwnerId,
     string Name,
     bool IsPlayer,
     string Color,
     PoCabinetPersonality? Personality,
-    double MaxSpeed = 220,
-    double Acceleration = 200,
-    double Handling = 1.0,
-    double CorneringSkill = 0.7);
-
-/// <summary>Per-tick player input (WASD / arrows).</summary>
-public sealed record PoCabinetInput(bool Up, bool Down, bool Left, bool Right);
+    double MaxSpeed = PoCabinetPhysics.MaxSpeed,
+    double CorneringSkill = 0.7,
+    string OfficialId = "player");
 
 /// <summary>
-/// Personality parameter bundle for an AI driver. Reused by
-/// <see cref="PoCabinetAiDriver"/> in T3. Values default to neutral so a missing
-/// personality degrades to "drive forward at moderate speed" (see
-/// <see cref="PoCabinetSim.ApplyAi"/>).
+/// Personality parameter bundle for an AI driver (see <see cref="PoCabinetAiDriver"/> for what
+/// each knob does). Values default to neutral.
 /// </summary>
 public sealed record PoCabinetPersonality(
     double LookaheadDistance = 60,
@@ -364,12 +285,11 @@ public sealed record PoCabinetPersonality(
     double CollisionTolerance = 0.5,
     double DraftingAffinity = 0.0)
 {
-    /// <summary>The four named officials for v1. T3 wires these into the AI driver.</summary>
+    /// <summary>The four named officials. Mirrored in <c>js/pocabinet/physics.js</c> (<c>OFFICIALS</c>).</summary>
     public static class Officials
     {
-        // Each official's parameters are spread far enough that their lines diverge by
-        // a measurable amount on every track — the E2E-API contract test (PoCabinetAiPersonalityTests)
-        // asserts ≥ 5° average heading delta between any two officials over a 200-tick sim.
+        // Lateral offsets are spread across the road so their lines stay visibly apart
+        // (PoCabinetAiPersonalityTests asserts it over a full lap).
         public static readonly PoCabinetPersonality SeanS = new(
             LookaheadDistance: 25, LateralOffset: -0.95, BrakingAggression: 0.95,
             CollisionTolerance: 0.2, DraftingAffinity: 0.1);
@@ -383,4 +303,15 @@ public sealed record PoCabinetPersonality(
             LookaheadDistance: 130, LateralOffset: -0.40, BrakingAggression: 0.40,
             CollisionTolerance: 0.3, DraftingAffinity: 0.95);
     }
+
+    /// <summary>The AI roster in seat order: id, display name, colour, line, pace and cornering.
+    /// Top speeds sit a few percent under a player's, and the cornering margin keeps them off
+    /// the grip limit, so a clean human lap wins.</summary>
+    public static IReadOnlyList<(string Id, string Name, string Color, PoCabinetPersonality Personality, double MaxSpeed, double CorneringSkill)> Roster { get; } =
+    [
+        ("sean-s", "Sean S.", "#3470d8", Officials.SeanS, PoCabinetPhysics.MaxSpeed * 0.93, 0.62),
+        ("steve-b", "Steve B.", "#5e4b8b", Officials.SteveB, PoCabinetPhysics.MaxSpeed * 0.95, 0.55),
+        ("bill-b", "Bill B.", "#a02c2c", Officials.BillB, PoCabinetPhysics.MaxSpeed * 0.91, 0.70),
+        ("mike-p", "Mike P.", "#1c8054", Officials.MikeP, PoCabinetPhysics.MaxSpeed * 0.96, 0.60),
+    ];
 }

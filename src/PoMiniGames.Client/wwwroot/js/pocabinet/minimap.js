@@ -6,10 +6,11 @@
 // so 30 Hz redraws stay cheap even at 8 cars.
 //
 // Data sources:
-//   • centerline — the same per-track preset the scene mounts against
-//     (PoCabinetScenePresets, server units). Accepts BOTH [x, y] arrays and
-//     {X, Y} shapes because the wire has carried both over time.
-//   • cars — snapshot rows (x, y, isPlayer, color, officialId, finished).
+//   • world — the static world the scene mounts against (centerXY, flat
+//     [x0, y0, ...] in sim units, from PoCabinetTrackGeometry). A bare point
+//     array ([x, y] or {X, Y}) is still accepted.
+//   • cars — rows from race.js (x, y, isPlayer = the local car, color,
+//     officialId, finished), pushed ~15 Hz.
 //
 // Accessibility: the canvas is aria-hidden (decorative); the HUD position
 // readout remains the accessible source of truth. When colorSafe is on, the
@@ -168,12 +169,18 @@ class MinimapHandle {
 /**
  * Mount a minimap onto a canvas element.
  * @param {HTMLCanvasElement|string} canvas the element or its DOM id
- * @param {Array<[number,number]|{X:number,Y:number}>} centerline server-unit points
+ * @param {{centerXY:number[]}|Array<[number,number]|{X:number,Y:number}>} worldOrCenterline
  * @param {{ accent?: string, colorSafe?: boolean }} opts
  */
-export function mountMinimap(canvas, centerline, opts) {
+export function mountMinimap(canvas, worldOrCenterline, opts) {
     if (typeof canvas === 'string') canvas = document.getElementById(canvas);
     if (!canvas) throw new Error('pocabinet/minimap: canvas element is required');
+    let centerline = worldOrCenterline;
+    if (worldOrCenterline && Array.isArray(worldOrCenterline.centerXY)) {
+        const xy = worldOrCenterline.centerXY;
+        centerline = [];
+        for (let i = 0; i + 1 < xy.length; i += 2) centerline.push([xy[i], xy[i + 1]]);
+    }
     if (!Array.isArray(centerline) || centerline.length < 3) {
         throw new Error('pocabinet/minimap: centerline is required');
     }

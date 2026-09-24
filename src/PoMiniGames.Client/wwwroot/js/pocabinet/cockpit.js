@@ -46,25 +46,24 @@ function getOrCreateMaterials() {
 
 function getOrCreateGeometry() {
     if (!COCKPIT_GEOMETRY.wheel) {
-        // Steering wheel: torus with a 0.4 radius, 0.06 tube.
-        const w = new THREE.TorusGeometry(0.4, 0.06, 8, 24);
-        w.rotateX(Math.PI / 2);
-        COCKPIT_GEOMETRY.wheel = w;
-
-        COCKPIT_GEOMETRY.wheelHub = new THREE.CircleGeometry(0.12, 12);
-
-        // Hood: trapezoid plate, facing up and forward.
-        COCKPIT_GEOMETRY.hood = new THREE.BoxGeometry(3.0, 0.05, 1.6);
-
-        // Mirror: thin disc mounted above the windshield.
-        const m = new THREE.CircleGeometry(0.45, 16);
-        COCKPIT_GEOMETRY.mirror = m;
-
-        // Gauge bezel: ring around a gauge face.
-        COCKPIT_GEOMETRY.gaugeBezel = new THREE.TorusGeometry(0.18, 0.02, 8, 18);
-
-        // Gauge needle: thin elongated box.
-        COCKPIT_GEOMETRY.gaugeNeedle = new THREE.BoxGeometry(0.16, 0.012, 0.008);
+        // Layout note: the cockpit rides the camera (vertical FOV 60–90°), so at one unit
+        // ahead the view spans roughly ±0.7 vertically. Everything below sits in the
+        // bottom quarter or the top edge; the road ahead stays clear. (It was laid out
+        // blind — the camera was never in the scene graph, so none of it rendered —
+        // and on 2026-09-23 the mirror turned out to cover a third of the screen.)
+        COCKPIT_GEOMETRY.wheel = new THREE.TorusGeometry(0.3, 0.045, 8, 28);
+        COCKPIT_GEOMETRY.wheelHub = new THREE.CircleGeometry(0.08, 12);
+        COCKPIT_GEOMETRY.wheelSpoke = new THREE.BoxGeometry(0.56, 0.05, 0.02);
+        COCKPIT_GEOMETRY.dash = new THREE.BoxGeometry(2.6, 0.3, 0.3);
+        COCKPIT_GEOMETRY.hood = new THREE.BoxGeometry(2.2, 0.04, 2.0);
+        COCKPIT_GEOMETRY.mirror = new THREE.BoxGeometry(0.44, 0.1, 0.02);
+        COCKPIT_GEOMETRY.mirrorFrame = new THREE.BoxGeometry(0.48, 0.13, 0.015);
+        COCKPIT_GEOMETRY.gaugeFace = new THREE.CircleGeometry(0.1, 20);
+        COCKPIT_GEOMETRY.gaugeBezel = new THREE.TorusGeometry(0.1, 0.012, 8, 20);
+        // Needle pivots at one end: shift the box so its origin is the hub.
+        const needle = new THREE.BoxGeometry(0.085, 0.008, 0.004);
+        needle.translate(0.0425, 0, 0);
+        COCKPIT_GEOMETRY.gaugeNeedle = needle;
     }
     return COCKPIT_GEOMETRY;
 }
@@ -74,32 +73,49 @@ function getOrCreateGeometry() {
 // ──────────────────────────────────────────────────────────────────────────
 
 class CockpitHandle {
-    constructor(group, gaugeNeedle, rearMirror, wheel) {
+    constructor(group, gaugeNeedle, rearMirror, wheel, mirrorFrame, gauge) {
         this.group = group;
         this.gaugeNeedle = gaugeNeedle;
         this.rearMirror = rearMirror;
         this.wheel = wheel;
+        this.mirrorFrame = mirrorFrame;
+        this.gauge = gauge;
+        this.aspect = 0;
         this.disposed = false;
     }
 
     /**
-     * Update the cockpit readouts from the latest sim snapshot.
-     * @param {{ speed: number, rpm: number, gear: number, lap: number, position: number }} hud
+     * Portrait phones see a much narrower slice (half-width at one unit ≈ 0.7 × aspect):
+     * shrink the mirror and pull the speedometer in so neither leaves or swamps the view.
+     */
+    layout(aspect) {
+        if (!(aspect > 0) || Math.abs(aspect - this.aspect) < 0.01) return;
+        this.aspect = aspect;
+        const halfWidth = 0.7 * aspect;
+        const s = Math.min(1, aspect / 1.4);
+        this.rearMirror.scale.set(s, 1, 1);
+        this.mirrorFrame.scale.set(s, 1, 1);
+        this.gauge.position.x = Math.min(0.48, halfWidth * 0.62);
+    }
+
+    /**
+     * Per-frame readouts: the gauge needle sweeps with speed and the wheel turns
+     * with the steering input (visual lock ≈ 90° either way).
+     * @param {{ speedKmh: number, steer: number }} hud
      */
     updateHud(hud) {
         if (this.disposed || !hud) return;
-        // RPM needle rotation: 0..1 → -120°..+120°
-        const t = Math.max(0, Math.min(1, (hud.rpm || 0) / 8000));
-        this.gaugeNeedle.rotation.z = -Math.PI * 0.66 + t * Math.PI * 1.33;
-        // Steering wheel matches player heading. (Server broadcasts car heading;
-        // the cockpit hook reads the camera's quaternion instead for camera-relative
-        // rotation, but the v1 simplification is to rotate the wheel only when the
-        // player steers, which the racing service drives.)
-        // The wheel multiplier is in radians per second; we leave that to the racing
-        // service which calls setSteering. Stubbed out for T2:
-        // this.wheel.rotation.y = hud.steering || 0;
-        // (T2: leave at zero; T7 wires the steering input handler.)
-        void hud;
+        this.layout(this.group.parent?.aspect);
+        const t = Math.max(0, Math.min(1, (Number(hud.speedKmh) || 0) / 300));
+        this.gaugeNeedle.rotation.z = Math.PI * 0.66 - t * Math.PI * 1.33;
+        const steer = Math.max(-1, Math.min(1, Number(hud.steer) || 0));
+        // The wheel torus lies in the view plane after mount; spin it about the view axis.
+        this.wheel.rotation.z = -steer * Math.PI * 0.5;
+    }
+
+    /** Hide the interior for chase / TV cameras. */
+    setVisible(visible) {
+        if (!this.disposed) this.group.visible = !!visible;
     }
 
     /**
@@ -145,33 +161,41 @@ export function mountCockpit(sceneOrCamera) {
     const group = new THREE.Group();
     group.name = 'pocabinet-cockpit';
 
-    // ─── Steering wheel: in front of the camera, slightly below eye level ──
-    const wheel = new THREE.Mesh(geom.wheel, mats.rubber);
-    wheel.position.set(0, -0.55, -1.1);
-    const wheelHub = new THREE.Mesh(geom.wheelHub, mats.chrome);
-    wheel.add(wheelHub);
-    group.add(wheel);
-
-    // ─── Hood: angled plate visible at the bottom of the view ───
+    // ─── Dashboard across the bottom edge, bonnet sliver beyond it ───
+    const dash = new THREE.Mesh(geom.dash, mats.hood);
+    dash.position.set(0, -0.72, -1.05);
+    group.add(dash);
     const hood = new THREE.Mesh(geom.hood, mats.hood);
-    hood.position.set(0, -0.95, -0.2);
-    hood.rotation.x = -Math.PI / 6;
+    hood.position.set(0, -0.85, -2.1);
     group.add(hood);
 
-    // ─── RPM gauge needle (the only piece that animates each frame) ───
+    // ─── Steering wheel: tilted back on a mount; the wheel itself spins about its axis ───
+    const wheelMount = new THREE.Group();
+    wheelMount.position.set(0, -0.66, -0.9);
+    wheelMount.rotation.x = -0.35;
+    const wheel = new THREE.Mesh(geom.wheel, mats.rubber);
+    wheel.add(new THREE.Mesh(geom.wheelHub, mats.chrome));
+    wheel.add(new THREE.Mesh(geom.wheelSpoke, mats.rubber));
+    wheelMount.add(wheel);
+    group.add(wheelMount);
+
+    // ─── Speedometer on the dash, right of the wheel ───
+    const gauge = new THREE.Group();
+    gauge.position.set(0.48, -0.5, -1.0);
+    gauge.add(new THREE.Mesh(geom.gaugeFace, mats.bezel));
+    gauge.add(new THREE.Mesh(geom.gaugeBezel, mats.chrome));
     const gaugeNeedle = new THREE.Mesh(geom.gaugeNeedle, mats.needle);
-    gaugeNeedle.position.set(0, 0, -0.95);
-    gaugeNeedle.rotation.z = -Math.PI * 0.66;
-    group.add(gaugeNeedle);
+    gaugeNeedle.position.z = 0.004;
+    gaugeNeedle.rotation.z = Math.PI * 0.66;
+    gauge.add(gaugeNeedle);
+    group.add(gauge);
 
-    // ─── Gauge bezel (decorative; doesn't move) ───
-    const bezel = new THREE.Mesh(geom.gaugeBezel, mats.bezel);
-    bezel.position.set(0, 0, -0.96);
-    group.add(bezel);
-
-    // ─── Rear-view mirror: thin disc above and ahead of the camera ───
+    // ─── Rear-view mirror: a slim strip at the top edge ───
     const rearMirror = new THREE.Mesh(geom.mirror, mats.mirror);
-    rearMirror.position.set(0, 0.55, -0.85);
+    rearMirror.position.set(0, 0.56, -1.0);
+    const mirrorFrame = new THREE.Mesh(geom.mirrorFrame, mats.rubber);
+    mirrorFrame.position.set(0, 0.56, -1.005);
+    group.add(mirrorFrame);
     group.add(rearMirror);
 
     // Camera-relative attachment: cockpit is a child of the camera so it rides with
@@ -179,7 +203,7 @@ export function mountCockpit(sceneOrCamera) {
     // never lags the camera).
     camera.add(group);
 
-    return new CockpitHandle(group, gaugeNeedle, rearMirror, wheel);
+    return new CockpitHandle(group, gaugeNeedle, rearMirror, wheel, mirrorFrame, gauge);
 }
 
 export function unmountCockpit(handle) {

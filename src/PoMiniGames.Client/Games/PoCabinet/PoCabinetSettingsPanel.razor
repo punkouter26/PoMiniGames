@@ -69,6 +69,52 @@
         <label for="pocabinet-colorsafe">Colorblind-safe minimap palette</label>
         <input id="pocabinet-colorsafe" type="checkbox" checked="@Value.ColorSafe" @onchange="OnColorSafeChanged" />
     </div>
+
+    <h3 class="pocabinet-settings__group">Controls &amp; driver aids</h3>
+    <p class="pocabinet-settings__hint">Keyboard: W A S D or arrows, C changes camera, Esc pauses. Gamepads work too: left stick steers, the triggers are gas and brake.</p>
+
+    <div class="pocabinet-settings__row">
+        <label for="pocabinet-touch">On-screen touch controls</label>
+        <select id="pocabinet-touch" value="@Value.TouchControls" @onchange="OnTouchChanged">
+            <option value="auto">Auto (touch screens)</option>
+            <option value="on">Always show</option>
+            <option value="off">Hide</option>
+        </select>
+    </div>
+
+    <div class="pocabinet-settings__row">
+        <label for="pocabinet-steermode">Touch steering</label>
+        <select id="pocabinet-steermode" value="@Value.SteerMode" @onchange="OnSteerModeChanged">
+            <option value="pad">Steer pad</option>
+            <option value="tilt">Tilt the device</option>
+        </select>
+    </div>
+
+    <div class="pocabinet-settings__row">
+        <label for="pocabinet-sens">Steering sensitivity</label>
+        <input id="pocabinet-sens" type="range" min="0.5" max="1.5" step="0.05"
+               value="@Format(Value.SteerSensitivity)" @oninput="OnSensitivityChanged" />
+        <span class="pocabinet-settings__value">@($"{Value.SteerSensitivity:0.00}×")</span>
+    </div>
+
+    <div class="pocabinet-settings__row">
+        <label for="pocabinet-assist">Steering assist</label>
+        <select id="pocabinet-assist" value="@Value.SteeringAssist" @onchange="OnAssistChanged">
+            <option value="off">Off</option>
+            <option value="light">Light</option>
+            <option value="strong">Strong</option>
+        </select>
+    </div>
+
+    <div class="pocabinet-settings__row">
+        <label for="pocabinet-autobrake">Auto-brake for corners</label>
+        <input id="pocabinet-autobrake" type="checkbox" checked="@Value.AutoBrake" @onchange="OnAutoBrakeChanged" />
+    </div>
+
+    <div class="pocabinet-settings__row">
+        <label for="pocabinet-line">Show racing line (green = flat out, red = brake)</label>
+        <input id="pocabinet-line" type="checkbox" checked="@Value.RacingLine" @onchange="OnRacingLineChanged" />
+    </div>
 </div>
 
 @code {
@@ -110,6 +156,24 @@
 
     private Task OnColorSafeChanged(ChangeEventArgs e) =>
         RaiseAsync(s => s.ColorSafe = e.Value is bool b && b);
+
+    private Task OnTouchChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.TouchControls = e.Value?.ToString() ?? s.TouchControls);
+
+    private Task OnSteerModeChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.SteerMode = e.Value?.ToString() ?? s.SteerMode);
+
+    private Task OnSensitivityChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.SteerSensitivity = ParseDouble(e.Value?.ToString(), s.SteerSensitivity));
+
+    private Task OnAssistChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.SteeringAssist = e.Value?.ToString() ?? s.SteeringAssist);
+
+    private Task OnAutoBrakeChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.AutoBrake = e.Value is bool b && b);
+
+    private Task OnRacingLineChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.RacingLine = e.Value is bool b && b);
 
     private static double ParseDouble(string? raw, double fallback) =>
         double.TryParse(raw, System.Globalization.NumberStyles.Float,

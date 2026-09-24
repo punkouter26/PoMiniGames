@@ -21,6 +21,12 @@ public sealed class PoCabinetUiSettings
     public bool ColorSafe { get; set; }
     public string Weather { get; set; } = "auto";
     public string TimeOfDay { get; set; } = "auto";
+    public string TouchControls { get; set; } = "auto";
+    public string SteerMode { get; set; } = "pad";
+    public double SteerSensitivity { get; set; } = 1;
+    public string SteeringAssist { get; set; } = "off";
+    public bool AutoBrake { get; set; }
+    public bool RacingLine { get; set; }
 
     /// <summary>Load from a <c>PoCabinet.loadSettings()</c> JSON element, keeping defaults for missing props.</summary>
     public void LoadFrom(System.Text.Json.JsonElement el)
@@ -35,6 +41,12 @@ public sealed class PoCabinetUiSettings
         ColorSafe = GetBool(el, "colorSafe", ColorSafe);
         Weather = GetString(el, "weather", Weather);
         TimeOfDay = GetString(el, "timeOfDay", TimeOfDay);
+        TouchControls = GetString(el, "touchControls", TouchControls);
+        SteerMode = GetString(el, "steerMode", SteerMode);
+        SteerSensitivity = GetDouble(el, "steerSensitivity", SteerSensitivity);
+        SteeringAssist = GetString(el, "steeringAssist", SteeringAssist);
+        AutoBrake = GetBool(el, "autoBrake", AutoBrake);
+        RacingLine = GetBool(el, "racingLine", RacingLine);
     }
 
     /// <summary>Key-compatible projection passed to <c>PoCabinet.saveSettings</c>/<c>applySettings</c>.</summary>
@@ -49,6 +61,12 @@ public sealed class PoCabinetUiSettings
         colorSafe = ColorSafe,
         weather = Weather,
         timeOfDay = TimeOfDay,
+        touchControls = TouchControls,
+        steerMode = SteerMode,
+        steerSensitivity = SteerSensitivity,
+        steeringAssist = SteeringAssist,
+        autoBrake = AutoBrake,
+        racingLine = RacingLine,
     };
 
     /// <summary>HudScale formatted invariantly for the <c>--pocabinet-hud</c> CSS custom property.</summary>

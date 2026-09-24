@@ -1,75 +1,78 @@
 using FluentAssertions;
 using PoMiniGames.Features.PoCabinet;
+using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.E2EAPI.Features.PoCabinet;
 
 /// <summary>
-/// E2E-API contract test for the PoCabinet AI roster + dialogue pipeline. Three
-/// claims, one method by design (the E2E-API tier is capped at 25 and the hermetic
-/// tiers are full per the 100/50/25/25 rule):
+/// E2E-API contract test for the PoCabinet AI roster, the sim and the dialogue pipeline.
+/// One method by design (the E2E-API tier is capped at 25 and the hermetic tiers are full
+/// per the 100/50/25/25 rule):
 /// <list type="bullet">
-///   <item>Each of the four named officials produces a distinct driving line on the
-///         same track over the same number of ticks — a ≥ 5° average heading delta
-///         vs every other official, which is what gives the satirical roster its bite.</item>
+///   <item>Each of the four named officials, alone on the track, completes a lap through the
+///         real physics — the sim moved no car at all before 2026-09-23 — and holds its own
+///         line: every pair's mean lateral offsets over the lap differ by ≥ 8 units.</item>
+///   <item>A human car obeys its inputs and the barrier: full throttle with full right lock
+///         ends up pinned at the wall, never through it, and every applied input's
+///         sequence number is acknowledged.</item>
 ///   <item><see cref="PoCabinetDialogue.PickLine"/> is deterministic by
-///         <c>(official, kind, raceTick)</c> — same triple → same line, regardless of
-///         how many times the picker is invoked.</item>
-///   <item>The dialogue pool passes the banned-token scan; no slur placeholder or
-///         targeted-harassment marker ever appears in any authored line.</item>
+///         <c>(official, kind, raceTick)</c>, and the pool passes the banned-token scan.</item>
 /// </list>
 /// </summary>
 public sealed class PoCabinetAiPersonalityTests
 {
-    private const int TickCount = 200; // ~6.6 s of sim time at 30 Hz
+    private const double Dt = 1.0 / 30.0;
+    private const int LapTicks = 30 * 60; // a minute of sim time; a lap takes well under half that
 
     [Fact]
-    public void EachOfficial_ProducesDistinctLines_AndDialogueIsDeterministic_AndContentIsClean()
+    public void EachOfficial_LapsOnItsOwnLine_HumanCarObeysWalls_AndDialogueIsDeterministicAndClean()
     {
-        // ── Part 1: distinct driving lines ───────────────────────────────
-        var headings = new Dictionary<string, List<double>>();
-        var officials = new[]
+        // ── Part 1: every official laps, on a distinct line ──────────────
+        var laterals = new Dictionary<string, List<double>>();
+        foreach (var o in PoCabinetPersonality.Roster)
         {
-            ("sean-s", PoCabinetPersonality.Officials.SeanS),
-            ("steve-b", PoCabinetPersonality.Officials.SteveB),
-            ("bill-b", PoCabinetPersonality.Officials.BillB),
-            ("mike-p", PoCabinetPersonality.Officials.MikeP),
-        };
-
-        foreach (var (id, personality) in officials)
-        {
-            var drivers = new List<PoCabinetDriver>
-            {
-                new("owner", id, IsPlayer: false, Color: "#000000", Personality: personality),
-            };
-            var sim = new PoCabinetSim("capitol", seed: 42, drivers);
-            var inputs = new Dictionary<string, PoCabinetInput>();
+            var sim = new PoCabinetSim("capitol", seed: 42,
+            [
+                new PoCabinetDriver("bot", o.Name, IsPlayer: false, o.Color, o.Personality, o.MaxSpeed, o.CorneringSkill, o.Id),
+            ]);
+            var car = sim.SnapshotCars()[0];
             var series = new List<double>();
-            for (var i = 0; i < TickCount; i++)
+            for (var i = 0; i < LapTicks && car.LapsDone < 1; i++)
             {
-                sim.Tick(1.0 / 30.0, inputs);
-                series.Add(sim.SnapshotCars()[0].Heading);
+                sim.Tick(Dt, new Dictionary<string, PoCabinetInput>());
+                // Sample the settled part of the lap, past the grid and the first turn-in.
+                if (car.Distance > 150) series.Add(car.Lateral);
             }
-            headings[id] = series;
+            car.LapsDone.Should().BeGreaterThanOrEqualTo(1, $"{o.Id} must complete a lap under the real physics");
+            car.BestLapSeconds.Should().BeInRange(12, 60, $"{o.Id}'s lap time must be a plausible arcade lap");
+            laterals[o.Id] = series;
         }
 
-        // Compare every pair — average heading delta must be ≥ 5°.
-        var ids = headings.Keys.ToList();
+        var ids = laterals.Keys.ToList();
         for (var i = 0; i < ids.Count; i++)
         {
             for (var j = i + 1; j < ids.Count; j++)
             {
-                var a = headings[ids[i]];
-                var b = headings[ids[j]];
-                double totalDelta = 0;
-                for (var k = 0; k < a.Count; k++)
-                {
-                    totalDelta += Math.Abs(PoCabinetAiDriver.ShortAngleDiff(a[k], b[k]));
-                }
-                var avgDeg = (totalDelta / a.Count) * (180.0 / Math.PI);
-                avgDeg.Should().BeGreaterThanOrEqualTo(5.0,
-                    $"{ids[i]} and {ids[j]} must drive visibly different lines (saw {avgDeg:F2}°)");
+                var gap = Math.Abs(laterals[ids[i]].Average() - laterals[ids[j]].Average());
+                gap.Should().BeGreaterThanOrEqualTo(8,
+                    $"{ids[i]} and {ids[j]} must hold visibly different lines (mean lateral gap {gap:F1})");
             }
         }
+
+        // ── Part 1b: a human car obeys inputs and the barrier ───────────
+        var human = new PoCabinetSim("capitol", seed: 1, [new PoCabinetDriver("me", "Me", IsPlayer: true, "#fff", null)]);
+        var me = human.SnapshotCars()[0];
+        var wall = PoCabinetPhysics.WallLateral(human.Track);
+        for (var seq = 1; seq <= 150; seq++)
+        {
+            human.Tick(Dt, new Dictionary<string, PoCabinetInput>
+            {
+                ["me"] = new() { Throttle = 1, Steer = 1, Seq = seq },
+            });
+            Math.Abs(me.Lateral).Should().BeLessThanOrEqualTo(wall + 0.5, "no car may pass through the barrier");
+        }
+        me.AckSeq.Should().Be(150, "every applied input must be acknowledged");
+        me.Speed.Should().BeGreaterThan(0, "throttle moves the car");
 
         // ── Part 2: dialogue determinism ─────────────────────────────────
         var firstCall = PoCabinetDialogue.PickLine("sean-s", DialogueKind.PreRace, 12);

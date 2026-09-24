@@ -51,7 +51,7 @@ public sealed class PoCabinetSharedContractTests
                 Name = $"Car {i}",
                 OfficialId = "sean-s",
                 Color = "#3470d8",
-                ColorDark = "#1a3a6c",
+                AckSeq = 123_456,
                 X = 100 + i * 25,
                 Y = 200 + i * 12,
                 Heading = i * 0.785,

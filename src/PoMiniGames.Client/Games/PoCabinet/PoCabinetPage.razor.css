@@ -1,6 +1,10 @@
 /* PoCabinet UI — themed with the framework's design tokens (no per-component hex values).
    See wwwroot/css/app.css :root for the token set; this file only references vars so
-   light/dark themes flow through automatically. */
+   light/dark themes flow through automatically.
+
+   Scoped CSS reaches only markup written in PoCabinetPage.razor. Rules for the child
+   components (track selector, paint shop, championship, lobby, lobby browser, settings
+   panel) are therefore ::deep — without it, as before 2026-09-23, they never applied. */
 
 .pocabinet-root {
     --color-primary: var(--color-accent-solid, #6366f1);
@@ -51,7 +55,8 @@
     margin-top: 1rem;
 }
 
-.pocabinet-primary {
+.pocabinet-primary,
+::deep .pocabinet-primary {
     background: var(--color-primary);
     color: var(--color-on-primary, white);
     border: none;
@@ -61,12 +66,14 @@
     font: inherit;
 }
 
-.pocabinet-primary:focus-visible {
+.pocabinet-primary:focus-visible,
+::deep .pocabinet-primary:focus-visible {
     outline: 2px solid var(--color-focus, currentColor);
     outline-offset: 2px;
 }
 
-.pocabinet-secondary {
+.pocabinet-secondary,
+::deep .pocabinet-secondary {
     background: transparent;
     color: var(--color-text, inherit);
     border: 1px solid var(--color-border, currentColor);
@@ -79,14 +86,14 @@
 
 /* ─── Track selector ─────────────────────────────────────────────────────── */
 
-.pocabinet-track-selector {
+::deep .pocabinet-track-selector {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 0.75rem;
     margin: 1rem 0;
 }
 
-.pocabinet-track {
+::deep .pocabinet-track {
     display: flex;
     align-items: flex-start;
     gap: 0.75rem;
@@ -100,12 +107,12 @@
     color: inherit;
 }
 
-.pocabinet-track--selected {
+::deep .pocabinet-track--selected {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
 }
 
-.pocabinet-track__swatch {
+::deep .pocabinet-track__swatch {
     flex: 0 0 12px;
     width: 12px;
     height: 64px;
@@ -113,19 +120,19 @@
     background: var(--accent);
 }
 
-.pocabinet-track__title {
+::deep .pocabinet-track__title {
     display: block;
     font-size: 1.05rem;
 }
 
-.pocabinet-track__meta {
+::deep .pocabinet-track__meta {
     display: block;
     color: var(--color-text-muted);
     font-size: 0.85rem;
     margin: 0.15rem 0;
 }
 
-.pocabinet-track__description {
+::deep .pocabinet-track__description {
     display: block;
     font-size: 0.85rem;
     color: var(--color-text-muted);
@@ -133,17 +140,17 @@
 
 /* ─── Paint shop ─────────────────────────────────────────────────────────── */
 
-.pocabinet-paintshop {
+::deep .pocabinet-paintshop {
     margin-top: 1rem;
 }
 
-.pocabinet-paintshop__grid {
+::deep .pocabinet-paintshop__grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.4rem;
 }
 
-.pocabinet-swatch {
+::deep .pocabinet-swatch {
     aspect-ratio: 1 / 1;
     width: 100%;
     min-height: 38px;
@@ -155,31 +162,31 @@
     color: inherit;
 }
 
-.pocabinet-swatch:hover {
+::deep .pocabinet-swatch:hover {
     border-color: var(--color-primary);
 }
 
-.pocabinet-swatch--selected {
+::deep .pocabinet-swatch--selected {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
 }
 
 /* ─── Championship ───────────────────────────────────────────────────────── */
 
-.pocabinet-championship {
+::deep .pocabinet-championship {
     margin-top: 1.5rem;
     padding: 0.75rem;
     border: 1px dashed var(--color-border, transparent);
     border-radius: var(--radius-md, 6px);
 }
 
-.pocabinet-championship__title {
+::deep .pocabinet-championship__title {
     margin: 0 0 0.5rem 0;
     font-size: 1rem;
     letter-spacing: 0.08em;
 }
 
-.pocabinet-championship__stages {
+::deep .pocabinet-championship__stages {
     list-style: none;
     padding: 0;
     margin: 0;
@@ -188,7 +195,7 @@
     flex-wrap: wrap;
 }
 
-.pocabinet-stage {
+::deep .pocabinet-stage {
     flex: 1 1 0;
     min-width: 120px;
     padding: 0.5rem;
@@ -198,10 +205,10 @@
     background: var(--color-surface);
 }
 
-.pocabinet-stage--done { opacity: 1; }
-.pocabinet-stage--active { outline: 2px solid var(--color-primary); }
+::deep .pocabinet-stage--done { opacity: 1; }
+::deep .pocabinet-stage--active { outline: 2px solid var(--color-primary); }
 
-.pocabinet-championship__rewards {
+::deep .pocabinet-championship__rewards {
     margin-top: 0.75rem;
     display: flex;
     gap: 0.5rem;
@@ -209,35 +216,35 @@
     font-size: 0.85rem;
 }
 
-.pocabinet-reward {
+::deep .pocabinet-reward {
     padding: 0.25rem 0.5rem;
     border: 1px dashed var(--color-border, transparent);
     border-radius: 999px;
     color: var(--color-text-muted);
 }
 
-.pocabinet-reward--unlocked {
+::deep .pocabinet-reward--unlocked {
     color: var(--color-text);
     border-style: solid;
 }
 
 /* ─── Lobby ──────────────────────────────────────────────────────────────── */
 
-.pocabinet-lobby {
+::deep .pocabinet-lobby {
     display: flex;
     flex-direction: column;
     gap: 1rem;
     padding: 1rem;
 }
 
-.pocabinet-lobby__header {
+::deep .pocabinet-lobby__header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     flex-wrap: wrap;
 }
 
-.pocabinet-lobby__code {
+::deep .pocabinet-lobby__code {
     display: inline-flex;
     gap: 0.5rem;
     align-items: center;
@@ -246,13 +253,13 @@
     border-radius: var(--radius-md, 6px);
 }
 
-.pocabinet-lobby__seats {
+::deep .pocabinet-lobby__seats {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: 0.5rem;
 }
 
-.pocabinet-seat {
+::deep .pocabinet-seat {
     padding: 0.6rem;
     border: 1px solid var(--color-border, transparent);
     border-radius: var(--radius-md, 6px);
@@ -260,10 +267,10 @@
     min-height: 48px;
 }
 
-.pocabinet-seat--filled { background: var(--color-surface); }
-.pocabinet-seat--empty { opacity: 0.6; border-style: dashed; }
+::deep .pocabinet-seat--filled { background: var(--color-surface); }
+::deep .pocabinet-seat--empty { opacity: 0.6; border-style: dashed; }
 
-.pocabinet-seat__badge {
+::deep .pocabinet-seat__badge {
     display: inline-block;
     margin-left: 0.25rem;
     padding: 0.1rem 0.4rem;
@@ -273,14 +280,14 @@
     font-size: 0.7rem;
 }
 
-.pocabinet-lobby__controls {
+::deep .pocabinet-lobby__controls {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
 }
 
-.pocabinet-lobby__start,
-.pocabinet-lobby__ready {
+::deep .pocabinet-lobby__start,
+::deep .pocabinet-lobby__ready {
     background: var(--color-primary);
     color: var(--color-on-primary, white);
     border: none;
@@ -290,12 +297,12 @@
     font: inherit;
 }
 
-.pocabinet-lobby__start:disabled {
+::deep .pocabinet-lobby__start:disabled {
     background: var(--color-text-muted);
     cursor: not-allowed;
 }
 
-.pocabinet-lobby__error {
+::deep .pocabinet-lobby__error {
     color: var(--color-danger, #c0392b);
 }
 
@@ -502,14 +509,14 @@
 
 /* ─── Settings panel ─────────────────────────────────────────────────────── */
 
-.pocabinet-settings {
+::deep .pocabinet-settings {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
     margin-top: 0.5rem;
 }
 
-.pocabinet-settings__row {
+::deep .pocabinet-settings__row {
     display: flex;
     align-items: center;
     gap: 0.6rem;
@@ -517,18 +524,18 @@
     flex-wrap: wrap;
 }
 
-.pocabinet-settings__row label {
+::deep .pocabinet-settings__row label {
     flex: 1 1 auto;
     color: var(--color-text-muted);
 }
 
-.pocabinet-settings__row select,
-.pocabinet-settings__row input[type="range"] {
+::deep .pocabinet-settings__row select,
+::deep .pocabinet-settings__row input[type="range"] {
     flex: 0 1 auto;
     accent-color: var(--color-primary);
 }
 
-.pocabinet-settings__value {
+::deep .pocabinet-settings__value {
     min-width: 3.2em;
     text-align: right;
     color: var(--color-text);
@@ -537,12 +544,58 @@
 
 /* ─── Results: podium, confetti, PB, laps ────────────────────────────────── */
 
-.pocabinet-finished {
+/* Results sit over the still-running scene (the replay needs the canvas alive). */
+.pocabinet-results {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    overflow-y: auto;
+    padding: 1rem;
+    background: rgba(4, 8, 18, 0.55);
+    border-radius: var(--radius-md, 8px);
+}
+
+.pocabinet-results__card {
     position: relative;
     overflow: hidden;
-    padding: 1rem;
     max-width: 720px;
     margin: 0 auto;
+    padding: 1.25rem;
+    background: var(--color-surface);
+    color: var(--color-text);
+    border-radius: var(--radius-md, 10px);
+    box-shadow: var(--shadow-card, none);
+}
+
+.pocabinet-results__card h2 {
+    margin: 0 0 0.5rem 0;
+}
+
+/* ─── Telemetry chart ─────────────────────────────────────────────────────── */
+
+.pocabinet-telemetry {
+    margin-top: 1rem;
+}
+
+.pocabinet-telemetry h3 {
+    margin: 0 0 0.4rem 0;
+    font-size: 0.95rem;
+}
+
+.pocabinet-telemetry__chart {
+    display: block;
+    width: 100%;
+    height: 240px;
+    border-radius: var(--radius-md, 6px);
+    border: 1px solid var(--color-border, transparent);
+    background: var(--color-background, transparent);
+}
+
+.pocabinet-telemetry__summary {
+    margin: 0.5rem 0 0;
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    line-height: 1.4;
 }
 
 .pocabinet-pb {
@@ -650,4 +703,305 @@
 @media (prefers-reduced-motion: reduce) {
     .pocabinet-confetti span { animation: none; display: none; }
     .pocabinet-reconnect__spinner { animation-duration: 2.4s; }
+}
+/* ─── Touch controls (input.js flips data-active; hidden otherwise) ──────── */
+
+.pocabinet-touch {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 70vh; /* the canvas box — the controls sit over its lower edge */
+    pointer-events: none;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 0 0.75rem 0.75rem;
+    z-index: 5;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.pocabinet-touch[data-active="true"] {
+    display: flex;
+}
+
+.pocabinet-touch__steer {
+    --pocabinet-steer: 0;
+    position: relative;
+    width: min(46vw, 260px);
+    height: 84px;
+    border-radius: 42px;
+    background: rgba(8, 12, 24, 0.45);
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    pointer-events: auto;
+    touch-action: none;
+}
+
+.pocabinet-touch__knob {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    opacity: 0.85;
+    transform: translate(calc(-50% + var(--pocabinet-steer) * min(19vw, 98px)), -50%);
+}
+
+.pocabinet-touch[data-steer="tilt"] .pocabinet-touch__steer {
+    visibility: hidden;
+}
+
+.pocabinet-touch__tilt {
+    display: none;
+    pointer-events: auto;
+    align-self: center;
+    padding: 0.5rem 0.9rem;
+    border-radius: var(--radius-md, 6px);
+    border: none;
+    background: var(--color-primary);
+    color: var(--color-on-primary, white);
+    font: inherit;
+}
+
+.pocabinet-touch[data-steer="tilt"]:not([data-tilt="on"]) .pocabinet-touch__tilt {
+    display: block;
+}
+
+.pocabinet-touch__pedals {
+    display: flex;
+    gap: 0.6rem;
+    pointer-events: auto;
+}
+
+.pocabinet-touch__pedal {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 84px;
+    height: 110px;
+    border-radius: 16px;
+    background: rgba(8, 12, 24, 0.45);
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    color: #ffffff;
+    font-weight: 700;
+    touch-action: none;
+}
+
+.pocabinet-touch__pedal--gas { height: 132px; border-color: #2ecc71; }
+.pocabinet-touch__pedal--brake { border-color: #e74c3c; }
+
+.pocabinet-touch__pedal[data-pressed="true"] {
+    background: rgba(255, 255, 255, 0.28);
+}
+
+/* ─── Spectator badge + replay bar ───────────────────────────────────────── */
+
+.pocabinet-spectating {
+    position: absolute;
+    top: 0.7rem;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    background: rgba(8, 12, 24, 0.7);
+    color: #ffffff;
+    font-size: 0.85rem;
+}
+
+.pocabinet-replaybar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: var(--radius-md, 6px);
+    background: var(--color-surface);
+}
+
+.pocabinet-replaybar input[type="range"] {
+    flex: 1 1 160px;
+    accent-color: var(--color-primary);
+}
+
+.pocabinet-replaybar__time {
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-muted);
+    min-width: 7.5em;
+}
+
+/* ─── Lobby additions + lobby browser (child components → ::deep) ────────── */
+
+::deep .pocabinet-seat--me {
+    outline: 2px solid var(--color-primary);
+}
+
+::deep .pocabinet-seat--bot {
+    border-style: dotted;
+    color: var(--color-text-muted);
+}
+
+::deep .pocabinet-seat__state {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+}
+
+::deep .pocabinet-lobby__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+::deep .pocabinet-lobby__note,
+::deep .pocabinet-lobby__track {
+    margin: 0;
+    color: var(--color-text-muted);
+}
+
+::deep .pocabinet-stepper {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+::deep .pocabinet-stepper button {
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 50%;
+    border: 1px solid var(--color-border, transparent);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: inherit;
+    cursor: pointer;
+}
+
+::deep .pocabinet-stepper button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+::deep .pocabinet-stepper output {
+    min-width: 1.5em;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+::deep .pocabinet-browser {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border, transparent);
+}
+
+::deep .pocabinet-browser__title {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.05rem;
+}
+
+::deep .pocabinet-browser__empty {
+    color: var(--color-text-muted);
+    margin: 0 0 0.75rem 0;
+}
+
+::deep .pocabinet-browser__list {
+    list-style: none;
+    margin: 0 0 0.75rem 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+::deep .pocabinet-browser__row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: var(--radius-md, 6px);
+}
+
+::deep .pocabinet-browser__host {
+    font-weight: 600;
+}
+
+::deep .pocabinet-browser__meta {
+    flex: 1 1 auto;
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+}
+
+::deep .pocabinet-browser__code {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+::deep .pocabinet-browser__code input {
+    flex: 1 1 140px;
+    padding: 0.45rem 0.6rem;
+    border-radius: var(--radius-md, 6px);
+    border: 1px solid var(--color-border, transparent);
+    background: var(--color-background, transparent);
+    color: var(--color-text);
+    font: inherit;
+    text-transform: uppercase;
+}
+
+::deep .pocabinet-settings__group {
+    margin: 0.75rem 0 0 0;
+    font-size: 0.95rem;
+}
+
+::deep .pocabinet-settings__hint {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+}
+
+::deep .pocabinet-primary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* ─── Official's radio bubble (created by dialogue.js → ::deep) ──────────── */
+
+::deep .pocabinet-dialogue {
+    position: absolute;
+    left: 50%;
+    bottom: 32%;
+    max-width: min(80%, 420px);
+    padding: 0.5rem 0.8rem;
+    border-radius: var(--radius-md, 8px);
+    background: rgba(8, 12, 24, 0.78);
+    color: #ffffff;
+    opacity: 0;
+    transform: translate(-50%, 8px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    pointer-events: none;
+}
+
+::deep .pocabinet-dialogue--visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+::deep .pocabinet-dialogue__name {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: var(--color-primary);
+}
+
+::deep .pocabinet-dialogue__body {
+    font-size: 0.95rem;
+    line-height: 1.3;
 }

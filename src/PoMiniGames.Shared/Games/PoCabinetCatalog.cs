@@ -1,9 +1,8 @@
 namespace PoMiniGames.Shared.Games;
 
 /// <summary>
-/// Display metadata for the three themed PoCabinet tracks.
-/// <see cref="PoMiniGames.Features.PoCabinet.PoCabinetTrackRegistry"/> consumes this
-/// catalog to populate <c>PoCabinetTrackData.DisplayName</c> / <c>Description</c>.
+/// Display metadata for the three themed PoCabinet tracks. Geometry (knots, width,
+/// atmosphere) lives next door in <see cref="PoCabinetTrackGeometry"/>, keyed by the same ids.
 /// Track ids are lower-case, kebab-friendly strings safe for URL paths.
 /// </summary>
 public sealed record PoCabinetTrackInfo(string Id, string Name, string Description);

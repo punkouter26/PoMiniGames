@@ -60,6 +60,8 @@ public sealed class PoCabinetAtmosphereWire
     public string FogHex { get; set; } = "#0f1a3a";
     public double AmbientIntensity { get; set; } = 0.5;
     public string GroundHex { get; set; } = "#888";
+    /// <summary>Asphalt tint for the road ribbon (the ground is grass/sand/marble around it).</summary>
+    public string RoadHex { get; set; } = "#3a3a40";
     public string AccentHex { get; set; } = "#888";
 }
 
@@ -68,6 +70,8 @@ public sealed class PoCabinetAtmosphereWire
 /// <summary>
 /// Wire shape for a single car in a snapshot. Trim-safe: every property is a
 /// value type or a string — no reflection-heavy serialization shapes.
+/// There is deliberately no dark/trim colour: the client derives it from
+/// <see cref="Color"/>, and the per-car copy cost ~170 bytes of the 2 KB frame at 8 cars.
 /// </summary>
 public sealed class PoCabinetCarState
 {
@@ -75,7 +79,6 @@ public sealed class PoCabinetCarState
     public string Name { get; set; } = "";
     public string OfficialId { get; set; } = "";
     public string Color { get; set; } = "#ffffff";
-    public string ColorDark { get; set; } = "#222222";
     public double X { get; set; }
     public double Y { get; set; }
     public double Heading { get; set; }
@@ -85,6 +88,12 @@ public sealed class PoCabinetCarState
     public int Position { get; set; }
     public bool IsPlayer { get; set; }
     public bool Finished { get; set; }
+    /// <summary>
+    /// Highest <see cref="PoCabinetInput.Seq"/> the server has applied to this car (0 for AI
+    /// officials and in solo races). The owning client drops acknowledged inputs from its
+    /// prediction history and replays the rest on top of this server state.
+    /// </summary>
+    public int AckSeq { get; set; }
 }
 
 // ──────────────────────────────  Dialogue event  ──────────────────────────────
@@ -125,8 +134,10 @@ public sealed class PoCabinetRaceSnapshot
 }
 
 /// <summary>
-/// Static world payload — sent once on join. CenterXY + WallsXY are flat
-/// double arrays (PoRacer pattern) to keep the JSON shape predictable.
+/// Static world payload — sent once on join, and built locally for solo races, both via
+/// <see cref="PoCabinetTrackGeometry.BuildStaticWorld"/>. CenterXY is a flat double array
+/// (PoRacer pattern). WallsXY is unused: walls are the centerline offset by TrackWidth/2 plus
+/// the run-off, which both physics implementations derive themselves.
 /// </summary>
 public sealed class PoCabinetStaticWorld
 {
@@ -145,12 +156,64 @@ public sealed class PoCabinetStaticWorld
 
 // ──────────────────────────────  Player input  ──────────────────────────────
 
+/// <summary>
+/// One tick of player intent. Analog fields (keyboard ramp, gamepad, touch) win; the digital
+/// Up/Down/Left/Right flags remain for callers that only have keys. Steer is +1 = right,
+/// i.e. the heading-increasing direction in the sim's frame. Seq increases by one per client
+/// tick and is echoed back as <see cref="PoCabinetCarState.AckSeq"/>.
+/// </summary>
 public sealed class PoCabinetInput
 {
     public bool Up { get; set; }
     public bool Down { get; set; }
     public bool Left { get; set; }
     public bool Right { get; set; }
+    public double Throttle { get; set; }
+    public double Brake { get; set; }
+    public double Steer { get; set; }
+    public int Seq { get; set; }
+}
+
+// ──────────────────────────────  Multiplayer lobby  ──────────────────────────────
+
+/// <summary>
+/// One lobby seat as other players see it. <see cref="SeatId"/> is a per-lobby hash of the
+/// player's claim id — never the claim itself, which is an Entra object id.
+/// </summary>
+public sealed class PoCabinetLobbySeat
+{
+    public string SeatId { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public bool IsGuest { get; set; }
+    public bool IsReady { get; set; }
+    public bool IsHost { get; set; }
+    public string Color { get; set; } = "";
+}
+
+/// <summary>Full lobby state, broadcast as <c>LobbyState</c> after every change.</summary>
+public sealed class PoCabinetLobbyView
+{
+    public string Code { get; set; } = "";
+    public string TrackId { get; set; } = PoCabinetCatalog.DefaultTrackId;
+    public bool IsPublic { get; set; }
+    /// <summary>AI officials the host asked for; the race seats min(BotCount, free seats).</summary>
+    public int BotCount { get; set; }
+    /// <summary>True while a race for this lobby is running; the lobby reopens when it ends.</summary>
+    public bool InRace { get; set; }
+    public IReadOnlyList<PoCabinetLobbySeat> Players { get; set; } = new List<PoCabinetLobbySeat>();
+    /// <summary>The caller's own seat — set only on the Open/Join reply, null in broadcasts.</summary>
+    public string? YourSeatId { get; set; }
+}
+
+/// <summary>One row of the public lobby browser.</summary>
+public sealed class PoCabinetLobbySummary
+{
+    public string Code { get; set; } = "";
+    public string HostName { get; set; } = "";
+    public string TrackId { get; set; } = PoCabinetCatalog.DefaultTrackId;
+    public int Humans { get; set; }
+    public int Bots { get; set; }
+    public bool InRace { get; set; }
 }
 
 // ──────────────────────────────  Final result  ──────────────────────────────
@@ -160,6 +223,11 @@ public sealed record PoCabinetFinalResult(
     IReadOnlyList<PoCabinetFinalEntry> Standings,
     DateTimeOffset FinishedAtUtc);
 
+/// <summary>
+/// One finisher. <see cref="TotalTimeSeconds"/> is race time from GO to the line (-1 when the
+/// car was still running at the cut-off); <see cref="CarId"/> lets a client find its own row
+/// by the <c>LocalCarId</c> it was given on join.
+/// </summary>
 public sealed record PoCabinetFinalEntry(
     int Position,
     string Name,
@@ -167,4 +235,5 @@ public sealed record PoCabinetFinalEntry(
     bool IsPlayer,
     bool Finished,
     double TotalTimeSeconds,
-    double BestLapSeconds = -1);
+    double BestLapSeconds = -1,
+    int CarId = -1);

@@ -52,6 +52,14 @@ public class PoCabinetRouteUiTests
         // Asserting that the page title carries the Cabinet identity and that #app
         // contains rendered markup is enough for a route smoke — the in-race canvas
         // and AI car meshes are visual-audit territory, not unit-test territory.
+        // <PageTitle> lands on the first Blazor render, which can trail NetworkIdle by a beat —
+        // reading the title immediately failed about one run in four. Give it a moment first.
+        try
+        {
+            await page.WaitForFunctionAsync("f => document.title.includes(f)", expectedTitleFragment,
+                new PageWaitForFunctionOptions { Timeout = 15_000 });
+        }
+        catch (TimeoutException) { /* fall through: the assertion below reports the real title */ }
         var title = await page.TitleAsync();
         title.Should().Contain(expectedTitleFragment, "the Blazor page title should name the game");
 

@@ -1,52 +1,39 @@
 // pocabinet/index.js
 //
-// Facade module. The trim-analyzer-friendly scene.js / cockpit.js / cars.js /
-// dialogue.js use named ES module exports — Blazor's IJSRuntime can only invoke
-// methods on `window.*` globals. We re-export the relevant functions under a
-// single `window.PoCabinet` namespace so the page does the same `JS.InvokeAsync`
-// dance as the other engines, and the loaded modules stay directly importable
-// for unit tests / future code-splitting.
+// Facade module. Blazor's IJSRuntime can only invoke functions reachable from
+// `window`, so the engine's named ES exports are re-exported under a single
+// `window.PoCabinet` namespace (the same JS.InvokeAsync dance as the other
+// engines); the modules themselves stay directly importable.
 //
 // Contract surface (called from src/PoMiniGames.Client/Games/PoCabinet/...):
-//   PoCabinet.mount(canvas, atmosphere, centerline) -> handle
+//   PoCabinet.mount(canvasId, world) -> sceneHandle      — world = PoCabinetStaticWorld
 //   PoCabinet.unmount(handle)
-//   PoCabinet.mountCockpit(sceneHandle)
-//   PoCabinet.unmountCockpit(handle)
-//   PoCabinet.mountCar(parent, opts) -> carHandle
-//   PoCabinet.updateCar(handle, snap)
-//   PoCabinet.unmountCar(handle)
-//   PoCabinet.mountDialogue(parent, officialId) -> dialogueHandle
-//   PoCabinet.showDialogue(handle, text, durationMs)
-//   PoCabinet.hideDialogue(handle)
-//   PoCabinet.unmountDialogue(handle)
+//   PoCabinet.mountCockpit(sceneHandle) / unmountCockpit(handle)
+//   PoCabinet.mountDialogue(parentId, officialId) / showDialogue / hideDialogue / unmountDialogue
 //   PoCabinet.officialName(officialId)
+//   PoCabinet.mountMinimap(canvasId, world, opts) / unmountMinimap(handle)
+//   PoCabinet.mountEnvironment(sceneHandle) / unmountEnvironment(handle)
 //
-//   PoCabinet.pauseSoloRace() / resumeSoloRace()          — solo pause (Esc)
+//   PoCabinet.startRace(dotnetRef, scene, cockpit, minimap, opts)  — race.js driver
+//   PoCabinet.stopRace() / pauseRace() / resumeRace()
+//   PoCabinet.pushServerSnapshot(snap)                     — multiplayer
+//   PoCabinet.updateRaceSettings(settings) / cycleCamera()
+//   PoCabinet.showTelemetry(canvasId) -> summary text
+//   PoCabinet.startReplay() / replayCommand(cmd, value) / stopReplay()
+//   PoCabinet.recordClip() -> 'shared' | 'downloaded' | 'unavailable'
 //
-//   PoCabinet.loadSettings() -> settings                   — persisted prefs
-//   PoCabinet.saveSettings(patch) -> settings              — merge + persist
-//   PoCabinet.applySettings(sceneHandle, settings)         — FOV + pixel ratio + audio
-//   PoCabinet.getRecords(trackId) -> { bestLap, sectors }
-//   PoCabinet.recordTrackResult(trackId, bestLap, sectors) -> { isPb, previousBest }
-//
-//   PoCabinet.initAudio()                                  — user-gesture gate
-//   PoCabinet.setAudioSuspended(bool)                      — pause-menu duck
-//   PoCabinet.updateEngineAudio(speedKmh)                  — per snapshot
-//   PoCabinet.setSquealAudio(bool)                         — hard steering at speed
-//   PoCabinet.countdownBeep(isFinal) / blip() / lapChime() / fanfare(podium)
-//
-//   PoCabinet.mountMinimap(canvas, centerline, opts) -> minimapHandle
-//   PoCabinet.updateMinimap(handle, cars)
-//   PoCabinet.unmountMinimap(handle)
-//
-//   PoCabinet.mountEnvironment(sceneHandle) -> envHandle   — night + rain + DC weather
-//   PoCabinet.unmountEnvironment(handle)
+//   PoCabinet.loadSettings() / saveSettings(patch) / applySettings(scene, settings)
+//   PoCabinet.getRecords(trackId) / recordTrackResult(trackId, bestLap, sectors)
+//   PoCabinet.initAudio() / setAudioSuspended(bool) / countdownBeep / blip / lapChime / fanfare
+//   PoCabinet.shareResult(payload)
 
 import { mount as sceneMount, unmount as sceneUnmount } from './scene.js';
 import { mountCockpit, unmountCockpit } from './cockpit.js';
-import { mountCar, unmountCar } from './cars.js';
 import { mount as mountDialogue, unmount as unmountDialogue, show, hide, officialName } from './dialogue.js';
-import { startSoloRace, stopSoloRace, pauseSoloRace, resumeSoloRace } from './practice.js';
+import {
+    startRace, stopRace, pauseRace, resumeRace, pushServerSnapshot, updateRaceSettings, cycleCamera,
+    showTelemetry, startReplay, replayCommand, stopReplay, recordClip,
+} from './race.js';
 import { loadSettings, saveSettings, getRecords, recordTrackResult } from './settings.js';
 import * as audio from './audio.js';
 import { mountMinimap, unmountMinimap } from './minimap.js';
@@ -57,19 +44,24 @@ const api = {
     unmount: sceneUnmount,
     mountCockpit,
     unmountCockpit,
-    mountCar,
-    unmountCar,
-    updateCar(handle, snap) { handle.update(snap); },
-    updatePlayerView(sceneHandle, p) { if (sceneHandle && !sceneHandle.disposed) sceneHandle.updatePlayerView(p); },
     mountDialogue,
     showDialogue: (handle, text, durationMs) => show(handle, text, durationMs),
     hideDialogue: hide,
     unmountDialogue,
     officialName,
-    startSoloRace,
-    stopSoloRace,
-    pauseSoloRace,
-    resumeSoloRace,
+
+    startRace,
+    stopRace,
+    pauseRace,
+    resumeRace,
+    pushServerSnapshot,
+    updateRaceSettings,
+    cycleCamera,
+    showTelemetry,
+    startReplay,
+    replayCommand,
+    stopReplay,
+    recordClip,
 
     loadSettings,
     saveSettings,
@@ -78,25 +70,23 @@ const api = {
 
     initAudio: audio.init,
     setAudioSuspended: audio.setSuspended,
-    updateEngineAudio: audio.updateEngine,
-    setSquealAudio: audio.setSqueal,
     countdownBeep: audio.countdownBeep,
     blip: audio.blip,
     lapChime: audio.lapChime,
     fanfare: audio.fanfare,
 
     mountMinimap,
-    updateMinimap: (handle, cars) => handle.update(cars),
     unmountMinimap,
 
     mountEnvironment,
     unmountEnvironment,
 
-    /** Push persisted prefs into the live scene + audio graph. */
+    /** Push persisted prefs into the live scene, audio graph and race driver. */
     applySettings(sceneHandle, settings) {
         if (sceneHandle && !sceneHandle.disposed) sceneHandle.applyView(settings);
         audio.setVolume(settings?.masterVolume);
         audio.setMuted(settings?.muted);
+        updateRaceSettings(settings);
     },
 
     /**

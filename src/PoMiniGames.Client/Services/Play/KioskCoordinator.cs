@@ -101,6 +101,22 @@ public sealed class KioskCoordinator : IDisposable
         _currentKey = key;
         CurrentGameName = _entries.FirstOrDefault(e => e.Key == key)?.DisplayName;
         _currentIndex = _entries.FindIndex(e => e.Key == key);
+        var normalizedKey = key.EndsWith("-demo", StringComparison.OrdinalIgnoreCase)
+            ? key[..^5]
+            : key;
+        _currentKey = normalizedKey;
+        var entry = _entries.FirstOrDefault(e => string.Equals(e.Key, normalizedKey, StringComparison.OrdinalIgnoreCase)
+                                              || string.Equals(e.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (entry is not null)
+        {
+            CurrentGameName = entry.DisplayName;
+            _currentIndex = _entries.IndexOf(entry);
+        }
+        else
+        {
+            _currentIndex = _entries.FindIndex(e => string.Equals(e.Key, normalizedKey, StringComparison.OrdinalIgnoreCase));
+            CurrentGameName = _currentIndex >= 0 ? _entries[_currentIndex].DisplayName : null;
+        }
         // Use the per-game dwell so the on-screen countdown matches the actual
         // dwell the coordinator is going to honour. Without this the bar would
         // say "20s" for PoJoker (dwell 24s) and the bar's countdown would always
@@ -122,6 +138,9 @@ public sealed class KioskCoordinator : IDisposable
         _timer?.Dispose();
         _timer = null;
         _isPaused = false;
+        _currentIndex = -1;
+        _currentKey = null;
+        CurrentGameName = null;
         SecondsUntilAdvance = AdvanceSeconds;
         Changed?.Invoke();
     }
@@ -237,6 +256,12 @@ public sealed class KioskCoordinator : IDisposable
         if (TryGetKioskIndex(e.Location, out var kioskIndex))
         {
             _advanceIndex = kioskIndex;
+            _currentIndex = kioskIndex;
+            if (kioskIndex >= 0 && kioskIndex < _entries.Count)
+            {
+                _currentKey = _entries[kioskIndex].Key;
+                CurrentGameName = _entries[kioskIndex].DisplayName;
+            }
             SecondsUntilAdvance = DwellFor(kioskIndex);
             if (_timer is null && !_disposed)
             {

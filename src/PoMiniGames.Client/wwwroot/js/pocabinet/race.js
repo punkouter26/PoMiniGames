@@ -6,7 +6,11 @@
 //               server runs), fixed 30 Hz ticks, rendered interpolated at the
 //               display rate. A HUD snapshot goes to Blazor every tick.
 //   demo      — as solo, with the local car on autopilot and the camera
-//               cycling cockpit → chase → TV.
+//               cycling chase → far chase → TV.
+//
+// The camera is third person at all times (2026-09-23): 'chase', 'far' (the
+// camera button toggles them) and, in the demo and replays, 'tv'. The cockpit
+// handle is still accepted but kept hidden.
 //   net       — the server is authoritative. The local car is PREDICTED here:
 //               each tick samples input, steps the car, sends the numbered
 //               input (via Blazor → SignalR) and remembers it. Each server
@@ -107,7 +111,7 @@ class Race {
         // Rain grip is a solo-only effect: online, prediction must run the server's numbers.
         this.grip = this.mode === 'net' ? 1 : (currentEnvironment().raining ? 0.85 : 1);
         this.settings = {};
-        this.cameraMode = 'cockpit';
+        this.cameraMode = 'chase';   // third person only: 'chase' | 'far'
         this.demoCameraAt = 0;
         this.paused = false;
         this.disposed = false;
@@ -152,6 +156,10 @@ class Race {
         if (this.scene.scenery) {
             this.scene.scenery.onFlash = (pos) => audio.shutter(pos, 0.8);
         }
+        // Night: every car's lamps glow (bloom); the player's car also throws a real beam.
+        const night = currentEnvironment().night || 0;
+        for (const car of this.cars) car.mesh?.setNight?.(night);
+        if (night > 0.05) this.local?.mesh?.setHeadlight?.(true);
 
         this.frameCb = (now) => this.frame(now);
         this.scene.onFrame(this.frameCb);
@@ -265,12 +273,12 @@ class Race {
 
     cycleCamera() {
         if (this.replay) {
-            const order = ['chase', 'tv', 'cockpit'];
+            const order = ['chase', 'far', 'tv'];
             this.replay.camera = order[(order.indexOf(this.replay.camera) + 1) % order.length];
             this.pushReplayState(true);
             return;
         }
-        this.cameraMode = this.cameraMode === 'cockpit' ? 'chase' : 'cockpit';
+        this.cameraMode = this.cameraMode === 'chase' ? 'far' : 'chase';
     }
 
     // ── Frame loop ───────────────────────────────────────────────────────
@@ -602,19 +610,19 @@ class Race {
         if (this.mode === 'demo') {
             if (now - this.demoCameraAt > 7000) {
                 this.demoCameraAt = now;
-                const order = ['cockpit', 'chase', 'tv'];
+                const order = ['chase', 'far', 'tv'];
                 this.demoCamera = order[(order.indexOf(this.demoCamera || 'tv') + 1) % order.length];
             }
-            mode = this.demoCamera || 'cockpit';
+            mode = this.demoCamera || 'chase';
         }
         const focus = this.local || [...this.cars].sort((a, b) => a.position - b.position)[0];
         if (!this.local) mode = 'chase';
         if (focus) {
             const along = this.track.project(focus.render.x, focus.render.y, focus.body.segHint).along;
             this.scene.setView({ ...focus.render, along, mode, dt });
-            if (focus.mesh) focus.mesh.group.visible = mode !== 'cockpit' || !focus.isLocal;
+            if (focus.mesh) focus.mesh.group.visible = true;
         }
-        this.cockpit?.setVisible?.(mode === 'cockpit' && !!this.local);
+        this.cockpit?.setVisible?.(false);
         this.effects(dt, mode, focus);
 
         if (this.minimap && now - this.minimapAt > 66) {
@@ -650,7 +658,7 @@ class Race {
         const speed01 = focus ? Math.min(1, Math.abs(focus.render.speed) / ph.MAX_SPEED) : 0;
         // Speed blur belongs to a camera that moves with the car, not a trackside one.
         fx.speed = racing && mode !== 'tv' ? speed01 : 0;
-        fx.cockpit = mode === 'cockpit' && !!this.local;
+        fx.cockpit = false;
         fx.focus = focus ? { x: focus.render.x / 10, z: focus.render.y / 10, speed01 } : null;
 
         const events = this.fx?.update(this.paused ? 0 : dt * this.timeScale, this.fxCars(), { skids: true });
@@ -887,7 +895,7 @@ class Race {
         } else if (cmd === 'speed') {
             rp.speed = [0.5, 1, 2].includes(Number(value)) ? Number(value) : 1;
         } else if (cmd === 'camera') {
-            rp.camera = ['chase', 'tv', 'cockpit'].includes(value) ? value : 'chase';
+            rp.camera = ['chase', 'far', 'tv'].includes(value) ? value : 'chase';
         }
         this.pushReplayState(true);
     }
@@ -918,12 +926,12 @@ class Race {
         focus = focus || this.cars[0];
         const along = this.track.project(focus.render.x, focus.render.y, focus.body.segHint).along;
         this.scene.setView({ ...focus.render, along, mode: rp.camera, dt });
-        if (focus.mesh) focus.mesh.group.visible = rp.camera !== 'cockpit';
-        this.cockpit?.setVisible?.(rp.camera === 'cockpit');
+        if (focus.mesh) focus.mesh.group.visible = true;
+        this.cockpit?.setVisible?.(false);
         // The replay gets the same smoke, sparks and speed blur; its skid marks are already down.
         const fx = this.scene.fx;
         fx.speed = rp.camera === 'tv' ? 0 : Math.min(1, Math.abs(focus.render.speed) / ph.MAX_SPEED);
-        fx.cockpit = rp.camera === 'cockpit';
+        fx.cockpit = false;
         fx.focus = null;
         this.fx?.update(rp.playing ? dt * rp.speed : 0, this.fxCars(), { skids: false });
         this.pushReplayState(false, now);
@@ -968,7 +976,7 @@ class Race {
         if (!this.replay) this.startReplay(from);
         const rp = this.replay;
         rp.t = from; rp.speed = 1; rp.playing = true; rp.endAt = to;
-        if (rp.camera === 'cockpit') rp.camera = 'chase';
+        if (rp.camera !== 'far') rp.camera = 'chase';
         rp.onEnd = () => { rp.onEnd = null; rp.endAt = null; try { recorder.stop(); } catch { /* already stopped */ } };
         recorder.start(250);
         this.pushReplayState(true);

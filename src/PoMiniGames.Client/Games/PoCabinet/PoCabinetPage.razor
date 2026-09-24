@@ -75,7 +75,7 @@
                         class="pocabinet-canvas"
                         role="img"
                         tabindex="0"
-                        aria-label="Cabinet cockpit view. Drive with W A S D, the arrow keys, a gamepad or the on-screen controls.">
+                        aria-label="Cabinet race view. Drive with W A S D, the arrow keys, a gamepad or the on-screen controls.">
                 </canvas>
                 <canvas id="pocabinetMinimap" @ref="_minimapCanvas" class="pocabinet-minimap" aria-hidden="true"></canvas>
                 <div id="pocabinetDialogueLayer" class="pocabinet-dialogue-layer" aria-hidden="true"></div>
@@ -125,7 +125,7 @@
                         <select aria-label="Replay camera" value="@_replayCamera" @onchange="SetReplayCameraAsync" disabled="@_recordingClip">
                             <option value="chase">Chase</option>
                             <option value="tv">TV</option>
-                            <option value="cockpit">Cockpit</option>
+                            <option value="far">Far chase</option>
                         </select>
                         <button type="button" class="pocabinet-secondary" @onclick="RecordClipAsync" disabled="@_recordingClip">
                             @(_recordingClip ? "Recording lap…" : "Save best-lap clip")

@@ -17,6 +17,7 @@
 import * as THREE from 'three';
 import { RUN_OFF } from './physics.js';
 import { KERB_INNER, KERB_OUTER } from './kerbs.js';
+import { wind, water } from './materials.js';
 
 const WS = 10; // sim → world (scene.js WORLD_SCALE)
 
@@ -35,7 +36,9 @@ function seededRng(text) {
     };
 }
 
-const lam = (color, extra) => new THREE.MeshLambertMaterial({ color, ...(extra || {}) });
+const lam = (color, extra) => new THREE.MeshStandardMaterial({ color, roughness: 0.82, metalness: 0, ...(extra || {}) });
+/** HDR colour: > 1 so the post pass blooms it. */
+const hdr = (color, k) => new THREE.Color(color).multiplyScalar(k);
 
 /** Sim point at `dist` along the loop, `lat` to the right; plus the tangent. */
 function simAt(track, dist, lat) {
@@ -155,6 +158,13 @@ export class Scenery {
         this.buildPlanting();
         this.buildBillboards();
         this.buildPressPen();
+        this.group.traverse(o => {
+            if (!o.isMesh || o.userData.noShadow) return;
+            const m = o.material;
+            if (m && (m.isMeshBasicMaterial || m.blending === THREE.AdditiveBlending)) return;
+            o.castShadow = true;
+            o.receiveShadow = true;
+        });
     }
 
     // ── Kerbs ──
@@ -194,6 +204,8 @@ export class Scenery {
             vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2,
         }));
         mesh.name = 'pocabinet-kerbs';
+        mesh.userData.noShadow = true;
+        mesh.receiveShadow = true;
         this.group.add(mesh);
     }
 
@@ -206,7 +218,7 @@ export class Scenery {
         g.name = 'pocabinet-gantry';
         g.position.set(p.x / WS, 0, p.y / WS);
         g.rotation.y = yawTo(p.tx, p.ty);
-        const steel = lam('#2b2f38');
+        const steel = lam('#2b2f38', { roughness: 0.45, metalness: 0.6 });
         // Posts stand just outside the barrier, so no car can ever drive through one.
         const span = (hw + RUN_OFF + 4) * 2 / WS;
         for (const s of [-1, 1]) {
@@ -263,9 +275,9 @@ export class Scenery {
             const color = go ? '#22ff66' : '#ff1c1c';
             row.forEach(({ mat, glow }, k) => {
                 const show = on && (go ? k === 1 : k === 0);
-                mat.color.set(show ? color : '#1a0606');
+                mat.color.copy(show ? hdr(color, 7) : new THREE.Color('#1a0606'));
                 glow.material.opacity = show ? 0.9 : 0;
-                if (show) glow.material.color.set(color);
+                if (show) glow.material.color.copy(hdr(color, 2.5));
             });
         });
     }
@@ -281,13 +293,15 @@ export class Scenery {
         postGeom.translate(0, 3, 0);
         const armGeom = new THREE.BoxGeometry(0.1, 0.1, armLen);
         const headGeom = new THREE.BoxGeometry(0.4, 0.16, 0.8);
-        const posts = new THREE.InstancedMesh(postGeom, lam('#3a3d44'), count);
-        const arms = new THREE.InstancedMesh(armGeom, lam('#3a3d44'), count);
+        const posts = new THREE.InstancedMesh(postGeom, lam('#3a3d44', { roughness: 0.5, metalness: 0.7 }), count);
+        const arms = new THREE.InstancedMesh(armGeom, lam('#3a3d44', { roughness: 0.5, metalness: 0.7 }), count);
         const headMat = new THREE.MeshBasicMaterial({ color: '#8f8a78' });
-        this.nightMats.push({ mat: headMat, day: new THREE.Color('#8f8a78'), night: new THREE.Color('#fff1c8') });
+        this.nightMats.push({ mat: headMat, day: new THREE.Color('#8f8a78'), night: hdr('#fff1c8', 7) });
         const heads = new THREE.InstancedMesh(headGeom, headMat, count);
         const glowMat = new THREE.SpriteMaterial({ map: glowTexture(), color: '#ffd89a', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 });
         const poolMat = new THREE.MeshBasicMaterial({ map: glowTexture(), color: '#ffcf8a', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 });
+        glowMat.color.multiplyScalar(2.5);
+        poolMat.color.multiplyScalar(1.1);
         this.nightGlows.push({ mat: glowMat, max: 0.85 }, { mat: poolMat, max: 0.4 });
         const poolGeom = new THREE.PlaneGeometry(10, 10);
         poolGeom.rotateX(-Math.PI / 2);
@@ -434,7 +448,7 @@ export class Scenery {
         cap.rotation.y = Math.PI / 4;
         cap.position.y = 26.95;
         g.add(cap);
-        const blink = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: '#ff2a2a', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
+        const blink = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: hdr('#ff2a2a', 5), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
         blink.position.y = 26.4;
         blink.scale.set(2, 2, 1);
         g.add(blink);
@@ -449,7 +463,8 @@ export class Scenery {
         const ends = [[px - ax * 140, py - ay * 140], [px + ax * 140, py + ay * 140]];
         if (ends.every(([x, y]) => clearOfTrack(t, x, y, 25)) && clearOfTrack(t, px, py, 25)) {
             const pool = new THREE.Mesh(new THREE.PlaneGeometry(28, 3.4),
-                new THREE.MeshPhongMaterial({ color: '#1f3346', specular: '#8fa6c0', shininess: 90 }));
+                water(new THREE.MeshStandardMaterial({ color: '#0e1e2a', roughness: 0.04, metalness: 0 }), 0.12));
+            pool.userData.noShadow = true;
             pool.rotation.x = -Math.PI / 2;
             pool.rotation.z = -Math.atan2(ay, ax);
             pool.position.set(px / WS, 0.025, py / WS);
@@ -478,11 +493,12 @@ export class Scenery {
         }
         add(new THREE.BoxGeometry(4, 13, 4), stucco, -4, 6.5, -1);
         pyramid(4.8, 4.8, 3.4, -4, 13, -1);
-        const water = new THREE.Mesh(new THREE.PlaneGeometry(12, 5),
-            new THREE.MeshPhongMaterial({ color: '#2fb7d6', specular: '#ffffff', shininess: 120 }));
-        water.rotation.x = -Math.PI / 2;
-        water.position.set(0, 0.03, 10);
-        g.add(water);
+        const swim = new THREE.Mesh(new THREE.PlaneGeometry(12, 5),
+            water(new THREE.MeshStandardMaterial({ color: '#1b8fb0', roughness: 0.05, metalness: 0 }), 0.1));
+        swim.userData.noShadow = true;
+        swim.rotation.x = -Math.PI / 2;
+        swim.position.set(0, 0.03, 10);
+        g.add(swim);
         this.placeGroup(g, at, face);
         this.exclusions.push({ x: at.x, y: at.y, r: 260 });
     }
@@ -500,6 +516,8 @@ export class Scenery {
             const disc = new THREE.Mesh(new THREE.CircleGeometry(3.2, 24), green);
             disc.rotation.x = -Math.PI / 2;
             disc.position.set(x / WS, 0.02, y / WS);
+            disc.userData.noShadow = true;
+            disc.receiveShadow = true;
             this.group.add(disc);
             const p = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.4, 5), pole);
             p.position.set(x / WS, 1.2, y / WS);
@@ -537,7 +555,7 @@ export class Scenery {
         add(new THREE.BoxGeometry(30, 4.6, 0.4), lam('#111111'), 0, 16, 0);
         add(new THREE.PlaneGeometry(29, 4), screen, 0, 16, 0.22);
         const truss = lam('#262628');
-        const spot = new THREE.SpriteMaterial({ map: glowTexture(), color: '#ffe6f2', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.8 });
+        const spot = new THREE.SpriteMaterial({ map: glowTexture(), color: hdr('#ffe6f2', 3), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.8 });
         for (const x of [-31, 31]) {
             add(new THREE.BoxGeometry(0.6, 20, 0.6), truss, x, 10, 1);
             for (const y of [14, 17, 20]) {
@@ -575,7 +593,7 @@ export class Scenery {
             const coneGeom = new THREE.ConeGeometry(1, 1, 7);
             coneGeom.translate(0, 0.5, 0);
             const trunks = new THREE.InstancedMesh(trunkGeom, lam('#5a4230'), spots.length);
-            const crowns = new THREE.InstancedMesh(coneGeom, lam('#ffffff'), spots.length);
+            const crowns = new THREE.InstancedMesh(coneGeom, wind(lam('#ffffff', { roughness: 0.9 }), 0.07), spots.length);
             spots.forEach((p, i) => {
                 const h = 4 + this.rng() * 4;
                 const r = 1.2 + this.rng() * 1.1;
@@ -605,7 +623,7 @@ export class Scenery {
         const leafGeom = new THREE.BoxGeometry(2.6, 0.05, 0.5);
         leafGeom.translate(1.3, 0, 0);
         const trunks = new THREE.InstancedMesh(trunkGeom, lam('#8a6a48'), spots.length);
-        const leaves = new THREE.InstancedMesh(leafGeom, lam('#ffffff'), spots.length * LEAVES);
+        const leaves = new THREE.InstancedMesh(leafGeom, wind(lam('#ffffff', { roughness: 0.75, side: THREE.DoubleSide }), 0.09, 'x', 0.45), spots.length * LEAVES);
         const top = new THREE.Vector3();
         spots.forEach((p, i) => {
             const h = 5 + this.rng() * 4;
@@ -711,7 +729,7 @@ export class Scenery {
                 dummy.updateMatrix();
                 cams.setMatrixAt(n, dummy.matrix);
                 const flash = new THREE.Sprite(new THREE.SpriteMaterial({
-                    map: glowTexture(), color: '#eef4ff', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0,
+                    map: glowTexture(), color: hdr('#eef4ff', 8), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0,
                 }));
                 flash.position.set(cx + fwd.x * 0.2, 1.4, cz + fwd.z * 0.2);
                 flash.scale.set(2.6, 2.6, 1);

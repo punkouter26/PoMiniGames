@@ -1,10 +1,11 @@
 // pocabinet/environment.js
 //
-// Time-of-day + weather pass for PoCabinet's cockpit scene. Two visual layers
-// on top of the static per-track atmosphere:
+// Time-of-day + weather pass for PoCabinet's scene. Two layers on top of the
+// static per-track atmosphere:
 //
-//   • night — sky/fog colors pulled toward a dark navy, ambient + sun dimmed,
-//     and a warm headlight SpotLight parented to the cockpit camera
+//   • night — handed to SceneHandle.setSkyEnvironment, which darkens fog and sky,
+//     dims the sun and fill, re-captures the IBL and lights the lamps; race.js
+//     switches the cars' headlights on from currentEnvironment().night
 //   • rain  — a camera-attached LineSegments streak field (recycled in a small
 //     box ahead of the player), fog pulled in, plus (solo races only) a grip
 //     penalty race.js applies (online stays dry: prediction must run the server numbers)
@@ -16,11 +17,10 @@
 //     Cached 30 minutes in localStorage; any failure resolves to clear.
 //
 // Both also feed the rest of the scene: the sky dome and the lamps / floodlit
-// landmarks get the night factor (handle.setSkyEnvironment); rain darkens the
-// asphalt into a glossy wet surface, puts drops on the windscreen (postfx.js via
-// handle.fx.rain), runs the wiper clock (handle.fx.wipeT, thunk at each end of
-// the sweep — the shader draws the same blade from the same clock) and plays
-// rain on the roof.
+// landmarks get the night factor (handle.setSkyEnvironment); rain turns the
+// asphalt dark and near-mirror, puts drops on the camera lens (postfx.js via
+// handle.fx.rain) and plays rain on the roof. The wiper clock still runs, but
+// with the cockpit view retired nothing draws or plays the wiper.
 //
 // All mutations go through the SceneHandle from scene.js and are fully undone
 // by dispose(), so a race teardown never leaks GPU resources.
@@ -135,37 +135,11 @@ class EnvironmentHandle {
         handle.setSkyEnvironment?.(night, raining);
         this.applied.push(() => handle.setSkyEnvironment?.(0, false));
 
-        // ── Night: darken sky/fog, dim lights, add headlights ──
-        if (night > 0.05) {
-            const darkSky = new THREE.Color(handle.baseAtmosphere.skyHex).lerp(new THREE.Color('#05070f'), night * 0.85);
-            const darkFog = new THREE.Color(handle.baseAtmosphere.fogHex).lerp(new THREE.Color('#05070f'), night * 0.85);
-            handle.scene.background = darkSky;
-            if (handle.scene.fog) {
-                handle.scene.fog.color = darkFog;
-                handle.scene.fog.far = handle.baseAtmosphere.fogEnd * (1 - night * 0.25);
-            }
-            const dim = 1 - night * 0.62;
-            handle.ambient.intensity = handle.baseAtmosphere.ambientIntensity * dim;
-            handle.sun.intensity = Math.max(0.05, (handle.baseAtmosphere.ambientIntensity + 0.2) * dim);
+        // Night lighting, fog and the sky all come from setSkyEnvironment above; the
+        // headlights ride the cars (race.js → cars.js), not the camera.
 
-            const headlight = new THREE.SpotLight(0xffe6b0, night * 260, 90, 0.42, 0.55, 1.4);
-            headlight.position.set(0, 2.2, 0.5);
-            headlight.target.position.set(0, 0, -30);
-            handle.camera.add(headlight);
-            handle.camera.add(headlight.target);
-            this.headlight = headlight;
-            this.applied.push(() => {
-                handle.camera.remove(headlight);
-                handle.camera.remove(headlight.target);
-                headlight.dispose();
-            });
-        }
-
-        // ── Rain: camera-parented streak field + tighter fog ──
+        // ── Rain: camera-parented streak field ──
         if (raining) {
-            if (handle.scene.fog) {
-                handle.scene.fog.far = (handle.scene.fog.far || handle.baseAtmosphere.fogEnd) * 0.82;
-            }
             const count = prefs.reducedMotion ? 120 : 320;
             const positions = new Float32Array(count * 2 * 3);
             this.dropY = new Float32Array(count);
@@ -190,20 +164,21 @@ class EnvironmentHandle {
                 mat.dispose();
             });
 
-            // Wet asphalt: darker, and glossy enough to catch the headlights and lamps.
+            // Wet asphalt: darker and near-mirror, so the sky, lamps and tail lights
+            // reflect in it through the environment map (same PBR material, tuned).
             const road = handle.roadMesh;
-            if (road && road.material) {
-                const dry = road.material;
-                const wet = new THREE.MeshPhongMaterial({
-                    color: dry.color.clone().multiplyScalar(0.62),
-                    specular: new THREE.Color('#5d6670'),
-                    shininess: 70,
-                    side: THREE.DoubleSide,
-                });
-                road.material = wet;
+            const roadMat = road?.material;
+            if (roadMat && roadMat.isMeshStandardMaterial) {
+                const dry = { color: roadMat.color.clone(), roughness: roadMat.roughness, env: roadMat.envMapIntensity, ns: roadMat.normalScale.clone() };
+                roadMat.color.multiplyScalar(0.55);
+                roadMat.roughness = 0.3;
+                roadMat.envMapIntensity = 1.6;
+                roadMat.normalScale.set(0.35, 0.35);
                 this.applied.push(() => {
-                    if (road.material === wet) road.material = dry;
-                    wet.dispose();
+                    roadMat.color.copy(dry.color);
+                    roadMat.roughness = dry.roughness;
+                    roadMat.envMapIntensity = dry.env;
+                    roadMat.normalScale.copy(dry.ns);
                 });
             }
 

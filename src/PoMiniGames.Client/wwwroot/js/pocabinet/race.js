@@ -22,7 +22,16 @@
 // Input comes from input.js (keyboard ramp, gamepad, touch, tilt); driver aids
 // (physics.assistControls) are applied to the input before it is stepped or
 // sent, so online they need no server support and change nobody else's physics.
+//
+// Feel layer (render + audio only — never the sim): each frame feeds fx.js
+// (smoke, sparks, skid marks) and scene.fx (speed blur, FOV kick, shake), places
+// the audio listener and every rival's engine, and runs the moments — the start
+// gantry, launch smoke at GO, kerb buzz/rumble, barrier slapback, flashbulbs on a
+// personal-best lap, and in solo races a photo-finish slow motion. Slow motion
+// scales how much sim time each frame feeds the fixed-tick accumulator, so lap
+// times (sim clock) are unaffected; online the server owns time and it never runs.
 
+import { Vector3 } from 'three';
 import { buildTrack, wrapAngle } from './track.js';
 import * as ph from './physics.js';
 import { attachInput } from './input.js';
@@ -30,6 +39,9 @@ import { mountCar, unmountCar } from './cars.js';
 import * as audio from './audio.js';
 import { currentEnvironment } from './environment.js';
 import { lapTraces, bestTrace, loadPbTrace, savePbTrace, renderTelemetry } from './telemetry.js';
+import { createFx } from './fx.js';
+import { computeKerbs, onKerb } from './kerbs.js';
+import { getRecords } from './settings.js';
 
 const TICK = ph.TICK_SECONDS;
 const COUNTDOWN = 3;
@@ -38,6 +50,8 @@ const MAX_RECORD_FRAMES = 30 * 60 * 8;
 const INTERP_DELAY_MS = 100;
 const SNAP_DISTANCE = 40;
 const PLAYER_SLOT = 2;
+const SLOW_MO_SCALE = 0.28;
+const GANTRY_PODS = 5;
 
 let race = null;
 
@@ -120,6 +134,24 @@ class Race {
         if (this.mode === 'net' && opts.initialSnapshot) this.onServerSnapshot(opts.initialSnapshot);
         this.startRecording();
         this.applySettings(opts.settings || {});
+
+        // Feel layer.
+        this.kerbs = computeKerbs(this.track);
+        try {
+            this.fx = createFx(this.scene, this.track, {
+                grip: this.grip, raining: currentEnvironment().raining, groundHex: this.world?.atmosphere?.groundHex,
+            });
+        } catch { this.fx = null; }
+        const pb = getRecords(this.track.id).bestLap;
+        this.pbLap = pb > 0 ? pb : -1;
+        this.timeScale = 1;
+        this.photo = { state: 'idle', endAt: 0, startedAt: 0 };
+        this.lights = { lit: -1, go: false };
+        this.cam = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, init: false };
+        this.camFwd = new Vector3();
+        if (this.scene.scenery) {
+            this.scene.scenery.onFlash = (pos) => audio.shutter(pos, 0.8);
+        }
 
         this.frameCb = (now) => this.frame(now);
         this.scene.onFrame(this.frameCb);
@@ -253,7 +285,7 @@ class Race {
             return;
         }
         if (!this.paused) {
-            this.acc += dt;
+            this.acc += dt * this.timeScale;
             let steps = 0;
             while (this.acc >= TICK && steps < 5) {
                 this.tick();
@@ -302,6 +334,7 @@ class Race {
         }
         ph.resolveContacts(bodies);
         this.lapBookkeeping(tickStart, stepDt, elapsed);
+        this.checkPhotoFinish();
         this.feedback();
         this.record(elapsed);
         this.pushHud(elapsed);
@@ -322,8 +355,10 @@ class Race {
                 }
                 car.lapStart = crossedAt;
                 car.lastLap = lapTime;
-                if (car.bestLap <= 0 || lapTime < car.bestLap) car.bestLap = lapTime;
+                const raceBest = car.bestLap <= 0 || lapTime < car.bestLap;
+                if (raceBest) car.bestLap = lapTime;
                 car.lapsDone++;
+                if (car.isLocal && this.mode !== 'demo') this.onLocalLap(lapTime, raceBest && car.lapsDone > 1);
                 if (car.lapsDone >= this.totalLaps) {
                     car.finished = true;
                     car.finishTime = crossedAt;
@@ -376,8 +411,57 @@ class Race {
         if (car.body.wallImpact > 6) {
             const s = Math.min(1, car.body.wallImpact / 60);
             this.input.rumble(s);
-            audio.beep(70 + 40 * s, 0.12, 'sine', 0.06 + 0.1 * s);
+            audio.impact(s, 'wall');
+            this.scene.fx.shake = Math.max(this.scene.fx.shake, 0.35 + s * 0.65);
         }
+    }
+
+    // ── Moments ──────────────────────────────────────────────────────────
+
+    /**
+     * A lap by the player. A personal best (against the stored record, then against
+     * this session's own laps) sets the whole press pen off; a race-best lap that is
+     * not a PB gets a smaller volley.
+     */
+    onLocalLap(lapTime, raceBest) {
+        if (!(lapTime > 0)) return;
+        const scenery = this.scene.scenery;
+        if (this.pbLap < 0 || lapTime < this.pbLap) {
+            this.pbLap = lapTime;
+            scenery?.flashBurst(1);
+            this.scene.fx.flash = Math.max(this.scene.fx.flash, this.scene.fx.reduced ? 0.12 : 0.3);
+        } else if (raceBest) {
+            scenery?.flashBurst(0.35);
+        }
+    }
+
+    /**
+     * Solo only: on the final lap, when the player is about a second from the line
+     * with a rival alongside, slow time until just after they cross it.
+     */
+    checkPhotoFinish() {
+        const p = this.photo, me = this.local;
+        if (!me || this.mode === 'net' || p.state === 'done') return;
+        const L = this.track.length;
+        if (p.state === 'idle') {
+            if (me.finished || me.lapsDone !== this.totalLaps - 1) return;
+            const toGo = this.totalLaps * L - me.body.distance;
+            if (toGo <= 0 || toGo > Math.max(45, me.body.speed * 1.05)) return;
+            const close = this.cars.some(c => c !== me && Math.abs(c.body.distance - me.body.distance) < 30
+                && (c.finished ? c.finishTime > this.clock - COUNTDOWN - 0.25 : c.lapsDone === this.totalLaps - 1));
+            if (!close) return;
+            p.state = 'slow';
+            p.endAt = Infinity;
+            p.startedAt = this.clock;
+            return;
+        }
+        if (me.finished && p.endAt === Infinity) {
+            p.endAt = this.clock + 0.4;
+            this.scene.fx.flash = Math.max(this.scene.fx.flash, this.scene.fx.reduced ? 0.15 : 0.55);
+            this.scene.scenery?.flashBurst(1);
+            audio.shutter(null, 1);
+        }
+        if (this.clock >= p.endAt || this.clock - p.startedAt > 3) p.state = 'done';
     }
 
     // ── Multiplayer ──────────────────────────────────────────────────────
@@ -531,14 +615,7 @@ class Race {
             if (focus.mesh) focus.mesh.group.visible = mode !== 'cockpit' || !focus.isLocal;
         }
         this.cockpit?.setVisible?.(mode === 'cockpit' && !!this.local);
-
-        if (this.local) {
-            const kmh = Math.abs(this.local.render.speed) * ph.KMH_PER_UNIT;
-            this.cockpit?.updateHud?.({ speedKmh: kmh, steer: this.lastControls.steer });
-            const racing = this.mode === 'net' ? (this.net.started && !this.net.finished) : (this.clock > COUNTDOWN && !this.simDone);
-            audio.updateEngine(racing ? kmh : 0);
-            audio.setSqueal(racing && this.local.body.sliding);
-        }
+        this.effects(dt, mode, focus);
 
         if (this.minimap && now - this.minimapAt > 66) {
             this.minimapAt = now;
@@ -548,6 +625,132 @@ class Race {
                     isPlayer: c.isLocal, finished: c.finished,
                 })));
             } catch { /* decorative */ }
+        }
+    }
+
+    // ── Feel layer: particles, post inputs, audio, gantry ────────────────
+
+    effects(dt, mode, focus) {
+        const fx = this.scene.fx;
+        const isNet = this.mode === 'net';
+
+        // Slow motion eases in and out on real time.
+        const target = this.photo.state === 'slow' ? SLOW_MO_SCALE : 1;
+        if (dt > 0) this.timeScale += (target - this.timeScale) * (1 - Math.exp(-dt * 6));
+        if (Math.abs(this.timeScale - target) < 0.005) this.timeScale = target;
+        const slow = (1 - this.timeScale) / (1 - SLOW_MO_SCALE);
+        fx.slow = slow;
+        audio.setSlowMo(slow);
+
+        const serverS = isNet ? this.estServerMs() / 1000 : this.clock;
+        const preStart = isNet ? !this.net.started && serverS < COUNTDOWN : this.clock < COUNTDOWN;
+        const racing = isNet ? (this.net.started && !this.net.finished) : (this.clock > COUNTDOWN && !this.simDone);
+        this.updateLights(serverS);
+
+        const speed01 = focus ? Math.min(1, Math.abs(focus.render.speed) / ph.MAX_SPEED) : 0;
+        // Speed blur belongs to a camera that moves with the car, not a trackside one.
+        fx.speed = racing && mode !== 'tv' ? speed01 : 0;
+        fx.cockpit = mode === 'cockpit' && !!this.local;
+        fx.focus = focus ? { x: focus.render.x / 10, z: focus.render.y / 10, speed01 } : null;
+
+        const events = this.fx?.update(this.paused ? 0 : dt * this.timeScale, this.fxCars(), { skids: true });
+
+        if (this.local) {
+            const b = this.local.body;
+            const kmh = Math.abs(this.local.render.speed) * ph.KMH_PER_UNIT;
+            const throttle = this.mode === 'demo' && preStart ? 0 : this.lastControls.throttle;
+            audio.updateEngine(racing ? kmh : 0, throttle, racing ? 'race' : preStart ? 'grid' : 'off');
+            const es = audio.engineState();
+            this.cockpit?.updateHud?.({ speedKmh: kmh, steer: this.lastControls.steer, rpm: es.rpm, redline: es.redline, gear: es.gear });
+            audio.setSqueal(racing && b.sliding ? 1 : 0, kmh);
+
+            const kerbOn = racing && Math.abs(b.speed) > 15 && onKerb(this.kerbs, this.track, b.segHint, b.lateral);
+            audio.setKerb(kerbOn, kmh);
+            fx.rumble = kerbOn ? 0.3 + 0.7 * Math.min(1, Math.abs(b.speed) / ph.MAX_SPEED) : 0;
+            if (kerbOn && this.mode !== 'demo') this.input.rumble(0.2 + 0.3 * fx.rumble);
+
+            const gap = ph.wallLateral(this.track) - Math.abs(b.lateral);
+            const near = racing ? Math.max(0, 1 - gap / 45) * Math.min(1, Math.abs(b.speed) / 60) : 0;
+            audio.setWallProximity(near, b.lateral > 0 ? 1 : -1);
+            audio.setScrape(racing ? (events?.scraping.get(this.local.id) || 0) : 0);
+        } else {
+            fx.rumble = 0;
+        }
+
+        for (const c of events?.contacts || []) {
+            if (this.local && c.ids.includes(this.local.id)) {
+                audio.impact(c.strength, 'car');
+                if (this.mode !== 'demo') this.input.rumble(c.strength);
+                fx.shake = Math.max(fx.shake, 0.3 + 0.5 * c.strength);
+            } else {
+                audio.impact(c.strength * 0.8, 'car', { x: c.x, y: 0.5, z: c.z });
+            }
+        }
+
+        this.updateAudioScene(dt, racing || preStart);
+    }
+
+    /** Car poses for fx.js, in sim units. Locally simulated cars report their exact slide flag. */
+    fxCars() {
+        const exact = this.mode !== 'net';
+        return this.cars.map(c => ({
+            id: c.id, x: c.render.x, y: c.render.y, heading: c.render.heading, speed: c.render.speed,
+            sliding: (exact || c.isLocal) ? !!c.body.sliding : false,
+        }));
+    }
+
+    /** Listener on the camera (with its velocity, for Doppler) and every rival's engine. */
+    updateAudioScene(dt, live) {
+        const cam = this.scene.camera;
+        const c = this.cam;
+        const p = cam.position;
+        if (c.init && dt > 0) {
+            const dx = p.x - c.x, dy = p.y - c.y, dz = p.z - c.z;
+            if (dx * dx + dy * dy + dz * dz > 9) {
+                c.vx = c.vy = c.vz = 0;   // camera cut, not motion
+            } else {
+                const k = 1 - Math.exp(-dt * 8);
+                c.vx += (dx / dt - c.vx) * k;
+                c.vy += (dy / dt - c.vy) * k;
+                c.vz += (dz / dt - c.vz) * k;
+            }
+        }
+        c.x = p.x; c.y = p.y; c.z = p.z; c.init = true;
+        cam.getWorldDirection(this.camFwd);
+        audio.updateListener({ x: p.x, y: p.y, z: p.z }, this.camFwd, { x: 0, y: 1, z: 0 }, { x: c.vx, y: c.vy, z: c.vz });
+        if (!live) { audio.updateRivals([]); return; }
+        const list = [];
+        for (const car of this.cars) {
+            if (car.isLocal) continue;
+            const h = car.render.heading, v = car.render.speed;
+            list.push({
+                id: car.id, x: car.render.x / 10, y: 0.5, z: car.render.y / 10,
+                vx: Math.cos(h) * v / 10, vz: Math.sin(h) * v / 10, kmh: Math.abs(v) * ph.KMH_PER_UNIT,
+            });
+        }
+        audio.updateRivals(list);
+    }
+
+    /** Start gantry: pods light red one by one through the countdown, all green at GO. */
+    updateLights(elapsedS) {
+        const remaining = COUNTDOWN - elapsedS;
+        let lit = 0, go = false;
+        if (remaining > 0) lit = Math.min(GANTRY_PODS, Math.floor((COUNTDOWN - remaining) / COUNTDOWN * GANTRY_PODS) + 1);
+        else if (remaining > -2.5) go = true;
+        if (lit === this.lights.lit && go === this.lights.go) return;
+        const wentGreen = go && !this.lights.go && this.lights.lit > 0;
+        this.lights.lit = lit;
+        this.lights.go = go;
+        this.scene.setStartLights?.(lit, go);
+        if (wentGreen) this.onGo();
+    }
+
+    /** GO: a jolt, and every car lights its rear tyres (the player's by how hard they launch). */
+    onGo() {
+        this.scene.fx.shake = Math.max(this.scene.fx.shake, 0.45);
+        for (const car of this.cars) {
+            const mine = car.isLocal && this.mode !== 'demo';
+            this.fx?.launch(car.id, mine ? 0.9 : 0.6, mine ? Math.max(0.35, this.lastControls.throttle) : 0.55);
         }
     }
 
@@ -622,7 +825,10 @@ class Race {
             const done = r.laps.length;
             if (l.body.distance >= (done + 1) * L && done < this.totalLaps) {
                 const startT = done === 0 ? 0 : r.laps[done - 1].endT;
-                r.laps.push({ lap: done + 1, startT, endT: raceTime, time: raceTime - startT });
+                const time = raceTime - startT;
+                const raceBest = done > 0 && r.laps.every(x => time < x.time);
+                r.laps.push({ lap: done + 1, startT, endT: raceTime, time });
+                this.onLocalLap(time, raceBest);
             }
         }
     }
@@ -655,8 +861,11 @@ class Race {
             t0, t1, playing: true, speed: 1, camera: 'chase', pushedAt: 0, endAt: null,
         };
         this.scene.setRacingLine?.(false);
-        audio.updateEngine(0);
-        audio.setSqueal(false);
+        this.photo.state = 'done';
+        this.timeScale = 1;
+        audio.silenceRace();
+        this.scene.fx.slow = 0;
+        this.scene.fx.rumble = 0;
         this.pushReplayState(true);
         return true;
     }
@@ -711,6 +920,12 @@ class Race {
         this.scene.setView({ ...focus.render, along, mode: rp.camera, dt });
         if (focus.mesh) focus.mesh.group.visible = rp.camera !== 'cockpit';
         this.cockpit?.setVisible?.(rp.camera === 'cockpit');
+        // The replay gets the same smoke, sparks and speed blur; its skid marks are already down.
+        const fx = this.scene.fx;
+        fx.speed = rp.camera === 'tv' ? 0 : Math.min(1, Math.abs(focus.render.speed) / ph.MAX_SPEED);
+        fx.cockpit = rp.camera === 'cockpit';
+        fx.focus = null;
+        this.fx?.update(rp.playing ? dt * rp.speed : 0, this.fxCars(), { skids: false });
         this.pushReplayState(false, now);
     }
 
@@ -787,8 +1002,12 @@ class Race {
         this.input.detach();
         for (const car of this.cars) if (car.mesh) unmountCar(car.mesh);
         this.cockpit?.setVisible?.(true);
-        audio.updateEngine(0);
-        audio.setSqueal(false);
+        this.fx?.dispose();
+        audio.silenceRace();
+        const fx = this.scene.fx;
+        if (fx) { fx.speed = 0; fx.rumble = 0; fx.slow = 0; fx.shake = 0; fx.focus = null; }
+        this.scene.setStartLights?.(0, false);
+        if (this.scene.scenery) this.scene.scenery.onFlash = null;
     }
 }
 

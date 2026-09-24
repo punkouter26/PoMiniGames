@@ -15,11 +15,21 @@
 //     (no API key, no geolocation prompt; the satire picks the capital).
 //     Cached 30 minutes in localStorage; any failure resolves to clear.
 //
+// Both also feed the rest of the scene: the sky dome and the lamps / floodlit
+// landmarks get the night factor (handle.setSkyEnvironment); rain darkens the
+// asphalt into a glossy wet surface, puts drops on the windscreen (postfx.js via
+// handle.fx.rain), runs the wiper clock (handle.fx.wipeT, thunk at each end of
+// the sweep — the shader draws the same blade from the same clock) and plays
+// rain on the roof.
+//
 // All mutations go through the SceneHandle from scene.js and are fully undone
 // by dispose(), so a race teardown never leaks GPU resources.
 
 import * as THREE from 'three';
-import { currentSettings } from './settings.js';
+import { currentSettings, loadSettings } from './settings.js';
+import * as audio from './audio.js';
+
+const WIPE_PERIOD = 1.8;
 
 const ENV_CACHE_KEY = 'pocabinet.envcache.v1';
 const ENV_CACHE_MS = 30 * 60 * 1000;
@@ -79,6 +89,10 @@ async function fetchCapitalRain() {
  * failed resolution degrades to a clear midday scene.
  */
 export async function resolveEnvironment() {
+    // Load from storage first: the page reads/writes the settings JSON itself, so
+    // until something calls loadSettings the module copy is still the defaults and
+    // a saved day/night or weather choice would be ignored after a reload.
+    loadSettings();
     const prefs = currentSettings();
     let night;
     if (prefs.timeOfDay === 'night') night = 1;
@@ -117,6 +131,9 @@ class EnvironmentHandle {
         const prefs = currentSettings();
         const night = this.env.night;
         const raining = this.env.raining;
+
+        handle.setSkyEnvironment?.(night, raining);
+        this.applied.push(() => handle.setSkyEnvironment?.(0, false));
 
         // ── Night: darken sky/fog, dim lights, add headlights ──
         if (night > 0.05) {
@@ -173,11 +190,49 @@ class EnvironmentHandle {
                 mat.dispose();
             });
 
+            // Wet asphalt: darker, and glossy enough to catch the headlights and lamps.
+            const road = handle.roadMesh;
+            if (road && road.material) {
+                const dry = road.material;
+                const wet = new THREE.MeshPhongMaterial({
+                    color: dry.color.clone().multiplyScalar(0.62),
+                    specular: new THREE.Color('#5d6670'),
+                    shininess: 70,
+                    side: THREE.DoubleSide,
+                });
+                road.material = wet;
+                this.applied.push(() => {
+                    if (road.material === wet) road.material = dry;
+                    wet.dispose();
+                });
+            }
+
+            if (handle.fx) {
+                handle.fx.rain = 1;
+                handle.fx.wipeP = WIPE_PERIOD;
+                handle.fx.wipeT = 0;
+                this.applied.push(() => { handle.fx.rain = 0; handle.fx.wipeT = 0; });
+            }
+            audio.setRain(1);
+            this.applied.push(() => audio.setRain(0));
+
             let last = performance.now();
+            let wipeT = 0;
             this.frameCb = (now) => {
                 if (this.disposed || !this.rain) return;
                 const dt = Math.min(0.05, (now - last) / 1000);
                 last = now;
+                // Wiper clock: the blade reverses at each half period — that is the thunk.
+                const before = Math.floor(wipeT / (WIPE_PERIOD / 2));
+                wipeT += dt;
+                if (handle.fx) {
+                    handle.fx.wipeT = wipeT;
+                    if (Math.floor(wipeT / (WIPE_PERIOD / 2)) !== before) {
+                        if (handle.fx.cockpit) audio.wiper();
+                        // Re-assert: the AudioContext may only have been unlocked after mount.
+                        audio.setRain(1);
+                    }
+                }
                 const pos = this.rain.geom.attributes.position.array;
                 const speed = prefs.reducedMotion ? 9 : 22;
                 for (let i = 0; i < this.rain.count; i++) {

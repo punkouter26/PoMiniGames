@@ -1,6 +1,7 @@
 // pocabinet/cockpit.js
 //
-// Cockpit interior — steering wheel, hood, RPM gauge, speedometer, rear-view mirror.
+// Cockpit interior — steering wheel (with shift lights and a gear readout fed by
+// audio.js's virtual gearbox), hood, speedometer, rear-view mirror.
 // Mounts into the three.js scene from scene.js; the camera is the player's eye, so
 // these primitives hang around the camera and ride along with car motion.
 //
@@ -64,9 +65,18 @@ function getOrCreateGeometry() {
         const needle = new THREE.BoxGeometry(0.085, 0.008, 0.004);
         needle.translate(0.0425, 0, 0);
         COCKPIT_GEOMETRY.gaugeNeedle = needle;
+        COCKPIT_GEOMETRY.led = new THREE.CircleGeometry(0.012, 10);
+        COCKPIT_GEOMETRY.gearFace = new THREE.PlaneGeometry(0.075, 0.075);
     }
     return COCKPIT_GEOMETRY;
 }
+
+// Shift lights: green → red → blue as RPM climbs, all flashing at the limiter.
+const LED_COLORS = ['#19d45a', '#19d45a', '#19d45a', '#ff2a2a', '#ff2a2a', '#ff2a2a', '#2a7dff', '#2a7dff', '#2a7dff'];
+const LED_OFF = '#1a1c20';
+const LED_FLASH = '#b8d4ff';
+const LED_FROM = 0.62;
+const LED_STEP = 0.04;
 
 // ──────────────────────────────────────────────────────────────────────────
 //  CockpitHandle — owns the cockpit group + per-frame HUD updates.
@@ -99,9 +109,11 @@ class CockpitHandle {
     }
 
     /**
-     * Per-frame readouts: the gauge needle sweeps with speed and the wheel turns
-     * with the steering input (visual lock ≈ 90° either way).
-     * @param {{ speedKmh: number, steer: number }} hud
+     * Per-frame readouts: the gauge needle sweeps with speed, the wheel turns with
+     * the steering input (visual lock ≈ 90° either way), and — when the audio
+     * engine's virtual gearbox reports them — the wheel's shift lights fill with
+     * RPM and the hub shows the gear.
+     * @param {{ speedKmh: number, steer: number, rpm?: number, redline?: number, gear?: number }} hud
      */
     updateHud(hud) {
         if (this.disposed || !hud) return;
@@ -111,6 +123,33 @@ class CockpitHandle {
         const steer = Math.max(-1, Math.min(1, Number(hud.steer) || 0));
         // The wheel torus lies in the view plane after mount; spin it about the view axis.
         this.wheel.rotation.z = -steer * Math.PI * 0.5;
+
+        const redline = Number(hud.redline) || 0;
+        if (this.leds && redline > 0) {
+            const r = (Number(hud.rpm) || 0) / redline;
+            const limiter = r > 0.965 && (performance.now() % 160) < 80;
+            this.leds.forEach((led, i) => {
+                const on = r >= LED_FROM + i * LED_STEP;
+                const color = limiter ? LED_FLASH : on ? LED_COLORS[i] : LED_OFF;
+                if (led.userData.color !== color) {
+                    led.material.color.set(color);
+                    led.userData.color = color;
+                }
+            });
+        }
+        const gear = Number(hud.gear) || 0;
+        if (this.gearCanvas && gear !== this.gearShown) {
+            this.gearShown = gear;
+            const g = this.gearCanvas.getContext('2d');
+            g.fillStyle = '#060708';
+            g.fillRect(0, 0, 64, 64);
+            g.fillStyle = '#ffd24a';
+            g.font = '800 50px system-ui, sans-serif';
+            g.textAlign = 'center';
+            g.textBaseline = 'middle';
+            g.fillText(gear > 0 ? String(gear) : 'N', 32, 35);
+            this.gearTexture.needsUpdate = true;
+        }
     }
 
     /** Hide the interior for chase / TV cameras. */
@@ -129,8 +168,12 @@ class CockpitHandle {
     dispose() {
         if (this.disposed) return;
         this.disposed = true;
-        // Detach group from any parent; geometry + materials are cached, do not dispose.
+        // Detach group from any parent; shared geometry + materials are cached, do not
+        // dispose. The shift lights and gear readout are per mount, so they go here.
         if (this.group.parent) this.group.parent.remove(this.group);
+        for (const led of this.leds || []) led.material.dispose();
+        this.gearTexture?.dispose();
+        this.gearMaterial?.dispose();
     }
 }
 
@@ -198,12 +241,38 @@ export function mountCockpit(sceneOrCamera) {
     group.add(mirrorFrame);
     group.add(rearMirror);
 
+    // ─── Shift lights across the top of the wheel, gear readout on the hub ───
+    // Children of the wheel, so they turn with it. Per mount (they change colour).
+    const leds = [];
+    for (let i = 0; i < LED_COLORS.length; i++) {
+        const led = new THREE.Mesh(geom.led, new THREE.MeshBasicMaterial({ color: LED_OFF }));
+        led.position.set((i - (LED_COLORS.length - 1) / 2) * 0.034, 0.2, 0.012);
+        led.userData.color = LED_OFF;
+        wheel.add(led);
+        leds.push(led);
+    }
+    const gearCanvas = document.createElement('canvas');
+    gearCanvas.width = gearCanvas.height = 64;
+    const gearTexture = new THREE.CanvasTexture(gearCanvas);
+    gearTexture.colorSpace = THREE.SRGBColorSpace;
+    const gearMaterial = new THREE.MeshBasicMaterial({ map: gearTexture });
+    const gearFace = new THREE.Mesh(geom.gearFace, gearMaterial);
+    gearFace.position.z = 0.008;
+    wheel.add(gearFace);
+
     // Camera-relative attachment: cockpit is a child of the camera so it rides with
     // the player's eye automatically. This matches racing-game convention (the dashboard
     // never lags the camera).
     camera.add(group);
 
-    return new CockpitHandle(group, gaugeNeedle, rearMirror, wheel, mirrorFrame, gauge);
+    const handle = new CockpitHandle(group, gaugeNeedle, rearMirror, wheel, mirrorFrame, gauge);
+    handle.leds = leds;
+    handle.gearCanvas = gearCanvas;
+    handle.gearTexture = gearTexture;
+    handle.gearMaterial = gearMaterial;
+    handle.gearShown = -1;
+    handle.updateHud({ speedKmh: 0, steer: 0, gear: 1 });
+    return handle;
 }
 
 export function unmountCockpit(handle) {

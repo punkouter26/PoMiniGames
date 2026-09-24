@@ -93,7 +93,8 @@
 
                 @if (_countdownDisplay > 0)
                 {
-                    <div class="pocabinet-countdown" role="status">@_countdownDisplay</div>
+                    @* @key re-creates the element per number, so its entry animation replays each second. *@
+                    <div @key="_countdownDisplay" class="pocabinet-countdown" role="status">@_countdownDisplay</div>
                 }
                 else if (_showGo)
                 {

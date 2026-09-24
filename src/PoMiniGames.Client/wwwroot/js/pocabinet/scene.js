@@ -20,14 +20,27 @@
 // children — cockpit, headlight, rain field — actually render; before
 // 2026-09-23 it was not, and none of them ever appeared.
 //
+// Around the road: a sky dome (sky.js), trackside scenery with apex kerbs, the
+// start gantry, lamps, landmarks and the press pen (scenery.js), and one
+// post-processing pass (postfx.js) for speed blur, windscreen rain and the
+// flash / slow-motion grade. `handle.fx` is the per-frame bag race.js and
+// environment.js write into: speed, cockpit, rain, wiper clock, flash, shake,
+// kerb rumble, slow motion. The loop turns it into FOV kick and camera shake
+// after every frame callback has placed the camera.
+//
 // API surface:
 //   const handle = await mount(canvas, world);
 //   handle.setView({ x, y, heading, mode, speed }); handle.setRacingLine(bool);
+//   handle.setStartLights(lit, go); handle.setSkyEnvironment(night, rain);
 //   unmount(handle);
 
 import * as THREE from 'three';
 import { buildTrack } from './track.js';
 import { RUN_OFF, GRIP_ACCEL } from './physics.js';
+import { computeKerbs } from './kerbs.js';
+import { Sky } from './sky.js';
+import { Scenery } from './scenery.js';
+import { PostFx } from './postfx.js';
 
 export const WORLD_SCALE = 10;
 const EYE_HEIGHT = 1.35;
@@ -49,11 +62,23 @@ class SceneHandle {
         this.trackGroup = null;
         this.racingLine = null;
         this.groundMesh = null;
+        this.roadMesh = null;
+        this.sky = null;
+        this.scenery = null;
+        this.post = null;
+        this.baseFov = camera.fov;
+        // Per-frame effect inputs (see header). Writers set values; the loop decays
+        // flash and shake itself.
+        this.fx = {
+            speed: 0, cockpit: true, rain: 0, wipeT: 0, wipeP: 1.8, flash: 0, slow: 0,
+            shake: 0, rumble: 0, reduced: false, focus: null,
+        };
         // Atmosphere the track was mounted with (unmodified) — environment.js
         // derives night/rain lighting from this baseline.
         this.baseAtmosphere = null;
         this._frameCbs = new Set();
         this._raf = null;
+        this._lastNow = null;
         this._tvIndex = -1;
         this._chase = new THREE.Vector3();
         this._chaseInit = false;
@@ -75,10 +100,18 @@ class SceneHandle {
         const loop = (now) => {
             if (this.disposed) return;
             this._raf = requestAnimationFrame(loop);
+            const dt = this._lastNow === null ? 0 : Math.min(0.1, (now - this._lastNow) / 1000);
+            this._lastNow = now;
             for (const cb of this._frameCbs) {
                 try { cb(now); } catch { /* one bad effect never kills the frame */ }
             }
-            this.renderer.render(this.scene, this.camera);
+            try {
+                this.applyFx(dt);
+                this.sky?.update(this.camera, this.scene.fog, now / 1000);
+                this.scenery?.update(dt, this.fx.focus);
+            } catch { /* decoration never kills the frame */ }
+            if (this.post) this.post.render(this.scene, this.camera, this.fx, now / 1000);
+            else this.renderer.render(this.scene, this.camera);
         };
         this._raf = requestAnimationFrame(loop);
     }
@@ -134,6 +167,45 @@ class SceneHandle {
         this.camera.lookAt(x, 0.6, z);
     }
 
+    /**
+     * Speed FOV kick + camera shake, applied after setView has placed the camera
+     * for this frame (setView fully re-places it next frame, so nothing accumulates).
+     */
+    applyFx(dt) {
+        const fx = this.fx;
+        const motion = !fx.reduced;
+        const fov = this.baseFov + (motion ? Math.pow(Math.min(1, fx.speed), 1.6) * 9 : 0);
+        const k = dt > 0 ? 1 - Math.exp(-dt * 4) : 1;
+        const next = this.camera.fov + (fov - this.camera.fov) * k;
+        if (Math.abs(next - this.camera.fov) > 0.01) {
+            this.camera.fov = next;
+            this.camera.updateProjectionMatrix();
+        }
+        const amp = motion ? Math.min(1, fx.shake + fx.rumble * 0.35) : 0;
+        if (amp > 0.002) {
+            const r = () => Math.random() - 0.5;
+            this.camera.position.x += r() * 0.05 * amp;
+            this.camera.position.y += r() * 0.07 * amp;
+            this.camera.rotateX(r() * 0.012 * amp);
+            this.camera.rotateZ(r() * 0.016 * amp);
+        }
+        const decay = dt > 0 ? Math.exp(-dt * 7) : 1;
+        fx.shake *= decay;
+        fx.flash *= dt > 0 ? Math.exp(-dt * 4.5) : 1;
+        if (fx.flash < 0.004) fx.flash = 0;
+    }
+
+    /** Start gantry: `lit` pods red (0..5), or all green on `go`. */
+    setStartLights(lit, go) {
+        this.scenery?.setStartLights(lit, go);
+    }
+
+    /** Night factor 0..1 and rain flag for the sky, lamps and floodlit landmarks. */
+    setSkyEnvironment(night, rain) {
+        this.sky?.setEnvironment(night, rain);
+        this.scenery?.setNight(night);
+    }
+
     /** Legacy cockpit follow (kept for callers that only have a pose). */
     updatePlayerView(p) {
         this.setView({ ...p, mode: 'cockpit' });
@@ -146,10 +218,12 @@ class SceneHandle {
         const scale = Math.min(1.5, Math.max(0.5, Number(o.renderScale) || 1));
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * scale);
         const fov = Math.min(90, Math.max(60, Number(o.fov) || 70));
+        this.baseFov = fov;
         if (Math.abs(this.camera.fov - fov) > 0.01) {
             this.camera.fov = fov;
             this.camera.updateProjectionMatrix();
         }
+        this.fx.reduced = !!o.reducedMotion;
         this.setRacingLine(!!o.racingLine);
         this.resize();
     }
@@ -175,11 +249,12 @@ class SceneHandle {
         const group = new THREE.Group();
         group.name = 'pocabinet-track';
 
-        // Ground: one plane covering the bounds plus a generous margin.
+        // Ground: reaches past the fog's far edge in every direction, so it fades into
+        // the sky dome's horizon (which is the fog colour) instead of ending in a seam.
         const minX = Number(world.minX) || 0, maxX = Number(world.maxX) || 0;
         const minY = Number(world.minY) || 0, maxY = Number(world.maxY) || 0;
-        const margin = 600;
-        const w = (maxX - minX + margin * 2) / WORLD_SCALE, d = (maxY - minY + margin * 2) / WORLD_SCALE;
+        const reach = (Number(atmosphere.fogEnd) || 900) * 1.3;
+        const w = (maxX - minX) / WORLD_SCALE + reach * 2, d = (maxY - minY) / WORLD_SCALE + reach * 2;
         const groundGeom = new THREE.PlaneGeometry(w, d);
         groundGeom.rotateX(-Math.PI / 2);
         const ground = new THREE.Mesh(groundGeom, new THREE.MeshLambertMaterial({ color: hex(atmosphere.groundHex, '#2a3a24') }));
@@ -188,8 +263,9 @@ class SceneHandle {
         this.groundMesh = ground;
 
         const hw = this.track.halfWidth;
-        group.add(new THREE.Mesh(ribbon(this.track, -hw, hw, 0.02),
-            new THREE.MeshLambertMaterial({ color: hex(atmosphere.roadHex, '#393b42'), side: THREE.DoubleSide })));
+        this.roadMesh = new THREE.Mesh(ribbon(this.track, -hw, hw, 0.02),
+            new THREE.MeshLambertMaterial({ color: hex(atmosphere.roadHex, '#393b42'), side: THREE.DoubleSide }));
+        group.add(this.roadMesh);
 
         // Edge lines on the tarmac, then the barriers where physics puts the wall.
         const lineMat = new THREE.MeshLambertMaterial({ color: 0xe8e8e8, side: THREE.DoubleSide });
@@ -208,6 +284,22 @@ class SceneHandle {
         this.racingLine.visible = false;
         group.add(this.racingLine);
 
+        try {
+            this.scenery = new Scenery(this.track, { ...world, kerbs: computeKerbs(this.track) });
+            group.add(this.scenery.group);
+        } catch (e) {
+            this.scenery = null;
+            console.warn('pocabinet/scene: scenery skipped', e);
+        }
+        try {
+            this.sky = new Sky(this.track.id);
+            group.add(this.sky.mesh);
+            this.sun.position.copy(this.sky.lightDirection()).multiplyScalar(100);
+        } catch (e) {
+            this.sky = null;
+            console.warn('pocabinet/scene: sky skipped', e);
+        }
+
         this.scene.add(group);
         this.trackGroup = group;
     }
@@ -215,12 +307,16 @@ class SceneHandle {
     disposeTrackMeshes() {
         if (!this.trackGroup) return;
         this.scene.remove(this.trackGroup);
+        this.scenery?.dispose();
         this.trackGroup.traverse(o => {
             if (o.geometry) o.geometry.dispose();
             if (o.material) o.material.dispose();
         });
         this.trackGroup = null;
         this.racingLine = null;
+        this.roadMesh = null;
+        this.scenery = null;
+        this.sky = null;
     }
 
     /** Match the canvas size to its CSS box; called on resize + after mount. */
@@ -231,6 +327,7 @@ class SceneHandle {
         this.renderer.setSize(w, h, false);
         this.camera.aspect = w / h;
         this.camera.updateProjectionMatrix();
+        this.post?.setSize();
     }
 
     dispose() {
@@ -240,6 +337,8 @@ class SceneHandle {
         this.stopLoop();
         this._frameCbs.clear();
         this.disposeTrackMeshes();
+        this.post?.dispose();
+        this.post = null;
         this.renderer.dispose();
     }
 }
@@ -325,7 +424,7 @@ function racingLineMesh(track) {
     const c = new THREE.Color();
     for (let i = 0; i <= track.count; i++) {
         const k = i % track.count;
-        positions.push(track.x[k] / WORLD_SCALE, 0.05, track.y[k] / WORLD_SCALE);
+        positions.push(track.x[k] / WORLD_SCALE, 0.065, track.y[k] / WORLD_SCALE);
         let kappa = 0;
         for (let j = 0; j < 8; j++) kappa = Math.max(kappa, track.curvatureAt((k + j) % track.count));
         const vMax = Math.sqrt(GRIP_ACCEL * 0.9 / Math.max(kappa, 1e-5));
@@ -361,7 +460,9 @@ export async function mount(canvas, world) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.1, 5000);
+    // Near plane 0.25: the cockpit's closest part sits ~0.9 ahead, and the extra depth
+    // precision keeps the stacked road overlays (lines, kerbs, skid marks) from shimmering.
+    const camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.25, 5000);
     camera.position.set(0, EYE_HEIGHT, 0);
     scene.add(camera);
 
@@ -372,6 +473,12 @@ export async function mount(canvas, world) {
     scene.add(sun);
 
     const handle = new SceneHandle(renderer, scene, camera, ambient, sun, canvas);
+    try {
+        handle.post = new PostFx(renderer);
+    } catch (e) {
+        handle.post = null;   // no post pass: the scene renders straight to the canvas
+        console.warn('pocabinet/scene: post-processing unavailable', e);
+    }
     handle.setTrack(world);
     const start = handle.track.pointAt(-40);
     handle.setView({ x: start.x, y: start.y, heading: Math.atan2(start.ty, start.tx), mode: 'cockpit' });

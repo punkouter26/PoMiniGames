@@ -365,13 +365,30 @@
     font-size: calc(4.5rem * var(--pocabinet-hud, 1));
     font-weight: 800;
     color: #ffffff;
-    text-shadow: 0 2px 18px rgba(0, 0, 0, 0.65);
+    text-shadow: 0 2px 18px rgba(0, 0, 0, 0.65), 0 0 36px rgba(255, 40, 40, 0.55);
     pointer-events: none;
+    animation: pocabinet-count-pop 0.9s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
 }
 
 .pocabinet-countdown--go {
     color: #2ecc71;
     font-size: calc(3.6rem * var(--pocabinet-hud, 1));
+    text-shadow: 0 2px 18px rgba(0, 0, 0, 0.65), 0 0 42px rgba(46, 204, 113, 0.8);
+    animation: pocabinet-go-burst 1.2s cubic-bezier(0.1, 0.8, 0.3, 1) both;
+}
+
+/* Each number punches in big and settles; GO! blows outward and fades. */
+@keyframes pocabinet-count-pop {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(2.2); filter: blur(6px); }
+    30% { opacity: 1; transform: translate(-50%, -50%) scale(0.94); filter: blur(0); }
+    55% { transform: translate(-50%, -50%) scale(1.02); }
+    100% { opacity: 0.85; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes pocabinet-go-burst {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); letter-spacing: 0; }
+    18% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(2.4); letter-spacing: 0.3em; }
 }
 
 /* Dialogue bubble layer — dialogue.js appends its own .pocabinet-dialogue
@@ -551,20 +568,37 @@
     z-index: 20;
     overflow-y: auto;
     padding: 1rem;
-    background: rgba(4, 8, 18, 0.55);
+    background: rgba(4, 8, 18, 0.45);
+    -webkit-backdrop-filter: blur(3px) saturate(1.1);
+    backdrop-filter: blur(3px) saturate(1.1);
     border-radius: var(--radius-md, 8px);
+    animation: pocabinet-results-dim 0.6s ease-out both;
 }
 
+/* Frosted glass over the still-running scene: the race stays visible, blurred, behind it. */
 .pocabinet-results__card {
     position: relative;
     overflow: hidden;
     max-width: 720px;
     margin: 0 auto;
     padding: 1.25rem;
-    background: var(--color-surface);
+    background: color-mix(in srgb, var(--color-surface) 74%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(1.35);
+    backdrop-filter: blur(16px) saturate(1.35);
+    border: 1px solid color-mix(in srgb, var(--color-text) 14%, transparent);
     color: var(--color-text);
     border-radius: var(--radius-md, 10px);
     box-shadow: var(--shadow-card, none);
+    animation: pocabinet-results-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+}
+
+@keyframes pocabinet-results-dim {
+    from { background: rgba(4, 8, 18, 0); -webkit-backdrop-filter: blur(0); backdrop-filter: blur(0); }
+}
+
+@keyframes pocabinet-results-in {
+    from { opacity: 0; transform: translateY(28px) scale(0.96); }
+    to { opacity: 1; transform: none; }
 }
 
 .pocabinet-results__card h2 {
@@ -703,6 +737,13 @@
 @media (prefers-reduced-motion: reduce) {
     .pocabinet-confetti span { animation: none; display: none; }
     .pocabinet-reconnect__spinner { animation-duration: 2.4s; }
+    .pocabinet-countdown, .pocabinet-results, .pocabinet-results__card { animation: none; }
+}
+
+.pocabinet-reduced .pocabinet-countdown,
+.pocabinet-reduced .pocabinet-results,
+.pocabinet-reduced .pocabinet-results__card {
+    animation: none;
 }
 /* ─── Touch controls (input.js flips data-active; hidden otherwise) ──────── */
 

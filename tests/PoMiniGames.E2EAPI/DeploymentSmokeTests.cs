@@ -16,33 +16,17 @@ public class DeploymentSmokeTests
         _factory = factory;
     }
 
-    [Fact]
-    public async Task HealthEndpoint_Is200()
+    [Theory]
+    [InlineData("/health")]
+    // The /api/auth/config route is the cheapest public probe of the BFF /api prefix; the other
+    // BFF routes (hubs, leaderboards) require setup that this fixture intentionally doesn't provide.
+    [InlineData("/api/auth/config")]
+    // §2.1: Microsoft.AspNetCore.OpenApi must publish the schema doc.
+    [InlineData("/openapi/v1.json")]
+    public async Task PublicProbe_Is2xx(string path)
     {
         using var client = _factory.CreateClient();
-        var response = await client.GetAsync("/health");
-        response.EnsureSuccessStatusCode();
-    }
-
-    [Fact]
-    public async Task ApiPrefix_RoutesAreReachable()
-    {
-        using var client = _factory.CreateClient();
-
-        // The /api/auth/config route is the cheapest public probe; the other
-        // BFF routes (hubs, leaderboards) require setup that this fixture
-        // intentionally doesn't provide.
-        var config = await client.GetAsync("/api/auth/config");
-        config.EnsureSuccessStatusCode();
-    }
-
-    [Fact]
-    public async Task OpenApiDocument_IsPublished()
-    {
-        using var client = _factory.CreateClient();
-        var response = await client.GetAsync("/openapi/v1.json");
-
-        // §2.1: Microsoft.AspNetCore.OpenApi must publish the schema doc.
+        var response = await client.GetAsync(path);
         response.EnsureSuccessStatusCode();
     }
 }

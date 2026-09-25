@@ -296,6 +296,7 @@ internal static class GameServicesExtensions
                 sp.GetRequiredService<IOptions<JevOptions>>().Value.DailyCallsPerIdentity, clock.GetUtcNow, store));
         });
         services.AddSingleton<ArenaMatchRegistry>();
+        services.AddSingleton<CreatureLibraryStore>();
         services.AddSingleton<IHostedService>(sp => new AiTokenBudgetFlushService(
             sp.GetRequiredService<JevCallAllowance>().Budget,
             sp.GetRequiredService<IOptions<AiTokenBudgetOptions>>(),

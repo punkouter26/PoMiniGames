@@ -48,6 +48,9 @@ public sealed class StorageInitializer
         // PoJevArena's daily Jev call cap (same shape as AiTokenLedger). Name must match
         // JevCallAllowance.TableName.
         "PoJevArenaCallLedger",
+        // PoJevArena public creature library (one partition). Name must match
+        // CreatureLibraryStore.TableName.
+        "PoJevArenaCreatures",
     ];
 
     /// <summary>Blob containers used by the consolidated games.</summary>

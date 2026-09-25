@@ -3,6 +3,7 @@ using System.Diagnostics.Metrics;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
+using PoMiniGames.Domain.Services;
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.PoJevArena.Jev;
 using PoMiniGames.Shared.Games.PoJevArena;
@@ -39,7 +40,7 @@ public static class PoJevArenaEndpoints
             .Produces<ArenaStatus>()
             .RequireRateLimiting("pojevarena");
 
-        group.MapPost("/matches", RegisterMatch)
+        group.MapPost("/matches", RegisterMatchAsync)
             .WithName("PoJevArenaRegisterMatch")
             .WithSummary("Freeze two 10-creature rosters into a match and issue its id and seed")
             .Produces<ArenaMatchTicket>()
@@ -57,8 +58,163 @@ public static class PoJevArenaEndpoints
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .RequireRateLimiting("pojevarena-decide");
 
+        group.MapPost("/matches/{matchId}/result", ReportResultAsync)
+            .WithName("PoJevArenaReportResult")
+            .WithSummary("Report a finished match once; updates each library creature's win/loss record")
+            .Produces<ArenaResultReceipt>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .RequireRateLimiting("pojevarena");
+
+        // ── Shared creature library ───────────────────────────────────────
+        group.MapGet("/creatures", ListCreaturesAsync)
+            .WithName("PoJevArenaListCreatures")
+            .WithSummary("The public creature library (sort=new|used|winrate, q=name filter)")
+            .Produces<ArenaCreature[]>()
+            .RequireRateLimiting("leaderboard-read");
+
+        group.MapPost("/creatures", CreateCreatureAsync)
+            .WithName("PoJevArenaCreateCreature")
+            .WithSummary("Save a creature to the public library")
+            .Produces<ArenaCreature>(StatusCodes.Status201Created)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .RequireRateLimiting("pojevarena");
+
+        group.MapPut("/creatures/{id}", UpdateCreatureAsync)
+            .WithName("PoJevArenaUpdateCreature")
+            .WithSummary("Edit one of your own creatures")
+            .Produces<ArenaCreature>()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .RequireRateLimiting("pojevarena");
+
+        group.MapDelete("/creatures/{id}", DeleteCreatureAsync)
+            .WithName("PoJevArenaDeleteCreature")
+            .WithSummary("Delete one of your own creatures")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .RequireRateLimiting("pojevarena");
+
         return app;
     }
+
+    private static async Task<IResult> ListCreaturesAsync(
+        HttpContext http, CreatureLibraryStore library, string? sort, string? q, CancellationToken ct)
+    {
+        var owner = Owner(http);
+        var viewer = owner is null ? null : CreatureLibraryStore.OwnerKeyFor(owner.Value.UserId);
+        return Results.Ok(await library.ListAsync(viewer, sort, q, ct));
+    }
+
+    private static async Task<IResult> CreateCreatureAsync(
+        ArenaCreatureDraft draft, HttpContext http, CreatureLibraryStore library, CancellationToken ct)
+    {
+        var owner = Owner(http);
+        if (owner is null) return Results.Unauthorized();
+
+        var validation = PoJevArenaRules.Validate(draft);
+        if (!validation.IsValid) return Invalid(validation.Error);
+
+        var ownerName = DisplayNameSanitizer.Sanitize(owner.Value.DisplayName, fallback: "Player").Value;
+        var (result, creature) = await library.CreateAsync(
+            CreatureLibraryStore.OwnerKeyFor(owner.Value.UserId), ownerName, validation.Creature!, ct);
+        return result switch
+        {
+            LibraryWrite.Ok => Results.Created($"/api/pojevarena/creatures/{creature!.Id}", creature),
+            LibraryWrite.LimitReached => Results.Problem(statusCode: StatusCodes.Status409Conflict, title: "library-limit",
+                detail: $"You can keep {PoJevArenaRules.MaxCreaturesPerOwner} creatures; delete one to save another."),
+            _ => LibraryOffline(),
+        };
+    }
+
+    private static async Task<IResult> UpdateCreatureAsync(
+        string id, ArenaCreatureDraft draft, HttpContext http, CreatureLibraryStore library, CancellationToken ct)
+    {
+        var owner = Owner(http);
+        if (owner is null) return Results.Unauthorized();
+
+        var validation = PoJevArenaRules.Validate(draft);
+        if (!validation.IsValid) return Invalid(validation.Error);
+
+        var (result, creature) = await library.UpdateAsync(
+            CreatureLibraryStore.OwnerKeyFor(owner.Value.UserId), id, validation.Creature!, ct);
+        return WriteResult(result, () => Results.Ok(creature));
+    }
+
+    private static async Task<IResult> DeleteCreatureAsync(
+        string id, HttpContext http, CreatureLibraryStore library, CancellationToken ct)
+    {
+        var owner = Owner(http);
+        if (owner is null) return Results.Unauthorized();
+
+        var result = await library.DeleteAsync(CreatureLibraryStore.OwnerKeyFor(owner.Value.UserId), id, ct);
+        return WriteResult(result, Results.NoContent);
+    }
+
+    private static async Task<IResult> ReportResultAsync(
+        string matchId,
+        ArenaMatchResult result,
+        HttpContext http,
+        ArenaMatchRegistry registry,
+        CreatureLibraryStore library,
+        ILoggerFactory loggers,
+        CancellationToken ct)
+    {
+        var owner = Owner(http);
+        if (owner is null) return Results.Unauthorized();
+
+        if (result.Winner is not ("blue" or "red" or "draw") || !double.IsFinite(result.DurationSeconds) || result.DurationSeconds < 0)
+        {
+            return Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "result",
+                detail: "Winner must be blue, red or draw.");
+        }
+
+        var match = registry.Find(matchId, owner.Value.UserId);
+        if (match is null)
+        {
+            return Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "match-expired",
+                detail: "This match is not live on the server any more, so its result cannot be recorded.");
+        }
+
+        switch (match.TryClaimResult())
+        {
+            case ArenaResultGate.AlreadyReported:
+                return Results.Problem(statusCode: StatusCodes.Status409Conflict, title: "already-reported");
+            case ArenaResultGate.TooFewDecisions:
+                return Results.Problem(statusCode: StatusCodes.Status422UnprocessableEntity, title: "too-few-decisions",
+                    detail: $"A match needs at least {ArenaMatchRegistry.MinDecisionsForResult} Jev decisions to count.");
+        }
+
+        if (!await library.ApplyResultAsync(match.Roster.Blue, match.Roster.Red, result.Winner, ct)) return LibraryOffline();
+
+        loggers.CreateLogger(typeof(PoJevArenaEndpoints)).MatchFinished(match.MatchId, result.Winner, match.Decisions, match.CostUsd);
+        return Results.Ok(new ArenaResultReceipt(true));
+    }
+
+    private static IResult WriteResult(LibraryWrite result, Func<IResult> ok) => result switch
+    {
+        LibraryWrite.Ok => ok(),
+        LibraryWrite.NotFound => Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "creature-not-found"),
+        LibraryWrite.Forbidden => Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "not-your-creature"),
+        _ => LibraryOffline(),
+    };
+
+    private static IResult Invalid(string? error) =>
+        Results.Problem(statusCode: StatusCodes.Status422UnprocessableEntity, title: error ?? "invalid",
+            detail: "The creature breaks a library rule.");
+
+    private static IResult LibraryOffline() =>
+        Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "library-offline",
+            detail: "The creature library is unreachable right now.");
 
     private static async Task<IResult> StatusAsync(
         HttpContext http, IJevClient jev, JevCallAllowance allowance, CancellationToken ct)
@@ -70,8 +226,13 @@ public static class PoJevArenaEndpoints
         return Results.Ok(new ArenaStatus(jev.IsConfigured, verdict.Limit, verdict.Used, verdict.Remaining, verdict.ResetUtc));
     }
 
-    private static IResult RegisterMatch(
-        ArenaMatchRequest request, HttpContext http, IJevClient jev, ArenaMatchRegistry registry)
+    private static async Task<IResult> RegisterMatchAsync(
+        ArenaMatchRequest request,
+        HttpContext http,
+        IJevClient jev,
+        ArenaMatchRegistry registry,
+        CreatureLibraryStore library,
+        CancellationToken ct)
     {
         var owner = Owner(http);
         if (owner is null) return Results.Unauthorized();
@@ -84,8 +245,13 @@ public static class PoJevArenaEndpoints
                 detail: $"Each team needs exactly {PoJevArenaCatalog.TeamSize} creatures.");
         }
 
-        var blue = Resolve(request.BlueIds);
-        var red = Resolve(request.RedIds);
+        var libraryIds = request.BlueIds.Concat(request.RedIds)
+            .Where(id => !id.StartsWith(PoJevArenaCatalog.PresetPrefix, StringComparison.Ordinal));
+        var fromLibrary = await library.GetManyAsync(libraryIds, ct);
+        if (fromLibrary is null) return LibraryOffline();
+
+        var blue = Resolve(request.BlueIds, fromLibrary);
+        var red = Resolve(request.RedIds, fromLibrary);
         if (blue is null || red is null)
         {
             return Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "unknown-creature",
@@ -170,13 +336,13 @@ public static class PoJevArenaEndpoints
         return Results.Ok(new ArenaDecideResponse(decisions, Math.Max(0, verdict.Remaining - callable), notice));
     }
 
-    /// <summary>Presets resolve from the catalog; library ids are wired in with the creature store.</summary>
-    private static ArenaCreature[]? Resolve(string[] ids)
+    /// <summary>Presets from the catalog, everything else from the library snapshot; null if any id is unknown.</summary>
+    private static ArenaCreature[]? Resolve(string[] ids, Dictionary<string, ArenaCreature> fromLibrary)
     {
         var resolved = new ArenaCreature[ids.Length];
         for (var i = 0; i < ids.Length; i++)
         {
-            var creature = PoJevArenaCatalog.FindPreset(ids[i]);
+            var creature = PoJevArenaCatalog.FindPreset(ids[i]) ?? fromLibrary.GetValueOrDefault(ids[i] ?? "");
             if (creature is null) return null;
             resolved[i] = creature;
         }

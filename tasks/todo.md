@@ -42,7 +42,7 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
   - `EndpointRouteExtensions.cs` wiring.
   - Add registry rows to the T3 theory (one-shot, owner-only, 40-decision minimum, TTL via FakeTimeProvider).
 - [x] **Checkpoint C1:** (real Jev smoke: 2 units ok, 330-420 ms, $0.0000315/call) build; `--filter PoJevArena` Unit; ceilings; restart host → `/health` 200; hit `/api/pojevarena/status` with fake auth.
-- [ ] **T5 Creature library.**
+- [x] **T5 Creature library.**
   - `CreatureLibraryStore.cs`.
   - Creature routes plus the result route (stat increments) in `PoJevArenaEndpoints.cs`.
   - `StorageInitializer.cs` adds the `PoJevArenaCreatures` table.

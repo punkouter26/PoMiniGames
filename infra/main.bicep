@@ -30,6 +30,10 @@ param microsoftAuthApiClientId string = ''
 @description('Entra ID tenant id used to compose the authority URL (defaults to the deploying tenant)')
 param microsoftAuthTenantId string = tenant().tenantId
 
+@secure()
+@description('OpenRouter API key for Jev (PoMiniGames--Jev--ApiKey), required by PoJevArena. Empty leaves the existing Key Vault secret as it is.')
+param jevApiKey string = ''
+
 var tags = {
   'azd-env-name': name
 }
@@ -88,6 +92,7 @@ module kvSecrets './kv-secrets.bicep' = {
     keyVaultName: sharedKeyVaultName
     storageAccountName: resources.outputs.STORAGE_ACCOUNT_NAME
     aiFoundryEndpoint: resources.outputs.AI_FOUNDRY_ENDPOINT
+    jevApiKey: jevApiKey
   }
 }
 

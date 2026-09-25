@@ -48,13 +48,13 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
   - `StorageInitializer.cs` adds the `PoJevArenaCreatures` table.
   - Integration test `PoJevArenaLibraryTests`, one theory: round-trip, owner-only edit and delete, cap 25 → 409,
     parallel result increments commute. It uses the factory's `TableServiceClient` and guards on `DockerAvailable`.
-- [ ] **T6 Contract + infra.**
+- [x] **T6 Contract + infra.**
   - E2E-API `PoJevArenaContractTests`, one theory over `(method, path, authed, body, expected)`: anonymous → 401;
     authed without antiforgery → 403; authed + armed bad body → 400/422. Set the `X-Fake-User` header first, then
     `ArmAntiforgeryAsync()`.
   - Restore the conditional `jevApiKey` secret in `infra/kv-secrets.bicep`, `infra/main.bicep` and
     `infra/main.parameters.json` from `2235ed7d^`.
-- [ ] **Checkpoint C2:** Integration and E2E-API `--filter PoJevArena` (Azurite up); ceilings.
+- [x] **Checkpoint C2:** Integration and E2E-API `--filter PoJevArena` (Azurite up); ceilings.
 - [ ] **T7 Sim + abilities** (`sim.js`, `abilities.js`).
   - Scratch node harness in the scratchpad, written first so it fails first. It checks: an ability-less unit kills by
     melee; every ability triggers; the damage-pipeline order; the 3:00 HP% rule; no NaN over 10,800 ticks;

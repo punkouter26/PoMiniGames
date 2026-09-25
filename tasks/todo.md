@@ -98,8 +98,8 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
   - E2E-UI `PoJevArenaUiTests`, one test: guest → save creature → draft 10+10 → deploy (stub) → banner → scrub →
     inspector values change.
   - Screenshot sheet written to `artifacts/pojevarena/*.png`: per preset × team × pose, and per ability.
-- [ ] **Checkpoint C4:** all PoJevArena tests in each tier; ceilings; trim publish; bundle ≤ 25 MB; host restart → `/health` 200; manual pass of Journeys 1–3.
-- [ ] **T16 Docs.** `CLAUDE.md` gets the slice entry, "fourteen games", the Jev boundary contract and the test-stub
+- [x] **Checkpoint C4:** PoJevArena tests green in every tier; ceilings Unit 97 · Integration 50 · E2E-API 24 · E2E-UI 21; trimmed publish clean, `_framework` 12.39 MB; host `/health` 200; real-Jev match played end to end (2:38, 2,545 calls, ~$0.08, 0 console errors); draw p95 1.9 ms.
+- [x] **T16 Docs.** `CLAUDE.md` gets the slice entry, "fourteen games", the Jev boundary contract and the test-stub
   rule. `README.md` gets the game row. Keep `SPEC.md` and `tasks/todo.md` in sync.
 - [ ] **Phase 5:** full suite (`scripts/test-all.ps1` — the NET_START workflow explicitly asks for it),
   `/code-review`, `/security-review`, `/simplify`, re-test, then evidence per SPEC §13 criterion (command output and

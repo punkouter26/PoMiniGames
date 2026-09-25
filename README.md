@@ -22,6 +22,7 @@ AI-powered games.
 | PoRacer | Canvas racer with WebGL effects, solo races, and a multiplayer lobby |
 | PoSports | Sprite-based sports mini-game |
 | PoVoxelStrike | Third-person survival shooter with fully destructible voxel structures |
+| PoJevArena | Design creatures, draft 10 v 10, and watch TypeSafe's Jev make every tactical call; post-match Black Box scrubber |
 
 ## Quick start
 

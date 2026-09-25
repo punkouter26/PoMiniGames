@@ -1,85 +1,68 @@
-# Capability Map — PoCabinet (Cockpit-View Political Satire Racer)
+# Capability Map — PoJevArena (10v10 Jev-Driven Creature Battle)
 
-PoCabinet ships as 9 cohesive, testable modules inside the PoMiniGames framework. Arrows denote build-order dependencies (a module is implemented only after its prerequisites exist and pass tests).
+PoJevArena ships as 9 modules (1–8 plus 5b, creature art) and one prerequisite repair. An arrow means the module at its tail must exist and pass
+its tests before the module at its head is built. The PoCabinet map is in git history
+(`git show 438800e7:CAPABILITY-MAP.md`).
 
 ```mermaid
 graph TD
-    M1[1. Track Geometry & Themed Environments] --> M2[2. Vehicle Physics & Cockpit Interior]
-    M1 --> M3[3. AI Roster Personalities & Driving Heuristics]
-    M2 --> M3
-    M3 --> M5[5. Wire Protocol & Multiplayer Snapshots]
-    M4[4. Scripted Dialogue System] --> M5
-    M5 --> M6[6. Career Progression & Save State]
-    M5 --> M7[7. Track-Partitioned Leaderboards & Persistence]
-    M5 --> M8[8. SignalR Multiplayer Lobby & Race Hub]
-    M1 --> M9[9. Native Blazor UI: Track Selector, Paint Shop, Championship View]
-    M2 --> M9
-    M6 --> M9
-    M7 --> M9
-    M8 --> M9
+    M0[0. Unit-tier ceiling repair] --> M1
+    M1[1. Shared contracts & catalogs] --> M2[2. Jev boundary + allowance]
+    M1 --> M3[3. Creature library store & endpoints]
+    M2 --> M4[4. Decision proxy + match registry]
+    M3 --> M4
+    M1 --> M5[5. JS sim + abilities]
+    M5 --> M5b[5b. Creature art & animation]
+    M5 --> M6[6. JS scheduler + Black Box]
+    M5b --> M7
+    M4 --> M6
+    M3 --> M7[7. Blazor UI & modes]
+    M6 --> M7
+    M7 --> M8[8. Platform wiring, infra & docs]
 ```
 
 ---
 
 ## Module Directory
 
-| # | Module | Location | Primary Responsibilities | Test Surface | Depends On |
-|---|--------|----------|--------------------------|--------------|------------|
-| **1** | **Track Geometry & Themed Environments** | `src/PoMiniGames.API/Features/PoCabinet/PoCabinetTrackRegistry.cs`, `PoCabinetTrackData.cs`; `src/PoMiniGames.Client/wwwroot/js/pocabinet/scene.js` | 3 themed tracks (Capitol Speedway asphalt, Mar-a-Lago GP beachside, Press Briefing 500 podium stadium) as server spline + client three.js scene base. Per-track atmospheric lighting, sky color, fog density. Three.js material setup following PoEcosystem Lambert pattern (`normal_fragment_begin` for normal-dependent shader code). | Hermetic C# unit tests: closed-loop splines, checkpoint ordering, wall normal consistency. Visual audit (browser) for theme correctness, no GL state leak on track switch. | — |
-| **2** | **Vehicle Physics & Cockpit Interior** | `src/PoMiniGames.API/Features/PoCabinet/PoCabinetSim.cs`; `src/PoMiniGames.Client/wwwroot/js/pocabinet/cockpit.js` | Server-authoritative car physics: throttle, brake, steering, grip, speed clamping, wall collisions, surface zones (asphalt, sand, gravel). Cockpit interior (steering wheel, hood, dashboard, RPM/speed gauges, rear-view mirror) rendered as three.js primitives. Camera tied to car heading with damping. | Hermetic C# unit tests: speed clamping, grip degradation, wall collision resolution, lap counting. Three.js scene audit: cockpit assets mount/unmount cleanly, no leaks on car wipe. | 1 |
-| **3** | **AI Roster Personalities & Driving Heuristics** | `src/PoMiniGames.API/Features/PoCabinet/PoCabinetAiDriver.cs`, `PoCabinetSim.cs` | 4 named officials (Sean S., Steve B., Bill B., Mike P.) with distinct personality parameters: racing line offset, braking aggression, collision tolerance, drafting affinity. Look-ahead steering with marshal rescue on stall. Each official's driving produces visibly different lap patterns. | Hermetic C# unit tests: each personality completes laps without stall, steering variance between officials, marshal rescue timer. | 1, 2 |
-| **4** | **Scripted Dialogue System** | `src/PoMiniGames.API/Features/PoCabinet/PoCabinetDialogue.cs`; `src/PoMiniGames.Client/wwwroot/js/pocabinet/dialogue.js` | Per-official pools of pre-race speeches (~8 each), mid-race barks (~12 each), post-race quips (~6 each). Triggered by race events (pre-race countdown, lap transitions, position changes, finish). Hand-authored content, no AI generation. | Unit tests: dialogue selection is deterministic by seed, pool exhaustion falls back gracefully, content scan rejects slurs/hate speech per Microsoft content policies. | — |
-| **5** | **Wire Protocol & Multiplayer Snapshots** | `src/PoMiniGames.Shared/Games/PoCabinetShared.cs` | DTOs for race state (cars, positions, lap counts, dialogue cues), join/leave events, championship progression, leaderboard rows. Snapshot shape sized for ≤ 2 KB per tick at 8 cars. | Unit tests: JSON wire size, enum string compatibility, snapshot immutability. | 3, 4 |
-| **6** | **Career Progression & Save State** | `src/PoMiniGames.Client/Games/PoCabinet/PoCabinetCareerState.cs`; `src/PoMiniGames.API/Features/PoCabinet/PoCabinetCareerEndpoints.cs` | Linear 3-race championship state machine: Capitol Speedway → Mar-a-Lago GP → Press Briefing 500. Top-3 finish advances; winning the final unlocks the gold livery + trophy. Persists to `localStorage` (player device) with optional server-side sync via `/api/pocabinet/career` endpoint for cross-device resume. | Unit tests: state transitions, advance gating, trophy unlock, localStorage round-trip. E2E-API: career endpoint contract. | 5 |
-| **7** | **Track-Partitioned Leaderboards & Persistence** | `src/PoMiniGames.Domain/Models/PoCabinetHighScore.cs`; `src/PoMiniGames.Infrastructure/Services/StorageService.cs` (extension); `src/PoMiniGames.API/Features/PoCabinet/PoCabinetScoreEndpoints.cs` | Azure Table Storage `PoCabinetScores` partitioned by `TrackId`. REST `/api/pocabinet/scores?track={trackId}` (anonymous reads, authed writes under `pocabinet` rate-limit policy). Best-lap ranking per track. | Integration tests (Azurite): row partitioning, ETag-update on overwrite, rate-limit cooldown. E2E-API: query validation + 401/200 status contract. | 5 |
-| **8** | **SignalR Multiplayer Lobby & Race Hub** | `src/PoMiniGames.API/Features/PoCabinet/PoCabinetLobbyHub.cs`, `PoCabinetRaceHub.cs`, `PoCabinetLobbyService.cs`, `PoCabinetRaceRegistry.cs` | Lobby creation with 8-char join code (PoRacer `PoRacerRaceRegistry` pattern). Up to 8 players per race, claim-derived seats. Snapshot at 30 Hz deterministic tick (PoRacer pattern). Lobby times out after 5 minutes idle. Demo Elo ladder via `PoCabinetElo` table, increment-on-finish (PoBrawl pattern). | Unit tests: lobby state machine, seat binding, Elo increment math. E2E-API: lobby hub negotiate contract. | 5 |
-| **9** | **Native Blazor UI** | `src/PoMiniGames.Client/Games/PoCabinet/{PoCabinetPage.razor, PoCabinetTrackSelector.razor, PoCabinetPaintShop.razor, PoCabinetChampionshipView.razor, PoCabinetLobby.razor}` | Track selector (3 cards with difficulty, length, preview), paint shop (4 liveries × 4 colors, persisted to `localStorage`), championship tracker (current stage, trophy status, gold livery unlock), multiplayer lobby (join code entry, seat list), race HUD (speed, RPM, gear, lap, position, dialogue bubbles). Native Blazor, semantic CSS tokens, accessibility (WCAG AA, full keyboard + touch). No Radzen. | Component unit tests: state binding, accessibility, keyboard nav. E2E-UI: route renders, race starts, lobby accepts join code. | 1, 2, 6, 7, 8 |
-
----
-
-## Build & Execution Sequence
-
-```
-Module 1 (Track Geometry & Theming)
-   │
-   ├──► Module 2 (Vehicle Physics & Cockpit Interior)
-   │       │
-   │       └──► Module 3 (AI Roster Personalities)
-   │               │
-   │               ├──► Module 5 (Wire Protocol & Snapshots) ◄── Module 4 (Dialogue System)
-   │               │
-   │               ├──► Module 6 (Career Progression)
-   │               ├──► Module 7 (Leaderboards)
-   │               └──► Module 8 (Multiplayer Lobby)
-   │                       │
-   │                       └──► Module 9 (Native Blazor UI)
-```
-
-Modules 4 (Dialogue) and 6/7/8 are independent of 1/2/3 in code terms but ship after 5 (Wire Protocol) so the dialogue events and race state flow through the same wire. Build order in `tasks/todo.md` reflects this.
+| # | Module | Location | Responsibilities | Test surface | Depends on |
+|---|---|---|---|---|---|
+| **0** | Unit-tier ceiling repair | `tests/PoMiniGames.Unit/**` | Bring Unit from 104 back to ≤ 96 methods by folding related facts into theories, with no assertions dropped. This fixes today's red CI gate and makes room for Module 1–4 tests | `scripts/test-ceilings.ps1`; every folded test still passes | — |
+| **1** | Shared contracts & catalogs | `src/PoMiniGames.Shared/Games/PoJevArenaShared.cs` | **Ability registry** (the extension point: id, slot, cost, Jev option key and criterion, parameters); the three personality catalogs; base tactical options and target foci; stat bounds; the build-budget function; the five presets; wire DTOs (creature, unit decision request/result, match register/result, status); a source-generated JSON context | Covered by Module 2/3 theories (validation, budget, registry integrity, prompt building) | 0 |
+| **2** | Jev boundary + daily allowance | `src/PoMiniGames.API/Features/PoJevArena/Jev/*`, `JevPromptBuilder.cs`, `JevCallAllowance.cs` | `JevOptions` (`PoMiniGames:Jev`); a named `HttpClient` (1.5 s timeout, no retries); a process-wide 16-permit `ConcurrencyLimiter`; the prompt builder (validated structured input → state string + per-attack-type question set); response mapping; the durable 20k/day per-identity call cap over the ledger-store pattern (table `PoJevArenaCallLedger`); a stub client honoured only in the `Test` environment | Unit: prompt builder theory, response mapping theory, allowance theory. Integration: allowance survives a restart | 1 |
+| **3** | Creature library | `src/PoMiniGames.API/Features/PoJevArena/CreatureLibraryStore.cs`, `PoJevArenaEndpoints.cs` (creature routes) | Table `PoJevArenaCreatures` (partition `lib`); create/edit/delete for the owner only; 25-per-owner cap; names through `DisplayNameSanitizer`; list with sort (new / used / win rate) and search; counter increments via `TableConcurrency` | Unit: validation theory. Integration: round-trip + commuting increments. E2E-API: 401/403 contract rows | 1 |
+| **4** | Decision proxy + match registry | `ArenaMatchRegistry.cs`, `PoJevArenaEndpoints.cs` (status, matches, decisions, result) | Register a match (rosters frozen, seed issued); fan a 1–8 unit batch out to Jev in parallel through the limiter; per-unit success or failure; a whole-batch 429 when over allowance; per-match `usage.cost` sum; one-shot owner-only result that needs ≥ 40 decisions, and applies deployed/W/L/D increments | Unit: registry/allowance theory. E2E-API: contract rows. E2E-UI: exercised end-to-end with the stub | 2, 3 |
+| **5** | JS sim + abilities | `src/PoMiniGames.Client/wwwroot/js/pojevarena/{sim,abilities}.js` | Pure 60 Hz physics (§4.3 of SPEC): damping, elastic circle collisions with brace mass, walls, **melee for every creature** (wind-up, lunge, knockback, cooldown), one damage pipeline (invulnerable → shell → brace arc → poison), registry-driven ability handlers (spit, boulder, mend, brace, shell, dash), intent steering, match end and 3:00 HP% rule | Scratch `node` harness (not a tier): a scripted-decision match ends, an ability-less creature kills by melee, every ability fires, no NaN over 10,800 ticks | 1 |
+| **5b** | Creature art & animation | `wwwroot/js/pojevarena/{creatures,fx,render}.js` | Procedural silhouettes (body from mass and speed, features from abilities, face and mannerism from temperament, seeded pattern), cached per-team body bitmaps, an animation state machine (idle, move, wind-up, strike, ability, hit, shell, dash, panic, low-HP, death), per-ability fx, particles (cap 400), popups, decals, intent overlay, colour-independent team markers, reduced-motion path, a Factory preview loop | Playwright screenshot sheet (one row per preset per team per pose), a grey-scale identification check, render ≤ 8 ms p95 | 5 |
+| **6** | JS scheduler + Black Box | `wwwroot/js/pojevarena/{scheduler,blackbox,index}.js` | A 250 ms slot scheduler (unit slot = index mod 4, no overlapping in-flight requests); candidate computation; a .NET round trip via `DecideAsync`; hold-last-intent-on-failure with a stale timer; a typed-array frame recorder and decision event log; scrub/play/step/speed; pause when the tab is hidden; `window.PoJevArena` mount/deploy/stop/unmount lifecycle that releases listeners, the rAF loop and timers | Scratch `node` harness for the scheduler cadence (≤ 20 calls/s). E2E-UI: scrubber drives the canvas and inspector | 4, 5 |
+| **7** | Blazor UI & modes | `src/PoMiniGames.Client/Games/PoJevArena/*` | Page with `@page "/pojevarena"` and `"/pojevarena/{ModeSegment}"`, `GameShell` + `GameIntro`; Factory, Library (`<Virtualize>`), Roster trays (2P hot-seat hiding and hand-off), Jev Inspector, Black Box scrubber, status chip, banners from §10 of SPEC; roster `localStorage`; typed API client with source-gen JSON; demo loop | E2E-UI: Journey 1 with the stub; all three routes render | 3, 6 |
+| **8** | Platform wiring, infra & docs | `GameCatalog.cs`, `GameKey.cs` (client + Domain), `MainLayout.razor`, `engineLoader.js`, `StorageInitializer.cs`, `EndpointRouteExtensions.cs`, `GameServicesExtensions.cs`, `RateLimitingExtensions.cs`, `tests/Shared/TestBudgetGuard.cs`, `infra/kv-secrets.bicep`, `infra/main.bicep`, `infra/main.parameters.json`, `appsettings*.json`, `CLAUDE.md`, `README.md` | Home-page card; route prefixes (plus PoCabinet's missing prefix, per Open Question 2); engine registry; startup tables; rate policies `pojevarena` (30/min) and `pojevarena-decide` (300/min); the one `TestBudgetGuard` edit; the restored conditional Key Vault secret; the docs update | Build, trim audit, bundle budget, host boots with `/health` 200 | 7 (registration pieces land with the module that needs them) |
 
 ---
 
 ## Architectural Guardrails & Contracts
 
-1. **Server-Authoritative Simulation**: All car positions, speed, wall collisions, surface friction, lap counts, race finishes are computed strictly on the server in `PoCabinetSim.cs`. The client is a thin renderer receiving 30 Hz snapshots and emitting intent (steer/throttle/brake) inputs.
-
-2. **No AI Foundry, No LLM Token Spend**: All dialogue is hand-authored in `PoCabinetDialogue.cs`. The framework's AI infrastructure (`/api/infer`, Azure OpenAI deployments) is NOT used by PoCabinet — `PoCabinet:Features:UseMockAI` does not apply (no AI boundary exists).
-
-3. **No Real Likenesses**: Roster art is procedural / static stylized vector portraits in the flat-shaded spirit of the PoEcosystem palette. Azure AI image generation is OUT (content-filter risk + cost); first-name + last-initial naming (`Sean S.`, etc.) carries the satirical reference without claiming to depict a specific real person.
-
-4. **Test Tier Ceilings** (HARD, per [`CLAUDE.md`](CLAUDE.md)):
-   - Unit ≤ 100 (currently AT cap; PoCabinet requires upfront consolidation of existing tests before any additions).
-   - Integration ≤ 50 (47/50; ~3 slots free; PoCabinet target ≤ 2).
-   - E2E-API ≤ 25 (19/25; ~6 slots free; PoCabinet target ≤ 5).
-   - E2E-UI ≤ 25 (17/25; ~8 slots free; PoCabinet target ≤ 3).
-   - PoCabinet ceiling trip on any tier → consolidate, never raise.
-
-5. **Trim Audit Safety**: three.js scene uses pre-allocated `BufferGeometry` and shared materials — no reflection-based dispatch in WASM. Trim analyzer gate is run after Module 9 ships.
-
-6. **Bundle Budget**: PoCabinet adds three.js scene (`wwwroot/js/pocabinet/`) + cockpit primitives + 3 themed tracks. Estimated +1.5 MB raw, post-trim +800 KB. Within the 25 MB `_framework` budget.
-
-7. **Native Blazor, Zero Radzen**: All UI uses native Blazor + CSS design tokens (`--color-surface`, `--color-primary`, etc.). Per [`CLAUDE.md`](CLAUDE.md#L113), Radzen.Blazor is rejected for bundle size.
-
-8. **Anti-Cheat**: Race ticks reconcile on the server; client cannot inject final-position claims. Lobby `/negotiate` is anonymous (SignalR hub at own root); writes require antiforgery token per the framework pattern.
-
-9. **Anti-Forgery Note**: All `POST/PUT/DELETE /api/pocabinet/*` requires the synchroniser token (framework `AntiforgeryExtensions`). The open antiforgery 403 bug (per `/memories/repo/local-dev-notes.md`, found 2026-09-13) affects authed writes across ALL games — this is a framework bug, not PoCabinet's; PoCabinet integration tests must target the workaround path until the framework fix ships.
+1. **Jev is required, never simulated.** Outside the `Test` environment there is no decision source other than
+   Jev. A failed call means the unit holds its last intent. The stub exists only behind
+   `TestBudgetGuard` + `IsEnvironment("Test")`.
+2. **The proxy is not a pass-through.** The client sends numbers and catalog ids. The server validates them and writes
+   every word Jev sees. The API key never leaves the server.
+3. **Cost is bounded at three layers**: 1 Hz per unit (about 20 calls/s per match), a durable 20k calls per identity
+   per day, and a 16-permit process-wide concurrency limiter in front of an upstream whose rate limit is unpublished.
+4. **The browser owns the simulation; the server owns trust.** Physics, rendering and the Black Box are client-side and
+   never uploaded. The server only holds what must not be forged cheaply: the allowance, the library, and the
+   result gate (owner, one-shot, at least 40 paid decisions).
+5. **Counters are increments under an ETag**, never read-modify-write absolutes, the same as the PoBrawl demo Elo board
+   and the AI token ledger.
+6. **Storage failure degrades.** Library reads go empty, writes fail visibly, and there is no in-memory fallback.
+   This follows the 2026-09-12 decision recorded in `CLAUDE.md`.
+7. **Test tier ceilings are hard.** Unit is repaired first (Module 0). E2E-API is full, so PoJevArena extends an
+   existing contract theory rather than adding a method.
+8. **Trim-safe.** All client JSON goes through source-generated contexts. There are no new packages, and the engine is
+   plain JS loaded on demand, so the `_framework` bundle grows only by the Razor components.
+9. **Native Blazor, no Radzen.** Colours come from `app.css` tokens. Team colours are scheme-invariant canvas tokens.
+10. **Abilities are data plus one handler plus one visual.** The C# registry is the single source for validation,
+    cost and the Jev option; JS keys handlers and visuals by the same id. No code outside those three places may list
+    abilities by name, which is how "room for other abilities" stays true.
+11. **Melee is universal.** Every creature can `melee_charge`, and abilities only add options. Removing the offense
+    ability from a creature never leaves it unable to fight.

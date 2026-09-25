@@ -1,143 +1,115 @@
-# Implementation Plan — PoCabinet (Cockpit-View Political Satire Racer)
+# Implementation Plan — PoJevArena (10v10 Jev-Driven Creature Battle)
 
-## Architectural Decisions
+## Context
+The user wants the PoJevArena PRD built as a 14th mini-game inside PoMiniGames, following the patterns the other
+games use. The spec (`SPEC.md`) and module map (`CAPABILITY-MAP.md`) are approved. Their key decisions:
+- Real Jev is required, with no fallback; a failed call means the unit holds its last intent.
+- Units decide at 1 Hz, staggered.
+- The simulation runs in the browser, with a server proxy that builds every prompt itself.
+- 1player, 2player and demo modes.
+- A 20k/day call cap per identity.
+- A public creature library in Table Storage with win/loss stats and an 80-point build budget.
+- Universal melee plus an ability registry (offense and defense slots, 6 abilities, extensible).
+- Procedural animated creatures.
 
-### ADR-1: Server-Authoritative 3D Physics with three.js Render-Only Client
-- **Context**: PoCabinet is cockpit-view, requiring a 3D scene that includes a cockpit interior (wheel, hood, gauges, mirror) and a 3D track ahead with AI cars visible in the distance. The framework already has server-authoritative simulation (PoRacer) and three.js scene graphs (PoEcosystem), but PoCabinet combines both for the first time.
-- **Decision**: Keep physics + race state on the server in `PoCabinetSim.cs` (PoRacer pattern). The client is a thin three.js renderer that receives 30 Hz snapshots, mounts the cockpit + scene, and emits player intent. No physics runs in WASM.
-- **Rationale**: Preserves anti-cheat (client cannot inject position claims), keeps multiplayer deterministic across machines, and reuses the proven PoRacer server-tick pattern. The cockpit interior is rendered locally because it's player-only chrome (no peer sees your dashboard) — purely cosmetic.
+The user picked tools 1–14 (already in the repo) and added Verify.Xunit and FakeTimeProvider.
 
-### ADR-2: Three Themed Tracks as Server Spline + Client Three.js Scene
-- **Context**: Three distinct tracks (Capitol Speedway, Mar-a-Lago GP, Press Briefing 500) need different atmospheres (sky color, fog, lighting, ground material, side props). Track geometry is shared with peers; atmosphere can vary per client.
-- **Decision**: Track splines and checkpoints live on the server (`PoCabinetTrackRegistry.cs`). The client `scene.js` switches the three.js scene's atmosphere when a new `TrackId` arrives in the snapshot, but the spline itself is published once and reused.
-- **Rationale**: Deterministic physics require shared geometry. Atmosphere is a presentation concern that doesn't affect race fairness. Splitting this way keeps the wire snapshot small (TrackId is one enum value).
+On approval, the first action copies this plan into `tasks/plan.md` and the checklist below into `tasks/todo.md`,
+replacing the PoCabinet versions, which stay in git.
 
-### ADR-3: 4 Distinct AI Personalities via CLR Heuristics
-- **Context**: The framework already has 7 PoRacer AI personalities (look-ahead steering with tunable lateral offset, braking aggression, drafting affinity). PoCabinet needs 4 distinct officials that race distinctively enough that players can tell them apart at a glance.
-- **Decision**: Reuse PoRacer's `PoRacerAiDriver` parameter structure (`LookaheadDistance`, `LateralOffset`, `BrakingAggression`, `CollisionTolerance`, `DraftingAffinity`). Define each official as a frozen struct of those parameters. Reuse PoRacer's look-ahead steering math; no new AI engine.
-- **Rationale**: Code reuse over reinvention. The 4 officials share the same physics model as PoRacer's 7 bots; only their personality parameters differ. Distinctive racing comes from parameter choice, not from a new heuristic. Saves significant unit-test work too (existing PoRacer marshal-rescue + lap-completion tests can be adapted, not rewritten).
+## Tool selection (pinned)
+Already in use: Blazor built-ins, IJSRuntime/DotNetObjectReference, STJ source-gen, Minimal APIs + OpenAPI/Scalar,
+Azure.Data.Tables + `TableConcurrency`, Http.Resilience 10.7.0, RateLimiting, IMemoryCache/HybridCache,
+Serilog + LoggerMessage + OTel metrics, Blazored.LocalStorage 4.5.0, xUnit/FluentAssertions/NSubstitute,
+Testcontainers.Azurite + WebApplicationFactory, Playwright 1.50.0, coverlet.
 
-### ADR-4: Scripted Dialogue Pool, No AI Generation
-- **Context**: Per the user's choice (no AI integration), all dialogue is hand-authored. There are 4 officials × ~26 lines each = ~104 lines total. Dialogue must fire at correct race events and not repeat too often.
-- **Decision**: `PoCabinetDialogue.cs` defines per-official dictionaries keyed by `DialogueKind` (PreRace, PositionChange, LapFinish, RaceFinish). Selection is deterministic by `(officialId, raceTick)` seed so the same race always plays the same lines (testable). A `playedIndices` set prevents immediate repetition.
-- **Rationale**: Hand-authored content is deterministic, content-policy-compliant, and zero-cost. Deterministic seed-based selection enables unit tests to assert "race tick N plays line X". The pool is large enough (~26 per official) that players won't notice repetition within a 3-lap race.
+**New (Unit test project only, no WASM bundle impact):**
+- `Verify.Xunit` **31.12.5**. It depends on xunit.extensibility.execution 2.9.3, which matches the pinned xunit 2.9.3.
+- `Microsoft.Extensions.TimeProvider.Testing` **10.7.0**, the same release train as Http.Resilience 10.7.0.
 
-### ADR-5: Track-Partitioned Leaderboards + Demo Elo Table
-- **Context**: Scores must be partitioned by track (3 tables, or 1 table with composite row keys) to avoid mixing lap times from tracks of different lengths. Demo mode needs an Elo ladder that commutes under concurrent demo finishes (PoBrawl pattern).
-- **Decision**: Single `PoCabinetScores` table partitioned by `TrackId` (PoRacer pattern). Separate `PoCabinetElo` table for demo Elo; updates use `TableConcurrency.UpdateWithRetryAsync` with **increments**, never absolute-from-read (PoBrawl `PoBrawlFighterRatings` pattern). Two concurrent demo finishes compose; neither clobbers the other.
-- **Rationale**: Same pattern proven across two existing games. Increments commute under ETag retries; absolutes do not.
+Both go in `Directory.Packages.props`. Add `*.received.*` to `.gitignore` and commit `*.verified.txt`.
 
-### ADR-6: Native Blazor UI + Design Tokens, Zero Radzen
-- **Context**: PoCabinet needs 4 UI surfaces (track selector, paint shop, championship view, lobby). The framework mandates zero Radzen per [`CLAUDE.md`](CLAUDE.md#L113). Bundle budget is 25 MB.
-- **Decision**: Native Blazor `.razor` components with scoped CSS, reusing `wwwroot/css/app.css` design tokens (`--color-surface`, `--color-primary`, `--color-accent-gold` for the political theme, etc.). Components use semantic HTML for accessibility; no third-party UI library.
-- **Rationale**: Matches framework convention. Keeps bundle small (zero added dependencies). Accessibility WCAG AA reachable with native Blazor + semantic markup.
+## Architecture decisions
+1. **Reuse, don't clone, the daily cap.**
+   - `AiTokenBudget` (`src/PoMiniGames.API/AI/AiTokenBudget.cs`) is already a generic durable per-identity daily counter.
+   - Register a second instance as a keyed singleton `"pojevarena"` built with the `(limit, clock, store)` constructor.
+   - Give `TableAiTokenLedgerStore` (`AI/AiTokenLedgerStore.cs:62-205`) an optional `tableName` constructor parameter,
+     defaulting to `"AiTokenLedger"`, so it can back table `PoJevArenaCallLedger`.
+   - Flush it with the existing `AiTokenBudgetFlushService`, registered through
+     `services.AddSingleton<IHostedService>(sp => new AiTokenBudgetFlushService(keyedBudget, …))`.
+     `AddHostedService<T>` uses TryAddEnumerable and would silently drop a second registration of the same type.
+   - Batch check: `verdict.Spent + units <= verdict.Limit`, then `Record(identity, successfulCalls)`.
+2. **The Jev boundary is feature-owned** (`Features/PoJevArena/Jev/`). It's restored from `git show 2235ed7d^:…`
+   and trimmed to one method: `EvaluateUnitAsync(state, questions, sessionId, user, ct)`, returning answers + usage,
+   or a typed failure.
+   - Named HttpClient: 1.5 s timeout, `AddStandardResilienceHandler` with retries disabled.
+   - A process-wide `ConcurrencyLimiter(16, queue 64)`.
+   - Endpoint `https://openrouter.ai/api/v1/systemone`, model `typesafe/jev-1.13`.
+3. **Stub only in the `Test` environment.** `PoMiniGames:Jev:UseStub` is honoured only when `env.IsEnvironment("Test")`.
+   This is stricter than `Features/Shared/AiMockFallback.ShouldUseMock`, which also allows Development. It's the one
+   `TestBudgetGuard` line. The stub answers deterministically from the offered options (first option, p=0.6, noul 0.1),
+   so E2E matches progress.
+4. **The prompt builder is pure and server-side** (`JevPromptBuilder`). Validated structured input goes in; the state
+   string and question set come out, both driven by the Shared ability registry. Verify snapshots per preset pin the
+   exact wording Jev sees.
+5. **Shared is the single source** (`PoMiniGames.Shared/Games/PoJevArenaShared.cs`) for the catalogs, the ability
+   registry, the budget function, bounds, the presets, the DTOs and the JsonContext. JS mirrors ids only.
+6. **Match registry** is `IMemoryCache` (15-min sliding) → rosters, owner, seed, decisionCount, reported. The result
+   gate is owner-only, one-shot and needs ≥ 40 decisions.
+7. **Engine** (`wwwroot/js/pojevarena/`) is a `window.PoJevArena` global via `engineLoader.js` `REGISTRY`, the PoCabinet
+   pattern.
+   - Canvases are passed by id.
+   - `DotNetObjectReference` with `[JSInvokable] DecideAsync(string json)` returns JSON: the PoEcosystem
+     `OnCloudThought` request/response pattern, so every API call rides the existing antiforgery and credentials
+     `HttpClient` pipeline.
+   - `sim.js` is pure and node-runnable.
+8. **Test room**: Unit is at 104/100 and E2E-API at 25/25, so T0 frees slots by folding tests. No cap is raised.
 
-### ADR-7: Blazored.LocalStorage for Career State (Player Device) + Optional Server Endpoint
-- **Context**: Career progression (current stage, trophies, gold livery unlock) is local-first but should optionally sync cross-device for signed-in users.
-- **Decision**: `PoCabinetCareerState.cs` wraps `ILocalStorageService` (Blazored.LocalStorage) for typed access to `currentStage`, `trophies`, `unlockedLiveries`. Optional `/api/pocabinet/career` POST endpoint syncs the same state to Azure Table Storage when signed in. Default behavior: local-only for guests, local+server for authed.
-- **Rationale**: Blazored.LocalStorage is the framework's de facto localStorage wrapper (already used by other games). Server sync is optional — guests park progress locally without auth friction.
+## Ten implementation examples (how the picks are used)
+1. **Virtualize library** — `<Virtualize Items="_filtered" ItemSize="84" Context="c"><CreatureCard Creature="c" .../></Virtualize>`.
+2. **Interop round trip** — JS `const r = await dotnet.invokeMethodAsync('DecideAsync', JSON.stringify(batch));` ↔
+   C# `[JSInvokable] public async Task<string> DecideAsync(string json) => JsonSerializer.Serialize(await _api.DecideAsync(_matchId, Deserialize(json)), ArenaJson.Default.DecideResponse);`
+3. **Source-gen JSON** — `[JsonSerializable(typeof(CreatureDto[]))] [JsonSerializable(typeof(DecideRequest))] internal sealed partial class ArenaJson : JsonSerializerContext;` with `JsonSourceGenerationOptions(CamelCase, UseStringEnumConverter = true)`.
+4. **Route group** — `var g = api.MapGroup("/pojevarena").WithTags("PoJevArena"); g.MapPost("/matches/{id}/decisions", Decide).RequireRateLimiting("pojevarena-decide");` returning `Results<Ok<DecideResponse>, NotFound, ProblemHttpResult>`.
+5. **Counter increments** — `TableConcurrency.UpdateWithRetryAsync<CreatureEntity>(table, "lib", id, () => throw …, e => { e.Deployed++; e.Wins += won; return true; }, ct)`.
+6. **Resilient named client** — `services.AddHttpClient("jev", c => c.BaseAddress = new(opts.Endpoint)).AddStandardResilienceHandler(o => { o.Retry.MaxRetryAttempts = 0; o.AttemptTimeout.Timeout = TimeSpan.FromMilliseconds(1500); });`. Check first whether `MaxRetryAttempts = 0` passes the options validator; if not, use `AddResilienceHandler` with timeout + circuit breaker only.
+7. **Concurrency gate** — `using var lease = await _limiter.AcquireAsync(1, ct); if (!lease.IsAcquired) return UnitFailure.Busy;`
+8. **Metrics + logs** — `Meter("PoMiniGames.PoJevArena")` with histogram `jev.latency.ms`, counters `jev.calls` and `jev.cost.usd`; `[LoggerMessage(EventId=…, Level=Warning, Message="Jev {Status} for {Unit}")]`.
+9. **Verify snapshot** — `[Theory][MemberData(nameof(Presets))] public Task JevPromptBuilder_BuildsStateAndOptions(string preset) => Verify(JevPromptBuilder.Build(Scenario(preset))).UseParameters(preset);`
+10. **FakeTimeProvider** — `var t = new FakeTimeProvider(new(2026,9,25,23,59,0,TimeSpan.Zero)); var b = new AiTokenBudget(20_000, t.GetUtcNow, store); … t.Advance(TimeSpan.FromMinutes(2)); (await b.CheckAsync(id)).Spent.Should().Be(0);`
 
-### ADR-8: Polly v8 Resilience for SignalR Reconnects + Transient HTTP
-- **Context**: Multiplayer races need to survive brief network blips. SignalR's built-in reconnect is good but doesn't retry the initial `/negotiate` if the server is briefly unreachable.
-- **Decision**: Configure `HttpClient` pipeline with Polly `AddPolicyHandler` for the lobby hub connection. Retry policy: 3 attempts, exponential backoff (250ms, 500ms, 1s), only on transient `HttpRequestException` or 5xx. No retry on 4xx (auth failures should surface immediately).
-- **Rationale**: Adds resilience without masking real errors. Polly v8 syntax is cleaner than v7 (`ResiliencePipelineBuilder`); aligns with .NET 10 idioms.
-
-### ADR-9: Trim-Safe three.js Mount (Static Geometry Cache)
-- **Context**: The publish step runs `PublishTrimmed=true` + `EnableTrimAnalyzer` (per [`CLAUDE.md`](CLAUDE.md)); any IL2xxx warning fails the CI build. three.js is reflection-heavy (`Mesh`/`Material` lookups by string), which can trip IL2xxx.
-- **Decision**: Pre-allocate all `BufferGeometry` instances at module-load time in `scene.js`/`cockpit.js`/`cars.js` and stash them in a frozen `GEOMETRY` constant. No per-race geometry construction. No reflection-based dispatch. Material colors are passed as constants, not via string lookup. If a trim warning is unavoidable, add the symbol to `TrimmerRoots.xml` with a comment explaining why.
-- **Rationale**: Avoids the trim analyzer's reflection-detection entirely. Cache-friendly for GC. Same approach as PoEcosystem's render modules.
-
----
-
-## Dependency Graph
-
-```mermaid
-graph TD
-    T0[T0: Test Suite Consolidation] --> T1
-    T1[T1: Track Geometry & Themed Environments] --> T2
-    T2[T2: Vehicle Physics & Cockpit Interior] --> T3
-    T3[T3: AI Roster & Scripted Dialogue] --> T4
-    T4[T4: Wire Protocol & Career State] --> T5
-    T4 --> T6
-    T5[T5: Track-Partitioned Leaderboards] --> T7
-    T6[T6: Multiplayer Lobby & SignalR Hubs] --> T7
-    T7[T7: Native Blazor UI] --> T8
-    T8[T8: Verification, Trim Audit, Bundle Check]
+## Dependency graph
 ```
+T0 ─► T1 ─► T2a ─► T2b ─► T2c ─► T3 ─► T4 ─► T5 ─► T6
+       └──► T7 ─► T8a ─► T8b ─► T9 ──────────────┐
+                                     T10 (design gate) ─► T11a ─► T11b ─► T12 ─► T13 ─► T14 ─► T15 ─► T16
+```
+The server track (T2–T6) and the engine track (T7–T9) are independent after T1. The UI (T11+) needs T5, T9 and the T10 design choice.
 
----
-
-## Top 10 Implementation Examples (referenced in tasks/todo.md)
-
-1. **three.js scene base** — `scene.js` mounts camera, lights, fog, themed environment per track.
-2. **Cockpit interior** — `cockpit.js` builds steering wheel, hood, RPM gauge, speedometer, rear-view mirror; teardown fn for race-end.
-3. **AI car procedural mesh** — `cars.js` flat-shaded body + wheels via `BufferGeometry`, tintable per official.
-4. **Blazored.LocalStorage career wrapper** — `PoCabinetCareerState.cs` typed accessor for `currentStage`, `trophies`, `unlockedLiveries`.
-5. **Polly SignalR retry pipeline** — `AddPolicyHandler` exponential backoff on transient `HttpRequestException`/5xx.
-6. **Server tick snapshot** — `PoCabinetSim.cs` Tick with pooled buffers + SignalR broadcast.
-7. **Race-event dialogue** — `PoCabinetDialogue.cs` keyed by `DialogueKind`, deterministic seed.
-8. **Lobby with claim-derived seats** — `PoCabinetLobbyService.cs` 8-char join codes, claim-derived identity.
-9. **Elo increment under ETag** — `PoCabinetEloService.cs` using `TableConcurrency.UpdateWithRetryAsync`.
-10. **Trim-safe three.js mount** — static `BufferGeometry` cache, no reflection-based dispatch.
-
----
-
-## Risk Table
-
+## Risks
 | Risk | Likelihood | Impact | Mitigation |
-|------|------------|--------|------------|
-| **Unit tier ceiling trips** (currently at 100/100) | High | Tests fail to compile | T0 consolidates ~15 existing tests via theory parameterization. Each task's test manifest is reviewed against headroom. |
-| **three.js bundle blowout** | Medium | Trim fails or exceeds 25 MB | Static `BufferGeometry` cache (ADR-9). TrimRoots.xml fallback with documented rationale. Bundle size measured in T8. |
-| **Shader compile error on a track** | Medium | That track unrenderable | Graceful fallback to low-poly wireframe per §10. Visual audit in T1 before any race logic depends on the scene. |
-| **Server tick desync** | Medium | Multiplayer race state diverges between clients | PoRacer's 30 Hz deterministic tick + ETag updates; PoCabinet reuses the same pattern. T8 includes a multiplayer smoke test (2 simulated clients racing the same seed). |
-| **Open antiforgery 403 bug** (framework-level, all games) | High | Authed writes 403 | Use `AntiforgeryTestExtensions.ArmAntiforgeryAsync()` in tests. E2E-API tests use the page-issued `fetch()` workaround per local-dev-notes. |
-| **AI personality overlap** (officials look the same) | Medium | Satirical flavor lost | T3 includes a "personality differentiation" test asserting ≥5° average heading delta between officials over a 3-lap race. |
-| **3D cockpit camera clipping on collision** | Low | Visual glitch | Camera shake is subtle (0.15s); cockpit interior is rendered from a fixed offset that doesn't penetrate walls (T2 unit test asserts camera position never enters a wall volume). |
-| **Blazored.LocalStorage not registered** | Low | Career state silently fails to persist | T4 includes a registration smoke test (`ILocalStorageService` resolves in DI). Falls back to in-memory state with a console warning if absent. |
-| **Polly retry masks real auth errors** | Low | Auth 4xx gets retried, hides bug | Polly policy explicitly excludes 4xx; only 5xx + `HttpRequestException`. T6 includes a test asserting 401 is not retried. |
-| **Dialogue pool exhaustion** | Low | All dialogue repeats | `playedIndices` set prevents immediate repeat; if pool is exhausted for a race, the system falls back to a generic "..." line. T3 unit test. |
+|---|---|---|---|
+| OpenRouter Jev rate limit unknown; 429s at 20 calls/s | Med | Units go stale | 16-permit limiter; smoke run measures the 429 rate; drop to 8 permits if > 1% (SPEC OQ4) |
+| Jev latency > 1 s makes 1 Hz decisions lag | Med | Sluggish tactics | 1.5 s timeout; hold intent; latency histogram; inspector shows staleness |
+| `MaxRetryAttempts = 0` rejected by resilience options validation | Med | Boot failure | Fall back to a custom pipeline (timeout + breaker) in T2c |
+| Test ceilings (Unit over, E2E-API full) | High | CI red | T0 folds 11 Unit and 2 E2E-API methods before any new test |
+| Canvas perf with 20 animated units + fx | Med | < 60 FPS | Cached body bitmaps, particle cap 400, render budget 8 ms measured in T8b |
+| Trim analyzer on new client code | Low | CI red | Source-gen JSON only; trim publish at checkpoints C3 and C6 |
+| Budget/ability balance makes one build dominant | Med | Stale meta | Costs are data; tuning is a registry edit (SPEC OQ6) |
+| Upstream key/credits (402) in prod | Low | Deploy disabled | `status` surfaces it; banner; Key Vault secret restored in T6 |
+| Verify snapshots + LF gate (`.gitattributes eol=lf`) | Low | Format churn | Verified files are text and LF; `*.received.*` ignored |
 
----
+The live checklist is [`tasks/todo.md`](todo.md).
+## Verification (end-to-end)
+- `dotnet build PoMiniGames.slnx` (0 warnings) and `dotnet format --verify-no-changes`.
+- Per tier: `dotnet test <tier> --filter "FullyQualifiedName~PoJevArena"`, then `pwsh scripts/test-ceilings.ps1`.
+- `docker compose up -d azurite`, then `dotnet run --project src/PoMiniGames.API/...`, then `/health` 200, then play
+  `/pojevarena/1player|2player|demo` in a browser. Without a key, expect "Jev unavailable". With a key, run a full
+  match and watch the logs for calls/s, 429 rate and summed cost.
+- Trim publish for IL2xxx and a `_framework` size check.
+- Screenshot sheet review for readability (SPEC criteria 15–16).
 
-## Checkpoints & Verification Gates
-
-- **Checkpoint A (T0–T2)**: Foundation. Verify Unit ceiling free (T0), track geometry math (T1), physics tick + cockpit mount (T2) all pass.
-- **Checkpoint B (T3–T4)**: AI + Protocol. Verify 4 officials race distinctively (T3), wire DTOs serialize cleanly (T4).
-- **Checkpoint C (T5–T6)**: Persistence + Networking. Verify leaderboards partition correctly + ETag updates commute (T5), lobby + race hubs handle 8 players (T6).
-- **Checkpoint D (T7–T8)**: UI + Verification. Verify all 4 routes render, race HUD reads correctly (T7); trim audit + bundle check + ceiling pass all green (T8).
-
-Each checkpoint gates the next task. A failing checkpoint stops the build.
-
----
-
-## Build & Execution Sequence
-
-```
-T0  Test Suite Consolidation (preflight)
-   │
-   ▼
-T1  Track Geometry & Themed Environments
-   │
-   ▼
-T2  Vehicle Physics & Cockpit Interior
-   │
-   ▼
-T3  AI Roster & Scripted Dialogue
-   │
-   ▼
-T4  Wire Protocol & Career State
-   │
-   ▼
-T5  Track-Partitioned Leaderboards
-   │
-   ▼
-T6  Multiplayer Lobby & SignalR Hubs
-   │
-   ▼
-T7  Native Blazor UI
-   │
-   ▼
-T8  Verification, Trim Audit, Bundle Check
-```
-
-Each task: Red → Green → Build → Verify (per the TDD discipline in `tasks/todo.md`). No skipping, no weakening tests, no mocking-away validation.
+## Standing notes
+- NET_START's "Radzen First" and `dotnet user-secrets` rules are overridden by `CLAUDE.md` (native Blazor; Key Vault or appsettings).
+- ponytail is a user-scope Claude Code plugin; the user installs it with `/plugin` if they want it. It is not part of this repo.
+- Commits go to `master`, one per task, in the casual commit style. No push without an explicit ask.

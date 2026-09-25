@@ -60,48 +60,37 @@ public sealed class AIFoundryCentralizationTests
     }
 
     [Fact]
-    public void AIFoundryClientFactory_ReturnsNull_WhenEndpointMissing()
+    public void AIFoundryClientFactory_NeverFabricatesAClient_AndStaysOneTypePerHost()
     {
-        var monitor = new TestOptionsMonitor<AIFoundryOptions>(new AIFoundryOptions
+        // Endpoint missing (deployment set): the factory must return null rather than invent a client.
+        var endpointless = new TestOptionsMonitor<AIFoundryOptions>(new AIFoundryOptions
         {
             Endpoint = string.Empty,
             DefaultDeployment = "gpt-4o-mini",
         });
+        new AIFoundryClientFactory(endpointless, NullLogger<AIFoundryClientFactory>.Instance)
+            .Client.Should().BeNull("an unconfigured foundry must NOT silently fabricate a client");
 
-        var factory = new AIFoundryClientFactory(monitor, NullLogger<AIFoundryClientFactory>.Instance);
-        factory.Client.Should().BeNull("an unconfigured foundry must NOT silently fabricate a client");
-    }
+        // Nothing configured at all: the chat-client cache resolves null for every game key.
+        var empty = new TestOptionsMonitor<AIFoundryOptions>(new AIFoundryOptions());
+        var cache = new AIFoundryChatClientCache(
+            new AIFoundryClientFactory(empty, NullLogger<AIFoundryClientFactory>.Instance), empty);
+        cache.Resolve(AIFoundryOptions.Games.FunQuiz).Should().BeNull();
+        cache.Resolve(AIFoundryOptions.Games.CoupleQuiz).Should().BeNull();
+        cache.Resolve(AIFoundryOptions.Games.Joker).Should().BeNull();
 
-    [Fact]
-    public void AIFoundryClientFactory_HasConsistentSingletonLifetime()
-    {
         // The factory must be a singleton — building two AzureOpenAIClient instances
         // (one per request) would double the underlying HTTPS connections and
-        // break the resilience pipeline's circuit breaker state.
-        var monitor = new TestOptionsMonitor<AIFoundryOptions>(new AIFoundryOptions
+        // break the resilience pipeline's circuit breaker state. Both instances expose the
+        // same singleton — the Lazy<T> inside the factory only initializes once per host.
+        var configured = new TestOptionsMonitor<AIFoundryOptions>(new AIFoundryOptions
         {
             Endpoint = "https://cog-pominigames-shared.openai.azure.com",
             DefaultDeployment = "gpt-4o-mini",
         });
-
-        var factory1 = new AIFoundryClientFactory(monitor, NullLogger<AIFoundryClientFactory>.Instance);
-        var factory2 = new AIFoundryClientFactory(monitor, NullLogger<AIFoundryClientFactory>.Instance);
-
-        // Both instances expose the same singleton — the Lazy<T> inside the
-        // factory only initializes once across the lifetime of the host.
+        var factory1 = new AIFoundryClientFactory(configured, NullLogger<AIFoundryClientFactory>.Instance);
+        var factory2 = new AIFoundryClientFactory(configured, NullLogger<AIFoundryClientFactory>.Instance);
         factory1.GetType().Should().Be(factory2.GetType());
-    }
-
-    [Fact]
-    public void AIFoundryChatClientCache_ResolvesNull_WhenFoundryNotConfigured()
-    {
-        var monitor = new TestOptionsMonitor<AIFoundryOptions>(new AIFoundryOptions());
-        var factory = new AIFoundryClientFactory(monitor, NullLogger<AIFoundryClientFactory>.Instance);
-        var cache = new AIFoundryChatClientCache(factory, monitor);
-
-        cache.Resolve(AIFoundryOptions.Games.FunQuiz).Should().BeNull();
-        cache.Resolve(AIFoundryOptions.Games.CoupleQuiz).Should().BeNull();
-        cache.Resolve(AIFoundryOptions.Games.Joker).Should().BeNull();
     }
 
     /// <summary>

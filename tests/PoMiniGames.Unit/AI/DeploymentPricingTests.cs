@@ -32,24 +32,15 @@ public sealed class DeploymentPricingTests
     }
 
     [Fact]
-    public void Empty_deployment_name_falls_through_to_Unknown()
+    public void Catalog_covers_every_deployment_and_degrades_safely()
     {
-        var pricing = DeploymentPricing.For("");
-        pricing.Should().BeSameAs(DeploymentPricing.Unknown);
-    }
+        // An empty deployment name falls through to the shared Unknown row rather than throwing.
+        DeploymentPricing.For("").Should().BeSameAs(DeploymentPricing.Unknown);
 
-    [Fact]
-    public void Negative_token_counts_are_clamped_to_zero()
-    {
         // Defensive: if a provider reports a negative number for any reason, the
         // diagnostic must not produce a negative cost row.
-        var pricing = DeploymentPricing.For("gpt-5.4-nano");
-        pricing.CostUsd(-100, -100).Should().Be(0d);
-    }
+        DeploymentPricing.For("gpt-5.4-nano").CostUsd(-100, -100).Should().Be(0d);
 
-    [Fact]
-    public void Catalog_covers_every_deployment_resolved_by_PoRacer_joker_etc()
-    {
         // If a deployment name leaks into the AiUsageAccumulator without a price,
         // /api/health/ai silently reports $0 for that row. Catch it at unit time
         // by pinning the names every game actually uses.

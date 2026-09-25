@@ -59,42 +59,23 @@ public sealed class HighScoreDescriptorTests
     }
 
     [Fact]
-    public void EveryBoard_MapsADefaultEntryWithoutThrowing()
+    public void EveryBoard_MapsDefaultEntryAndDeclaresValidRowKeyFields()
     {
         foreach (var board in Boards)
         {
             var entry = Activator.CreateInstance(board.EntryType)!;
 
             var map = () => ToFields(board, entry);
-
             map.Should().NotThrow($"{board.Name}.ToFields must handle a default {board.EntryType.Name}; " +
                                   "a board whose mapping throws rejects every submission with a 500");
-        }
-    }
 
-    [Fact]
-    public void EveryBoard_RowKeyFieldsExistInToFields()
-    {
-        // The failure this catches is quiet and total: DeterministicRowKey substitutes an empty
-        // value for a name ToFields never emits, so a typo'd or stale entry here doesn't throw —
-        // it makes every row on the board hash to the same RowKey and overwrite each other.
-        foreach (var board in Boards)
-        {
-            var entry = Activator.CreateInstance(board.EntryType)!;
-            var available = ToFields(board, entry).Keys;
-
-            RowKeyFields(board).Should().BeSubsetOf(
-                available,
-                $"every {board.Name}.RowKeyFields entry must name a field {board.EntryType.Name} actually emits");
-        }
-    }
-
-    [Fact]
-    public void EveryBoard_RowKeyFieldsAreNonEmptyAndDistinct()
-    {
-        foreach (var board in Boards)
-        {
+            // The failure this catches is quiet and total: DeterministicRowKey substitutes an empty
+            // value for a name ToFields never emits, so a typo'd or stale entry here doesn't throw —
+            // it makes every row on the board hash to the same RowKey and overwrite each other.
             var fields = RowKeyFields(board);
+            fields.Should().BeSubsetOf(
+                map().Keys,
+                $"every {board.Name}.RowKeyFields entry must name a field {board.EntryType.Name} actually emits");
             fields.Should().NotBeEmpty($"{board.Name} rows would all share one RowKey with no identity fields");
             fields.Should().OnlyHaveUniqueItems($"{board.Name} hashes each RowKey field once");
         }

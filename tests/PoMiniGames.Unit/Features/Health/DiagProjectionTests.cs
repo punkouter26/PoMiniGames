@@ -21,23 +21,30 @@ namespace PoMiniGames.Unit.Features.Health;
 /// </summary>
 public sealed class DiagProjectionTests
 {
-    [Fact]
-    public void Snapshot_OmitsCorsSection_WhenCORSisNotRegistered()
+    // Shape of the projection: which sections/keys must (or must never) appear. `cors` must stay
+    // absent because the single-origin host has no CORS policy to report; the AI Foundry rows must
+    // stay present, even unconfigured, because prod observability reads them.
+    [Theory]
+    [InlineData(null, "cors", false)]
+    [InlineData("integrations", "aiFoundryConfigured", true)]
+    [InlineData("keys", "aiFoundryEndpoint", true)]
+    [InlineData("keys", "aiDefaultDeployment", true)]
+    public void Snapshot_ExposesExactlyTheContractedFields(string? section, string property, bool expectedPresent)
     {
-        var json = SerializeSnapshot();
-        using var doc = JsonDocument.Parse(json);
-        doc.RootElement.TryGetProperty("cors", out _).Should().BeFalse(
-            "the single-origin host must never surface a `cors` field on /api/diag");
+        using var doc = JsonDocument.Parse(SerializeSnapshot());
+        var parent = section is null ? doc.RootElement : doc.RootElement.GetProperty(section);
+
+        parent.TryGetProperty(property, out _).Should().Be(expectedPresent,
+            $"`{section ?? "(root)"}.{property}` presence is part of the /api/diag contract");
     }
 
     [Fact]
-    public void Snapshot_Masks_AllSecretFields()
+    public void Snapshot_LeaksNoSecretsOrReflectionHelpers()
     {
         var json = SerializeSnapshot();
         using var doc = JsonDocument.Parse(json);
-        var keys = doc.RootElement.GetProperty("keys");
 
-        foreach (var prop in keys.EnumerateObject())
+        foreach (var prop in doc.RootElement.GetProperty("keys").EnumerateObject())
         {
             var value = prop.Value.GetString() ?? "(null)";
             value.Should().NotMatchRegex(@"KeyVaultSecret",
@@ -45,38 +52,11 @@ public sealed class DiagProjectionTests
             value.Should().NotMatchRegex(@"[A-Za-z0-9]{32,}",
                 $"the `{prop.Name}` field must be masked (raw 32-char+ token would indicate a leak)");
         }
-    }
-
-    [Fact]
-    public void Snapshot_SurfacesAIFoundry_AsIntegration()
-    {
-        var json = SerializeSnapshot();
-        using var doc = JsonDocument.Parse(json);
-
-        doc.RootElement.GetProperty("integrations").TryGetProperty("aiFoundryConfigured", out _)
-            .Should().BeTrue("the AI Foundry integration status must be surfaced for prod observability");
-    }
-
-    [Fact]
-    public void Snapshot_NeverContainsSystemReflectionHelpers()
-    {
-        var json = SerializeSnapshot();
 
         json.Should().NotContain("System.Reflection");
         json.Should().NotContain("RuntimeMethodHandle");
         json.Should().NotContain("Microsoft.AspNetCore.Builder");
         json.Should().NotContain("PoMiniGames.Health");
-    }
-
-    [Fact]
-    public void Snapshot_HasAIFoundryKeys_WhenUnconfigured()
-    {
-        var json = SerializeSnapshot();
-        using var doc = JsonDocument.Parse(json);
-        var keys = doc.RootElement.GetProperty("keys");
-
-        keys.TryGetProperty("aiFoundryEndpoint", out _).Should().BeTrue();
-        keys.TryGetProperty("aiDefaultDeployment", out _).Should().BeTrue();
     }
 
     private static string SerializeSnapshot()

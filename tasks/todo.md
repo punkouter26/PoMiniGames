@@ -24,7 +24,7 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
 - [x] **T2b Jev client.** `Jev/JevOptions.cs`, `Jev/JevWire.cs`, `Jev/JevClient.cs`, `Jev/StubJevClient.cs`, and test
   `JevResponse_MapsOrFails`. That theory uses a stub `HttpMessageHandler` and covers ok, missing key, unknown option,
   NaN, 401, 402, 429 and timeout.
-- [ ] **T2c Jev wiring.** In `GameServicesExtensions.cs`: options, named client, limiter, and Test-only stub selection.
+- [x] **T2c Jev wiring.** In `GameServicesExtensions.cs`: options, named client, limiter, and Test-only stub selection.
   Also `appsettings.json` (the `PoMiniGames:Jev` block with an empty key), `tests/Shared/TestBudgetGuard.cs`
   (`PoMiniGames:Jev:UseStub`) and `PoJevArenaLog.cs`. *Accept:* the host boots with no key and logs "Jev not configured".
 - [ ] **T3 Daily allowance.**

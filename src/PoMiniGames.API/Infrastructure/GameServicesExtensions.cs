@@ -5,8 +5,10 @@ using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoEcosystem;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoJoker.Storage;
+using PoMiniGames.Features.PoJevArena.Jev;
 using PoMiniGames.Features.PoRacer;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using PoMiniGames.Infrastructure.Services;
 
 namespace PoMiniGames.Infrastructure;
@@ -153,7 +155,7 @@ internal static class GameServicesExtensions
         });
         services.AddSingleton(sp =>
         {
-            var config = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<EloOptions>>();
+            var config = sp.GetRequiredService<IOptions<EloOptions>>();
             return new EloCalculator(config.Value);
         });
         // Head-to-head ratings for the PoBrawl demo board. A distinct calculator with its own
@@ -164,7 +166,7 @@ internal static class GameServicesExtensions
         services.AddOptions<PairwiseEloOptions>().BindConfiguration(PairwiseEloOptions.SectionName);
         services.AddSingleton(sp =>
         {
-            var config = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PairwiseEloOptions>>();
+            var config = sp.GetRequiredService<IOptions<PairwiseEloOptions>>();
             return new PairwiseEloCalculator(config.Value);
         });
 
@@ -255,6 +257,28 @@ internal static class GameServicesExtensions
         // the narrator follows the shared mock gate (PoEcosystem:Features:UseMockAI).
         services.AddSingleton<EcosystemWorldStore>();
         services.AddSingleton<IEcosystemChronicleService, EcosystemChronicleService>();
+
+        // PoJevArena — Jev (TypeSafe, via OpenRouter) is the arena's only decision source.
+        // The client is a typed HttpClient with its own per-call timeout and no retry pipeline
+        // (a late decision is worthless at 1 Hz); the concurrency gate is a singleton so every
+        // typed-client instance shares one in-flight cap. The stub is selected only under the
+        // Test environment — anywhere else a missing key means "Jev unavailable", never a mock.
+        services.AddOptions<JevOptions>()
+            .BindConfiguration(JevOptions.SectionName);
+        services.AddSingleton<JevConcurrencyGate>();
+        services.AddHttpClient<JevClient>(
+            JevClient.HttpClientName,
+            (sp, client) => client.BaseAddress = new Uri(sp
+                .GetRequiredService<IOptions<JevOptions>>()
+                .Value.Endpoint));
+        services.AddSingleton<StubJevClient>();
+        services.AddTransient<IJevClient>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<JevOptions>>().Value;
+            return options.UseStub && sp.GetRequiredService<IHostEnvironment>().IsEnvironment("Test")
+                ? sp.GetRequiredService<StubJevClient>()
+                : sp.GetRequiredService<JevClient>();
+        });
 
         // PoRacer — multiplayer racing. The lobby service is the in-memory
         // registry; the race registry + service own the per-game simulation

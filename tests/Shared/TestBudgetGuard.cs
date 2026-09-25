@@ -38,6 +38,11 @@ public static class TestBudgetGuard
         ["PoJoker:Features:UseMockAI"] = "true",
         ["PoEcosystem:Features:UseMockAI"] = "true",
         ["PoBrawl:Features:UseMockAI"] = "true",
+        // PoJevArena has no mock fallback in any real environment; this switch is honoured only
+        // when the host environment is "Test", and swaps in the deterministic StubJevClient.
+        // The empty key keeps a developer's real OpenRouter key out of every test host.
+        ["PoMiniGames:Jev:UseStub"] = "true",
+        ["PoMiniGames:Jev:ApiKey"] = "",
         ["KeyVault:Uri"] = "",
 
         // ── Browser-side guard ────────────────────────────────────────────

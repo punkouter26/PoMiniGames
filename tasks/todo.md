@@ -55,7 +55,7 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
   - Restore the conditional `jevApiKey` secret in `infra/kv-secrets.bicep`, `infra/main.bicep` and
     `infra/main.parameters.json` from `2235ed7d^`.
 - [x] **Checkpoint C2:** Integration and E2E-API `--filter PoJevArena` (Azurite up); ceilings.
-- [ ] **T7 Sim + abilities** (`sim.js`, `abilities.js`).
+- [x] **T7 Sim + abilities** (`sim.js`, `abilities.js`).
   - Scratch node harness in the scratchpad, written first so it fails first. It checks: an ability-less unit kills by
     melee; every ability triggers; the damage-pipeline order; the 3:00 HP% rule; no NaN over 10,800 ticks;
     determinism by seed.

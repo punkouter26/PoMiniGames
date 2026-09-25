@@ -181,8 +181,11 @@ Presets (ids `preset:<slug>`, constants in `PoMiniGames.Shared`, never in the ta
 - **Melee (every creature)**: when a unit whose intent is `melee_charge` comes within 0.3 m of its target's edge, it
   runs a strike: 120 ms wind-up, then a lunge. The hit lands on contact:
   `Damage = 15 + 0.5 · |v_attacker − v_defender| · mass_attacker` (velocities in m/s), plus knockback
-  `0.6 · mass_attacker / mass_defender` m/s. A strike has a 0.5 s cooldown per attacker, so sustained contact is
-  never per-frame damage.
+  `2.0 · mass_attacker / effective_mass_defender` m/s. A strike has a 1.0 s cooldown per attacker, so sustained
+  contact is never per-frame damage.
+- **Global damage scale 0.5** (tuned 2026-09-25 in the node harness). It applies to every source inside the one
+  damage pipeline. At the PRD's raw numbers a 10v10 match ended in about 25 s. With the scale, headless matches run
+  27–77 s, giving Jev 30–80 decisions per unit.
 - **Ability projectiles** (spit glob, boulder, mend bolt) use the registry parameters. They hit on circle overlap with
   an enemy (heals hit an ally), with no friendly fire. The boulder's arc is visual only; it collides on the ground plane.
 - **Damage pipeline** (one function, so defenses stack predictably): invulnerable → 0; else × (1 − shell 0.6);

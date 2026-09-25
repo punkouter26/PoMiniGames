@@ -59,7 +59,7 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
   - Scratch node harness in the scratchpad, written first so it fails first. It checks: an ability-less unit kills by
     melee; every ability triggers; the damage-pipeline order; the 3:00 HP% rule; no NaN over 10,800 ticks;
     determinism by seed.
-- [ ] **T8a Creature art.** `creatures.js` (silhouette from data, cached per-team bitmaps, faces, mannerisms,
+- [x] **T8a Creature art.** `creatures.js` (silhouette from data, cached per-team bitmaps, faces, mannerisms,
   animation state machine) and `render.js` (arena, units, HP bars, intent overlay, team base markers, DPR,
   reduced motion).
 - [ ] **T8b Ability FX.** `fx.js`: wind-up, release and impact per registry id; particles capped at 400; popups;

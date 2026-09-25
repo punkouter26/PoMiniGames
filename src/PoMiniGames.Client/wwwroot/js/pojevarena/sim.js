@@ -215,7 +215,11 @@ export function applyDecision(w, idx, decision, candidates) {
  */
 export function applyDamage(w, u, amount, kind, fromX, fromY, source = -1) {
     if (!u.alive || amount <= 0) return 0;
-    if (u.invuln > 0) { w.events.push({ type: 'dodge', u: u.idx }); return 0; }
+    if (u.invuln > 0) {
+        // A dodged blow is worth showing; a dodged poison tick (60 a second) is noise.
+        if (kind !== 'poison') w.events.push({ type: 'dodge', u: u.idx });
+        return 0;
+    }
 
     let dmg = amount * DAMAGE_SCALE;
     if (u.shell > 0) dmg *= 1 - shellFactor(u);

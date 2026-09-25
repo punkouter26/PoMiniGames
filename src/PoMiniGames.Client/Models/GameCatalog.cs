@@ -238,6 +238,19 @@ public static class GameCatalog
             ChipPrimary = true,
         },
 
+        // PoJevArena (2026-09-25): design creatures, draft 10 v 10, and watch TypeSafe's Jev
+        // decide every move. Needs sign-in (guests included) and a Jev key on the server;
+        // not in the kiosk rotation, because an unattended loop spends Jev calls.
+        new(GameKeys.PoJevArena, "Jev Arena", "⚔️",
+        [
+            new(GameMode.OnePlayer, "/pojevarena/1player", RequiresNetwork: true),
+            new(GameMode.TwoPlayer, "/pojevarena/2player", RequiresNetwork: true),
+            new(GameMode.Demo, "/pojevarena/demo", RequiresNetwork: true),
+        ])
+        {
+            ChipPrimary = true,
+        },
+
         // PoEcosystem is autonomous simulation only — Demo mode only.
         new(GameKeys.PoEcosystem, "PoEcosystem", "🌿",
         [

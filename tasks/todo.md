@@ -72,10 +72,11 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
   - `engineLoader.js` `REGISTRY` entry.
   - The harness asserts ≤ 20 calls/s.
 - [x] **Checkpoint C3:** node harness 11/11; trimmed publish 0 IL2xxx; `_framework` 12.39 MB (budget 25). Render p95 still to measure with a GPU at C4.
-- [ ] **T10 Design gate (Phase 3).** Publish one Artifact canvas with 10 layout concepts for the page (Factory,
+- [x] **T10 Design gate (Phase 3).** User picked concept 10, Dual Inspector (per-team inspectors beside the arena).
+  Original text: Publish one Artifact canvas with 10 layout concepts for the page (Factory,
   Library, Rosters, Arena, Inspector, Black Box) across desktop and phone. Stop for the user's pick, then confirm the
   component hierarchy. **No UI code before this.**
-- [ ] **T11a Catalog wiring.** Add `PoJevArena` to Domain `Primitives/GameKey.cs` (field only, not the `All[]`
+- [x] **T11a Catalog wiring.** Add `PoJevArena` to Domain `Primitives/GameKey.cs` (field only, not the `All[]`
   allowlist) and client `Models/GameKey.cs`. Add the `GameCatalog.cs` entry (1player, 2player, demo). Add
   `pojevarena` to `Layout/MainLayout.razor` `GameRoutePrefixes`, plus the missing `pocabinet` (SPEC OQ2).
 - [ ] **T11b Page shell.**

@@ -57,4 +57,8 @@ public static class GameKeys
     public static readonly GameKey PoEcosystem = new("poecosystem");
     public static readonly GameKey SandPlayground = new("sandplayground");
     public static readonly GameKey PoCabinet = new("pocabinet");
+
+    // Client-only on purpose: PoJevArena keeps no PlayerStats, so it is absent from the
+    // Domain allowlist that gates stats and unified-leaderboard reads.
+    public static readonly GameKey PoJevArena = new("pojevarena");
 }

@@ -152,6 +152,9 @@ builder.Services.AddScoped<PoMiniGamesClient.Games.PoVoxelStrike.Services.PoVoxe
 builder.Services.AddScoped<PoEcosystemInteropService>();
 // PoEcosystem's server surface: cloud world slots, the gallery, the chronicle and cloud thoughts.
 builder.Services.AddScoped<PoMiniGamesClient.Games.PoEcosystem.Services.PoEcosystemApiClient>();
+// PoJevArena's server surface: status/allowance, the creature library, match registration and
+// the Jev decision round trip (every call on the shared HttpClient pipeline).
+builder.Services.AddScoped<PoMiniGamesClient.Games.PoJevArena.PoJevArenaApiClient>();
 
 // ─── PoJoker (demo-only autonomous comedy show) ──────────────────────
 // TTS + Web-Audio effects run via JS interop

@@ -281,12 +281,14 @@ export function createRenderer(canvas, { creatures, fx, reduced = false }) {
         resize,
 
         /**
-         * Draws one frame. frame = { time, tick, dt, views, projectiles, events, selected, live }
+         * Draws one frame. frame = { time, tick, dt, views, projectiles, events, selected, live };
+         * `selected` is a unit index or an array of them (Dual Inspector: one per team).
          * `events` are this frame's sim events (fed to fx once per sim tick by the caller).
          */
         draw(frame) {
             if (!floor) buildFloor();
             const { views, projectiles = [], selected = -1, time = 0, dt = 1 / 60 } = frame;
+            const picked = new Set([].concat(selected));
 
             for (const e of frame.events || []) if (e.u !== undefined && memory[e.u]) noteEvent(memory[e.u], e);
             fx.update(dt);
@@ -298,7 +300,7 @@ export function createRenderer(canvas, { creatures, fx, reduced = false }) {
 
             fx.drawDecals(ctx, map);
             for (const v of views) if (v.alive) drawMarker(v, map.px(v.x), map.py(v.y), (v.r ?? radius(v)) * map.s);
-            for (const v of views) drawTargetLine(v, views, v.idx === selected);
+            for (const v of views) drawTargetLine(v, views, picked.has(v.idx));
 
             const order = views.slice().sort((a, b) => a.y - b.y);
             for (const v of order) {
@@ -312,7 +314,7 @@ export function createRenderer(canvas, { creatures, fx, reduced = false }) {
 
             fx.drawProjectiles(ctx, projectiles, map, time);
             fx.drawParticles(ctx, map);
-            for (const v of order) drawOverlay(v, map.px(v.x), map.py(v.y), radius(v) * map.s, v.idx === selected, time);
+            for (const v of order) drawOverlay(v, map.px(v.x), map.py(v.y), radius(v) * map.s, picked.has(v.idx), time);
             fx.drawPopups(ctx, map);
             ctx.setTransform(1, 0, 0, 1, 0, 0);
         },

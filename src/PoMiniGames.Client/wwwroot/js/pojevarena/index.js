@@ -2,7 +2,7 @@
 //
 // Contract surface (called from src/PoMiniGames.Client/Games/PoJevArena/*):
 //   PoJevArena.deploy(canvasId, dotnetRef, ticketJson, abilitiesJson, optionsJson)   → starts a live match
-//   PoJevArena.select(unitIdx) / cycle(+1|-1)                                         → inspector anchor
+//   PoJevArena.select(unitIdx) / cycle(team, +1|-1)                                  → Dual Inspector: one pick per team
 //   PoJevArena.scrub(frame) / play() / pause() / step(n) / jumpDecision(dir) / setSpeed(x)  → Black Box
 //   PoJevArena.stop()                                                                  → tears the match down
 //   PoJevArena.preview(canvasId, creatureJson, team) → id / stopPreview(id)            → Factory live preview
@@ -11,7 +11,7 @@
 // .NET callbacks (JSON strings in and out; the page deserialises with source-gen contexts):
 //   DecideAsync(batchJson) → responseJson   the only way this module reaches the server, so every call
 //                                           rides the app HttpClient (antiforgery + credentials)
-//   OnInspector(json)                       selected unit + the Jev distribution governing it
+//   OnInspector(json)                       per team: its selected unit + the Jev distribution governing it
 //   OnHud(json)                             ~4 Hz: clock, alive counts, calls, notices
 //   OnMatchEnded(json)                      winner, reason, duration → page reports + opens the Black Box
 //   OnBlackBox(json)                        replay position while scrubbing/playing
@@ -67,7 +67,8 @@ function deploy(canvasId, dotnet, ticketJson, abilitiesJson, optionsJson) {
 
     const m = {
         canvas, dotnet, world, fx, renderer, blackbox, teamColor, reduced,
-        selected: options.selected ?? 0,
+        // Dual Inspector: one selected unit per team (Blue-01 and Red-01 to start).
+        sel: { blue: 0, red: ticket.blue.length },
         mode: 'live',           // 'live' | 'replay'
         frame: 0, playing: false, speed: 1, replayAcc: 0,
         raf: 0, last: 0, acc: 0, hudAcc: 0, paused: false,
@@ -79,7 +80,7 @@ function deploy(canvasId, dotnet, ticketJson, abilitiesJson, optionsJson) {
         decide: async (batch) => JSON.parse(await dotnet.invokeMethodAsync('DecideAsync', JSON.stringify(batch))),
         onDecision: (frame, idx, decision, request) => {
             blackbox.recordDecision(frame, idx, decision, request);
-            if (idx === m.selected) pushInspector(m);
+            if (idx === m.sel.blue || idx === m.sel.red) pushInspector(m, world.units[idx].team);
         },
         onNotice: (notice) => { if (!m.notices.includes(notice)) m.notices.push(notice); pushHud(m, true); },
         onRemaining: (remaining) => { m.remaining = remaining; },
@@ -95,8 +96,10 @@ function deploy(canvasId, dotnet, ticketJson, abilitiesJson, optionsJson) {
     on(document, 'visibilitychange', () => { m.paused = document.hidden; m.last = performance.now(); });
     on(window, 'keydown', (e) => {
         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
-        if (e.key === '[') { cycle(-1); e.preventDefault(); }
-        else if (e.key === ']') { cycle(1); e.preventDefault(); }
+        if (e.key === '[') { cycle('blue', -1); e.preventDefault(); }
+        else if (e.key === ']') { cycle('blue', 1); e.preventDefault(); }
+        else if (e.key === ';') { cycle('red', -1); e.preventDefault(); }
+        else if (e.key === "'") { cycle('red', 1); e.preventDefault(); }
         else if (m.mode === 'replay' && e.key === ' ') { m.playing ? pause() : play(); e.preventDefault(); }
         else if (m.mode === 'replay' && e.key === 'ArrowLeft') { step(e.shiftKey ? -60 : -1); e.preventDefault(); }
         else if (m.mode === 'replay' && e.key === 'ArrowRight') { step(e.shiftKey ? 60 : 1); e.preventDefault(); }
@@ -110,7 +113,7 @@ function deploy(canvasId, dotnet, ticketJson, abilitiesJson, optionsJson) {
     match = m;
     m.last = performance.now();
     m.raf = requestAnimationFrame((t) => loop(m, t));
-    pushInspector(m);
+    pushInspectors(m);
     return true;
 }
 
@@ -132,11 +135,11 @@ function loop(m, now) {
             for (const e of m.world.events) m.pendingEvents.push(e);
         }
         const views = m.world.units.map(u => viewOf(u, m.world, m.scheduler.staleSeconds(u.idx)));
-        m.renderer.draw({ time: m.world.time, dt, views, projectiles: m.world.projectiles, events: m.pendingEvents, selected: m.selected });
+        m.renderer.draw({ time: m.world.time, dt, views, projectiles: m.world.projectiles, events: m.pendingEvents, selected: [m.sel.blue, m.sel.red] });
         m.pendingEvents.length = 0;
 
         m.hudAcc += dt;
-        if (m.hudAcc >= HUD_EVERY_S) { m.hudAcc = 0; pushHud(m); pushInspector(m); }
+        if (m.hudAcc >= HUD_EVERY_S) { m.hudAcc = 0; pushHud(m); pushInspectors(m); }
         if (m.world.over) endMatch(m);
     } else {
         if (m.playing) {
@@ -157,7 +160,7 @@ function loop(m, now) {
 
 function drawReplay(m, dt) {
     const d = m.blackbox.decode(m.frame);
-    m.renderer.draw({ time: d.time, dt, views: d.views, projectiles: d.projectiles, events: m.pendingEvents, selected: m.selected });
+    m.renderer.draw({ time: d.time, dt, views: d.views, projectiles: d.projectiles, events: m.pendingEvents, selected: [m.sel.blue, m.sel.red] });
     m.pendingEvents.length = 0;
     m.hudAcc += dt;
     if (m.hudAcc >= 0.1) { m.hudAcc = 0; pushBlackBox(m); }
@@ -180,7 +183,7 @@ function endMatch(m) {
     m.frame = m.blackbox.frames - 1;
     m.playing = false;
     pushBlackBox(m);
-    pushInspector(m);
+    pushInspectors(m);
 }
 
 function currentViews(m) {
@@ -198,18 +201,18 @@ function pushHud(m, force = false) {
     });
 }
 
-/** The inspector payload: who is selected, what they're doing, and the Jev answer governing it. */
-function pushInspector(m) {
+/** One side's inspector payload: its selected unit, what it's doing, and the Jev answer governing it. */
+function pushInspector(m, team) {
     if (!m) return;
+    const idx = m.sel[team];
     const frame = m.mode === 'live' ? m.world.tick : m.frame;
     const views = currentViews(m);
-    const v = views[m.selected];
+    const v = views[idx];
     if (!v) return;
-    const d = m.blackbox.decisionAt(m.selected, frame);
-    const stale = m.mode === 'live' ? m.scheduler.staleSeconds(m.selected) : (d ? (frame - d.frame) / 60 : frame / 60);
-    const creature = m.world.units[m.selected].creature;
+    const d = m.blackbox.decisionAt(idx, frame);
+    const stale = m.mode === 'live' ? m.scheduler.staleSeconds(idx) : (d ? (frame - d.frame) / 60 : frame / 60);
     send(m.dotnet, 'OnInspector', {
-        unit: v.label, index: v.idx, team: v.team, name: v.name, creatureId: creature.id,
+        unit: v.label, index: v.idx, team: v.team, name: v.name, creatureId: m.world.units[idx].creature.id,
         hp: Math.max(0, Math.round(v.hp)), maxHp: v.maxHp, alive: v.alive,
         action: (v.flags & FLAGS.PANIC) ? 'panic_flee' : v.action,
         target: v.target >= 0 ? views[v.target]?.label ?? null : null,
@@ -219,29 +222,39 @@ function pushInspector(m) {
     });
 }
 
+function pushInspectors(m) {
+    if (!m) return;
+    pushInspector(m, 'blue');
+    pushInspector(m, 'red');
+}
+
 function pushBlackBox(m) {
     send(m.dotnet, 'OnBlackBox', {
         frame: m.frame, frames: m.blackbox.frames, seconds: m.frame / 60,
         playing: m.playing, speed: m.speed, decisions: m.blackbox.decisions.length,
     });
-    pushInspector(m);
+    pushInspectors(m);
 }
 
 // ── Inspector & Black Box controls ───────────────────────────────────────────
 
+/** Selects a unit on its own team's side (the other side's selection is untouched). */
 function select(idx) {
     if (!match) return;
-    match.selected = Math.max(0, Math.min(match.world.units.length - 1, idx | 0));
-    pushInspector(match);
+    const u = match.world.units[Math.max(0, Math.min(match.world.units.length - 1, idx | 0))];
+    match.sel[u.team] = u.idx;
+    pushInspector(match, u.team);
 }
 
-function cycle(dir) {
+/** Steps one side's selection to the next living unit of that team. */
+function cycle(team, dir) {
     if (!match) return;
     const views = currentViews(match);
-    const n = views.length;
-    for (let k = 1; k <= n; k++) {
-        const i = (match.selected + dir * k + n * 2) % n;
-        if (views[i].alive) { select(i); return; }
+    const mine = views.filter(v => v.team === team);
+    const at = mine.findIndex(v => v.idx === match.sel[team]);
+    for (let k = 1; k <= mine.length; k++) {
+        const v = mine[(at + dir * k + mine.length * 2) % mine.length];
+        if (v.alive) { select(v.idx); return; }
     }
 }
 
@@ -259,9 +272,10 @@ function play() { if (match?.mode === 'replay') { if (match.frame >= match.black
 function pause() { if (match?.mode === 'replay') { match.playing = false; pushBlackBox(match); } }
 function step(n) { if (match?.mode === 'replay') { match.playing = false; scrub(match.frame + (n | 0)); } }
 function setSpeed(x) { if (match) { match.speed = Math.max(0.25, Math.min(4, +x || 1)); pushBlackBox(match); } }
-function jumpDecision(dir) {
+function jumpDecision(dir, team) {
     if (match?.mode !== 'replay') return;
-    const f = match.blackbox.neighbourDecision(match.frame, dir, match.selected);
+    const unit = team === 'blue' || team === 'red' ? match.sel[team] : -1;
+    const f = match.blackbox.neighbourDecision(match.frame, dir, unit);
     if (f >= 0) { match.playing = false; scrub(f); }
 }
 

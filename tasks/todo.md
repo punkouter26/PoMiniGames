@@ -71,7 +71,7 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
   - `index.js`: mount, preview, deploy, select, scrub, play, stop, unmount; releases every listener, rAF and bitmap.
   - `engineLoader.js` `REGISTRY` entry.
   - The harness asserts ≤ 20 calls/s.
-- [ ] **Checkpoint C3:** node harness green; trim publish (0 IL2xxx); record the `_framework` size.
+- [x] **Checkpoint C3:** node harness 11/11; trimmed publish 0 IL2xxx; `_framework` 12.39 MB (budget 25). Render p95 still to measure with a GPU at C4.
 - [ ] **T10 Design gate (Phase 3).** Publish one Artifact canvas with 10 layout concepts for the page (Factory,
   Library, Rosters, Arena, Inspector, Black Box) across desktop and phone. Stop for the user's pick, then confirm the
   component hierarchy. **No UI code before this.**

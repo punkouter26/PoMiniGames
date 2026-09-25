@@ -93,7 +93,7 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
 - [x] **T14 Arena, Inspector, Black Box.** `JevInspector.razor` (probability bars, confidence, panic, stale) and
   `BlackBoxScrubber.razor` (transport, speed, timeline, decision jumps). Deploy flow: register → mount → `DecideAsync`
   → end → report the result. Banners for every SPEC §10 state.
-- [ ] **T15 Demo + E2E-UI.**
+- [x] **T15 Demo + E2E-UI.**
   - Demo loop (presets plus random library creatures, highlight replay, allowance stop).
   - E2E-UI `PoJevArenaUiTests`, one test: guest → save creature → draft 10+10 → deploy (stub) → banner → scrub →
     inspector values change.

@@ -408,6 +408,7 @@
 .jev-root ::deep .jev-factory__body { display: grid; grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr); gap: 1rem; }
 
 .jev-root ::deep .jev-factory__preview {
+    align-self: start;
     display: flex;
     flex-direction: column;
     align-items: center;

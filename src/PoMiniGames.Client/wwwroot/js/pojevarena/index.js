@@ -135,8 +135,10 @@ function loop(m, now) {
             for (const e of m.world.events) m.pendingEvents.push(e);
         }
         const views = m.world.units.map(u => viewOf(u, m.world, m.scheduler.staleSeconds(u.idx)));
+        const t0 = performance.now();
         m.renderer.draw({ time: m.world.time, dt, views, projectiles: m.world.projectiles, events: m.pendingEvents, selected: [m.sel.blue, m.sel.red] });
         m.pendingEvents.length = 0;
+        noteDrawTime(m, performance.now() - t0);
 
         m.hudAcc += dt;
         if (m.hudAcc >= HUD_EVERY_S) { m.hudAcc = 0; pushHud(m); pushInspectors(m); }
@@ -164,6 +166,19 @@ function drawReplay(m, dt) {
     m.pendingEvents.length = 0;
     m.hudAcc += dt;
     if (m.hudAcc >= 0.1) { m.hudAcc = 0; pushBlackBox(m); }
+}
+
+/** Rolling window of draw durations, for the render budget check (SPEC §4.8: ≤ 8 ms p95). */
+function noteDrawTime(m, ms) {
+    m.drawMs ??= [];
+    m.drawMs.push(ms);
+    if (m.drawMs.length > 600) m.drawMs.shift();
+}
+
+function drawP95(m) {
+    if (!m.drawMs?.length) return null;
+    const sorted = m.drawMs.slice().sort((a, b) => a - b);
+    return +sorted[Math.floor(sorted.length * 0.95)].toFixed(2);
 }
 
 function endMatch(m) {
@@ -314,7 +329,7 @@ function drawPose(canvas, look, creature, pose, t, poseT) {
     if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); look.cache = null; }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const R = Math.min(canvas.width, canvas.height) * (0.16 + 0.03 * creature.mass / 5);
+    const R = Math.min(canvas.width, canvas.height) * (0.2 + 0.04 * creature.mass / 5);
     const offense = (creature.abilities || []).find(a => a === 'spit_glob' || a === 'hurl_boulder' || a === 'mend_bolt') || null;
     const defense = (creature.abilities || []).find(a => a === 'shield_brace' || a === 'hard_shell' || a === 'dodge_dash') || null;
     let flags = pose.flags;
@@ -371,7 +386,7 @@ const api = {
     scrub, play, pause, step, setSpeed, jumpDecision,
     preview, stopPreview, portrait,
     /** Test/diagnostic hook: frames recorded and calls made (read by the E2E-UI test). */
-    state: () => (match ? { mode: match.mode, frames: match.blackbox.frames, calls: match.scheduler.calls, over: match.world.over, time: match.world.time } : null),
+    state: () => (match ? { mode: match.mode, frames: match.blackbox.frames, calls: match.scheduler.calls, over: match.world.over, time: match.world.time, drawP95: drawP95(match) } : null),
 };
 
 window.PoJevArena = api;

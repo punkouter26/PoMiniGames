@@ -62,7 +62,7 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
 - [x] **T8a Creature art.** `creatures.js` (silhouette from data, cached per-team bitmaps, faces, mannerisms,
   animation state machine) and `render.js` (arena, units, HP bars, intent overlay, team base markers, DPR,
   reduced motion).
-- [ ] **T8b Ability FX.** `fx.js`: wind-up, release and impact per registry id; particles capped at 400; popups;
+- [x] **T8b Ability FX.** `fx.js`: wind-up, release and impact per registry id; particles capped at 400; popups;
   decals; replay-safe seeded particles. *Accept:* render p95 ≤ 8 ms, measured.
 - [ ] **T9 Scheduler + Black Box + lifecycle.**
   - `scheduler.js`: slot = index mod 4, no overlapping calls, candidate computation, hold intent plus a stale timer,

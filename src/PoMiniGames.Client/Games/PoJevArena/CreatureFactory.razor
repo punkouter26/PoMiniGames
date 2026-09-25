@@ -37,7 +37,7 @@
                         <option value="">None (melee only)</option>
                         @foreach (var a in PoJevArenaCatalog.Abilities.Where(a => a.Slot == ArenaAbilitySlot.Offense))
                         {
-                            <option value="@a.Id">@a.Label (@a.Cost pts): @a.Summary</option>
+                            <option value="@a.Id">@a.Label · @a.Cost pts</option>
                         }
                     </select>
                 </label>
@@ -47,7 +47,7 @@
                         <option value="">None</option>
                         @foreach (var a in PoJevArenaCatalog.Abilities.Where(a => a.Slot == ArenaAbilitySlot.Defense))
                         {
-                            <option value="@a.Id">@a.Label (@a.Cost pts): @a.Summary</option>
+                            <option value="@a.Id">@a.Label · @a.Cost pts</option>
                         }
                     </select>
                 </label>

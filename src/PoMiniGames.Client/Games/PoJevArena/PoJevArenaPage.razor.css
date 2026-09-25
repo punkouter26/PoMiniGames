@@ -19,6 +19,9 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+    /* The shell centres its content; without an explicit width the layout shrinks to fit
+       whatever the centre holds, and the arena collapses into a narrow column. */
+    width: 100%;
     height: var(--gps-area-h);
     padding: 0.75rem;
     box-sizing: border-box;
@@ -415,6 +418,7 @@
 }
 
 .jev-root ::deep .jev-factory__art { width: 100%; aspect-ratio: 1; display: block; }
+.jev-root ::deep .jev-factory__preview .jev-muted { color: #cfe8d4; }
 .jev-root ::deep .jev-factory__form { display: flex; flex-direction: column; gap: 0.75rem; }
 .jev-root ::deep .jev-factory__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
 .jev-root ::deep .jev-factory__actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }

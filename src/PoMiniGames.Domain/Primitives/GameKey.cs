@@ -118,6 +118,11 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     public static readonly GameKey SandPlayground = new("sandplayground");
     public static readonly GameKey PoCabinet = new("pocabinet");
 
+    // PoJevArena keeps no PlayerStats, but the client mints a play session for every catalogue
+    // game, and PlaySessionEndpoints validates the key against this list — without it every
+    // visit to /pojevarena logged a 400.
+    public static readonly GameKey PoJevArena = new("pojevarena");
+
     // This catalogue gates PlayerStats reads/writes (PlayerStatsEndpoints uses TryParse as
     // the §8 allowlist), so it must cover every game the client can mirror stats for —
     // it had drifted behind the client's GameKeys list (poracer/pobrawl/posports missing),
@@ -128,7 +133,7 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
         ConnectFive, TicTacToe, PoMarbleRace,
         PoRacer, PoBrawl, PoBrawlDemo, PoBrawlKo, PoSports,
         PoVoxelStrike, PoEcosystem, SandPlayground,
-        PoCabinet,
+        PoCabinet, PoJevArena,
     };
 
     private static readonly string[] WellKnownNames = All.Select(k => k.Value).ToArray();

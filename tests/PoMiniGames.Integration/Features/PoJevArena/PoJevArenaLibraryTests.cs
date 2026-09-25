@@ -36,6 +36,33 @@ public sealed class PoJevArenaLibraryTests : IClassFixture<TestWebApplicationFac
         var them = CreatureLibraryStore.OwnerKeyFor($"int-{Guid.NewGuid():N}");
         var design = PoJevArenaRules.Validate(PoJevArenaCatalog.Presets[2].ToDraft() with { Name = "Swamp Gob" }).Creature!;
 
+        try
+        {
+            await RunScenarioAsync(scenario, store, me, them, design);
+        }
+        finally
+        {
+            // This tier's storage override can land after the host has already bound its
+            // TableServiceClient, so these rows may be in the developer's local Azurite, where
+            // they would show up in the game's library. Leave nothing behind.
+            await DeleteOwnedAsync(store, me);
+            await DeleteOwnedAsync(store, them);
+        }
+    }
+
+    private static async Task DeleteOwnedAsync(CreatureLibraryStore store, string owner)
+    {
+        foreach (var name in new[] { "Swamp Gob", "Bog Gob" })
+        {
+            foreach (var mine in (await store.ListAsync(owner, "new", name)).Where(c => c.IsMine))
+            {
+                await store.DeleteAsync(owner, mine.Id);
+            }
+        }
+    }
+
+    private static async Task RunScenarioAsync(string scenario, CreatureLibraryStore store, string me, string them, ArenaCreature design)
+    {
         switch (scenario)
         {
             case "round-trip":

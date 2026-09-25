@@ -15,6 +15,7 @@ using PoMiniGames.Features.MatchHistory;
 using PoMiniGames.Features.PoCoupleQuiz;  // CoupleQuizHub (the slice's only server surface)
 using PoMiniGames.Features.PoEcosystem;   // cloud world slots, gallery, chronicle (2026-09-14)
 using PoMiniGames.Features.PoFunQuiz;
+using PoMiniGames.Features.PoJevArena;    // Jev-driven 10v10 arena (2026-09-25)
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoRacer;
 using PoMiniGames.Features.PoCabinet; // T4-T6: career, score, lobby + race hubs
@@ -132,6 +133,9 @@ internal static class EndpointRouteExtensions
         gameApi.MapPoBrawlOnlineMatchEndpoints();
         // PoEcosystem: the caller's three cloud slots, sharing, the chronicle and cloud thoughts.
         gameApi.MapPoEcosystemEndpoints();
+        // PoJevArena: Jev status/allowance, match registration and the decision proxy. Inside the
+        // authenticated group because every route spends or reveals the caller's Jev allowance.
+        gameApi.MapPoJevArenaEndpoints();
 
         // ── SignalR hubs (auth required; not part of MapGroup) ────────────
         app.MapHub<CoupleQuizHub>("/couplequiz/hubs/game").RequireAuthorization();

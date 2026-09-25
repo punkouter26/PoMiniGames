@@ -144,6 +144,33 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
+            // PoJevArena (2026-09-25): library writes, match registration and status share a
+            // modest cap; the decision proxy gets its own because a live match sends a batch
+            // every 250 ms (240/min). Spend is bounded separately by the daily Jev allowance —
+            // these only shape bursts.
+            opts.AddPolicy("pojevarena", ctx =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: BuildPartitionKey(ctx),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        Window = TimeSpan.FromMinutes(1),
+                        PermitLimit = 30,
+                        AutoReplenishment = true,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0,
+                    }));
+            opts.AddPolicy("pojevarena-decide", ctx =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: BuildPartitionKey(ctx),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        Window = TimeSpan.FromMinutes(1),
+                        PermitLimit = 300,
+                        AutoReplenishment = true,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0,
+                    }));
+
             // Every policy here is a fixed window with QueueLimit = 0, so a rejected caller has
             // to guess how long to wait — and the client's own retry handler deliberately does
             // not replay a 429. Hand back the window's remaining time as Retry-After so the UI

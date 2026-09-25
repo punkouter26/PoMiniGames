@@ -34,7 +34,7 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
   - Test `CallAllowance_AndMatchRegistry_Contracts` (allowance rows now) uses FakeTimeProvider: limit boundary,
     whole-batch reject, UTC rollover.
   - Existing `AiTokenBudget*` tests still pass.
-- [ ] **T4 Match registry + decision endpoints.**
+- [x] **T4 Match registry + decision endpoints.**
   - `ArenaMatchRegistry.cs`.
   - `PoJevArenaEndpoints.cs` with status, register match and decisions (parallel fan-out, per-unit results, 429 plus
     `Retry-After`, cost sum).

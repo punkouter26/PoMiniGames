@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using PoMiniGames.AI;
 using PoMiniGames.Features.PoJevArena;
+using PoMiniGames.Shared.Games.PoJevArena;
 using Xunit;
 
 namespace PoMiniGames.Unit.Features.PoJevArena;
@@ -23,11 +24,70 @@ public sealed class ArenaContractsTests
     [InlineData("allowance-utc-rollover")]
     [InlineData("allowance-survives-restart")]
     [InlineData("allowance-identities-independent")]
+    [InlineData("registry-owner-only")]
+    [InlineData("registry-result-one-shot")]
+    [InlineData("registry-result-needs-paid-decisions")]
+    [InlineData("registry-sliding-expiry")]
+    [InlineData("registry-roster-frozen")]
     public async Task CallAllowance_AndMatchRegistry_Contracts(string scenario)
     {
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 25, 23, 58, 0, TimeSpan.Zero));
         var store = new MemoryLedgerStore();
         var allowance = NewAllowance(limit: 100, clock, store);
+        var registry = new ArenaMatchRegistry(clock);
+        var roster = new ArenaRoster(
+            [.. Enumerable.Repeat(PoJevArenaCatalog.Presets[0], 10)],
+            [.. Enumerable.Repeat(PoJevArenaCatalog.Presets[1], 10)]);
+
+        switch (scenario)
+        {
+            case "registry-owner-only":
+                {
+                    var match = registry.Register(Me, roster, ArenaMode.OnePlayer);
+                    registry.Find(match.MatchId, Me).Should().BeSameAs(match);
+                    registry.Find(match.MatchId, "id:someone-else").Should().BeNull("another identity must not see or drive my match");
+                    registry.Find("no-such-match", Me).Should().BeNull();
+                    return;
+                }
+            case "registry-result-one-shot":
+                {
+                    var match = registry.Register(Me, roster, ArenaMode.OnePlayer);
+                    match.RecordDecisions(ArenaMatchRegistry.MinDecisionsForResult, costUsd: 0.001);
+                    match.TryClaimResult().Should().Be(ArenaResultGate.Accepted);
+                    match.TryClaimResult().Should().Be(ArenaResultGate.AlreadyReported);
+                    return;
+                }
+            case "registry-result-needs-paid-decisions":
+                {
+                    var match = registry.Register(Me, roster, ArenaMode.OnePlayer);
+                    match.RecordDecisions(ArenaMatchRegistry.MinDecisionsForResult - 1, costUsd: 0);
+                    match.TryClaimResult().Should().Be(ArenaResultGate.TooFewDecisions,
+                        "stats cannot be inflated without spending real Jev decisions");
+                    match.RecordDecisions(1, costUsd: 0);
+                    match.TryClaimResult().Should().Be(ArenaResultGate.Accepted);
+                    return;
+                }
+            case "registry-sliding-expiry":
+                {
+                    var match = registry.Register(Me, roster, ArenaMode.OnePlayer);
+                    clock.Advance(TimeSpan.FromMinutes(10));
+                    registry.Find(match.MatchId, Me).Should().NotBeNull("each lookup slides the expiry");
+                    clock.Advance(TimeSpan.FromMinutes(10));
+                    registry.Find(match.MatchId, Me).Should().NotBeNull();
+                    clock.Advance(ArenaMatchRegistry.IdleExpiry + TimeSpan.FromSeconds(1));
+                    registry.Find(match.MatchId, Me).Should().BeNull("an idle match expires");
+                    return;
+                }
+            case "registry-roster-frozen":
+                {
+                    var a = registry.Register(Me, roster, ArenaMode.Demo);
+                    var b = registry.Register(Me, roster, ArenaMode.Demo);
+                    a.MatchId.Should().NotBe(b.MatchId);
+                    a.Roster.Should().BeSameAs(roster);
+                    a.Mode.Should().Be(ArenaMode.Demo);
+                    return;
+                }
+        }
 
         switch (scenario)
         {

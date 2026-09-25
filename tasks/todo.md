@@ -17,7 +17,7 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
   bounds, the five presets, the DTOs and `PoJevArenaJsonContext`. Test first in
   `Unit/Features/PoJevArena/CreatureRulesTests.cs`: theory `CreatureValidation_RejectsOutOfBoundsAndOffCatalog`, which
   also asserts presets are within budget and every registry row is unique in id and option. *Files:* 2.
-- [ ] **T2a Prompt builder + test packages.**
+- [x] **T2a Prompt builder + test packages.**
   - `JevPromptBuilder.cs` and the test `JevPromptBuilder_BuildsStateAndOptions`, with Verify snapshots for the 5 presets
     plus an ability-less and a no-candidate scenario.
   - Package edits: `Directory.Packages.props`, `PoMiniGames.Unit.csproj` (Verify + TimeProvider.Testing), `.gitignore`.

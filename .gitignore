@@ -55,6 +55,8 @@ coverage/
 *.coveragexml
 *.trx
 *.snap
+# Verify writes *.received.* on a snapshot mismatch; only *.verified.* is committed.
+*.received.*
 test-results/
 artifacts/
 

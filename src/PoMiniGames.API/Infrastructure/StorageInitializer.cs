@@ -45,6 +45,9 @@ public sealed class StorageInitializer
         // PoEcosystem cloud slots + the public gallery index. Name must match
         // EcosystemWorldStore.TableName.
         "PoEcosystemWorlds",
+        // PoJevArena's daily Jev call cap (same shape as AiTokenLedger). Name must match
+        // JevCallAllowance.TableName.
+        "PoJevArenaCallLedger",
     ];
 
     /// <summary>Blob containers used by the consolidated games.</summary>

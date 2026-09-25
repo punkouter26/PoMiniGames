@@ -27,7 +27,7 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
 - [x] **T2c Jev wiring.** In `GameServicesExtensions.cs`: options, named client, limiter, and Test-only stub selection.
   Also `appsettings.json` (the `PoMiniGames:Jev` block with an empty key), `tests/Shared/TestBudgetGuard.cs`
   (`PoMiniGames:Jev:UseStub`) and `PoJevArenaLog.cs`. *Accept:* the host boots with no key and logs "Jev not configured".
-- [ ] **T3 Daily allowance.**
+- [x] **T3 Daily allowance.**
   - `AiTokenLedgerStore.cs` gets the optional table name.
   - `GameServicesExtensions.cs` registers the keyed budget and the flush service.
   - `StorageInitializer.cs` adds the `PoJevArenaCallLedger` table.

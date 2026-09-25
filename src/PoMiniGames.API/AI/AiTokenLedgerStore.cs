@@ -66,15 +66,22 @@ public sealed class TableAiTokenLedgerStore : IAiTokenLedgerStore
 
     private readonly TableServiceClient _serviceClient;
     private readonly ILogger<TableAiTokenLedgerStore> _logger;
+    private readonly string _tableName;
     private TableClient? _table;
     private readonly object _tableLock = new();
     private DateTime _lastCreateAttemptUtc = DateTime.MinValue;
     private static readonly TimeSpan CreateBackoff = TimeSpan.FromSeconds(10);
 
-    public TableAiTokenLedgerStore(TableServiceClient serviceClient, ILogger<TableAiTokenLedgerStore> logger)
+    /// <param name="tableName">
+    /// Defaults to the shared AI token ledger. PoJevArena passes its own table so its daily Jev call
+    /// cap is a separate counter over the same durable increment-under-ETag mechanism.
+    /// </param>
+    public TableAiTokenLedgerStore(
+        TableServiceClient serviceClient, ILogger<TableAiTokenLedgerStore> logger, string tableName = TableName)
     {
         _serviceClient = serviceClient;
         _logger = logger;
+        _tableName = tableName;
     }
 
     public bool IsDurable => true;
@@ -137,7 +144,7 @@ public sealed class TableAiTokenLedgerStore : IAiTokenLedgerStore
             {
                 // Storage is down. Throwing hands the delta back to the flusher's re-queue, which
                 // is what keeps the spend from being silently forgiven when storage returns.
-                throw new InvalidOperationException($"Table {TableName} is unavailable.");
+                throw new InvalidOperationException($"Table {_tableName} is unavailable.");
             }
 
             await TableConcurrency.UpdateWithRetryAsync<LedgerEntity>(
@@ -179,7 +186,7 @@ public sealed class TableAiTokenLedgerStore : IAiTokenLedgerStore
             _lastCreateAttemptUtc = DateTime.UtcNow;
         }
 
-        var client = _serviceClient.GetTableClient(TableName);
+        var client = _serviceClient.GetTableClient(_tableName);
         await client.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
 
         lock (_tableLock)

@@ -5,6 +5,7 @@ using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoEcosystem;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoJoker.Storage;
+using PoMiniGames.Features.PoJevArena;
 using PoMiniGames.Features.PoJevArena.Jev;
 using PoMiniGames.Features.PoRacer;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -279,6 +280,25 @@ internal static class GameServicesExtensions
                 ? sp.GetRequiredService<StubJevClient>()
                 : sp.GetRequiredService<JevClient>();
         });
+        // Daily Jev call cap: its own AiTokenBudget (counting calls, not tokens) over its own
+        // ledger table, flushed by a second instance of the stock flusher. Registered through
+        // AddSingleton<IHostedService> on purpose — AddHostedService<T> is a TryAddEnumerable
+        // and would silently drop a second AiTokenBudgetFlushService.
+        services.AddSingleton(sp =>
+        {
+            var tables = sp.GetService<Azure.Data.Tables.TableServiceClient>();
+            IAiTokenLedgerStore store = tables is null
+                ? NullAiTokenLedgerStore.Instance
+                : new TableAiTokenLedgerStore(
+                    tables, sp.GetRequiredService<ILogger<TableAiTokenLedgerStore>>(), JevCallAllowance.TableName);
+            var clock = sp.GetRequiredService<TimeProvider>();
+            return new JevCallAllowance(new AiTokenBudget(
+                sp.GetRequiredService<IOptions<JevOptions>>().Value.DailyCallsPerIdentity, clock.GetUtcNow, store));
+        });
+        services.AddSingleton<IHostedService>(sp => new AiTokenBudgetFlushService(
+            sp.GetRequiredService<JevCallAllowance>().Budget,
+            sp.GetRequiredService<IOptions<AiTokenBudgetOptions>>(),
+            sp.GetRequiredService<ILogger<AiTokenBudgetFlushService>>()));
 
         // PoRacer — multiplayer racing. The lobby service is the in-memory
         // registry; the race registry + service own the per-game simulation

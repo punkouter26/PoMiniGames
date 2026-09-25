@@ -36,7 +36,9 @@ public sealed class JevClientTests
         {
             [JevPromptBuilder.ActionKey] = new("choice", "pick", new Dictionary<string, string>
             {
-                ["melee_charge"] = "a", ["peel_to_ally"] = "b", ["fall_back"] = "c",
+                ["melee_charge"] = "a",
+                ["peel_to_ally"] = "b",
+                ["fall_back"] = "c",
             }),
             [JevPromptBuilder.PanicKey] = new("noul", "panic?", new Dictionary<string, string> { ["true"] = "y", ["false"] = "n" }),
         };
@@ -44,7 +46,8 @@ public sealed class JevClientTests
         {
             questions[JevPromptBuilder.FocusKey] = new("choice", "focus", new Dictionary<string, string>
             {
-                ["nearest_threat"] = "a", ["weakest_target"] = "b",
+                ["nearest_threat"] = "a",
+                ["weakest_target"] = "b",
             });
         }
         return new JevPrompt("Subject: Blue-01", questions);

@@ -13,7 +13,7 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
   Unit goes 104 → 93. *Accept:* `pwsh scripts/test-ceilings.ps1` passes for Unit, and the five classes pass with `--filter`.
 - [x] **T0b E2E-API room.** Fold `DeploymentSmokeTests` into one theory over the paths (−2), taking E2E-API to 23/25.
   *Accept:* ceilings pass; `--filter DeploymentSmokeTests` passes (needs Azurite).
-- [ ] **T1 Shared contracts.** Write `PoJevArenaShared.cs`: the catalogs, the ability registry, the budget function,
+- [x] **T1 Shared contracts.** Write `PoJevArenaShared.cs`: the catalogs, the ability registry, the budget function,
   bounds, the five presets, the DTOs and `PoJevArenaJsonContext`. Test first in
   `Unit/Features/PoJevArena/CreatureRulesTests.cs`: theory `CreatureValidation_RejectsOutOfBoundsAndOffCatalog`, which
   also asserts presets are within budget and every registry row is unique in id and option. *Files:* 2.

@@ -1,0 +1,470 @@
+/* Jev Arena — Dual Inspector layout: Blue column · centre · Red column.
+   Scoped CSS only reaches this page's own markup, so every rule for a child component
+   (TeamColumn, JevInspector, CreatureLibrary, CreatureFactory, BlackBoxScrubber, …) is ::deep.
+   Colours come from app.css tokens; the --jev-* team/canvas tokens below are scheme-invariant
+   (the engine reads them from the canvas's computed style), and team is never colour-alone:
+   Blue stands on a ring, Red on a diamond, and every panel names its team. */
+
+.jev-root {
+    --jev-blue: #3d7bff;
+    --jev-blue-dark: #1b3f99;
+    --jev-red: #f0524f;
+    --jev-red-dark: #8f1f1d;
+    --jev-floor: #2b3a2f;
+    --jev-floor-line: #324536;
+    --jev-wall: #141a15;
+    --jev-ink: #f4f6f8;
+    --jev-heal: #5fe07f;
+
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    height: var(--gps-area-h);
+    padding: 0.75rem;
+    box-sizing: border-box;
+    color: var(--color-text-primary);
+}
+
+.jev-topbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.jev-status {
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+}
+
+.jev-status.is-ok { background: var(--accent-success-soft); color: var(--accent-success); }
+.jev-status.is-off { background: var(--accent-danger-soft); color: var(--accent-danger); }
+
+.jev-score { font-weight: 800; font-size: 1.125rem; }
+.jev-score__blue { color: var(--player-1-ink); }
+.jev-score__red { color: var(--player-2-ink); }
+.jev-clock { font-variant-numeric: tabular-nums; }
+
+.jev-banner {
+    padding: 0.625rem 0.875rem;
+    border-radius: 10px;
+    background: var(--accent-warning-soft);
+    color: var(--color-text-primary);
+    border: 1px solid var(--accent-warning);
+}
+
+.jev-layout {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(15rem, 19rem) minmax(0, 1fr) minmax(15rem, 19rem);
+    gap: 0.75rem;
+}
+
+.jev-center {
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.jev-arena {
+    position: relative;
+    flex: 1;
+    min-height: 16rem;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--jev-wall);
+}
+
+.jev-arena__canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: manipulation;
+    cursor: crosshair;
+}
+
+.jev-result {
+    position: absolute;
+    left: 50%;
+    top: 0.75rem;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.125rem;
+    padding: 0.5rem 1.25rem;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--color-bg) 85%, transparent);
+    font-size: 1.25rem;
+}
+
+.jev-deploy, .jev-after {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.jev-handoff {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    border-radius: 12px;
+    background: var(--color-surface);
+    text-align: center;
+}
+
+.jev-confirm {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.625rem 0.875rem;
+    border-radius: 10px;
+    background: var(--accent-danger-soft);
+}
+
+/* ── shared bits (used by child components) ── */
+
+.jev-root ::deep .jev-kicker {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+.jev-root ::deep .jev-muted { color: var(--color-text-secondary); }
+.jev-root ::deep .jev-small { font-size: 0.8125rem; }
+.jev-root ::deep .jev-warn { color: var(--accent-warning); margin: 0; }
+.jev-root ::deep .jev-danger { color: var(--accent-danger); }
+
+.jev-root ::deep .jev-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.jev-root ::deep .jev-btn {
+    min-height: 44px;
+    padding: 0 1rem;
+    border-radius: 10px;
+    border: 0;
+    font: 600 0.875rem/1 var(--font-body);
+    background: var(--color-accent-solid);
+    color: var(--color-accent-contrast);
+    cursor: pointer;
+}
+
+.jev-root ::deep .jev-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.jev-root ::deep .jev-btn--ghost { background: transparent; color: var(--color-text-primary); border: 1px solid var(--color-border); }
+.jev-root ::deep .jev-btn--ghost[aria-pressed="true"] { background: var(--accent-bg); border-color: var(--color-accent); }
+.jev-root ::deep .jev-btn--danger { background: var(--color-error); }
+.jev-root ::deep .jev-btn--big { min-height: 52px; padding: 0 1.75rem; font-size: 1rem; }
+
+.jev-root ::deep .jev-link {
+    min-height: 44px;
+    padding: 0 0.5rem;
+    border: 0;
+    background: none;
+    color: var(--color-accent);
+    font: 600 0.8125rem var(--font-body);
+    cursor: pointer;
+}
+
+.jev-root ::deep .jev-input {
+    min-height: 40px;
+    padding: 0 0.625rem;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    color: var(--color-text-primary);
+    font: 0.875rem var(--font-body);
+}
+
+.jev-root ::deep .jev-chip {
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.jev-root ::deep .jev-chip--blue { background: color-mix(in srgb, var(--player-1) 22%, transparent); color: var(--player-1-ink); }
+.jev-root ::deep .jev-chip--red { background: color-mix(in srgb, var(--player-2) 22%, transparent); color: var(--player-2-ink); }
+
+.jev-root ::deep kbd {
+    padding: 0 0.3rem;
+    border-radius: 4px;
+    border: 1px solid var(--color-border);
+    font-size: 0.75rem;
+}
+
+/* ── team columns ── */
+
+.jev-root ::deep .jev-team {
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 12px;
+    background: var(--color-surface);
+    border: 2px solid transparent;
+}
+
+.jev-root ::deep .jev-team--blue { border-color: color-mix(in srgb, var(--player-1) 35%, transparent); }
+.jev-root ::deep .jev-team--red { border-color: color-mix(in srgb, var(--player-2) 35%, transparent); }
+.jev-root ::deep .jev-team--blue.is-active { border-color: var(--player-1); }
+.jev-root ::deep .jev-team--red.is-active { border-color: var(--player-2); }
+
+.jev-root ::deep .jev-team__head { display: flex; align-items: baseline; justify-content: space-between; }
+.jev-root ::deep .jev-team__title { margin: 0; font-size: 1rem; }
+.jev-root ::deep .jev-team--blue .jev-team__title { color: var(--player-1-ink); }
+.jev-root ::deep .jev-team--red .jev-team__title { color: var(--player-2-ink); }
+.jev-root ::deep .jev-team__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+.jev-root ::deep .jev-team__hidden {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+    border-radius: 10px;
+    background: repeating-linear-gradient(45deg, var(--color-surface), var(--color-surface) 14px, var(--color-surface-hover) 14px, var(--color-surface-hover) 28px);
+}
+
+.jev-root ::deep .jev-roster {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.375rem;
+}
+
+.jev-root ::deep .jev-slot {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    min-height: 44px;
+    padding: 0;
+    border-radius: 10px;
+    border: 2px solid var(--color-border);
+    background: var(--color-bg);
+    cursor: pointer;
+}
+
+.jev-root ::deep .jev-slot.is-empty { border-style: dashed; cursor: default; }
+.jev-root ::deep .jev-slot.is-selected { border-color: var(--jev-ink); box-shadow: 0 0 0 2px var(--color-accent); }
+.jev-root ::deep .jev-slot__art { width: 100%; height: 100%; display: block; }
+
+.jev-root ::deep .jev-slot__num {
+    position: absolute;
+    right: 3px;
+    bottom: 2px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: var(--color-text-secondary);
+}
+
+/* ── inspector ── */
+
+.jev-root ::deep .jev-inspector { display: flex; flex-direction: column; gap: 0.75rem; }
+.jev-root ::deep .jev-inspector__head { display: flex; align-items: center; justify-content: space-between; }
+.jev-root ::deep .jev-inspector__name { font-size: 1.0625rem; font-weight: 700; }
+.jev-root ::deep .jev-inspector__row { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.875rem; }
+
+.jev-root ::deep .jev-hp {
+    height: 6px;
+    margin-top: 0.375rem;
+    border-radius: 3px;
+    background: var(--color-surface-hover);
+    overflow: hidden;
+}
+
+.jev-root ::deep .jev-hp > span {
+    display: block;
+    width: var(--pct);
+    height: 100%;
+    background: var(--accent-success);
+}
+
+.jev-root ::deep .jev-dist { display: flex; flex-direction: column; gap: 0.375rem; }
+
+.jev-root ::deep .jev-dist__row {
+    display: grid;
+    grid-template-columns: 7.5rem minmax(0, 1fr) 2.5rem;
+    align-items: center;
+    gap: 0.5rem;
+    font: 600 0.75rem ui-monospace, Consolas, monospace;
+    color: var(--color-text-secondary);
+}
+
+.jev-root ::deep .jev-dist__row.is-chosen { color: var(--color-text-primary); }
+.jev-root ::deep .jev-dist__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jev-root ::deep .jev-dist__value { text-align: right; }
+
+.jev-root ::deep .jev-dist__bar {
+    height: 10px;
+    border-radius: 5px;
+    background: var(--color-surface-hover);
+    overflow: hidden;
+}
+
+.jev-root ::deep .jev-dist__bar > span {
+    display: block;
+    width: var(--pct);
+    height: 100%;
+    background: var(--color-text-secondary);
+}
+
+.jev-root ::deep .jev-dist__row.is-chosen .jev-dist__bar > span { background: var(--color-accent); }
+
+/* ── library ── */
+
+.jev-root ::deep .jev-library {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    padding: 0.75rem;
+    border-radius: 12px;
+    background: var(--color-surface);
+}
+
+.jev-root ::deep .jev-library__head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.jev-root ::deep .jev-library__tools { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.jev-root ::deep .jev-library__list { flex: 1; min-height: 0; overflow: auto; }
+
+.jev-root ::deep .jev-card {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 84px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+}
+
+.jev-root ::deep .jev-card.is-preset { border-style: dashed; }
+
+.jev-root ::deep .jev-card__pick {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0 0.75rem;
+    border: 0;
+    background: none;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.jev-root ::deep .jev-card__pick:hover:not(:disabled) { background: var(--color-surface-hover); border-radius: 10px; }
+.jev-root ::deep .jev-card__art { width: 64px; height: 64px; flex-shrink: 0; }
+.jev-root ::deep .jev-card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.125rem; }
+.jev-root ::deep .jev-card__name { font-weight: 700; }
+.jev-root ::deep .jev-card__kit { font-size: 0.8125rem; color: var(--color-text-primary); }
+.jev-root ::deep .jev-card__meta { font-size: 0.75rem; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jev-root ::deep .jev-card__stat { font-size: 0.75rem; color: var(--color-text-secondary); white-space: nowrap; }
+.jev-root ::deep .jev-card__own { display: flex; flex-direction: column; padding-right: 0.25rem; }
+
+/* ── factory ── */
+
+.jev-root ::deep .jev-factory {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 12px;
+    background: var(--color-surface);
+}
+
+.jev-root ::deep .jev-factory__head { display: flex; align-items: center; justify-content: space-between; }
+.jev-root ::deep .jev-factory__body { display: grid; grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr); gap: 1rem; }
+
+.jev-root ::deep .jev-factory__preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border-radius: 12px;
+    background: var(--jev-floor);
+}
+
+.jev-root ::deep .jev-factory__art { width: 100%; aspect-ratio: 1; display: block; }
+.jev-root ::deep .jev-factory__form { display: flex; flex-direction: column; gap: 0.75rem; }
+.jev-root ::deep .jev-factory__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.jev-root ::deep .jev-factory__actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+
+.jev-root ::deep .jev-field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem; }
+.jev-root ::deep .jev-slider input { accent-color: var(--color-accent); min-height: 32px; }
+.jev-root ::deep .jev-slider__row { display: flex; justify-content: space-between; }
+
+.jev-root ::deep .jev-budget { display: flex; flex-direction: column; gap: 0.375rem; }
+.jev-root ::deep .jev-budget__row { display: flex; justify-content: space-between; font-size: 0.875rem; }
+.jev-root ::deep .jev-budget__bar { height: 10px; border-radius: 5px; background: var(--color-surface-hover); overflow: hidden; }
+.jev-root ::deep .jev-budget__bar > span { display: block; width: var(--pct); height: 100%; background: var(--color-accent); }
+.jev-root ::deep .jev-budget.is-over .jev-budget__bar > span { background: var(--accent-danger); }
+.jev-root ::deep .jev-budget.is-over strong { color: var(--accent-danger); }
+
+/* ── black box ── */
+
+.jev-root ::deep .jev-blackbox {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border-radius: 12px;
+    background: var(--color-surface);
+}
+
+.jev-root ::deep .jev-blackbox__transport { display: flex; align-items: center; gap: 0.375rem; flex-wrap: wrap; }
+.jev-root ::deep .jev-blackbox__speed { display: flex; align-items: center; gap: 0.375rem; margin-left: 0.5rem; }
+.jev-root ::deep .jev-blackbox__clock { margin-left: auto; font: 600 0.8125rem ui-monospace, Consolas, monospace; }
+.jev-root ::deep .jev-blackbox__slider { width: 100%; min-height: 32px; accent-color: var(--color-accent); }
+
+/* ── phones and narrow windows: arena first, the two inspectors side by side beneath ── */
+
+@media (max-width: 56rem) {
+    .jev-root { height: auto; }
+
+    .jev-layout {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas: "center center" "blue red";
+    }
+
+    .jev-center { grid-area: center; }
+    .jev-arena { min-height: 60vw; flex: none; }
+    .jev-root ::deep .jev-team--blue { grid-area: blue; }
+    .jev-root ::deep .jev-team--red { grid-area: red; }
+    .jev-root ::deep .jev-factory__body { grid-template-columns: 1fr; }
+    .jev-root ::deep .jev-factory__grid { grid-template-columns: 1fr; }
+    .jev-root ::deep .jev-library__list { max-height: 60vh; }
+}
+
+@media (max-width: 30rem) {
+    .jev-layout { grid-template-columns: 1fr; grid-template-areas: "center" "blue" "red"; }
+}

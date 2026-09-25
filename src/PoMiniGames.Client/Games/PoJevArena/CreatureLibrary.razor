@@ -1,0 +1,83 @@
+@using PoMiniGames.Shared.Games.PoJevArena
+
+@* The shared public library plus the built-in presets. Clicking a card drafts it into the active
+   team's next free slot; your own creatures can be edited or deleted. Virtualized, so a big
+   library costs only the cards on screen. *@
+<section class="jev-library" aria-label="Creature library">
+    <header class="jev-library__head">
+        <h2 class="jev-kicker">Creature library</h2>
+        <div class="jev-library__tools">
+            <label class="jev-visually-hidden" for="jev-lib-q">Search creatures</label>
+            <input id="jev-lib-q" class="jev-input" type="search" placeholder="Search by name" value="@Query"
+                   @onchange="e => OnQuery.InvokeAsync(e.Value?.ToString())" />
+            <label class="jev-visually-hidden" for="jev-lib-sort">Sort</label>
+            <select id="jev-lib-sort" class="jev-input" value="@Sort" @onchange="e => OnSort.InvokeAsync(e.Value?.ToString())">
+                <option value="new">Newest</option>
+                <option value="used">Most used</option>
+                <option value="winrate">Win rate</option>
+            </select>
+            <button type="button" class="jev-btn" @onclick="OnNew">New creature</button>
+        </div>
+    </header>
+
+    @if (Offline)
+    {
+        <p class="jev-warn jev-small">Library offline right now. The presets still work.</p>
+    }
+
+    <div class="jev-library__list" tabindex="-1">
+        <Virtualize Items="Items" ItemSize="92" Context="c" OverscanCount="4">
+            <article class="jev-card @(c.IsPreset ? "is-preset" : null)" @key="c.Id">
+                <button type="button" class="jev-card__pick" disabled="@(!CanDraft)" @onclick="() => OnPick.InvokeAsync(c)"
+                        aria-label="@($"Draft {c.Name} into {ActiveTeamName}")">
+                    <CreaturePortrait Creature="c" Team="@ActiveTeam" Class="jev-card__art" />
+                    <span class="jev-card__body">
+                        <span class="jev-card__name">@c.Name</span>
+                        <span class="jev-card__kit">@Kit(c)</span>
+                        <span class="jev-card__meta">@c.MaxHp HP · @c.MoveSpeed.ToString("0.0") m/s · mass @c.Mass.ToString("0.0") · @Personality(c)</span>
+                    </span>
+                    <span class="jev-card__stat">@Record(c)</span>
+                </button>
+                @if (c.IsMine)
+                {
+                    <div class="jev-card__own">
+                        <button type="button" class="jev-link" @onclick="() => OnEdit.InvokeAsync(c)" aria-label="@($"Edit {c.Name}")">Edit</button>
+                        <button type="button" class="jev-link jev-danger" @onclick="() => OnDelete.InvokeAsync(c)" aria-label="@($"Delete {c.Name}")">Delete</button>
+                    </div>
+                }
+            </article>
+        </Virtualize>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ICollection<ArenaCreature> Items { get; set; } = [];
+    [Parameter] public string Sort { get; set; } = "new";
+    [Parameter] public string? Query { get; set; }
+    [Parameter] public string ActiveTeam { get; set; } = "blue";
+    [Parameter] public bool CanDraft { get; set; } = true;
+    [Parameter] public bool Offline { get; set; }
+    [Parameter] public EventCallback<ArenaCreature> OnPick { get; set; }
+    [Parameter] public EventCallback<ArenaCreature> OnEdit { get; set; }
+    [Parameter] public EventCallback<ArenaCreature> OnDelete { get; set; }
+    [Parameter] public EventCallback<string?> OnSort { get; set; }
+    [Parameter] public EventCallback<string?> OnQuery { get; set; }
+    [Parameter] public EventCallback OnNew { get; set; }
+
+    private string ActiveTeamName => ActiveTeam == "blue" ? "Team Blue" : "Team Red";
+
+    private static string Kit(ArenaCreature c) => c.Abilities.Length == 0
+        ? "Melee only"
+        : "Melee + " + string.Join(" · ", c.Abilities.Select(id => PoJevArenaCatalog.FindAbility(id)?.Label ?? id));
+
+    private static string Personality(ArenaCreature c) =>
+        PoJevArenaCatalog.Temperaments.FirstOrDefault(t => t.Id == c.Temperament)?.Label ?? c.Temperament;
+
+    private static string Record(ArenaCreature c)
+    {
+        if (c.IsPreset) return "Preset";
+        if (c.Deployed == 0) return $"New · by {c.OwnerName}";
+        var rate = (c.Wins + 0.5 * c.Draws) / c.Deployed;
+        return $"{rate:P0} W · {c.Deployed} fights";
+    }
+}

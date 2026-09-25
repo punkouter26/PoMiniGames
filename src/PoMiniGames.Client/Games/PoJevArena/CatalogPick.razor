@@ -1,0 +1,20 @@
+@using PoMiniGames.Shared.Games.PoJevArena
+
+@* A select over one fixed personality catalog; the summary under it is what Jev is told. *@
+<label class="jev-field">
+    <span>@Label</span>
+    <select class="jev-input" value="@Value" @onchange="e => ValueChanged.InvokeAsync(e.Value?.ToString() ?? Value)">
+        @foreach (var entry in Entries)
+        {
+            <option value="@entry.Id">@entry.Label</option>
+        }
+    </select>
+    <span class="jev-muted jev-small">@(Entries.FirstOrDefault(e => e.Id == Value)?.Summary)</span>
+</label>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public ArenaCatalogEntry[] Entries { get; set; } = [];
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+}

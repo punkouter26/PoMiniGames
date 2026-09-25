@@ -1,0 +1,136 @@
+@page "/pojevarena"
+@page "/pojevarena/{ModeSegment}"
+@using PoMiniGames.Shared.Games.PoJevArena
+
+<PageTitle>Jev Arena · PoMiniGames</PageTitle>
+
+<GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true" GameKey="pojevarena">
+    @if (_phase == Phase.Intro)
+    {
+        <GameIntro CueScope="pojevarena"
+                   Title="@TitleContent"
+                   Objective="@IntroObjective"
+                   Controls="@HowToPlay"
+                   Mode="@IntroMode"
+                   StartLabel="@(IsDemo ? "Watch" : "Start drafting")"
+                   OnStart="StartAsync" />
+    }
+    else
+    {
+        <div class="jev-root" data-phase="@_phase.ToString().ToLowerInvariant()">
+            <header class="jev-topbar">
+                <span class="jev-status @(Configured ? "is-ok" : "is-off")" role="status">@StatusText</span>
+                @if (_phase is Phase.Battle or Phase.Replay && _hud is not null)
+                {
+                    <span class="jev-score"><span class="jev-score__blue">Blue @_hud.BlueAlive</span> · <span class="jev-clock">@Clock(_hud.Time)</span> · <span class="jev-score__red">@_hud.RedAlive Red</span></span>
+                    <span class="jev-muted jev-small">@_hud.Calls Jev calls</span>
+                }
+            </header>
+
+            @if (Banner is not null)
+            {
+                <div class="jev-banner" role="alert">@Banner</div>
+            }
+
+            <div class="jev-layout">
+                <TeamColumn Team="blue" Slots="_blue" Drafting="Drafting" Active="@(_activeTeam == "blue")"
+                            Hidden="@(IsTwoPlayer && Drafting && _twoPlayerStep is TwoPlayerStep.Handoff or TwoPlayerStep.Red)"
+                            Locked="_blueLocked" ShowLock="@(IsTwoPlayer && _twoPlayerStep == TwoPlayerStep.Blue)"
+                            PlayerLabel="@(IsTwoPlayer ? "Player 1" : null)"
+                            Inspector="_inspectBlue"
+                            OnActivate='() => SetActive("blue")' OnClear='() => ClearTeam("blue")' OnLock='() => LockAsync("blue")'
+                            OnSlot='slot => OnSlotAsync("blue", slot)' />
+
+                <main class="jev-center">
+                    @if (Drafting)
+                    {
+                        @if (IsTwoPlayer && _twoPlayerStep == TwoPlayerStep.Handoff)
+                        {
+                            <section class="jev-handoff" aria-live="polite">
+                                <h2>Pass the device to Player 2</h2>
+                                <p class="jev-muted">Blue is locked and hidden. Player 2 drafts Red.</p>
+                                <button type="button" class="jev-btn" @onclick="StartRedDraft">I'm Player 2</button>
+                            </section>
+                        }
+                        else if (_factoryOpen)
+                        {
+                            <CreatureFactory Editing="_editing" OnSaved="OnCreatureSavedAsync" OnClose="CloseFactory" />
+                        }
+                        else
+                        {
+                            <CreatureLibrary Items="VisibleLibrary" Sort="@_sort" Query="@_query" ActiveTeam="@_activeTeam"
+                                             CanDraft="CanDraft" Offline="_libraryOffline"
+                                             OnPick="Draft" OnEdit="Edit" OnDelete="AskDelete"
+                                             OnSort="OnSortAsync" OnQuery="OnQueryAsync" OnNew="NewCreature" />
+                        }
+
+                        @if (_pendingDelete is not null)
+                        {
+                            <div class="jev-confirm" role="alertdialog" aria-label="Confirm delete">
+                                <span>Delete <strong>@_pendingDelete.Name</strong> from the public library?</span>
+                                <button type="button" class="jev-btn jev-btn--danger" @onclick="ConfirmDeleteAsync">Delete</button>
+                                <button type="button" class="jev-btn jev-btn--ghost" @onclick="() => _pendingDelete = null">Keep</button>
+                            </div>
+                        }
+
+                        <div class="jev-deploy">
+                            <button type="button" class="jev-btn jev-btn--big" disabled="@(!CanDeploy)" @onclick="DeployAsync">
+                                @(_deploying ? "Deploying…" : "Deploy battle")
+                            </button>
+                            <span class="jev-muted jev-small">@DeployHint</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="jev-arena">
+                            <canvas id="@CanvasId" class="jev-arena__canvas" aria-label="Arena. Click a creature to inspect it."></canvas>
+                            @if (_result is not null)
+                            {
+                                <div class="jev-result" role="status">
+                                    <strong>@ResultHeadline</strong>
+                                    <span class="jev-small">@ResultDetail</span>
+                                </div>
+                            }
+                        </div>
+
+                        @if (_phase == Phase.Replay)
+                        {
+                            <BlackBoxScrubber State="_blackBox" OnCommand="OnBlackBoxCommandAsync" />
+                            @if (!IsDemo)
+                            {
+                                <div class="jev-after">
+                                    <button type="button" class="jev-btn" @onclick="RematchAsync">Rematch</button>
+                                    <button type="button" class="jev-btn jev-btn--ghost" @onclick="BackToDraftAsync">Change teams</button>
+                                </div>
+                            }
+                        }
+                    }
+                </main>
+
+                <TeamColumn Team="red" Slots="_red" Drafting="Drafting" Active="@(_activeTeam == "red")"
+                            Locked="@(_redLocked || (IsTwoPlayer && _twoPlayerStep != TwoPlayerStep.Red))"
+                            ShowLock="@(IsTwoPlayer && _twoPlayerStep == TwoPlayerStep.Red)" PlayerLabel="@(IsTwoPlayer ? "Player 2" : null)"
+                            Inspector="_inspectRed"
+                            OnActivate='() => SetActive("red")' OnClear='() => ClearTeam("red")' OnLock='() => LockAsync("red")'
+                            OnSlot='slot => OnSlotAsync("red", slot)' />
+            </div>
+        </div>
+    }
+</GameShell>
+
+@code {
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">⚔️</span> Jev Arena · @GameModes.ToLabel(Mode)</span>;
+
+    private string IntroObjective => IsDemo
+        ? "Preset squads and community creatures fight while TypeSafe's Jev makes every call."
+        : "Design creatures, draft two squads of ten, and watch Jev decide every move.";
+
+    private RenderFragment HowToPlay => @<div>
+        <ul>
+            <li>Build creatures in the <strong>Factory</strong>: stats, one offense and one defense ability, a personality. Everyone melees.</li>
+            <li>Draft ten per side from the public library, then <strong>Deploy</strong>.</li>
+            <li>Click a creature to inspect Jev's probabilities. <kbd>[</kbd> <kbd>]</kbd> cycle Blue, <kbd>;</kbd> <kbd>'</kbd> cycle Red.</li>
+            <li>After the match, scrub the <strong>Black Box</strong>: <kbd>Space</kbd> play, <kbd>←</kbd> <kbd>→</kbd> step.</li>
+        </ul>
+    </div>;
+}

@@ -79,18 +79,18 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
 - [x] **T11a Catalog wiring.** Add `PoJevArena` to Domain `Primitives/GameKey.cs` (field only, not the `All[]`
   allowlist) and client `Models/GameKey.cs`. Add the `GameCatalog.cs` entry (1player, 2player, demo). Add
   `pojevarena` to `Layout/MainLayout.razor` `GameRoutePrefixes`, plus the missing `pocabinet` (SPEC OQ2).
-- [ ] **T11b Page shell.**
+- [x] **T11b Page shell.**
   - `PoJevArenaPage.razor`, `.razor.cs` and `.razor.css`, using `GameShell` + `GameIntro` and mode from
     `GameModes.Parse`.
   - `PoJevArenaApiClient.cs` with its own source-gen context and try/catch → null.
   - Register in `Client/Program.cs`.
   - Status chip and the Jev-unavailable state.
-- [ ] **T12 Factory + Library.** `CreatureFactory.razor` (sliders, ability pickers, budget meter, live preview canvas
+- [x] **T12 Factory + Library.** `CreatureFactory.razor` (sliders, ability pickers, budget meter, live preview canvas
   via `PoJevArena.preview`) and `CreatureLibrary.razor` (`<Virtualize>`, sort and search, own-row edit and delete,
   animated portraits). Page CSS uses `::deep`.
-- [ ] **T13 Rosters + modes.** `RosterTrays.razor`: 2×10 slots, the 2P lock and hand-off flow, Blazored.LocalStorage
+- [x] **T13 Rosters + modes.** `RosterTrays.razor`: 2×10 slots, the 2P lock and hand-off flow, Blazored.LocalStorage
   persistence, deleted-id pruning.
-- [ ] **T14 Arena, Inspector, Black Box.** `JevInspector.razor` (probability bars, confidence, panic, stale) and
+- [x] **T14 Arena, Inspector, Black Box.** `JevInspector.razor` (probability bars, confidence, panic, stale) and
   `BlackBoxScrubber.razor` (transport, speed, timeline, decision jumps). Deploy flow: register → mount → `DecideAsync`
   → end → report the result. Banners for every SPEC §10 state.
 - [ ] **T15 Demo + E2E-UI.**

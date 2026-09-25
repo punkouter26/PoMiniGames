@@ -1,0 +1,54 @@
+@using System.Globalization
+
+@* The post-match forensic transport. Frame-accurate: the slider is the recorded 60 Hz frame index,
+   and the decision jumps land on the frames where Jev's answers arrived (for either side's
+   selected unit, or anyone when unscoped). Keyboard: Space play/pause, ←/→ one frame
+   (Shift: one second) — handled by the engine while the arena is mounted. *@
+<section class="jev-blackbox" aria-label="Black Box">
+    <div class="jev-blackbox__transport">
+        <button type="button" class="jev-btn jev-btn--ghost" aria-label="First frame" @onclick='() => Command("first")'>|&lt;</button>
+        <button type="button" class="jev-btn jev-btn--ghost" aria-label="Previous Jev decision" @onclick='() => Command("prevDecision")'>&lt;&lt;</button>
+        <button type="button" class="jev-btn jev-btn--ghost" aria-label="Back one frame" @onclick='() => Command("step", -1)'>&lt;</button>
+        <button type="button" class="jev-btn" @onclick='() => Command(State?.Playing == true ? "pause" : "play")'>@(State?.Playing == true ? "Pause" : "Play")</button>
+        <button type="button" class="jev-btn jev-btn--ghost" aria-label="Forward one frame" @onclick='() => Command("step", 1)'>&gt;</button>
+        <button type="button" class="jev-btn jev-btn--ghost" aria-label="Next Jev decision" @onclick='() => Command("nextDecision")'>&gt;&gt;</button>
+        <button type="button" class="jev-btn jev-btn--ghost" aria-label="Last frame" @onclick='() => Command("last")'>&gt;|</button>
+
+        <label class="jev-blackbox__speed">
+            <span class="jev-muted jev-small">Speed</span>
+            <select class="jev-input" value="@SpeedValue" @onchange='e => Command("speed", double.Parse(e.Value?.ToString() ?? "1", CultureInfo.InvariantCulture))'>
+                <option value="0.25">0.25×</option>
+                <option value="0.5">0.5×</option>
+                <option value="1">1×</option>
+                <option value="2">2×</option>
+                <option value="4">4×</option>
+            </select>
+        </label>
+        <span class="jev-blackbox__clock">@Clock</span>
+    </div>
+
+    <label class="jev-visually-hidden" for="jev-bb-slider">Timeline</label>
+    <input id="jev-bb-slider" class="jev-blackbox__slider" type="range" min="0" max="@Math.Max(0, (State?.Frames ?? 1) - 1)"
+           value="@(State?.Frame ?? 0)" @oninput='e => Command("scrub", double.Parse(e.Value?.ToString() ?? "0", CultureInfo.InvariantCulture))' />
+</section>
+
+@code {
+    [Parameter] public ArenaBlackBoxView? State { get; set; }
+    [Parameter] public EventCallback<(string Command, double Value)> OnCommand { get; set; }
+
+    private string SpeedValue => (State?.Speed ?? 1).ToString(CultureInfo.InvariantCulture);
+
+    private string Clock
+    {
+        get
+        {
+            if (State is null) return "—";
+            var now = TimeSpan.FromSeconds(State.Seconds);
+            var end = TimeSpan.FromSeconds(Math.Max(0, State.Frames - 1) / 60.0);
+            return string.Create(CultureInfo.InvariantCulture,
+                $"{now:m\\:ss\\.f} / {end:m\\:ss\\.f} · frame {State.Frame} / {Math.Max(0, State.Frames - 1)}");
+        }
+    }
+
+    private Task Command(string command, double value = 0) => OnCommand.InvokeAsync((command, value));
+}

@@ -112,7 +112,10 @@ public static class PoJevArenaEndpoints
     {
         var owner = Owner(http);
         var viewer = owner is null ? null : CreatureLibraryStore.OwnerKeyFor(owner.Value.UserId);
-        return Results.Ok(await library.ListAsync(viewer, sort, q, ct));
+        // Null is a storage failure, reported as such so the page can say "offline" rather than
+        // showing an outage as an empty library.
+        var creatures = await library.ListAsync(viewer, sort, q, ct);
+        return creatures is null ? LibraryOffline() : Results.Ok(creatures);
     }
 
     private static async Task<IResult> CreateCreatureAsync(
@@ -165,6 +168,7 @@ public static class PoJevArenaEndpoints
         ArenaMatchResult result,
         HttpContext http,
         ArenaMatchRegistry registry,
+        TimeProvider clock,
         CreatureLibraryStore library,
         ILoggerFactory loggers,
         CancellationToken ct)
@@ -185,16 +189,24 @@ public static class PoJevArenaEndpoints
                 detail: "This match is not live on the server any more, so its result cannot be recorded.");
         }
 
-        switch (match.TryClaimResult())
+        switch (match.TryClaimResult(result.DurationSeconds, clock.GetUtcNow()))
         {
             case ArenaResultGate.AlreadyReported:
                 return Results.Problem(statusCode: StatusCodes.Status409Conflict, title: "already-reported");
             case ArenaResultGate.TooFewDecisions:
                 return Results.Problem(statusCode: StatusCodes.Status422UnprocessableEntity, title: "too-few-decisions",
-                    detail: $"A match needs at least {ArenaMatchRegistry.MinDecisionsForResult} Jev decisions to count.");
+                    detail: "This match did not make enough Jev decisions for its length to count.");
+            case ArenaResultGate.Implausible:
+                return Results.Problem(statusCode: StatusCodes.Status422UnprocessableEntity, title: "implausible-result",
+                    detail: "That result does not fit how long this match has been running.");
         }
 
-        if (!await library.ApplyResultAsync(match.Roster.Blue, match.Roster.Red, result.Winner, ct)) return LibraryOffline();
+        if (!await library.ApplyResultAsync(match.Roster.Blue, match.Roster.Red, result.Winner, ct))
+        {
+            // Hand the claim back: the write failed, so a retry must be able to land.
+            match.ReleaseResultClaim();
+            return LibraryOffline();
+        }
 
         loggers.CreateLogger(typeof(PoJevArenaEndpoints)).MatchFinished(match.MatchId, result.Winner, match.Decisions, match.CostUsd);
         return Results.Ok(new ArenaResultReceipt(true));
@@ -239,7 +251,8 @@ public static class PoJevArenaEndpoints
         if (!jev.IsConfigured) return JevUnavailable();
 
         if (request.BlueIds is not { Length: PoJevArenaCatalog.TeamSize }
-            || request.RedIds is not { Length: PoJevArenaCatalog.TeamSize })
+            || request.RedIds is not { Length: PoJevArenaCatalog.TeamSize }
+            || request.BlueIds.Concat(request.RedIds).Any(string.IsNullOrWhiteSpace))
         {
             return Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "roster-size",
                 detail: $"Each team needs exactly {PoJevArenaCatalog.TeamSize} creatures.");
@@ -284,7 +297,9 @@ public static class PoJevArenaEndpoints
         }
 
         var units = request.Units ?? [];
-        if (units.Length is 0 or > MaxBatch || units.Select(u => u.Unit).Distinct(StringComparer.Ordinal).Count() != units.Length)
+        if (units.Length is 0 or > MaxBatch
+            || units.Any(u => u is null || u.Unit is null)
+            || units.Select(u => u.Unit).Distinct(StringComparer.Ordinal).Count() != units.Length)
         {
             return Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "batch",
                 detail: $"Send 1-{MaxBatch} distinct units per batch.");

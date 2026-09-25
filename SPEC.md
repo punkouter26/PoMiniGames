@@ -315,13 +315,19 @@ All routes are relative to the authenticated `/api` group, so they need auth and
   write-behind pattern as `AiTokenBudget` / `IAiTokenLedgerStore` (table `PoJevArenaCallLedger`). A batch
   that would exceed the allowance is rejected whole with **429** plus `Retry-After` set to the reset time.
 - **Match registry**: an in-memory `IMemoryCache` holds `matchId → rosters, owner, decisionCount, reported`, with a
-  15-minute sliding TTL. A result is accepted only once, only from the owner, and only if the match made at least
-  40 decisions (about 2 s of play). That stops the counters being inflated without spending Jev calls. A recycled
+  15-minute sliding TTL. A result is accepted only once and only from the owner, and only when it is plausible:
+  the match lasted at least 10 s, at least 80% of the claimed duration has passed on the server clock since
+  registration, and there were at least max(40, 4 × duration) paid Jev decisions. The winner is still the client's
+  word (the server does not re-simulate), so a fake result is possible, but it costs the same time and allowance as
+  playing the match. That is enough for a sort order. If the stats write fails, the claim is released so a retry
+  can land. A recycled
   host forgets the match, so the result returns 404 and the page shows "stats not recorded".
 - **Creature store**: table `PoJevArenaCreatures`, one partition `lib`, RowKey is an 8-char id. Columns hold the
   stats, OwnerKey (SHA-256 of the claim id, first 24 hex characters), OwnerName, Deployed/Wins/Losses/Draws,
   CreatedUtc and UpdatedUtc. Counter updates go through `TableConcurrency.UpdateWithRetryAsync` as increments.
-  Reads fall back to empty and writes fail cleanly when storage is down, as `EcosystemWorldStore` does.
+  Row keys are inverted ticks plus a random suffix, so a partition scan reads newest-first. A listing considers the
+  newest 2,000 creatures and returns 200; the used/win-rate sorts and name search rank within that window. When
+  storage is down, a listing returns 503 (the page says "offline", never "empty") and writes fail cleanly.
 - **Configuration**: section `PoMiniGames:Jev` with `Endpoint`, `Model`, `ApiKey`, `CallTimeoutMs`,
   `MaxConcurrentCalls` and `DailyCallsPerIdentity`. The key comes from Key Vault secret `PoMiniGames--Jev--ApiKey`,
   restored as the conditional secret in `infra/kv-secrets.bicep`, or from `appsettings.Development.json` locally.

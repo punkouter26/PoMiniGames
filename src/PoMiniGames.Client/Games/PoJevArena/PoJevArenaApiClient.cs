@@ -26,15 +26,17 @@ public sealed class PoJevArenaApiClient(HttpClient http)
         catch { return null; }
     }
 
-    public async Task<ArenaCreature[]> ListCreaturesAsync(string sort, string? query, CancellationToken ct = default)
+    /// <returns>The listing, or null when the library is unreachable (the page shows "offline").</returns>
+    public async Task<ArenaCreature[]?> ListCreaturesAsync(string sort, string? query, CancellationToken ct = default)
     {
         try
         {
             var url = $"/api/pojevarena/creatures?sort={Uri.EscapeDataString(sort)}";
             if (!string.IsNullOrWhiteSpace(query)) url += $"&q={Uri.EscapeDataString(query.Trim())}";
-            return await http.GetFromJsonAsync(url, Json.ArenaCreatureArray, ct) ?? [];
+            using var response = await http.GetAsync(url, ct);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(Json.ArenaCreatureArray, ct) ?? [] : null;
         }
-        catch { return []; }
+        catch { return null; }
     }
 
     public Task<LibraryResult> CreateAsync(ArenaCreatureDraft draft, CancellationToken ct = default) =>

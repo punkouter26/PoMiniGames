@@ -9,6 +9,7 @@ public enum ArenaResultGate
     Accepted,
     AlreadyReported,
     TooFewDecisions,
+    Implausible,
 }
 
 /// <summary>
@@ -27,6 +28,7 @@ public sealed class ArenaMatch(string matchId, string ownerId, ArenaRoster roste
     public ArenaRoster Roster { get; } = roster;
     public ArenaMode Mode { get; } = mode;
     public int Seed { get; } = seed;
+    public DateTimeOffset RegisteredAt { get; } = now;
 
     public int Decisions => Volatile.Read(ref _decisions);
     public double CostUsd => Interlocked.Read(ref _costMicroUsd) / 1_000_000.0;
@@ -43,15 +45,28 @@ public sealed class ArenaMatch(string matchId, string ownerId, ArenaRoster roste
     }
 
     /// <summary>
-    /// One result per match, and only after at least <see cref="ArenaMatchRegistry.MinDecisionsForResult"/>
-    /// answered decisions (about two seconds of a full 10v10), so library win rates cannot be
-    /// farmed by reporting matches that never really ran.
+    /// One result per match, and only when the claim is plausible for a match that really ran:
+    /// at least <see cref="ArenaMatchRegistry.MinResultSeconds"/> long, at least 80% of the claimed
+    /// duration elapsed on the server's clock since registration (the sim runs in real time and
+    /// pauses when hidden, so it can only be slower), and paid Jev decisions in proportion to that
+    /// duration. The winner itself is the client's word — the server does not re-simulate — so
+    /// this does not make a result unforgeable; it makes forging one cost the same time and
+    /// allowance as playing it, which keeps library win rates honest enough for a sort order.
     /// </summary>
-    public ArenaResultGate TryClaimResult()
+    public ArenaResultGate TryClaimResult(double durationSeconds, DateTimeOffset now)
     {
-        if (Decisions < ArenaMatchRegistry.MinDecisionsForResult) return ArenaResultGate.TooFewDecisions;
+        var needed = Math.Max(ArenaMatchRegistry.MinDecisionsForResult, (int)(durationSeconds * ArenaMatchRegistry.MinDecisionsPerSecond));
+        if (Decisions < needed) return ArenaResultGate.TooFewDecisions;
+        if (durationSeconds < ArenaMatchRegistry.MinResultSeconds
+            || (now - RegisteredAt).TotalSeconds < durationSeconds * 0.8)
+        {
+            return ArenaResultGate.Implausible;
+        }
         return Interlocked.Exchange(ref _reported, 1) == 0 ? ArenaResultGate.Accepted : ArenaResultGate.AlreadyReported;
     }
+
+    /// <summary>Hands the claim back when the stats write failed, so the client's retry can land.</summary>
+    public void ReleaseResultClaim() => Interlocked.Exchange(ref _reported, 0);
 }
 
 /// <summary>
@@ -62,6 +77,8 @@ public sealed class ArenaMatch(string matchId, string ownerId, ArenaRoster roste
 public sealed class ArenaMatchRegistry(TimeProvider clock)
 {
     public const int MinDecisionsForResult = 40;
+    public const double MinDecisionsPerSecond = 4;
+    public const double MinResultSeconds = 10;
     public static readonly TimeSpan IdleExpiry = TimeSpan.FromMinutes(15);
 
     /// <summary>Upper bound on live matches; the oldest idle ones are swept first.</summary>

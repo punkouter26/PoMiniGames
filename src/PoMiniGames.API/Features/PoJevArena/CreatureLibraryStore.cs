@@ -30,7 +30,12 @@ public sealed class CreatureLibraryStore(TableServiceClient tables, ILogger<Crea
     public const string TableName = "PoJevArenaCreatures";
     private const string Partition = "lib";
 
-    /// <summary>How many rows a library listing returns; newest-first scan cap before sorting.</summary>
+    /// <summary>
+    /// How many rows a listing returns, and how many of the newest rows it considers. Row keys sort
+    /// newest-first (see <see cref="NewId"/>), so the partition scan reads the newest creatures first
+    /// and the cap keeps the newest <see cref="ScanLimit"/> — "used", "win rate" and name search
+    /// rank within that window, which is the trade for one bounded partition scan per listing.
+    /// </summary>
     public const int ListLimit = 200;
     private const int ScanLimit = 2_000;
 
@@ -83,7 +88,8 @@ public sealed class CreatureLibraryStore(TableServiceClient tables, ILogger<Crea
     public static string OwnerKeyFor(string userId) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId)))[..24].ToLowerInvariant();
 
-    public async Task<ArenaCreature[]> ListAsync(string? viewerKey, string? sort, string? query, CancellationToken ct = default)
+    /// <returns>The listing, or null when storage failed (the endpoint answers 503, the page says "offline").</returns>
+    public async Task<ArenaCreature[]?> ListAsync(string? viewerKey, string? sort, string? query, CancellationToken ct = default)
     {
         try
         {
@@ -117,7 +123,7 @@ public sealed class CreatureLibraryStore(TableServiceClient tables, ILogger<Crea
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LibraryFailed(ex, "list");
-            return [];
+            return null;
         }
     }
 
@@ -277,8 +283,14 @@ public sealed class CreatureLibraryStore(TableServiceClient tables, ILogger<Crea
         entity.BuildCost = creature.BuildCost;
     }
 
-    /// <summary>10 lowercase hex chars: short enough for a URL, never colliding with <c>preset:</c> ids.</summary>
-    private static string NewId() => Convert.ToHexString(RandomNumberGenerator.GetBytes(5)).ToLowerInvariant();
+    /// <summary>
+    /// Inverted UTC ticks (19 digits) plus 4 random hex chars: Table Storage returns a partition in
+    /// RowKey order, so this makes every scan newest-first; the suffix breaks same-tick ties. Never
+    /// collides with <c>preset:</c> ids.
+    /// </summary>
+    private static string NewId() =>
+        (DateTime.MaxValue.Ticks - DateTime.UtcNow.Ticks).ToString("D19", System.Globalization.CultureInfo.InvariantCulture)
+        + Convert.ToHexString(RandomNumberGenerator.GetBytes(2)).ToLowerInvariant();
 
     private async Task EnsureAsync(CancellationToken ct)
     {

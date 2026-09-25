@@ -76,19 +76,21 @@ public sealed class JevClient(
     {
         if (!IsConfigured) return JevOutcome.Fail("not-configured");
 
-        using var lease = await gate.Limiter.AcquireAsync(1, ct);
-        if (!lease.IsAcquired) return JevOutcome.Fail("busy");
-
         var questions = prompt.Questions.ToDictionary(
             q => q.Key, q => new JevWireQuestion(q.Value.Type, q.Value.Instructions, q.Value.Criteria), StringComparer.Ordinal);
         var body = new JevWireRequest(_options.Model, prompt.State, questions, sessionId, user);
 
+        // The budget starts before the queue: time spent waiting for a concurrency slot counts,
+        // because an answer that lands after the unit's next 1 Hz slot is worthless either way.
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromMilliseconds(Math.Max(1, _options.CallTimeoutMs)));
         var clock = Stopwatch.StartNew();
 
         try
         {
+            using var lease = await gate.Limiter.AcquireAsync(1, timeout.Token);
+            if (!lease.IsAcquired) return JevOutcome.Fail("busy", Elapsed(clock));
+
             using var request = new HttpRequestMessage(HttpMethod.Post, _options.Path)
             {
                 Content = JsonContent.Create(body, JevWireJsonContext.Default.JevWireRequest),

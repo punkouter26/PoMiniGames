@@ -29,6 +29,10 @@ public sealed class JevCallAllowance(AiTokenBudget budget)
         return new Verdict(calls <= remaining, v.Spent, v.Limit, remaining, v.ResetUtc);
     }
 
-    /// <summary>Charges the calls actually sent upstream (failed calls still cost a request).</summary>
+    /// <summary>
+    /// Charges the calls a batch attempted — charged before the fan-out so concurrent batches cannot
+    /// overshoot the cap — including ones that then time out, fail upstream, or never get a
+    /// concurrency slot. Only units rejected by validation are free.
+    /// </summary>
     public void Record(string identity, int calls) => budget.Record(identity, calls);
 }

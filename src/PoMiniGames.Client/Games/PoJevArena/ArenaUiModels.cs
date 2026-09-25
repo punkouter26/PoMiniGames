@@ -59,8 +59,12 @@ public sealed record ArenaMatchEndView(
 
 public sealed record ArenaBlackBoxView(int Frame, int Frames, double Seconds, bool Playing, double Speed, int Decisions);
 
-/// <summary>What the page remembers between visits: the last two rosters (library ids or preset ids).</summary>
-public sealed record ArenaSavedRosters(string?[] Blue, string?[] Red);
+/// <summary>
+/// What the page remembers between visits: the last two rosters as creature snapshots, so a
+/// creature outside the current library page is never mistaken for a deleted one. The server
+/// re-resolves every id at deploy, so a stale snapshot cannot put an outdated design in a match.
+/// </summary>
+public sealed record ArenaSavedRosters(ArenaCreature?[] Blue, ArenaCreature?[] Red);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(ArenaInspectorView))]

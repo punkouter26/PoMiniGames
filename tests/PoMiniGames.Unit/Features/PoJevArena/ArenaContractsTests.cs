@@ -27,6 +27,7 @@ public sealed class ArenaContractsTests
     [InlineData("registry-owner-only")]
     [InlineData("registry-result-one-shot")]
     [InlineData("registry-result-needs-paid-decisions")]
+    [InlineData("registry-result-must-be-plausible")]
     [InlineData("registry-sliding-expiry")]
     [InlineData("registry-roster-frozen")]
     public async Task CallAllowance_AndMatchRegistry_Contracts(string scenario)
@@ -53,18 +54,37 @@ public sealed class ArenaContractsTests
                 {
                     var match = registry.Register(Me, roster, ArenaMode.OnePlayer);
                     match.RecordDecisions(ArenaMatchRegistry.MinDecisionsForResult, costUsd: 0.001);
-                    match.TryClaimResult().Should().Be(ArenaResultGate.Accepted);
-                    match.TryClaimResult().Should().Be(ArenaResultGate.AlreadyReported);
+                    clock.Advance(TimeSpan.FromSeconds(10));
+                    match.TryClaimResult(10, clock.GetUtcNow()).Should().Be(ArenaResultGate.Accepted);
+                    match.TryClaimResult(10, clock.GetUtcNow()).Should().Be(ArenaResultGate.AlreadyReported);
+                    // A failed stats write hands the claim back, so the retry is not a 409.
+                    match.ReleaseResultClaim();
+                    match.TryClaimResult(10, clock.GetUtcNow()).Should().Be(ArenaResultGate.Accepted);
                     return;
                 }
             case "registry-result-needs-paid-decisions":
                 {
                     var match = registry.Register(Me, roster, ArenaMode.OnePlayer);
+                    clock.Advance(TimeSpan.FromSeconds(60));
                     match.RecordDecisions(ArenaMatchRegistry.MinDecisionsForResult - 1, costUsd: 0);
-                    match.TryClaimResult().Should().Be(ArenaResultGate.TooFewDecisions,
+                    match.TryClaimResult(10, clock.GetUtcNow()).Should().Be(ArenaResultGate.TooFewDecisions,
                         "stats cannot be inflated without spending real Jev decisions");
                     match.RecordDecisions(1, costUsd: 0);
-                    match.TryClaimResult().Should().Be(ArenaResultGate.Accepted);
+                    match.TryClaimResult(60, clock.GetUtcNow()).Should().Be(ArenaResultGate.TooFewDecisions,
+                        "a 60 s claim needs decisions in proportion to its length");
+                    match.RecordDecisions(200, costUsd: 0);
+                    match.TryClaimResult(60, clock.GetUtcNow()).Should().Be(ArenaResultGate.Accepted);
+                    return;
+                }
+            case "registry-result-must-be-plausible":
+                {
+                    var match = registry.Register(Me, roster, ArenaMode.OnePlayer);
+                    match.RecordDecisions(1_000, costUsd: 0);
+                    clock.Advance(TimeSpan.FromSeconds(5));
+                    match.TryClaimResult(120, clock.GetUtcNow()).Should().Be(ArenaResultGate.Implausible,
+                        "a 2-minute match cannot finish 5 s after it was registered");
+                    match.TryClaimResult(4, clock.GetUtcNow()).Should().Be(ArenaResultGate.Implausible,
+                        "a result needs a minimum match length");
                     return;
                 }
             case "registry-sliding-expiry":

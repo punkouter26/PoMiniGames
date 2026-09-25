@@ -54,7 +54,7 @@ public sealed class PoJevArenaLibraryTests : IClassFixture<TestWebApplicationFac
     {
         foreach (var name in new[] { "Swamp Gob", "Bog Gob" })
         {
-            foreach (var mine in (await store.ListAsync(owner, "new", name)).Where(c => c.IsMine))
+            foreach (var mine in (await store.ListAsync(owner, "new", name) ?? []).Where(c => c.IsMine))
             {
                 await store.DeleteAsync(owner, mine.Id);
             }
@@ -72,7 +72,7 @@ public sealed class PoJevArenaLibraryTests : IClassFixture<TestWebApplicationFac
                     saved!.Id.Should().NotBeNullOrEmpty();
                     saved.IsMine.Should().BeTrue();
 
-                    var listed = await store.ListAsync(them, "new", "Swamp Gob");
+                    var listed = (await store.ListAsync(them, "new", "Swamp Gob"))!;
                     var row = listed.Should().ContainSingle(c => c.Id == saved.Id).Subject;
                     row.IsMine.Should().BeFalse("another viewer sees it, but not as theirs");
                     row.OwnerName.Should().Be("Tester");

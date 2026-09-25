@@ -174,10 +174,10 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
 
     private async Task LoadLibraryAsync()
     {
+        // Null means the server could not reach storage (a 503), which is not the same as an empty library.
         var items = await Api.ListCreaturesAsync(_sort, _query);
-        _library = [.. items];
-        // An empty list with a live server is just an empty library; with no status either, it's an outage.
-        _libraryOffline = items.Length == 0 && _status is null;
+        _libraryOffline = items is null;
+        _library = [.. items ?? []];
     }
 
     private async Task OnSortAsync(string? sort)
@@ -296,7 +296,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     private async Task SaveRostersAsync()
     {
         if (IsDemo || IsTwoPlayer) return;
-        var saved = new ArenaSavedRosters(_blue.Select(c => c?.Id).ToArray(), _red.Select(c => c?.Id).ToArray());
+        var saved = new ArenaSavedRosters([.. _blue], [.. _red]);
         try { await Storage.SetItemAsStringAsync(RosterKey, JsonSerializer.Serialize(saved, ArenaUiJsonContext.Default.ArenaSavedRosters)); }
         catch { /* storage blocked (private mode): rosters just don't persist */ }
     }
@@ -312,25 +312,25 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         catch { return; }
         if (saved is null) return;
 
-        var known = PoJevArenaCatalog.Presets.Concat(_library).ToDictionary(c => c.Id);
-        var dropped = 0;
-        void Fill(string?[] ids, ArenaCreature?[] into)
+        // Snapshots, refreshed from the current library page when the creature is on it. A
+        // creature deleted since is only discovered at deploy, where the server says so.
+        var fresh = PoJevArenaCatalog.Presets.Concat(_library).ToDictionary(c => c.Id);
+        void Fill(ArenaCreature?[]? from, ArenaCreature?[] into)
         {
-            for (var i = 0; i < Math.Min(ids.Length, into.Length); i++)
+            if (from is null) return;
+            for (var i = 0; i < Math.Min(from.Length, into.Length); i++)
             {
-                if (ids[i] is null) continue;
-                if (known.TryGetValue(ids[i]!, out var c)) into[i] = c;
-                else dropped++;
+                if (from[i] is { } c) into[i] = fresh.GetValueOrDefault(c.Id) ?? c;
             }
         }
         Fill(saved.Blue, _blue);
         Fill(saved.Red, _red);
-        if (dropped > 0) _toast = $"{dropped} creature(s) in your saved rosters were deleted from the library.";
     }
 
     // ── Battle ───────────────────────────────────────────────────────────────
 
-    private async Task DeployAsync()
+    /// <returns>True when the match was registered and the arena is about to mount.</returns>
+    private async Task<bool> DeployAsync()
     {
         _deploying = true;
         _error = null;
@@ -350,7 +350,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
                 "library-offline" => "The creature library is unreachable right now.",
                 _ => "Couldn't start the match. Try again in a moment.",
             };
-            return;
+            return false;
         }
 
         _ticket = ticket;
@@ -361,6 +361,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         _inspectBlue = _inspectRed = null;
         _phase = Phase.Battle;
         _pendingDeploy = true;
+        return true;
     }
 
     private async Task RematchAsync()
@@ -375,6 +376,13 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         _phase = Phase.Draft;
         _result = null;
         _hud = null;
+        if (IsTwoPlayer)
+        {
+            // A new hot-seat round: both teams unlock and Player 1 drafts first again.
+            _blueLocked = _redLocked = false;
+            _twoPlayerStep = TwoPlayerStep.Blue;
+            _activeTeam = "blue";
+        }
         await Task.WhenAll(LoadStatusAsync(), LoadLibraryAsync());
     }
 
@@ -476,8 +484,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
 
             FillDemoTeam(_blue, rng);
             FillDemoTeam(_red, rng);
-            await DeployAsync();
-            if (_ticket is null) return;
+            if (!await DeployAsync()) return;
             await InvokeAsync(StateHasChanged);
 
             // Wait for the whistle (the engine calls OnMatchEnded), with a hard ceiling past 3:00.
@@ -494,15 +501,13 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         }
     }
 
+    /// <summary>Up to six random library creatures, the rest random presets, in shuffled slots.</summary>
     private void FillDemoTeam(ArenaCreature?[] team, Random rng)
     {
-        var community = _library.OrderBy(_ => rng.Next()).Take(6).ToList();
-        for (var i = 0; i < team.Length; i++)
-        {
-            team[i] = i < community.Count && i % 2 == 1
-                ? community[i]
-                : PoJevArenaCatalog.Presets[rng.Next(PoJevArenaCatalog.Presets.Length)];
-        }
+        var picks = _library.OrderBy(_ => rng.Next()).Take(6).ToList();
+        while (picks.Count < team.Length) picks.Add(PoJevArenaCatalog.Presets[rng.Next(PoJevArenaCatalog.Presets.Length)]);
+        var shuffled = picks.OrderBy(_ => rng.Next()).ToArray();
+        Array.Copy(shuffled, team, team.Length);
     }
 
     private static async Task Delay(int ms, CancellationToken ct)

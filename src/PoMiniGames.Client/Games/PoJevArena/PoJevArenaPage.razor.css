@@ -473,3 +473,73 @@
 @media (max-width: 30rem) {
     .jev-layout { grid-template-columns: 1fr; grid-template-areas: "center" "blue" "red"; }
 }
+
+/* ── replay: Jev debrief / Black Box toggle ── */
+
+.jev-center { overflow: auto; }
+.jev-arena.is-hidden { display: none; }
+
+.jev-viewtabs {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.jev-root ::deep .jev-debrief {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.jev-root ::deep .jev-debrief__teams {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.jev-root ::deep .jev-debrief__card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    padding: 0.875rem;
+    border-radius: 12px;
+    background: var(--color-surface);
+    border: 2px solid transparent;
+}
+
+.jev-root ::deep .jev-debrief__card--blue { border-color: color-mix(in srgb, var(--player-1) 45%, transparent); }
+.jev-root ::deep .jev-debrief__card--red { border-color: color-mix(in srgb, var(--player-2) 45%, transparent); }
+.jev-root ::deep .jev-debrief__head { display: flex; align-items: center; justify-content: space-between; }
+.jev-root ::deep .jev-debrief__head h3 { margin: 0; font-size: 1.0625rem; }
+.jev-root ::deep .jev-debrief__card--blue h3 { color: var(--player-1-ink); }
+.jev-root ::deep .jev-debrief__card--red h3 { color: var(--player-2-ink); }
+.jev-root ::deep .jev-debrief h4 { margin: 0.25rem 0 0; }
+
+.jev-root ::deep .jev-debrief__story {
+    margin: 0;
+    padding-left: 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    line-height: 1.4;
+}
+
+.jev-root ::deep .jev-debrief__bars { display: flex; flex-direction: column; gap: 0.375rem; }
+
+.jev-root ::deep .jev-debrief__creatures,
+.jev-root ::deep .jev-debrief__moments {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.875rem;
+}
+
+.jev-root ::deep .jev-debrief__moments li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+
+@media (max-width: 56rem) {
+    .jev-root ::deep .jev-debrief__teams { grid-template-columns: 1fr; }
+}

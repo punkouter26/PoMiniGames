@@ -4,6 +4,7 @@
 //   PoJevArena.deploy(canvasId, dotnetRef, ticketJson, abilitiesJson, optionsJson)   → starts a live match
 //   PoJevArena.select(unitIdx) / cycle(team, +1|-1)                                  → Dual Inspector: one pick per team
 //   PoJevArena.scrub(frame) / play() / pause() / step(n) / jumpDecision(dir) / setSpeed(x)  → Black Box
+//   PoJevArena.jumpTo(frame, unitIdx)                                                 → debrief "Jump"
 //   PoJevArena.stop()                                                                  → tears the match down
 //   PoJevArena.preview(canvasId, creatureJson, team) → id / stopPreview(id)            → Factory live preview
 //   PoJevArena.portrait(canvasId, creatureJson, team)                                  → static library card
@@ -13,7 +14,7 @@
 //                                           rides the app HttpClient (antiforgery + credentials)
 //   OnInspector(json)                       per team: its selected unit + the Jev distribution governing it
 //   OnHud(json)                             ~4 Hz: clock, alive counts, calls, notices
-//   OnMatchEnded(json)                      winner, reason, duration → page reports + opens the Black Box
+//   OnMatchEnded(json)                      winner, reason, duration, Jev debrief → page reports + opens the Black Box
 //   OnBlackBox(json)                        replay position while scrubbing/playing
 //
 // Lifecycle: stop() (and page dispose) cancels the rAF loop, removes every listener, stops the
@@ -25,6 +26,7 @@ import { createFx } from './fx.js';
 import { createScheduler } from './scheduler.js';
 import { createBlackBox } from './blackbox.js';
 import { lookFor, newMemory, drawCreature, FLAGS } from './creatures.js';
+import { summarize } from './debrief.js';
 
 const BASE_ACTIONS = ['idle', 'melee_charge', 'peel_to_ally', 'fall_back'];
 const HUD_EVERY_S = 0.25;
@@ -192,6 +194,8 @@ function endMatch(m) {
         calls: m.scheduler.calls,
         decisions: m.blackbox.decisions.filter(d => d.ok).length,
         frames: m.blackbox.frames,
+        // What each team was "thinking", from the Black Box log: no extra Jev calls.
+        debrief: summarize(w, m.blackbox.decisions),
     });
     // Hand over to the Black Box, parked on the final frame.
     m.mode = 'replay';
@@ -287,6 +291,15 @@ function play() { if (match?.mode === 'replay') { if (match.frame >= match.black
 function pause() { if (match?.mode === 'replay') { match.playing = false; pushBlackBox(match); } }
 function step(n) { if (match?.mode === 'replay') { match.playing = false; scrub(match.frame + (n | 0)); } }
 function setSpeed(x) { if (match) { match.speed = Math.max(0.25, Math.min(4, +x || 1)); pushBlackBox(match); } }
+/** Debrief "Jump": park the Black Box on a frame and put that unit in its side's inspector. */
+function jumpTo(frame, unitIdx) {
+    if (match?.mode !== 'replay') return;
+    match.playing = false;
+    const u = match.world.units[unitIdx | 0];
+    if (u) match.sel[u.team] = u.idx;
+    scrub(frame);
+}
+
 function jumpDecision(dir, team) {
     if (match?.mode !== 'replay') return;
     const unit = team === 'blue' || team === 'red' ? match.sel[team] : -1;
@@ -383,7 +396,7 @@ function portrait(canvasId, creatureJson, team) {
 
 const api = {
     deploy, stop, select, cycle,
-    scrub, play, pause, step, setSpeed, jumpDecision,
+    scrub, play, pause, step, setSpeed, jumpDecision, jumpTo,
     preview, stopPreview, portrait,
     /** Test/diagnostic hook: frames recorded and calls made (read by the E2E-UI test). */
     state: () => (match ? { mode: match.mode, frames: match.blackbox.frames, calls: match.scheduler.calls, over: match.world.over, time: match.world.time, drawP95: drawP95(match) } : null),

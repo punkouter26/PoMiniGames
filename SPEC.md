@@ -57,8 +57,22 @@ player's role is to design creatures, draft teams, watch, and inspect *why* Jev 
    Telemetry Inspector to it; `[` / `]` cycle units.
 7. The match ends when one team has no living units, or at **3:00** (§4.6). A result banner shows the winner, and
    the page reports the result so each library creature's counters update.
-8. The **Black Box** opens: play/pause, step ±1 frame, jump to the previous/next decision, first/last, speed
-   0.25×–4×, timeline slider. The canvas and inspector show the historical state at the scrubbed frame.
+8. The **Jev debrief** opens first: one card per team saying, in plain sentences, what that team was
+   "thinking". It covers:
+   - its style (aggressive, defensive or supportive, with the share of calls it's based on)
+   - its targeting habit
+   - how sure Jev was (average confidence and coin-flip calls under 0.40)
+   - morale (who panicked, peak panic)
+   - failed calls
+   - an action-share chart and a per-creature breakdown (go-to move and confidence)
+   - key moments: the most confident call, the closest call against the best alternative, and the first panic.
+     Each has a **Jump** link into the Black Box.
+
+   It is computed in the browser from the Black Box decision log (`js/pojevarena/debrief.js`), so it costs no extra
+   Jev calls.
+9. The **Black Box** (toggle next to the debrief) offers play/pause, step ±1 frame, jump to the previous/next
+   decision, first/last, speed 0.25×–4×, and a timeline slider. The canvas and inspector show the historical state at
+   the scrubbed frame.
 
 ### Journey 2 — 2P hot-seat (`/pojevarena/2player`)
 1. Same device, one signed-in account. Player 1 drafts **Blue** while Red's tray is hidden, then clicks **Lock Blue**.

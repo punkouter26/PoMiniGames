@@ -82,7 +82,20 @@
                     }
                     else
                     {
-                        <div class="jev-arena">
+                        @if (_phase == Phase.Replay && _result?.Debrief is not null)
+                        {
+                            <div class="jev-viewtabs">
+                                <button type="button" class="jev-btn @(ShowDebrief ? null : "jev-btn--ghost")" aria-pressed="@ShowDebrief"
+                                        @onclick="() => _showDebrief = true">Jev debrief</button>
+                                <button type="button" class="jev-btn @(ShowDebrief ? "jev-btn--ghost" : null)" aria-pressed="@(!ShowDebrief)"
+                                        @onclick="() => _showDebrief = false">Black Box</button>
+                                <span class="jev-muted jev-small">@ResultHeadline · @ResultDetail</span>
+                            </div>
+                        }
+
+                        @* The canvas stays mounted while the debrief shows: the engine keeps its Black Box,
+                           and the ResizeObserver re-fits it when the arena comes back. *@
+                        <div class="jev-arena @(ShowDebrief ? "is-hidden" : null)">
                             <canvas id="@CanvasId" class="jev-arena__canvas" aria-label="Arena. Click a creature to inspect it."></canvas>
                             @if (_result is not null)
                             {
@@ -95,7 +108,14 @@
 
                         @if (_phase == Phase.Replay)
                         {
-                            <BlackBoxScrubber State="_blackBox" OnCommand="OnBlackBoxCommandAsync" />
+                            @if (ShowDebrief)
+                            {
+                                <JevDebrief Debrief="_result!.Debrief!" Winner="@_result.Winner" IsTwoPlayer="IsTwoPlayer" OnJump="JumpToMomentAsync" />
+                            }
+                            else
+                            {
+                                <BlackBoxScrubber State="_blackBox" OnCommand="OnBlackBoxCommandAsync" />
+                            }
                             @if (!IsDemo)
                             {
                                 <div class="jev-after">

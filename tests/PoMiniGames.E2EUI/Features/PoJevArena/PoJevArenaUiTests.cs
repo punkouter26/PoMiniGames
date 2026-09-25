@@ -86,10 +86,23 @@ public class PoJevArenaUiTests
 
         await page.WaitForFunctionAsync("() => window.PoJevArena?.state()?.over === true", null,
             new() { Timeout = 240_000, PollingInterval = 500 });
-        var result = page.Locator(".jev-result");
+        // The debrief opens first and hides the arena, so the result headline is read from the
+        // replay toggle bar, which carries the same line.
+        var result = page.Locator(".jev-viewtabs");
         await result.WaitForAsync(new() { Timeout = 15_000 });
         (await result.InnerTextAsync()).Should().MatchRegex("(Blue wins|Red wins|Draw)");
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "result.png") });
+
+        // Jev debrief: shown first after the whistle, one plain-language card per team, with
+        // "Jump" links that open the Black Box on that moment.
+        var debrief = page.Locator(".jev-debrief");
+        await debrief.WaitForAsync(new() { Timeout = 10_000 });
+        var story = await debrief.InnerTextAsync();
+        story.Should().Contain("Blue played").And.Contain("Red played").And.Contain("melee charge",
+            "the stub always charges, and the debrief should say so");
+        await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "debrief.png"), FullPage = true });
+        await debrief.GetByRole(AriaRole.Button, new() { Name = "Show" }).First.ClickAsync();
+        await page.Locator("#jev-bb-slider").WaitForAsync(new() { Timeout = 10_000 });
 
         // Black Box: scrubbing moves the inspector to the recorded frame.
         var before = await page.Locator(".jev-inspector--blue").InnerTextAsync();

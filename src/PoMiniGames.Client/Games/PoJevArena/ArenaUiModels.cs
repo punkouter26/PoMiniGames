@@ -55,7 +55,47 @@ public sealed record ArenaMatchEndView(
     int RedAlive,
     int Calls,
     int Decisions,
-    int Frames);
+    int Frames,
+    ArenaDebrief? Debrief = null);
+
+// ── Jev debrief (js/pojevarena/debrief.js) ──────────────────────────────────
+
+/// <summary>How often one option was chosen, as a count and a share of that team's calls.</summary>
+public sealed record ArenaShare(string Key, int Count, double Share);
+
+public sealed record ArenaCreatureDebrief(
+    string Name, int Count, int Decisions, string? TopAction, double TopShare, double AverageConfidence);
+
+/// <summary>A decision worth revisiting: <c>surest</c>, <c>torn</c> (closest call) or <c>first-panic</c>.</summary>
+public sealed record ArenaMoment(
+    string Kind,
+    int Frame,
+    int UnitIndex,
+    string Unit,
+    string Name,
+    string? Action,
+    double Confidence,
+    string? RunnerUp,
+    double RunnerUpProbability,
+    double Panic);
+
+public sealed record ArenaTeamDebrief(
+    int Decisions,
+    int Failures,
+    double AverageConfidence,
+    int AverageLatencyMs,
+    int CoinFlips,
+    ArenaShare[] Actions,
+    ArenaShare[] Foci,
+    int PanicDecisions,
+    int PanickedUnits,
+    double PeakPanic,
+    int Survivors,
+    ArenaCreatureDebrief[] Creatures,
+    ArenaMoment[] Moments);
+
+/// <summary>What each team was "thinking": computed from the Black Box log, no extra Jev calls.</summary>
+public sealed record ArenaDebrief(ArenaTeamDebrief Blue, ArenaTeamDebrief Red);
 
 public sealed record ArenaBlackBoxView(int Frame, int Frames, double Seconds, bool Playing, double Speed, int Decisions);
 

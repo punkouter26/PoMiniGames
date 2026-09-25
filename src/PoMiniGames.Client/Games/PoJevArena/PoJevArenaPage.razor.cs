@@ -59,6 +59,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     private ArenaMatchEndView? _result;
     private string? _resultNote;
     private ArenaBlackBoxView? _blackBox;
+    private bool _showDebrief;
     private string? _error;
     private string? _toast;
     private DotNetObjectReference<PoJevArenaPage>? _self;
@@ -69,6 +70,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     private bool IsTwoPlayer => Mode == GameMode.TwoPlayer;
     private bool Drafting => _phase == Phase.Draft;
     private bool Configured => _status?.Configured == true;
+    private bool ShowDebrief => _showDebrief && _phase == Phase.Replay && _result?.Debrief is not null;
 
     private GameIntro.IntroMode IntroMode => IsDemo ? GameIntro.IntroMode.Demo
         : IsTwoPlayer ? GameIntro.IntroMode.TwoPlayer : GameIntro.IntroMode.OnePlayer;
@@ -423,6 +425,8 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     {
         _result = JsonSerializer.Deserialize(json, ArenaUiJsonContext.Default.ArenaMatchEndView);
         _phase = Phase.Replay;
+        // The debrief is the first thing a player sees after the whistle (the demo goes straight to its highlight replay).
+        _showDebrief = !IsDemo;
         _resultNote = "recording…";
         await InvokeAsync(StateHasChanged);
 
@@ -456,6 +460,13 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
             case "prevDecision": await SafeJsAsync("PoJevArena.jumpDecision", -1); break;
             case "nextDecision": await SafeJsAsync("PoJevArena.jumpDecision", 1); break;
         }
+    }
+
+    /// <summary>Debrief "Jump": switch to the Black Box on that frame with that creature in its side's inspector.</summary>
+    private async Task JumpToMomentAsync(ArenaMoment moment)
+    {
+        _showDebrief = false;
+        await SafeJsAsync("PoJevArena.jumpTo", moment.Frame, moment.UnitIndex);
     }
 
     // ── Demo ─────────────────────────────────────────────────────────────────

@@ -113,7 +113,7 @@ export function createWorld({ seed, blue, red, abilities }) {
     spawn(red, false);
 
     return {
-        seed, tick: 0, time: 0, units, projectiles: [], events: [],
+        seed, tick: 0, time: 0, units, projectiles: [], events: [], pending: [],
         over: false, winner: null, nextProjectileId: 1,
     };
 }
@@ -203,7 +203,8 @@ export function applyDecision(w, idx, decision, candidates) {
     intent.panicked = (decision.panic ?? 0) > PANIC_THRESHOLD;
     intent.decided = true;
     intent.since = w.time;
-    if (intent.panicked !== wasPanicked) w.events.push({ type: 'panic', u: idx, on: intent.panicked });
+    // Decisions land between ticks; queue the event so the next step() reports it.
+    if (intent.panicked !== wasPanicked) w.pending.push({ type: 'panic', u: idx, on: intent.panicked });
 }
 
 // ── Damage ───────────────────────────────────────────────────────────────────
@@ -306,6 +307,7 @@ function steer(dx, dy, k) {
 export function step(w, dt = DT) {
     if (w.over) return;
     w.events.length = 0;
+    if (w.pending.length) { w.events.push(...w.pending); w.pending.length = 0; }
 
     for (const u of w.units) if (u.alive) think(w, u, dt);
     for (const u of w.units) if (u.alive) integrate(u, dt);

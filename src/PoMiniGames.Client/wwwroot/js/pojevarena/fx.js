@@ -245,6 +245,11 @@ export function createFx() {
             ctx.globalAlpha = 1;
         },
 
+        /** Re-lays death splats after a Black Box jump, so fallen creatures don't just vanish. */
+        restoreDeaths(deaths, teamColor) {
+            for (const d of deaths) decal(d.x, d.y, teamColor(d.team), 0.7, 'death');
+        },
+
         /** Clears transient visuals (used when the Black Box jumps, so stale sparks don't linger). */
         clear({ keepDecals = false } = {}) {
             particles.length = 0;

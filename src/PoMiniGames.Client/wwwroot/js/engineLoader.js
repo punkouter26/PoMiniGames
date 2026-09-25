@@ -43,6 +43,8 @@ const REGISTRY = {
     // exports of js/pocabinet/scene.js | cockpit.js | cars.js | dialogue.js
     // so Blazor's InvokeAsync stays a single global.
     pocabinet: ['js/pocabinet/index.js', 'PoCabinet'],
+    // §PoJevArena (2026-09-25) — Canvas 2D 10v10 arena: sim, Jev scheduler, Black Box, creature art.
+    pojevarena: ['js/pojevarena/index.js', 'PoJevArena'],
 };
 
 /**

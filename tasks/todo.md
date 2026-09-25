@@ -64,7 +64,7 @@ Each task touches ≤ 5 files and follows Red → Green → targeted tests → `
   reduced motion).
 - [x] **T8b Ability FX.** `fx.js`: wind-up, release and impact per registry id; particles capped at 400; popups;
   decals; replay-safe seeded particles. *Accept:* render p95 ≤ 8 ms, measured.
-- [ ] **T9 Scheduler + Black Box + lifecycle.**
+- [x] **T9 Scheduler + Black Box + lifecycle.**
   - `scheduler.js`: slot = index mod 4, no overlapping calls, candidate computation, hold intent plus a stale timer,
     pause on `visibilitychange`.
   - `blackbox.js`: typed-array frames plus combat and decision events.

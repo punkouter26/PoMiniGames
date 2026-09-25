@@ -22,7 +22,7 @@ internal static partial class PoJevArenaLog
     public static partial void JevStubEnabled(this ILogger logger, string environment);
 
     [LoggerMessage(EventId = 4805, Level = LogLevel.Information,
-        Message = "PoJevArena: match {MatchId} batch of {Units} → {Ok} ok, {Failed} failed, ${CostUsd:0.000000} in {ElapsedMs} ms.")]
+        Message = "PoJevArena: match {MatchId} batch of {Units}: {Ok} ok, {Failed} failed, ${CostUsd:0.000000} in {ElapsedMs} ms.")]
     public static partial void DecisionBatch(this ILogger logger, string matchId, int units, int ok, int failed, double costUsd, long elapsedMs);
 
     [LoggerMessage(EventId = 4806, Level = LogLevel.Warning,

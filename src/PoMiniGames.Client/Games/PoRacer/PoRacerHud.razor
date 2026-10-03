@@ -13,9 +13,9 @@
             @if (IsDemo) { <strong>Spectating</strong> }
             else
             {
-                @if (Cars.Count > 1)
+                @if (Roster.Count > 1)
                 {
-                    <span class="race-pos" @key="me?.Position">P<strong>@(me?.Position ?? 0)</strong><small>/@Cars.Count</small></span>
+                    <span class="race-pos" @key="me?.Position">P<strong>@(me?.Position ?? 0)</strong><small>/@Roster.Count</small></span>
                 }
                 <span>Lap <strong>@Math.Min(me?.Lap ?? 1, TotalLaps)/@TotalLaps</strong></span>
                 <span><strong class="race-speed"></strong> km/h</span>
@@ -37,7 +37,7 @@
                 <span class="race-chip race-chip--drift" hidden>Drift</span>
             </div>
         }
-        @if (Cars.Count > 1)
+        @if (Roster.Count > 1)
         {
             <ol class="race-standings" aria-label="Race standings">
                 @foreach (var car in Rows())
@@ -82,6 +82,7 @@
     /// </summary>
     private IEnumerable<PoRacerCarState> Rows()
     {
+        if (Cars.Count <= 4) return Cars.OrderBy(c => c.Position);
         var mine = Player?.Position ?? 2;
         var want = new SortedSet<int> { 1, mine - 1, mine, mine + 1 };
         for (var reach = 2; want.Count(p => p >= 1 && p <= Cars.Count) < Math.Min(4, Cars.Count); reach++)

@@ -2,12 +2,13 @@
 // the lifecycle (input listeners, the animation frame, cached bitmaps, audio voices) and the
 // snapshot timeline; renderer.js draws, audio.js sounds, input.js reads the driver.
 //
-// The page pushes each 20 Hz server snapshot in as one flat number array (push) and the
-// per-car facts that never change once (setRoster), so a snapshot crosses the interop
-// boundary as numbers only, with no per-car objects or strings.
+// Streaming snapshots arrive as unparsed SignalR bytes: native JS decodes all cars and
+// returns only the visible standings to Blazor. Join/rejoin sends numeric bytes; both paths
+// feed the same flat-array push() timeline. Names and paint arrive once via setRoster().
 import * as Render from './renderer.js';
 import * as Audio from './audio.js';
 import { sampleAt } from './interpolation.js';
+import { prepareSnapshot } from './snapshot.js';
 import { startInput, stopInput, setInputEnabled, getSize, pollPad } from './input.js';
 import '../weather.js';
 
@@ -29,6 +30,7 @@ const STALE_MS = 1500;
 const BUFFER_MAX = 6;
 /** Numbers per car in a pushed snapshot: x, y, heading, speed, boost, skid, damage, sand, position, lap, finished, tow, drift, boost seconds left. */
 const STRIDE = 14;
+const snapshotDecoder = new TextDecoder('utf-8', { fatal: true });
 
 /** Ascending by `st` (server clock, ms). Newest last. */
 let buf = [];
@@ -198,6 +200,29 @@ window.PoRacer = {
     setRoster(cars, localId) {
         roster = (cars || []).map(c => ({ ...c, isPlayer: c.id === localId }));
         localIdx = roster.findIndex(c => c.isPlayer);
+    },
+
+    /** Blazor's direct byte-array transfer avoids JSON serialization of the car numbers. */
+    pushBytes(st, elapsed, lapNow, countdownMs, running, bytes) {
+        const expected = roster.length * STRIDE * Float64Array.BYTES_PER_ELEMENT;
+        if (!(bytes instanceof Uint8Array) || bytes.byteLength !== expected) {
+            throw new Error('Invalid PoRacer snapshot byte length.');
+        }
+        const flat = new Float64Array(bytes.slice().buffer);
+        window.PoRacer.push(st, elapsed, lapNow, countdownMs, running, flat);
+    },
+
+    /** Parse the full field natively and return only the HUD-sized state to Blazor. */
+    pushSnapshotMessage(bytes) {
+        const message = JSON.parse(snapshotDecoder.decode(bytes));
+        if (message.type !== 1 || message.target !== 'raceSnapshot' || message.arguments?.length !== 1) {
+            throw new Error('Invalid PoRacer snapshot message.');
+        }
+        const snapshot = message.arguments[0];
+        const prepared = prepareSnapshot(snapshot, roster, localIdx);
+        window.PoRacer.push(snapshot.serverTimeMs, snapshot.elapsedRaceTime,
+            prepared.lapNow, snapshot.countdownMs, prepared.running, prepared.flat);
+        return prepared.hud;
     },
 
     /**

@@ -2,6 +2,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.AspNetCore.SignalR.Protocol;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
@@ -45,7 +48,9 @@ public static class HubConnectionFactory
     /// </summary>
     public static string? BearerToken { get; set; }
 
-    public static HubConnection Create(string hubUrl, HttpTransportType? transports = null, TimeSpan[]? reconnectDelays = null)
+    /// <param name="protocolDecorator">Optional game-specific inbound fast path around the configured JSON protocol.</param>
+    public static HubConnection Create(string hubUrl, HttpTransportType? transports = null, TimeSpan[]? reconnectDelays = null,
+        Func<IHubProtocol, IHubProtocol>? protocolDecorator = null)
     {
         var builder = new HubConnectionBuilder()
             .WithUrl(hubUrl, options =>
@@ -69,6 +74,11 @@ public static class HubConnectionFactory
         builder = reconnectDelays is null
             ? builder.WithAutomaticReconnect()
             : builder.WithAutomaticReconnect(reconnectDelays);
+        if (protocolDecorator is not null)
+        {
+            builder.Services.AddSingleton<IHubProtocol>(services => protocolDecorator(
+                new JsonHubProtocol(services.GetRequiredService<IOptions<Microsoft.AspNetCore.SignalR.JsonHubProtocolOptions>>())));
+        }
         return builder.Build();
     }
 }

@@ -405,15 +405,17 @@ function buildTrackBitmap(scale, dpr) {
     // Unlike those layers this bitmap is sized to the track's bounding box at the
     // current zoom, not to the viewport, so it can be far larger than the screen —
     // squaring dpr into it without a limit risks a canvas the browser refuses to
-    // allocate, and a failed allocation here means no track at all. Cap the extra
-    // resolution by area and fall back toward 1x rather than overshooting; the
+    // allocate, and a failed allocation here means no track at all. Cap the
+    // resolution by area, including ratios below 1x when necessary; the
     // texture keeps its CSS-space coordinate system either way, so nothing below
     // this line needs to know which happened.
     const TRACK_TEX_BUDGET = 24e6;   // ~24 Mpx, comfortably inside browser limits
-    const reqDpr = Math.max(1, dpr || 1);
+    // The viewport pixel budget can grant less than 1x; retain that ratio as the
+    // cache key so draw() does not rebuild the track on every frame.
+    const reqDpr = dpr > 0 ? dpr : 1;
     let texDpr = reqDpr;
     const over = (texW * texH * texDpr * texDpr) / TRACK_TEX_BUDGET;
-    if (over > 1) texDpr = Math.max(1, texDpr / Math.sqrt(over));
+    if (over > 1) texDpr /= Math.sqrt(over);
     trackDpr = texDpr;          // what we actually got
     trackReqDpr = reqDpr;       // what draw() asked for; the rebuild key
     trackTexCssW = texW; trackTexCssH = texH;

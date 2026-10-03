@@ -101,5 +101,16 @@ scripts/                        Working scripts only — see scripts/README.md
 PoRacer ranks **best completed laps**, separately from final race times. Its legacy JSON
 field and Azure Table column `totalTimeSeconds` / `TotalTimeSeconds` retain their names
 for stored-score compatibility; existing rows are preserved without inferred conversion.
+Solo races have 99 AI rivals and spectator demos have 100 AI cars; online rooms remain
+capped at 8 cars. The minimap is removed. Add `?perf=1` to a PoRacer URL and inspect
+`window.PoRacer.getPerformanceProfile()` for frame rates and render-stage timings.
+Track bitmaps respect the canvas pixel budget, including backing-store ratios below 1,
+without rebuilding on every frame.
+Join/rejoin snapshot numbers use Blazor's direct byte-array interop transfer rather than
+JSON-formatting 1,400 floating-point values on the browser's WASM main thread.
+Streaming snapshots retain the existing SignalR wire format but are decoded in native
+JavaScript; only the four visible standings rows return to Blazor. All cars still feed
+interpolation, rendering, and audio, and the HUD's field size comes from the complete roster.
+Run `node --test tests\poracer-snapshot.test.mjs` for focused native snapshot coverage.
 Run `pwsh scripts/test-ceilings.ps1` to check all four test-method budgets without Docker.
 CI validates Bicep and deploys application code; use `azd up` for resource provisioning.

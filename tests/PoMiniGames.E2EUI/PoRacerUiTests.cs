@@ -9,7 +9,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
     [InlineData("circuit")]
     [InlineData("neonskyline")]
     [InlineData("desertdustway")]
-    public async Task SoloRace_CompletesSavesAndShowsTheLapOnTheNextVisit(string track)
+    public async Task SoloTimeTrial_CompletesSavesAndShowsTheLapOnTheNextVisit(string track)
     {
         using var playwright = await Playwright.CreateAsync();
         var launch = BrowserLaunch.Options();
@@ -23,9 +23,9 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player?autoGuest=1");
         await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
         await page.Locator($"input[name=poracer-track][value={track}]").CheckAsync();
-        // The scripted driver holds 235-300 units/s on the centerline: a bronze-medal lap. That
-        // keeps up with the Easy field; Medium and Hard would win and close the race on it.
-        await page.GetByText("Easy", new() { Exact = true }).ClickAsync();
+        // Isolate lap timing and persistence from 99-car traffic: the keyboard driver
+        // follows the centerline and does not plan overtakes. Full-field input is tested below.
+        await page.GetByText("Time trial", new() { Exact = true }).ClickAsync();
         var save = page.WaitForResponseAsync(r => r.Url.EndsWith("/api/poracer/scores", StringComparison.Ordinal) && r.Request.Method == "POST", new() { Timeout = 200000 });
         await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).ClickAsync();
         await page.Locator(".race-countdown").WaitForAsync();
@@ -42,7 +42,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         await page.GetByText("Best lap saved to the leaderboard.", new() { Exact = true }).WaitForAsync();
         (await page.Locator(".race-results .local-driver").InnerTextAsync()).Should().NotContain("DNF");
         await page.ScreenshotAsync(new() { Path = $"artifacts/poracer-{track}-results.png" });
-        // The results modal has one way out, to the hub; coming back opens the start card.
+        // Return to the hub; visiting the racer again opens the start card.
         await page.GetByRole(AriaRole.Button, new() { Name = "Back to all games" }).ClickAsync();
         await page.WaitForURLAsync(url => new Uri(url).AbsolutePath == "/");
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player");
@@ -57,7 +57,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
     }
 
     [Fact]
-    public async Task SoloRace_UnfinishedPlayerGetsDnfResultsAndOneWayOut()
+    public async Task SoloRace_UnfinishedPlayerGetsDnfResultsAndCanReturnToHub()
     {
         using var playwright = await Playwright.CreateAsync();
         var launch = BrowserLaunch.Options(); launch.SlowMo = 0;
@@ -71,7 +71,8 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         driver.Result!.Standings.Single(s => s.CarId == driver.LocalId).Finished.Should().BeFalse();
         await page.Locator(".race-results").WaitForAsync();
         (await page.Locator(".race-results .local-driver").InnerTextAsync()).Should().Contain("DNF");
-        (await page.Locator("dialog.gps-modal footer button").CountAsync()).Should().Be(1, "every game ends on one button");
+        (await page.Locator("dialog.gps-modal[open] footer").GetByRole(AriaRole.Button,
+            new() { Name = "Back to all games" }).CountAsync()).Should().Be(1);
         await page.GetByRole(AriaRole.Button, new() { Name = "Back to all games" }).ClickAsync();
         await page.WaitForURLAsync(url => new Uri(url).AbsolutePath == "/");
         errors.Should().BeEmpty();
@@ -98,6 +99,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         foreach (var page in new[] { host, guest })
         {
             await page.Locator(".race-metrics").WaitForAsync(new() { Timeout = 30000 });
+            (await page.Locator(".race-pos small").InnerTextAsync()).Should().Be("/8");
             await page.Locator("#racerCanvas").ClickAsync();
             await page.Keyboard.DownAsync("ArrowUp");
             await page.WaitForFunctionAsync("() => [...document.querySelectorAll('.race-metrics span')].some(e => e.textContent.includes('km/h') && parseInt(e.textContent) > 0)", null, new() { Timeout = 10000 });
@@ -134,8 +136,10 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         var errors = new List<string>();
         page.PageError += (_, error) => errors.Add(error);
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer?autoGuest=1");
+        if (!touch) await VerifyTrackBitmapCacheAsync(page);
         await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).ClickAsync(new() { Timeout = 60000 });
         await page.Locator(".race-metrics").WaitForAsync(new() { Timeout = 30000 });
+        (await page.Locator(".race-pos small").InnerTextAsync()).Should().Be("/100");
         if (touch)
         {
             var gas = page.Locator("[data-po-input=up]");
@@ -150,8 +154,8 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         if (touch) await page.Locator("[data-po-input=up]").DispatchEventAsync("pointerup", new { pointerId = 1, bubbles = true });
         else await page.Keyboard.UpAsync("ArrowUp");
         await page.ScreenshotAsync(new() { Path = $"artifacts/poracer-{(touch ? "mobile" : "desktop")}.png" });
-        // The minimap and the mini standings are on screen at both sizes (the phone used to lose the standings).
-        (await page.Locator("#racerMinimap").IsVisibleAsync()).Should().BeTrue();
+        // Standings remain on both sizes; the minimap was removed to reduce rendering work.
+        (await page.Locator("#racerMinimap").CountAsync()).Should().Be(0);
         (await page.Locator(".race-standings li").CountAsync()).Should().Be(4);
         await BackToStartAsync(page);
         await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).ClickAsync();
@@ -159,5 +163,51 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         await BackToStartAsync(page);
         errors.Should().BeEmpty();
         (await page.EvaluateAsync<bool>("() => document.documentElement.scrollWidth <= innerWidth")).Should().BeTrue();
+    }
+
+    private static async Task VerifyTrackBitmapCacheAsync(IPage page)
+    {
+        var allocations = await page.EvaluateAsync<int[]>("""
+            async () => {
+                const renderer = await import('/js/poracer/renderer.js?cache-regression');
+                const canvas = document.createElement('canvas');
+                canvas.id = 'track-cache-regression';
+                document.body.appendChild(canvas);
+                const OriginalCanvas = window.OffscreenCanvas;
+                let created = 0;
+                window.OffscreenCanvas = class extends OriginalCanvas {
+                    constructor(w, h) { super(w, h); created++; }
+                };
+                const result = [];
+                try {
+                    renderer.mount(canvas.id);
+                    renderer.setStatic([0, 0, 1000, 0, 1000, 1000, 0, 1000],
+                        210, [], [], [], 'circuit');
+                    const cars = [{ x: 0, y: 0, h: 0, v: 0, position: 1,
+                        color: '#ffffff', colorDark: '#888888' }];
+                    for (const dpr of [0.75, 1, 1.5]) {
+                        canvas.width = 300 * dpr; canvas.height = 180 * dpr;
+                        renderer.invalidateBitmaps();
+                        renderer.draw(cars, 300, 180);
+                        const warmed = created;
+                        for (let i = 0; i < 5; i++) {
+                            cars[0].x += 10;
+                            renderer.draw(cars, 300, 180);
+                        }
+                        renderer.finish(true);
+                        renderer.draw(cars, 300, 180);
+                        renderer.finish(false);
+                        result.push(created - warmed);
+                    }
+                    return result;
+                } finally {
+                    renderer.dispose();
+                    window.OffscreenCanvas = OriginalCanvas;
+                    canvas.remove();
+                }
+            }
+            """);
+        allocations.Should().Equal(new[] { 0, 0, 0 },
+            "camera movement and finish zoom must reuse warmed bitmaps at sub-1x, 1x and high DPR");
     }
 }

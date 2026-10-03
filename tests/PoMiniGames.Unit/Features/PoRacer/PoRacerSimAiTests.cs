@@ -47,10 +47,10 @@ public class PoRacerSimAiTests
 
         sim.LastCollisionCandidateCount.Should().BeLessThan(PoRacerCatalog.SoloCarCount * (PoRacerCatalog.SoloCarCount - 1) / 2);
         _out.WriteLine($"100-car simulation: 250 ticks in {timer.Elapsed.TotalMilliseconds:0.0} ms; final collision candidates={sim.LastCollisionCandidateCount}");
+        CollisionBroadphase_IncludesEveryOverlappingPairAcrossCellBoundaries();
     }
 
-    [Fact]
-    public void CollisionBroadphase_IncludesEveryOverlappingPairAcrossCellBoundaries()
+    private static void CollisionBroadphase_IncludesEveryOverlappingPairAcrossCellBoundaries()
     {
         var sim = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>(), carCount: PoRacerCatalog.SoloCarCount);
         const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
@@ -84,11 +84,7 @@ public class PoRacerSimAiTests
         }
     }
 
-    [Theory]
-    [InlineData("circuit")]
-    [InlineData("neonskyline")]
-    [InlineData("desertdustway")]
-    public void PrecomputedUpcomingBend_MatchesCenterlineCalculation(string trackId)
+    private static void PrecomputedUpcomingBend_MatchesCenterlineCalculation(string trackId)
     {
         var sim = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>(), trackId);
         var method = typeof(PoRacerSim).GetMethod("UpcomingBend", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
@@ -125,6 +121,7 @@ public class PoRacerSimAiTests
     [InlineData("circuit", true)]
     public void RaceCompletion_FinishesBotsOrSerializesDnf(string trackId, bool expireRace = false)
     {
+        PrecomputedUpcomingBend_MatchesCenterlineCalculation(trackId);
         var sim = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>(), trackId);
         var noInput = new Dictionary<string, PoRacerInput>();
         if (expireRace)

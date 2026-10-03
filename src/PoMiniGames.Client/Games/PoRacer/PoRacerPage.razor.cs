@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Routing;
 using Microsoft.JSInterop;
+using System.Runtime.InteropServices;
 using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Models;
 using PoMiniGamesClient.Services.Play;
@@ -48,6 +49,7 @@ public partial class PoRacerPage
     private int _countdown, _countdownMs, _hudKey;
     private bool _raceStarted;
     private IReadOnlyList<PoRacerCarState> _cars = [];
+    private byte[] _snapshotBytes = [];
     private IReadOnlyList<PoRacerCarInfo> _roster = [];
     private Dictionary<string, double> _bests = [];
     private PoRacerCarState? Player => _cars.FirstOrDefault(c => c.Id == _localCarId);
@@ -234,7 +236,12 @@ public partial class PoRacerPage
         var session = new PoRacerSession(Endpoints);
         _session = session;
         session.Joined += snapshot => InvokeAsync(() => ApplyJoinAsync(snapshot));
-        session.SnapshotReceived += snapshot => InvokeAsync(() => ApplySnapshotAsync(snapshot));
+        session.SnapshotReceived += bytes => InvokeAsync(async () =>
+        {
+            if (_disposed) return;
+            var hud = await JS.InvokeAsync<PoRacerRaceSnapshot>("PoRacer.pushSnapshotMessage", bytes);
+            await ApplySnapshotAsync(hud, pushed: true);
+        });
         session.RosterChanged += roster => InvokeAsync(() => ApplyRosterAsync(roster));
         session.Finished += result => InvokeAsync(() => FinishAsync(result));
         session.StatusChanged += status => InvokeAsync(() => { if (!_disposed) { _connectionStatus = status; StateHasChanged(); } });
@@ -304,7 +311,7 @@ public partial class PoRacerPage
         StateHasChanged();
     }
 
-    private async Task ApplySnapshotAsync(PoRacerRaceSnapshot snapshot)
+    private async Task ApplySnapshotAsync(PoRacerRaceSnapshot snapshot, bool pushed = false)
     {
         if (_disposed) return;
         _cars = snapshot.Cars;
@@ -313,23 +320,27 @@ public partial class PoRacerPage
         _countdownMs = snapshot.CountdownMs;
         _raceStarted = snapshot.Started;
 
-        // One flat array instead of eight objects: this crosses the interop boundary twenty
-        // times a second. Names and paint went once, in the roster.
-        var flat = new double[_cars.Count * Stride];
-        for (var i = 0; i < _cars.Count; i++)
+        if (!pushed)
         {
-            var c = _cars[i];
-            var o = i * Stride;
-            flat[o] = c.X; flat[o + 1] = c.Y; flat[o + 2] = c.Heading; flat[o + 3] = c.Speed;
-            flat[o + 4] = c.BoostGlow; flat[o + 5] = c.SkidIntensity; flat[o + 6] = c.Damage;
-            flat[o + 7] = c.Surface == "sand" ? 1 : 0;
-            flat[o + 8] = c.Position; flat[o + 9] = c.Lap; flat[o + 10] = c.Finished ? 1 : 0;
-            flat[o + 11] = c.Drafting ? 1 : 0; flat[o + 12] = c.Drift; flat[o + 13] = c.BoostTimer;
+            // Join/rejoin still uses the typed snapshot; transfer its numbers without JSON.
+            var byteCount = _cars.Count * Stride * sizeof(double);
+            if (_snapshotBytes.Length != byteCount) _snapshotBytes = new byte[byteCount];
+            var flat = MemoryMarshal.Cast<byte, double>(_snapshotBytes.AsSpan());
+            for (var i = 0; i < _cars.Count; i++)
+            {
+                var c = _cars[i];
+                var o = i * Stride;
+                flat[o] = c.X; flat[o + 1] = c.Y; flat[o + 2] = c.Heading; flat[o + 3] = c.Speed;
+                flat[o + 4] = c.BoostGlow; flat[o + 5] = c.SkidIntensity; flat[o + 6] = c.Damage;
+                flat[o + 7] = c.Surface == "sand" ? 1 : 0;
+                flat[o + 8] = c.Position; flat[o + 9] = c.Lap; flat[o + 10] = c.Finished ? 1 : 0;
+                flat[o + 11] = c.Drafting ? 1 : 0; flat[o + 12] = c.Drift; flat[o + 13] = c.BoostTimer;
+            }
+            var running = snapshot.Started && !snapshot.Paused && !snapshot.Finished;
+            await JS.InvokeVoidAsync("PoRacer.pushBytes", snapshot.ServerTimeMs, snapshot.ElapsedRaceTime,
+                Player?.CurrentLapSeconds ?? 0, snapshot.CountdownMs, running, _snapshotBytes);
         }
         var me = Player;
-        var running = snapshot.Started && !snapshot.Paused && !snapshot.Finished;
-        await JS.InvokeVoidAsync("PoRacer.push", snapshot.ServerTimeMs, snapshot.ElapsedRaceTime,
-            me?.CurrentLapSeconds ?? 0, snapshot.CountdownMs, running, flat);
         if (_raceStarted) await UpdateAudioAsync();
 
         // Speed and the two running clocks are written by the engine straight into the HUD,
@@ -337,7 +348,7 @@ public partial class PoRacerPage
         // a lamp, a place, a lap, a lap time. That is a handful of renders a lap, not 20 Hz.
         var key = new HashCode();
         key.Add(_raceStarted); key.Add(Lit); key.Add(_countdown); key.Add(_elapsed < 0.9);
-        foreach (var c in _cars) { key.Add(c.Position); key.Add(c.Lap); key.Add(c.Finished); }
+        foreach (var c in _cars) { key.Add(c.Id); key.Add(c.Position); key.Add(c.Lap); key.Add(c.Finished); }
         key.Add(me?.LastLapSeconds); key.Add(me?.BestLapSeconds);
         var hud = key.ToHashCode();
         if (hud == _hudKey) return;

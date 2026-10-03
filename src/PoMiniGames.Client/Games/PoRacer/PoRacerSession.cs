@@ -20,8 +20,9 @@ public sealed class PoRacerSession : IAsyncDisposable
 
     public PoRacerSession(ApiEndpoints endpoints)
     {
-        _hub = HubConnectionFactory.Create(endpoints.Hub("poracer/race-hub"));
-        _hub.On<PoRacerRaceSnapshot>("raceSnapshot", async snapshot =>
+        _hub = HubConnectionFactory.Create(endpoints.Hub("poracer/race-hub"),
+            protocolDecorator: protocol => new PoRacerHubProtocol(protocol));
+        _hub.On<byte[]>("raceSnapshot", async snapshot =>
         {
             if (_ready && SnapshotReceived is { } handler) await handler(snapshot);
         });
@@ -51,7 +52,7 @@ public sealed class PoRacerSession : IAsyncDisposable
     }
 
     public event Func<PoRacerRaceSnapshot, Task>? Joined;
-    public event Func<PoRacerRaceSnapshot, Task>? SnapshotReceived;
+    public event Func<byte[], Task>? SnapshotReceived;
     /// <summary>Another driver's paint arrived after this client's join.</summary>
     public event Func<IReadOnlyList<PoRacerCarInfo>, Task>? RosterChanged;
     public event Func<PoRacerFinalResult, Task>? Finished;

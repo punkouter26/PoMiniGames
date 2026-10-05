@@ -13,7 +13,7 @@ in brackets; total 38 of the 40 new slots.
   pins as needed. *Accept:* build has 0 warnings; `dotnet publish src/PoMiniGames.API -c Release`
   succeeds; `pwsh scripts/bundle-report.ps1` before and after shows ≤ 1.5 MB growth.
   *Deps:* none.
-- [ ] **T2 Ceiling, RNG, map.** Files: `tests/PoMiniGames.Unit/TestCountCeilingTests.cs`
+- [x] **T2 Ceiling, RNG, map.** Files: `tests/PoMiniGames.Unit/TestCountCeilingTests.cs`
   (100 → 140), `PoMuleRng.cs`, `PoMuleMap.cs`, `PoMuleMapTests.cs`. [4] *Accept:* 24×8, 4
   towns, wrap distance, same seed gives same map. *Verify:* `dotnet test tests/PoMiniGames.Unit
   --filter "FullyQualifiedName~PoMule"`; `pwsh scripts/test-ceilings.ps1`.
@@ -83,7 +83,7 @@ in brackets; total 38 of the 40 new slots.
   min with no score post; `Kiosk.MarkFinished()` at the end; 2 Playwright methods (→ 25/25).
   *Deps:* T20.
 - [ ] **T23 Docs and trim.** Files: `README.md` (fifteen games, Radzen note, Unit cap 140),
-  `js/paletteBus.js`, `js/gameCues.js`, stale "fourteen" comments in `Index.razor` and
+  `js/paletteBus.js`, `js/gameCues.js`, the "Unit 100" message in `scripts/test-ceilings.ps1`, stale "fourteen" comments in `Index.razor` and
   `LeaderboardsPage.razor`. *Accept:* `css-lint.ps1` passes. *Deps:* T22.
 
 Blast radius: only the files listed. Anything else needed is raised first.

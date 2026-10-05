@@ -24,6 +24,9 @@ public sealed class PlayerState
     /// <summary>The <see cref="Good"/> the towed M.U.L.E. is outfitted for, or -1 for a bare one.</summary>
     public sbyte Outfit { get; set; } = -1;
 
+    /// <summary>Ran short of Food, or had a M.U.L.E. idle for lack of Energy, this month.</summary>
+    public bool WentShort { get; set; }
+
     public bool InPub { get; set; }
     public bool HoldsAssay { get; set; }
 }

@@ -38,6 +38,13 @@ public static class PoMuleTuning
     public const int PubCap = 250;
     public const int MinSpeedPercent = 40;
 
+    // Production and events.
+    public const int WarehouseCap = 50;
+    public const int EventChancePercent = 75;
+
+    /// <summary>This many colonists short of Food or Energy in one month is a colony crisis.</summary>
+    public const int CrisisShortColonists = 3;
+
     // Scoring.
     public const int LandValue = 500;
     public const int MuleValue = 350;

@@ -24,6 +24,7 @@ public static class PoMuleDevelopment
             if (player.Species == Species.ZephyrFlapper) percent = percent * 110 / 100;
 
             player.SpeedPercent = percent;
+            player.WentShort = food < need;
             player.Goods[(int)Good.Food] = Math.Max(0, food - need);
             player.HasMule = false;
             player.Outfit = MatchState.Nobody;

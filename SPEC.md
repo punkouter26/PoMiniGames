@@ -202,8 +202,10 @@ In Demo mode the eighth seat repeats one archetype chosen by the seed.
 - **Net Worth** = cash + 500 per plot + 350 per installed M.U.L.E. + goods at current Store
   prices *(values proposed)*. Highest is First Founder.
 - **Colony grade** *(proposed)*: the colony survives if combined Net Worth is at least 60,000
-  and there were at most 3 crisis months (a month where the colony's total Food or Energy was
-  below the colony's total need). Otherwise it collapses, and the results say so above the
+  and there were at most 3 crisis months. A crisis month is one in which at least 3 of the 8
+  colonists started short of Food or had a M.U.L.E. idle for lack of Energy. (Changed during
+  the build from "colony totals below need": totals do not move when one colonist hoards, and
+  hoarding is what the PRD says should sink the colony.) Otherwise it collapses, and the results say so above the
   winner's name.
 - The leaderboard stores Net Worth, species, and whether the colony survived.
 

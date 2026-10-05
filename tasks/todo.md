@@ -26,7 +26,7 @@ in brackets; total 38 of the 40 new slots.
 - [x] **T5 Development.** Files: `PoMuleDevelopment.cs`, `PoMuleDevelopmentTests.cs`. [6]
   *Accept:* buy, outfit, install, swap, assay, pub payout, three runaway causes, food speed
   factor, starvation skip, every refusal case in SPEC §12. *Deps:* T3.
-- [ ] **T6 Production and events.** Files: `PoMuleProduction.cs`, `PoMuleEvents.cs`,
+- [x] **T6 Production and events.** Files: `PoMuleProduction.cs`, `PoMuleEvents.cs`,
   `PoMuleProductionTests.cs`. [5] *Accept:* yields with species bonuses, energy shutdown
   order, spoilage, six events. *Deps:* T5.
 - [ ] **T7 Market.** Files: `PoMuleMarket.cs`, `PoMuleMarketTests.cs`. [5] *Accept:* trade

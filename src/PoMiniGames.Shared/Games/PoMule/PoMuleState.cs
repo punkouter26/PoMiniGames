@@ -76,6 +76,17 @@ public sealed class MatchState
     public int HighBid { get; set; }
     public sbyte HighBidder { get; set; } = Nobody;
 
+    /// <summary>The <see cref="Good"/> on the trading floor, or <see cref="Nobody"/>.</summary>
+    public sbyte MarketGood { get; set; } = Nobody;
+
+    /// <summary>Per seat: <see cref="PoMuleMarket.Seller"/>, <see cref="PoMuleMarket.Buyer"/>, or 0 for sitting out.</summary>
+    public sbyte[] LaneRole { get; set; } = new sbyte[PoMuleTuning.Seats];
+
+    /// <summary>Per seat: the price that seat is standing at on the floor.</summary>
+    public int[] LanePrice { get; set; } = new int[PoMuleTuning.Seats];
+
+    public int TradeMeter { get; set; }
+
     /// <param name="humanSpecies">The player's pick, or null for an all-AI demo match.</param>
     public static MatchState New(ulong seed, Species? humanSpecies)
     {

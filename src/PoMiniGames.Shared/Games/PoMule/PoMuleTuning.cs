@@ -45,6 +45,14 @@ public static class PoMuleTuning
     /// <summary>This many colonists short of Food or Energy in one month is a colony crisis.</summary>
     public const int CrisisShortColonists = 3;
 
+    // Market. Limits on the Store's buying price for Food / Energy / Smithore / Crystite.
+    public static readonly IReadOnlyList<int> PriceMin = [15, 15, 25, 50];
+    public static readonly IReadOnlyList<int> PriceMax = [150, 150, 250, 150];
+    public const int SmithorePerMule = 2;
+
+    /// <summary>Smithore the colony wants on hand each month (enough for four new M.U.L.E.s).</summary>
+    public const int SmithoreNeed = 8;
+
     // Scoring.
     public const int LandValue = 500;
     public const int MuleValue = 350;

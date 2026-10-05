@@ -29,7 +29,7 @@ in brackets; total 38 of the 40 new slots.
 - [x] **T6 Production and events.** Files: `PoMuleProduction.cs`, `PoMuleEvents.cs`,
   `PoMuleProductionTests.cs`. [5] *Accept:* yields with species bonuses, energy shutdown
   order, spoilage, six events. *Deps:* T5.
-- [ ] **T7 Market.** Files: `PoMuleMarket.cs`, `PoMuleMarketTests.cs`. [5] *Accept:* trade
+- [x] **T7 Market.** Files: `PoMuleMarket.cs`, `PoMuleMarketTests.cs`. [5] *Accept:* trade
   fires when bid meets ask, at that price, one unit per 0.25 s; stops on no cash or no goods;
   Store as last resort; monthly Store price move; Smithore to M.U.L.E. conversion. *Deps:* T6.
 - [ ] **T8 AI.** Files: `PoMuleAi.cs`, `PoMuleAiTests.cs`. [5] *Accept:* each of 7 archetypes

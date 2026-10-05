@@ -13,6 +13,7 @@ using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
 using PoMiniGamesClient.Services.Ui;
+using Radzen;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -129,6 +130,9 @@ builder.Services.AddScoped<SettingsService>();
 // the *AsString* members; the generic overloads go through reflection-based JSON that the
 // trim analyzer rejects. Existing raw `localStorage.getItem` interop is left as-is.
 builder.Services.AddBlazoredLocalStorage();
+// Radzen dialog / notification / tooltip services. Only PoMule uses them so far; its
+// page loads the Radzen stylesheet itself so the other games keep their plain CSS.
+builder.Services.AddRadzenComponents();
 // Viewport-width helper so leaderboards can render
 // top-3 on mobile and top-10 on desktop without a JS-only media query.
 builder.Services.AddScoped<BrowserViewport>();

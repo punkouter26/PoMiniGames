@@ -61,6 +61,7 @@
          overloads serialise through reflection-based System.Text.Json, which the trim
          analyzer flags (IL2026) and the trimmer may break. -->
     <PackageReference Include="Blazored.LocalStorage" />
+    <PackageReference Include="Radzen.Blazor" />
   </ItemGroup>
 
   <ItemGroup>

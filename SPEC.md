@@ -40,8 +40,8 @@ Two modes ship in v1:
 |---|---|---|
 | .NET SDK | 10.0.100, `rollForward: latestFeature` | `global.json` |
 | Target framework | `net10.0` | `Directory.Build.props`; warnings are errors |
-| Blazor WebAssembly | 10.0.10 | `Directory.Packages.props` |
-| **Radzen.Blazor** | **12.0.5** (MIT) | New. Verified on NuGet 2026-10-05. Its `net10.0` build needs `Microsoft.AspNetCore.Components` ≥ 10.0.12, above the repo's 10.0.10 pin (see risk R1) |
+| Blazor WebAssembly | 10.0.12 | `Directory.Packages.props`; all ASP.NET 10.0.x pins moved from 10.0.10 for Radzen, and `Microsoft.OpenApi` from 2.7.5 to 2.12.0 to follow |
+| **Radzen.Blazor** | **12.0.5** (MIT) | New. Trimmed Release publish is clean. Unused, it ships 41 KB of code and a 61 KB stylesheet (brotli) |
 | Blazored.LocalStorage | 4.5.0 | Existing; string API only |
 | xUnit / FluentAssertions | 2.9.3 / 8.8.0 | Existing |
 | Playwright | 1.50.0 | Existing |
@@ -218,6 +218,13 @@ In Demo mode the eighth seat repeats one archetype chosen by the seed.
 - The market runs entirely in the engine at 10 ticks per second; JavaScript only draws it.
 - The camera follows the player on a sideways-scrolling strip; a HUD panorama shows all 24
   columns with the seam.
+- Layout (chosen from ten concepts, 2026-10-05): "split focus" on desktop. The map and
+  panorama take the left three fifths; the right two fifths hold the timer, a "Your colony"
+  card (cash, the four goods against this month's need, M.U.L.E. in tow, plots) and a rivals
+  grid. On phones in landscape the map fills the screen with a cash pill, a timer pill, eight
+  player dots, a stick on the left and Act and Dash buttons on the right.
+- Components: `PoMulePage`, `PoMuleHud`, `PoMuleAuction`, `PoMuleStandings`. The species
+  picker sits in the start card.
 - Radzen provides every non-canvas element. The shared start card and end modal stay as the
   outer frame so PoMule opens and closes like the other games.
 - PoMule follows the existing leaderboard and offline score-sync path with no new mechanism.

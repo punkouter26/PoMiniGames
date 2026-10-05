@@ -8,7 +8,7 @@ in brackets; total 38 of the 40 new slots.
 
 - [x] **T0 Docs.** Write `tasks/plan.md`, `tasks/todo.md`; commit with `SPEC.md` and
   `CAPABILITY-MAP.md`. *Accept:* files exist and match this plan.
-- [ ] **T1 Radzen spike.** Files: `Directory.Packages.props`, `PoMiniGamesClient.csproj`,
+- [x] **T1 Radzen spike.** Files: `Directory.Packages.props`, `PoMiniGamesClient.csproj`,
   `_Imports.razor`, `Program.cs`. Add Radzen 12.0.5 and `AddRadzenComponents()`; bump ASP.NET
   pins as needed. *Accept:* build has 0 warnings; `dotnet publish src/PoMiniGames.API -c Release`
   succeeds; `pwsh scripts/bundle-report.ps1` before and after shows ≤ 1.5 MB growth.

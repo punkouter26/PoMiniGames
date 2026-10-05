@@ -47,8 +47,8 @@ T1, T2–T9, T10–T14 and T15 are independent chains; they are done in the list
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| R1 | Radzen 12.0.5 needs ASP.NET Components ≥ 10.0.12; repo pins 10.0.10 | High | Build fails | T1 bumps the `Microsoft.AspNetCore.*` 10.0.x pins together; fallback is the newest Radzen that accepts 10.0.10 |
-| R2 | Radzen raises trim warnings on the trimmed publish (warnings are errors) | Medium | Blocks everything UI | T1 publishes Release before any game code. If it fails: stop and ask |
+| R1 (closed) | Radzen 12.0.5 needs ASP.NET Components ≥ 10.0.12; repo pinned 10.0.10. Pins moved to 10.0.12 in T1 | High | Build fails | T1 bumps the `Microsoft.AspNetCore.*` 10.0.x pins together; fallback is the newest Radzen that accepts 10.0.10 |
+| R2 (closed, publish is clean) | Radzen raises trim warnings on the trimmed publish (warnings are errors) | Medium | Blocks everything UI | T1 publishes Release before any game code. If it fails: stop and ask |
 | R3 | Radzen CSS leaks into other games | Medium | Visual regressions | A7; T16 checks the hub after leaving PoMule |
 | R4 | Balance targets (criterion 11) need many tuning rounds | High | Schedule | All numbers in one `PoMuleTuning` static class; T9 is time-boxed to 3 tuning passes, then the gap is reported |
 | R5 | Unit cap of 140 too small | Low | Blocks TDD | `[Theory]` rows; renderer maths in uncapped `node --test` |

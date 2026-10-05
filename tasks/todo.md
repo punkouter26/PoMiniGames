@@ -20,7 +20,7 @@ in brackets; total 38 of the 40 new slots.
 - [x] **T3 Species, state, scoring.** Files: `PoMuleSpecies.cs`, `PoMuleState.cs`,
   `PoMuleTuning.cs`, `PoMuleScoring.cs`, `PoMuleScoringTests.cs`. [3] *Accept:* 8 species with
   PRD funds; Net Worth formula; colony grade rule. *Deps:* T2.
-- [ ] **T4 Land.** Files: `PoMuleLand.cs`, `PoMuleLandTests.cs`. [4] *Accept:* contested tile
+- [x] **T4 Land.** Files: `PoMuleLand.cs`, `PoMuleLandTests.cs`. [4] *Accept:* contested tile
   has one winner, losers get nearest free plot by wrapped spiral, 1,000 seeds with no double
   ownership; auction on even months, highest affordable bid wins. *Deps:* T3.
 - [ ] **T5 Development.** Files: `PoMuleDevelopment.cs`, `PoMuleDevelopmentTests.cs`. [6]

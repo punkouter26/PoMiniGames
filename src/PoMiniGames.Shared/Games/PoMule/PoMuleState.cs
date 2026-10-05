@@ -49,6 +49,11 @@ public sealed class MatchState
     /// <summary>Months in which the colony as a whole was short of Food or Energy.</summary>
     public int CrisisMonths { get; set; }
 
+    /// <summary>Plot on the auction block, or -1 when no auction is open.</summary>
+    public int AuctionPlot { get; set; } = -1;
+    public int HighBid { get; set; }
+    public sbyte HighBidder { get; set; } = Nobody;
+
     /// <param name="humanSpecies">The player's pick, or null for an all-AI demo match.</param>
     public static MatchState New(ulong seed, Species? humanSpecies)
     {

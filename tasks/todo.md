@@ -23,7 +23,7 @@ in brackets; total 38 of the 40 new slots.
 - [x] **T4 Land.** Files: `PoMuleLand.cs`, `PoMuleLandTests.cs`. [4] *Accept:* contested tile
   has one winner, losers get nearest free plot by wrapped spiral, 1,000 seeds with no double
   ownership; auction on even months, highest affordable bid wins. *Deps:* T3.
-- [ ] **T5 Development.** Files: `PoMuleDevelopment.cs`, `PoMuleDevelopmentTests.cs`. [6]
+- [x] **T5 Development.** Files: `PoMuleDevelopment.cs`, `PoMuleDevelopmentTests.cs`. [6]
   *Accept:* buy, outfit, install, swap, assay, pub payout, three runaway causes, food speed
   factor, starvation skip, every refusal case in SPEC §12. *Deps:* T3.
 - [ ] **T6 Production and events.** Files: `PoMuleProduction.cs`, `PoMuleEvents.cs`,

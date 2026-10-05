@@ -13,6 +13,19 @@ public sealed class PlayerState
 
     /// <summary>Units held, indexed by <see cref="Good"/>.</summary>
     public int[] Goods { get; set; } = new int[4];
+
+    // ── This month's development phase ──
+
+    /// <summary>100 is full speed; 0 means starving and sitting the month out.</summary>
+    public int SpeedPercent { get; set; } = 100;
+
+    public bool HasMule { get; set; }
+
+    /// <summary>The <see cref="Good"/> the towed M.U.L.E. is outfitted for, or -1 for a bare one.</summary>
+    public sbyte Outfit { get; set; } = -1;
+
+    public bool InPub { get; set; }
+    public bool HoldsAssay { get; set; }
 }
 
 /// <summary>The one Colony Store every town shares.</summary>
@@ -41,6 +54,12 @@ public sealed class MatchState
 
     /// <summary>The <see cref="Good"/> each plot's M.U.L.E. produces, or <see cref="Nobody"/>.</summary>
     public sbyte[] Installed { get; set; } = [];
+
+    /// <summary>Plots whose Crystite level everyone can see.</summary>
+    public bool[] Assayed { get; set; } = [];
+
+    /// <summary>Ticks left in the current timed phase (ten to the second).</summary>
+    public int ClockTicks { get; set; }
 
     public StoreState Store { get; set; } = new();
     public int Month { get; set; } = 1;
@@ -91,6 +110,6 @@ public sealed class MatchState
         var installed = new sbyte[map.Plots.Length];
         Array.Fill(owner, Nobody);
         Array.Fill(installed, Nobody);
-        return new MatchState { Seed = seed, Rng = rng, Map = map, Players = players, Owner = owner, Installed = installed };
+        return new MatchState { Seed = seed, Rng = rng, Map = map, Players = players, Owner = owner, Installed = installed, Assayed = new bool[map.Plots.Length] };
     }
 }

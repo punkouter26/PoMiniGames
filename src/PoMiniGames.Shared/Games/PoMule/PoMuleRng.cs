@@ -26,6 +26,15 @@ public sealed class PoMuleRng(ulong seed)
     /// <summary>A value in <c>[0, max)</c>.</summary>
     public int Next(int max) => (int)(Next() % (uint)max);
 
+    public void Shuffle<T>(IList<T> items)
+    {
+        for (var i = items.Count - 1; i > 0; i--)
+        {
+            var j = Next(i + 1);
+            (items[i], items[j]) = (items[j], items[i]);
+        }
+    }
+
     /// <summary>True with the given probability in percent.</summary>
     public bool Chance(int percent) => Next(100) < percent;
 }

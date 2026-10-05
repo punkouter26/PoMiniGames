@@ -17,7 +17,7 @@ in brackets; total 38 of the 40 new slots.
   (100 → 140), `PoMuleRng.cs`, `PoMuleMap.cs`, `PoMuleMapTests.cs`. [4] *Accept:* 24×8, 4
   towns, wrap distance, same seed gives same map. *Verify:* `dotnet test tests/PoMiniGames.Unit
   --filter "FullyQualifiedName~PoMule"`; `pwsh scripts/test-ceilings.ps1`.
-- [ ] **T3 Species, state, scoring.** Files: `PoMuleSpecies.cs`, `PoMuleState.cs`,
+- [x] **T3 Species, state, scoring.** Files: `PoMuleSpecies.cs`, `PoMuleState.cs`,
   `PoMuleTuning.cs`, `PoMuleScoring.cs`, `PoMuleScoringTests.cs`. [3] *Accept:* 8 species with
   PRD funds; Net Worth formula; colony grade rule. *Deps:* T2.
 - [ ] **T4 Land.** Files: `PoMuleLand.cs`, `PoMuleLandTests.cs`. [4] *Accept:* contested tile

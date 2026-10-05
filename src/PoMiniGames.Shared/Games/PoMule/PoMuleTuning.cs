@@ -34,6 +34,13 @@ public static class PoMuleTuning
     public const int AuctionOpeningBid = 160;
     public const int AuctionPlotsPerEvenMonth = 2;
 
+    public const int AuctionRaise = 10;
+
+    // AI timing, in clock ticks left: the Gambler works only the first 15 s; the Agitator
+    // and the Prospector give up their errands with 15 s to go and head for the pub.
+    public const int GamblerWorksUntilTicks = 300;
+    public const int AgitatorHuntsUntilTicks = 150;
+
     // Development.
     public const int PubCap = 250;
     public const int MinSpeedPercent = 40;

@@ -32,7 +32,7 @@ in brackets; total 38 of the 40 new slots.
 - [x] **T7 Market.** Files: `PoMuleMarket.cs`, `PoMuleMarketTests.cs`. [5] *Accept:* trade
   fires when bid meets ask, at that price, one unit per 0.25 s; stops on no cash or no goods;
   Store as last resort; monthly Store price move; Smithore to M.U.L.E. conversion. *Deps:* T6.
-- [ ] **T8 AI.** Files: `PoMuleAi.cs`, `PoMuleAiTests.cs`. [5] *Accept:* each of 7 archetypes
+- [x] **T8 AI.** Files: `PoMuleAi.cs`, `PoMuleAiTests.cs`. [5] *Accept:* each of 7 archetypes
   shows its defining behaviour in a scripted state (for example Hoarder holds Food below the
   cap price). *Deps:* T7, T4.
 - [ ] **T9 Match driver and balance.** Files: `PoMuleMatch.cs`, `PoMuleSave.cs` (with JSON

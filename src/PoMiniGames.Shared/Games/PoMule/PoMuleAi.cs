@@ -1,0 +1,190 @@
+namespace PoMiniGames.Shared.Games.PoMule;
+
+public enum GoalKind : byte { Idle, Outfitter, Install, Assay, Survey, Pub, Chase }
+
+/// <summary>
+/// Where an AI colonist is heading during development. The renderer steers the avatar there
+/// and reports the arrival; the engine then performs (and re-checks) the action.
+/// </summary>
+/// <param name="Target">
+/// A plot for <see cref="GoalKind.Install"/> and <see cref="GoalKind.Survey"/>; a seat for
+/// <see cref="GoalKind.Chase"/> (-1 = loiter at a town door); otherwise -1, meaning the
+/// nearest town.
+/// </param>
+/// <param name="Good">What to outfit or install.</param>
+public readonly record struct Goal(GoalKind Kind, int Target, Good Good);
+
+/// <summary>
+/// The seven computer personalities. Hand-written rules, like every other opponent in
+/// PoMiniGames; each method reads the match and answers one question, keeping nothing
+/// between calls.
+/// </summary>
+public static class PoMuleAi
+{
+    // Terrain appeal by personality: Plains, River, Mountain, Crater. (Mountains add 20 a peak.)
+    private static int Appeal(Archetype archetype, Terrain terrain) => (archetype, terrain) switch
+    {
+        (Archetype.Farmer or Archetype.Hoarder or Archetype.Speculator, Terrain.River) => 100,
+        (Archetype.Farmer or Archetype.Hoarder, Terrain.Plains) => 50,
+        (Archetype.Industrialist, Terrain.Mountain) => 60,
+        (Archetype.Prospector, Terrain.Crater) => 100,
+        (Archetype.Prospector, Terrain.Mountain) => 30,
+        (Archetype.Speculator, Terrain.Crater) => 60,
+        (Archetype.Agitator or Archetype.Gambler, Terrain.River or Terrain.Plains) => 50,
+        _ => 20,
+    };
+
+    /// <summary>The plot this colonist points its land-grant cursor at.</summary>
+    public static int PickLand(MatchState match, int seat)
+    {
+        var archetype = match.Players[seat].Archetype;
+        var best = -1;
+        var bestScore = int.MinValue;
+        for (var i = 0; i < match.Owner.Length; i++)
+        {
+            if (!PoMuleLand.Claimable(match, i)) continue;
+            var plot = match.Map.Plots[i];
+            var score = Appeal(archetype, plot.Terrain) - TownDistance(i) + match.Rng.Next(8);
+            if (archetype == Archetype.Industrialist) score += 20 * plot.Peaks;
+            if (archetype == Archetype.Prospector && PoMuleDevelopment.CanSeeCrystite(match, seat, i)) score += 30 * plot.Crystite;
+            if (score > bestScore) (best, bestScore) = (i, score);
+        }
+        return best;
+    }
+
+    private static int TownDistance(int plot)
+    {
+        var (column, row) = (plot % PoMuleMap.Columns, plot / PoMuleMap.Columns);
+        return PoMuleMap.TownColumns.Min(t => PoMuleMap.ColumnDistance(t, column)) + Math.Abs(row - PoMuleMap.TownRow);
+    }
+
+    /// <summary>Crystite a M.U.L.E. would dig here as far as this colonist can tell: craters are a good bet.</summary>
+    private static int ExpectedYield(MatchState match, int seat, int plot, Good good)
+    {
+        var tile = match.Map.Plots[plot];
+        if (good == Good.Crystite && !PoMuleDevelopment.CanSeeCrystite(match, seat, plot))
+            return tile.Terrain == Terrain.Crater ? 3 : 0;
+        return PoMuleProduction.BaseYield(tile, good);
+    }
+
+    private static IEnumerable<int> Plots(MatchState match, int seat) =>
+        Enumerable.Range(0, match.Owner.Length).Where(i => match.Owner[i] == seat);
+
+    /// <summary>What to outfit a M.U.L.E. for, given the plot it is bound for.</summary>
+    public static Good ChooseOutfit(MatchState match, int seat, int plot)
+    {
+        var player = match.Players[seat];
+        var worked = Plots(match, seat).Where(i => match.Installed[i] != MatchState.Nobody).ToList();
+        int Making(Good g) => worked.Where(i => match.Installed[i] == (sbyte)g).Sum(i => PoMuleProduction.BaseYield(match.Map.Plots[i], g));
+
+        // Nobody runs M.U.L.E.s they cannot power: stock plus output must cover this one too.
+        var drawing = worked.Count(i => match.Installed[i] != (sbyte)Good.Energy) + 1;
+        if (player.Goods[(int)Good.Energy] + Making(Good.Energy) < drawing) return Good.Energy;
+
+        var miner = player.Archetype is Archetype.Industrialist or Archetype.Prospector;
+        if (player.Archetype == Archetype.Industrialist) return Good.Smithore;
+        if (player.Archetype == Archetype.Prospector && ExpectedYield(match, seat, plot, Good.Crystite) >= 2) return Good.Crystite;
+
+        // Everyone but the miners feeds themselves before chasing profit.
+        var canFarm = PoMuleProduction.BaseYield(match.Map.Plots[plot], Good.Food) >= 2;
+        if (!miner && canFarm && Making(Good.Food) < PoMuleTuning.FoodNeed(match.Month + 1)) return Good.Food;
+        if (player.Archetype == Archetype.Farmer && canFarm) return Good.Food;
+        if (player.Archetype == Archetype.Hoarder)
+            return ExpectedYield(match, seat, plot, Good.Food) >= ExpectedYield(match, seat, plot, Good.Energy) ? Good.Food : Good.Energy;
+
+        return Enum.GetValues<Good>().MaxBy(g => ExpectedYield(match, seat, plot, g) * match.Store.Price[(int)g]);
+    }
+
+    /// <summary>Where this colonist is heading right now in the development phase.</summary>
+    public static Goal NextGoal(MatchState match, int seat)
+    {
+        var player = match.Players[seat];
+        if (!PoMuleDevelopment.CanAct(match, seat)) return new Goal(GoalKind.Idle, -1, default);
+
+        var empty = Plots(match, seat).Where(i => match.Installed[i] == MatchState.Nobody).ToList();
+        if (player.HasMule)
+        {
+            if (empty.Count == 0) return new Goal(GoalKind.Pub, -1, default);
+            if (player.Outfit == MatchState.Nobody)
+                return new Goal(GoalKind.Outfitter, -1, ChooseOutfit(match, seat, empty[0]));
+            var outfit = (Good)player.Outfit;
+            return new Goal(GoalKind.Install, empty.MaxBy(i => ExpectedYield(match, seat, i, outfit)), outfit);
+        }
+
+        var working = player.Archetype != Archetype.Gambler || match.ClockTicks > PoMuleTuning.GamblerWorksUntilTicks;
+        if (working && empty.Count > 0 && match.Store.Mules > 0)
+        {
+            var good = ChooseOutfit(match, seat, empty[0]);
+            if (player.Cash >= match.Store.MulePrice + PoMuleTuning.OutfitCost[(int)good])
+                return new Goal(GoalKind.Outfitter, -1, good);
+        }
+
+        if (player.Archetype == Archetype.Agitator && match.ClockTicks > PoMuleTuning.AgitatorHuntsUntilTicks)
+        {
+            var prey = match.Players.FirstOrDefault(p => p.Seat != seat && p.HasMule);
+            return new Goal(GoalKind.Chase, prey?.Seat ?? -1, default);
+        }
+
+        if (player.Archetype == Archetype.Prospector && match.ClockTicks > PoMuleTuning.AgitatorHuntsUntilTicks
+            && player.Species != Species.CrystiteWeaver)
+        {
+            var crater = Enumerable.Range(0, match.Assayed.Length)
+                .FirstOrDefault(i => !match.Assayed[i] && match.Map.Plots[i].Terrain == Terrain.Crater, -1);
+            if (crater >= 0)
+                return player.HoldsAssay ? new Goal(GoalKind.Survey, crater, default) : new Goal(GoalKind.Assay, -1, default);
+        }
+
+        return new Goal(GoalKind.Pub, -1, default);
+    }
+
+    /// <summary>Which way this colonist walks on the trading floor this tick: +1 up, -1 down, 0 stay.</summary>
+    public static int MarketInput(MatchState match, int seat)
+    {
+        var role = match.LaneRole[seat];
+        if (role == 0 || match.MarketGood == MatchState.Nobody) return 0;
+        var good = (Good)match.MarketGood;
+        var player = match.Players[seat];
+        var (floor, ceiling) = (PoMuleMarket.Floor(match, good), PoMuleMarket.Ceiling(match, good));
+        var surplus = PoMuleMarket.Surplus(match, seat, good);
+        var here = match.LanePrice[seat];
+
+        if (role == PoMuleMarket.Buyer)
+        {
+            if (surplus >= 0) return -1;
+            return here < Math.Min(player.Cash, ceiling) ? 1 : 0;
+        }
+
+        if (surplus <= 0) return 1;
+        var essential = good is Good.Food or Good.Energy;
+        var price = match.Store.Price[(int)good];
+        var target = (player.Archetype, essential) switch
+        {
+            // Sits on Food and Energy until the price is close to its record high.
+            (Archetype.Hoarder, true) => price * 100 >= PoMuleTuning.PriceMax[(int)good] * 80 ? (floor + ceiling) / 2 : ceiling,
+            (Archetype.Farmer, true) => floor + (ceiling - floor) / 5,
+            // Holds ore for a spike, then dumps it on the Store.
+            (Archetype.Speculator, false) => price * 10 >= PoMuleTuning.StoreStartPrice[(int)good] * 13 ? floor : ceiling,
+            // Other colonists ask a third above the Store's price for essentials; ore has no
+            // buyer but the Store, so it goes to the floor.
+            (_, true) => floor + (ceiling - floor) / 3,
+            _ => floor,
+        };
+        return Math.Sign(target - here);
+    }
+
+    /// <summary>The bid this colonist would make right now at the land auction, or 0 to pass.</summary>
+    public static int AuctionBid(MatchState match, int seat)
+    {
+        if (match.AuctionPlot < 0 || match.HighBidder == seat) return 0;
+        var player = match.Players[seat];
+        var percent = player.Archetype switch
+        {
+            Archetype.Speculator => 60,
+            Archetype.Gambler => 50,
+            Archetype.Agitator => 20,
+            _ => 30,
+        };
+        var next = Math.Max(PoMuleTuning.AuctionOpeningBid, match.HighBid + PoMuleTuning.AuctionRaise);
+        return next <= player.Cash * percent / 100 ? next : 0;
+    }
+}

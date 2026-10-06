@@ -23,6 +23,10 @@ public sealed class ScoreRulesTests
     [InlineData("pomarblerace", 100_001, 2, ScoreVerdict.Impossible)]
     [InlineData("pomarblerace", 1_000_001, 600, ScoreVerdict.OutOfRange)]
     [InlineData("pomarblerace", double.NaN, 60, ScoreVerdict.OutOfRange)]
+    [InlineData("pomule", 15_000, 1_500, ScoreVerdict.Plausible)]
+    [InlineData("pomule", 15_000, 90, ScoreVerdict.Plausible)]    // resumed for the last month only
+    [InlineData("pomule", 500_001, 1_500, ScoreVerdict.OutOfRange)]
+    [InlineData("pomule", -1, 1_500, ScoreVerdict.OutOfRange)]
     // A board with no rules is never judged.
     [InlineData("poecosystem", int.MaxValue, 0, ScoreVerdict.Plausible)]
     public void CheckAgainstSession_JudgesScoreAgainstElapsedTime(

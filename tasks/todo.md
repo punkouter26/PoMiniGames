@@ -40,7 +40,7 @@ in brackets; total 38 of the 40 new slots.
   layout; determinism; save round trip; 100 seeded matches meet criteria 8 and 11; Demo
   timing rule. *Verify:* add `--collect:"XPlat Code Coverage"`; ≥ 90% on the engine folder.
   *Deps:* T8.
-- [ ] **T10 Domain.** Files: `Domain/Primitives/GameKey.cs`, `Domain/Models/PoMuleHighScore.cs`,
+- [x] **T10 Domain.** Files: `Domain/Primitives/GameKey.cs`, `Domain/Models/PoMuleHighScore.cs`,
   `Domain/Services/ScoreRules.cs`, `tests/…/Domain/ScoreRulesTests.cs` (rows only). [0]
   *Accept:* `GameKey.TryParse("pomule")` works; bounds 0 to 500,000, higher is better.
 - [ ] **T11 Storage.** Files: `IStorageService.cs`, `StorageService.cs`,

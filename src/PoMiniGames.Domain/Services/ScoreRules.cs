@@ -84,6 +84,12 @@ public static class ScoreRules
         [GameKey.PoVoxelStrike] = new ScoreBounds(
             Min: PoVoxelStrikeScore.Min, Max: PoVoxelStrikeScore.Max, LowerIsBetter: false, MinPlaySeconds: 5, MaxPerSecond: 50_000),
 
+        // PoMule's score is end-of-match Net Worth: real matches end between 10,000 and 30,000
+        // after about 25 minutes. The rate tier is deliberately loose because a match resumed
+        // from a month-start save is submitted from a play session that only saw its last months.
+        [GameKey.PoMule] = new ScoreBounds(
+            Min: PoMuleHighScore.MinNetWorth, Max: PoMuleHighScore.MaxNetWorth, LowerIsBetter: false, MinPlaySeconds: 30, MaxPerSecond: 2_000),
+
         // Time boards. Max mirrors each endpoint's existing inline range check; MinPlaySeconds
         // is the floor for the whole session, which for a meet or a race is longer than one leg.
         [GameKey.PoSports] = new ScoreBounds(

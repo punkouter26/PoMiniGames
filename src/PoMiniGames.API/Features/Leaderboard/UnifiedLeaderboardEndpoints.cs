@@ -100,6 +100,7 @@ public static class UnifiedLeaderboardEndpoints
             SafeBuildFunQuizAsync(funQuiz, limit),
             SafeBuildPoJokerAsync(joker, limit),
             SafeBuildPoVoxelStrikeAsync(storage, limit),
+            SafeBuildPoMuleAsync(storage, limit),
             SafeBuildOnlineMmrAsync(storage, limit),
         };
 
@@ -160,6 +161,11 @@ public static class UnifiedLeaderboardEndpoints
         try { return await BuildPoVoxelStrikeAsync(storage, limit); }
         catch { return EmptyBoard("Voxel Strike"); }
     }
+    private static async Task<GameLeaderboardDto> SafeBuildPoMuleAsync(IStorageService storage, int limit)
+    {
+        try { return await BuildPoMuleAsync(storage, limit); }
+        catch { return EmptyBoard("Mule"); }
+    }
     private static async Task<GameLeaderboardDto> SafeBuildOnlineMmrAsync(IStorageService storage, int limit)
     {
         try { return await BuildOnlineMmrAsync(storage, limit); }
@@ -213,6 +219,7 @@ public static class UnifiedLeaderboardEndpoints
             "couplequiz" => await BuildWinRateAsync(storage, "pocouplequiz", "Couple Quiz", limit),
             "joker" => await BuildPoJokerAsync(joker, limit),
             "povoxelstrike" => await BuildPoVoxelStrikeAsync(storage, limit),
+            "pomule" => await BuildPoMuleAsync(storage, limit),
             _ => null,
         };
     }
@@ -474,6 +481,21 @@ public static class UnifiedLeaderboardEndpoints
             .ToList();
         PadWithPlaceholders(entries, limit, "0");
         return new GameLeaderboardDto("pobrawldemo", "Brawl Demo", "ELO", HigherIsBetter: true, entries);
+    }
+
+    /// <summary>
+    /// PoMule ranks by best end-of-match Net Worth, one ratcheted row per player.
+    /// </summary>
+    private static async Task<GameLeaderboardDto> BuildPoMuleAsync(IStorageService storage, int limit)
+    {
+        var scores = await storage.GetPoMuleHighScoresAsync(limit);
+        var entries = scores
+            .Select((s, i) => new LeaderboardEntryDto(
+                i + 1, s.PlayerName, s.NetWorth, s.NetWorth.ToString("N0", CultureInfo.InvariantCulture)))
+            .ToList();
+        PadWithPlaceholders(entries, limit, "0");
+        // Unit "Score" from the closed vocabulary above: Net Worth is a point total, higher wins.
+        return new GameLeaderboardDto("pomule", "Mule", "Score", HigherIsBetter: true, entries);
     }
 
     /// <summary>

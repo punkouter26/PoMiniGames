@@ -21,6 +21,7 @@ using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoRacer;
 using PoMiniGames.Features.PoCabinet; // T4-T6: career, score, lobby + race hubs
 using PoMiniGames.Features.PoVoxelStrike;
+using PoMiniGames.Features.PoMule;
 
 namespace PoMiniGames.Infrastructure;
 
@@ -111,6 +112,7 @@ internal static class EndpointRouteExtensions
         gameApi.MapPoCabinetAiEndpoints();
         gameApi.MapPoSportsHighScoresEndpoints();
         gameApi.MapPoVoxelStrikeScoreEndpoints();
+        gameApi.MapPoMuleScoreEndpoints();
         // PoBrawl online (lobby + match hub) — match result ingest endpoint. Same
         // shape as PoRacer's score endpoints: authenticated, rate-limited highscores.
         gameApi.MapPoBrawlOnlineMatchEndpoints();

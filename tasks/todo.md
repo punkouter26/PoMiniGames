@@ -47,7 +47,7 @@ in brackets; total 38 of the 40 new slots.
   `StorageService.HighScores.cs`, `Features/Account/PlayerDataService.cs`,
   `tests/PoMiniGames.Integration/Features/PoMule/PoMuleHighScoreTests.cs`. *Accept:* save, read
   and best-score ratchet against Azurite (+2 integration methods → 48/50). *Deps:* T10.
-- [ ] **T12 API.** Files: `Features/PoMule/PoMuleEndpoints.cs`, `EndpointRouteExtensions.cs`,
+- [x] **T12 API.** Files: `Features/PoMule/PoMuleEndpoints.cs`, `EndpointRouteExtensions.cs`,
   `UnifiedLeaderboardEndpoints.cs`, `tests/PoMiniGames.E2EAPI/PoMuleEndpointsTests.cs`.
   *Accept:* anonymous is refused, valid POST is 201, out-of-range is 400, unified board lists
   PoMule (+1 method → 25/25). *Deps:* T11.

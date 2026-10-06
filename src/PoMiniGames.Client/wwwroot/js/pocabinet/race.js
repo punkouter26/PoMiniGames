@@ -354,7 +354,7 @@ class Race {
     applySettings(settings) {
         this.settings = { ...this.settings, ...(settings || {}) };
         this.input.setOptions(this.settings);
-        music.setEnabled(this.settings.music !== false);
+        music.setEnabled(false); // background music is off in every game; settings.music is ignored
         this.scene.setRacingLine?.(!!this.settings.racingLine && !this.replay);
     }
 

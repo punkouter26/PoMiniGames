@@ -29,17 +29,22 @@ public sealed class PoMuleDevelopmentTests
     [InlineData(Species.Humanoid, 4, 1, 100, 1)]       // needs 3, has 4
     [InlineData(Species.Humanoid, 2, 5, 50, 0)]        // needs 4, has half
     [InlineData(Species.Humanoid, 1, 9, 40, 0)]        // needs 5, has a fifth: floor is 40%
-    [InlineData(Species.Humanoid, 0, 1, 0, 0)]         // starving: sits the month out
-    [InlineData(Species.ZephyrFlapper, 4, 1, 110, 1)]  // +10% speed
-    [InlineData(Species.ZephyrFlapper, 2, 5, 55, 0)]
-    public void Begin_EatsTheMonthsFood_AndSetsSpeedFromHowMuchThereWas(
-        Species species, int food, int month, int speedPercent, int foodLeft)
+    [InlineData(Species.Humanoid, 0, 1, 40, 0)]        // starving: still the shortest month
+    [InlineData(Species.ZephyrFlapper, 4, 1, 100, 1)]  // +10% speed, same clock as anyone
+    [InlineData(Species.ZephyrFlapper, 2, 5, 50, 0)]
+    public void TheMonthsFoodIsEatenByItsEnd_AndTheHungryGetAShortMonth(
+        Species species, int food, int month, int timePercent, int foodLeft)
     {
         var match = Started(species, month, food);
 
-        match.Players[0].SpeedPercent.Should().Be(speedPercent);
-        match.Players[0].Goods[(int)Good.Food].Should().Be(foodLeft);
+        match.Players[0].TimePercent.Should().Be(timePercent);
+        PoMuleDevelopment.TimeLeft(match, 0).Should().Be(PoMuleTuning.DevelopmentSeconds * PoMuleTuning.TicksPerSecond * timePercent / 100);
+        PoMuleDevelopment.Speed(match, 0).Should().Be(species == Species.ZephyrFlapper ? 110 : 100, "hunger costs time, not pace");
+        match.Players[0].Goods[(int)Good.Food].Should().Be(food, "the ration is eaten over the month, not at its start");
         match.ClockTicks.Should().Be(PoMuleTuning.DevelopmentSeconds * PoMuleTuning.TicksPerSecond);
+
+        PoMuleDevelopment.End(match);
+        match.Players[0].Goods[(int)Good.Food].Should().Be(foodLeft);
     }
 
     [Fact]
@@ -76,10 +81,10 @@ public sealed class PoMuleDevelopmentTests
     [InlineData("install: not outfitted", Outcome.NotAllowed)]
     [InlineData("mule: in the pub", Outcome.NotAllowed)]
     [InlineData("mule: clock ran out", Outcome.NotAllowed)]
-    [InlineData("mule: starving", Outcome.NotAllowed)]
+    [InlineData("mule: hungry, time up", Outcome.NotAllowed)]
     public void RefusedActions_ChangeNothing_AndNeverLeaveANegativeBalance(string scenario, Outcome expected)
     {
-        var match = scenario == "mule: starving" ? Started(food: 0) : Started();
+        var match = scenario == "mule: hungry, time up" ? Started(food: 0) : Started();
         var you = match.Players[0];
         var plot = OwnPlot(match);
         Outcome actual;
@@ -93,7 +98,8 @@ public sealed class PoMuleDevelopmentTests
             case "install: not outfitted": PoMuleDevelopment.BuyMule(match, 0); actual = PoMuleDevelopment.Install(match, 0, plot); break;
             case "mule: in the pub": PoMuleDevelopment.EnterPub(match, 0); actual = PoMuleDevelopment.BuyMule(match, 0); break;
             case "mule: clock ran out": match.ClockTicks = 0; actual = PoMuleDevelopment.BuyMule(match, 0); break;
-            default: actual = PoMuleDevelopment.BuyMule(match, 0); break;
+            // Starving leaves 40% of the month: 18 s in, the others play on and this one is done.
+            default: match.ClockTicks = 270; actual = PoMuleDevelopment.BuyMule(match, 0); break;
         }
         var (cash, mules, towing) = (you.Cash, match.Store.Mules, you.HasMule);
 
@@ -121,6 +127,9 @@ public sealed class PoMuleDevelopmentTests
         PoMuleDevelopment.Bump(bumped, victim: 0, dashing: true).Should().BeTrue();
         bumped.Players[0].HasMule.Should().BeFalse();
         PoMuleDevelopment.Bump(bumped, victim: 0, dashing: true).Should().BeFalse("nothing left to lose");
+        PoMuleDevelopment.BuyMule(bumped, 0);
+        PoMuleDevelopment.Bump(bumped, victim: 0, dashing: true).Should().BeFalse("nobody loses two to a bump in one month");
+        bumped.BumpRunaways.Should().Be(1);
 
         var trespass = Towing();
         var theirs = OwnPlot(trespass, seat: 3);
@@ -140,6 +149,7 @@ public sealed class PoMuleDevelopmentTests
         for (var i = 0; i < 1000; i++)
         {
             drifter.Players[0].HasMule = true;
+            drifter.Players[0].Spooked = false;
             if (!PoMuleDevelopment.Bump(drifter, victim: 0, dashing: true)) kept++;
         }
         kept.Should().BeInRange(420, 580);
@@ -153,11 +163,11 @@ public sealed class PoMuleDevelopmentTests
     [InlineData(0, 1, 0)]
     public void Pub_PaysForTheSecondsLeft_AndTakesTheColonistOffTheMap(int ticksLeft, int month, int payout)
     {
-        var match = Started(month: month);
+        var match = Started(month: month, food: 9); // well fed: the whole clock is theirs
         match.ClockTicks = ticksLeft;
         var cash = match.Players[0].Cash;
 
-        PoMuleDevelopment.PubPayout(match).Should().Be(payout, "the offer shown is the amount paid");
+        PoMuleDevelopment.PubPayout(match, 0).Should().Be(payout, "the offer shown is the amount paid");
         PoMuleDevelopment.EnterPub(match, 0).Should().Be(payout);
 
         match.Players[0].Cash.Should().Be(cash + payout);

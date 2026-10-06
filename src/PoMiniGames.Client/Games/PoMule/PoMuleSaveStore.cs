@@ -73,20 +73,11 @@ public static class PoMuleUi
         _ => "Final results",
     };
 
-    /// <summary>Seconds a timed phase starts with, for the progress bar. 0 = not timed.</summary>
-    public static int PhaseSeconds(Phase phase) => phase switch
-    {
-        Phase.Auction => PoMuleTuning.AuctionSeconds,
-        Phase.Development => PoMuleTuning.DevelopmentSeconds,
-        Phase.Market => PoMuleTuning.MarketSeconds,
-        _ => 0,
-    };
-
     public static List<PoMuleRow> Rows(MatchState state) =>
         [.. PoMuleScoring.Standings(state).Select(s =>
         {
             var p = state.Players[s.Seat];
-            return new PoMuleRow(s.Rank, s.Seat, p.Name, SeatColors[s.Seat], PoMuleSpecies.Get(p.Species).Name,
+            return new PoMuleRow(s.Rank, s.Seat, p.Name, SeatColors[s.Seat], PoMuleSpecies.Name(p.Species, state.Classic),
                 p.Cash, p.Goods, state.Owner.Count(o => o == s.Seat), s.NetWorth);
         })];
 }

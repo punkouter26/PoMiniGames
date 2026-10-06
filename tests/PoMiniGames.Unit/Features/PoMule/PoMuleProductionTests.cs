@@ -21,11 +21,11 @@ public sealed class PoMuleProductionTests
     // The base table.
     [InlineData(ColonyEvent.None, Terrain.River, 0, 0, Good.Food, 4)]
     [InlineData(ColonyEvent.None, Terrain.River, 0, 0, Good.Energy, 2)]
-    [InlineData(ColonyEvent.None, Terrain.River, 0, 0, Good.Smithore, 1)]
+    [InlineData(ColonyEvent.None, Terrain.River, 0, 0, Good.Smithore, 0)]   // a river cannot be mined
     [InlineData(ColonyEvent.None, Terrain.Plains, 0, 1, Good.Food, 2)]
     [InlineData(ColonyEvent.None, Terrain.Plains, 0, 1, Good.Energy, 3)]
     [InlineData(ColonyEvent.None, Terrain.Plains, 0, 1, Good.Crystite, 1)]
-    [InlineData(ColonyEvent.None, Terrain.Mountain, 1, 0, Good.Food, 0)]
+    [InlineData(ColonyEvent.None, Terrain.Mountain, 1, 0, Good.Food, 1)]
     [InlineData(ColonyEvent.None, Terrain.Mountain, 1, 0, Good.Smithore, 2)]
     [InlineData(ColonyEvent.None, Terrain.Mountain, 3, 0, Good.Smithore, 4)]
     [InlineData(ColonyEvent.None, Terrain.Crater, 0, 4, Good.Crystite, 4)]
@@ -50,10 +50,10 @@ public sealed class PoMuleProductionTests
     }
 
     [Theory]
-    [InlineData(Species.Humanoid, 8, 4, 3, 3)]
-    [InlineData(Species.Gollumoid, 9, 4, 3, 3)]   // +15% of 8 river Food, rounded
-    [InlineData(Species.OreGorger, 8, 5, 3, 3)]   // +15% of 4 Smithore, rounded
-    [InlineData(Species.Voltronix, 8, 4, 3, 2)]   // one free Energy covers one M.U.L.E.
+    [InlineData(Species.Humanoid, 10, 4, 3, 3)]    // two river farms side by side make 5 each, not 4
+    [InlineData(Species.Gollumoid, 12, 4, 3, 3)]   // +15% of 10 river Food, rounded
+    [InlineData(Species.OreGorger, 10, 5, 3, 3)]   // +15% of 4 Smithore, rounded
+    [InlineData(Species.Voltronix, 10, 4, 3, 2)]   // one free Energy covers one M.U.L.E.
     public void AColony_ProducesAcrossItsPlots_WithSpeciesBonuses_AndPaysEnergyToRunThem(
         Species species, int food, int smithore, int energyMade, int energySpent)
     {
@@ -84,14 +84,15 @@ public sealed class PoMuleProductionTests
     {
         var match = Match();
         var food = Work(match, 0, Terrain.River, Good.Food);                    // 4 × 30 = 120
-        var smithore = Work(match, 1, Terrain.Mountain, Good.Smithore, peaks: 3); // 4 × 50 = 200
-        var weak = Work(match, 2, Terrain.Mountain, Good.Smithore, peaks: 1);     // 2 × 50 = 100
+        // The two mines are neighbours, so each digs one more than its mountain alone would give.
+        var smithore = Work(match, 1, Terrain.Mountain, Good.Smithore, peaks: 3); // 5 × 50 = 250
+        var weak = Work(match, 2, Terrain.Mountain, Good.Smithore, peaks: 1);     // 3 × 50 = 150
         match.Players[0].Goods[(int)Good.Energy] = 1;
 
         var report = PoMuleProduction.Run(match, ColonyEvent.None, vary: false);
 
         report.IdleMules[0].Should().Be(2);
-        report.Produced[0].Should().Equal(0, 0, 4, 0);
+        report.Produced[0].Should().Equal(0, 0, 5, 0);
         report.IdlePlots.Should().BeEquivalentTo([food, weak]);
         report.IdlePlots.Should().NotContain(smithore);
         match.Players[0].Goods[(int)Good.Energy].Should().Be(0);
@@ -124,7 +125,7 @@ public sealed class PoMuleProductionTests
         Work(pest, 1, Terrain.Plains, Good.Food);
         pest.Players[0].Goods[(int)Good.Energy] = 5;
         var report = PoMuleProduction.Run(pest, ColonyEvent.PestAttack, vary: false);
-        report.Produced[0][(int)Good.Food].Should().Be(2, "the pests eat the best Food plot, not the worst");
+        report.Produced[0][(int)Good.Food].Should().Be(3, "the pests eat the best Food plot, not the worst");
         report.PestPlot.Should().Be(0);
 
         var pirates = Match();
@@ -138,11 +139,13 @@ public sealed class PoMuleProductionTests
         fire.Store.Stock.Should().Equal(0, 0, 0, 6);
         fire.Store.Mules.Should().Be(PoMuleTuning.StoreStartMules, "the M.U.L.E. corral is outside");
 
-        var rng = new PoMuleRng(77);
-        var rolls = Enumerable.Range(0, 7000).Select(_ => PoMuleEvents.Roll(rng)).ToList();
-        rolls.Count(e => e == ColonyEvent.None).Should().BeInRange(1500, 2000);
-        foreach (var e in Enum.GetValues<ColonyEvent>().Where(e => e != ColonyEvent.None))
-            rolls.Count(r => r == e).Should().BeInRange(620, 900, e.ToString()); // seven events share three rolls in four
+        // Roll long enough and every event has struck exactly as often as its cap allows.
+        var months = Match();
+        var rolls = Enumerable.Range(0, 400).Select(_ => PoMuleEvents.Roll(months)).ToList();
+        foreach (var e in Enum.GetValues<ColonyEvent>().Where(e => e is not (ColonyEvent.None or ColonyEvent.ShipReturns)))
+            rolls.Count(r => r == e).Should().Be(PoMuleTuning.EventCap[(int)e], e.ToString());
+        months.Month = PoMuleTuning.Months;
+        PoMuleEvents.Roll(months).Should().Be(ColonyEvent.ShipReturns, "the last month has no event: the ship comes back");
         Enum.GetValues<ColonyEvent>().Should().OnlyContain(e => PoMuleEvents.Headline(e).Length > 0);
     }
 }

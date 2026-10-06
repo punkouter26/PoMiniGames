@@ -29,6 +29,12 @@ const CRYSTITE = '#8040c0';
 const ORANGE = '#c86000';
 const TEXT = '#585858';
 const GOOD_NAME = ['FOOD', 'ENERGY', 'SMITHORE', 'CRYSTITE'];
+const TERRAIN_NAME = ['PLAINS', 'RIVER', 'MOUNTAIN', 'CRATER'];
+// Ticks: a whole development month, a goods auction, and a land auction once its floor opens.
+const DEVELOP_TICKS = 450, MARKET_TICKS = 120, LAND_TICKS = 170;
+
+/** The land auction shows the plot on the map first, then moves to the bidding floor. */
+const onLandFloor = (g) => g.phase === 1 && g.snap[2] <= LAND_TICKS;
 const GOOD_COLOR = ['#28a010', '#c08000', '#707070', '#8040c0'];
 
 /** Fat-pixel rectangles: [cellX, cellY, width, height] from (x, y), one cell per Atari pixel. */
@@ -114,11 +120,29 @@ function wrapped(x, draw) {
 
 const snap = (v) => Math.round(v / PX) * PX;
 
+/**
+ * The planet's 192 plots, painted once and kept: terrain, fences and installed M.U.L.E.s
+ * only change when index.js is handed new plots (setPlots marks the layer stale). Painting
+ * them tile by tile every frame was most of the frame's cost.
+ */
+function tileLayer(g) {
+  if (g.tiles && !g.tilesStale) return g.tiles;
+  g.tiles ??= Object.assign(document.createElement('canvas'), { width: SCREEN_W, height: W.ROWS * W.TILE / PX });
+  const c = g.tiles.getContext('2d');
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, g.tiles.width, g.tiles.height);
+  c.setTransform(1 / PX, 0, 0, 1 / PX, 0, 0);
+  for (let i = 0; i < g.terrain.length; i++) drawTile(c, g, i, (i % W.COLS) * W.TILE, Math.floor(i / W.COLS) * W.TILE);
+  g.tilesStale = false;
+  return g.tiles;
+}
+
 function drawMap(c, g) {
   // A planetquake rattles the whole picture.
   const quake = g.phase === 4 && g.snap[7] === 4 ? (Math.floor(g.time * 20) % 3 - 1) : 0;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.drawImage(tileLayer(g), quake, MAP_Y);
   c.setTransform(1 / PX, 0, 0, 1 / PX, quake, MAP_Y);
-  for (let i = 0; i < g.terrain.length; i++) drawTile(c, g, i, (i % W.COLS) * W.TILE, Math.floor(i / W.COLS) * W.TILE);
 
   const frame = (index, color) => {
     const t = W.tileCenter(index);
@@ -160,8 +184,8 @@ function drawMap(c, g) {
       const x = snap((g.phaseTime * 500) % (W.WORLD_W + 200) - 100);
       cells(c, x, 96, INK, [[2, 0, 10, 1], [0, 1, 14, 2], [3, 3, 8, 1]]);
       cells(c, x, 96, ORANGE, [[4, 1, 1, 1], [7, 1, 1, 1], [10, 1, 1, 1]]);
-    } else if (g.eventPlot >= 0 && (event === 7 || event === 3)) {
-      frame(g.eventPlot, blink ? ORANGE : INK); // where the meteor fell, or the pests fed
+    } else if (g.eventPlot >= 0 && (event === 7 || event === 3 || event === 8)) {
+      frame(g.eventPlot, blink ? ORANGE : INK); // where the meteor fell, the pests fed, or a M.U.L.E. went crazy
     } else if (event === 6 && blink) {
       for (const col of W.TOWN_COLS) cells(c, col * W.TILE, W.TOWN_ROW * W.TILE, ORANGE, [[2, -3, 2, 3], [6, -5, 3, 5], [11, -2, 2, 2]]);
     }
@@ -211,9 +235,13 @@ function drawInterior(c, g) {
   drawText(c, 'EXIT', SCREEN_W - 2, 60, ORANGE, 1, 'right');
 }
 
-/** The auction floor: sellers come down from the top, buyers up from the bottom. */
+/**
+ * The auction floor: sellers come down from the top, buyers up from the bottom. Land is sold
+ * on the same floor, with everyone a buyer and the plot where the Store's stock would be.
+ */
 function drawMarket(c, g) {
-  const good = g.snap[3], floor = g.snap[8], ceiling = floor * 2;
+  const land = g.phase === 1;
+  const good = g.snap[3], floor = g.snap[8], ceiling = g.snap[22];
   const top = 18, bottom = 92, lane = 40, left = 22;
   const laneX = (seat) => left + (seat < 4 ? seat : seat + 1) * lane + lane / 2;
   const priceY = (p) => Math.round(bottom - ((p - floor) / Math.max(1, ceiling - floor)) * (bottom - top));
@@ -223,11 +251,12 @@ function drawMarket(c, g) {
   // The Store, between lanes 4 and 5.
   c.fillStyle = INK;
   c.fillRect(storeX + 4, top - 8, lane - 8, bottom - top + 16);
-  drawText(c, 'STORE', storeX + lane / 2, top - 5, WINDOW, 1, 'center');
-  drawText(c, String(g.snap[11 + good] ?? 0), storeX + lane / 2, (top + bottom) / 2 - 3, WINDOW, 1, 'center');
+  drawText(c, land ? 'LAND' : 'STORE', storeX + lane / 2, top - 5, WINDOW, 1, 'center');
+  drawText(c, land ? '1' : String(g.snap[11 + good] ?? 0), storeX + lane / 2, (top + bottom) / 2 - 3, WINDOW, 1, 'center');
 
-  // The Store's two prices as dotted lines; the best bid and ask as dashed ones.
-  for (const p of [ceiling, floor]) {
+  // The Store's two prices (for land, the opening bid) as dotted lines; the best bid and ask as dashed ones.
+  // For land the upper line is the top of the scale, which climbs ahead of the bidding.
+  for (const p of land ? [ceiling, floor + 10] : [ceiling, floor]) {
     c.fillStyle = RIVER;
     for (let x = left; x < SCREEN_W - 8; x += 4) c.fillRect(x, priceY(p), 2, 1);
     drawText(c, String(p), left - 2, priceY(p) - 3, ORANGE, 1, 'right');
@@ -245,7 +274,7 @@ function drawMarket(c, g) {
   }
 
   for (let seat = 0; seat < g.seats; seat++) {
-    const x = laneX(seat), role = g.seat(seat, 9), price = g.seat(seat, 10), units = g.seat(seat, 1 + good);
+    const x = laneX(seat), role = g.seat(seat, 9), price = g.seat(seat, 10), units = land ? '' : g.seat(seat, 1 + good);
     const y = role === 0 ? bottom + 14 : priceY(price);
     c.fillStyle = g.colors[seat];
     if (role === 1) for (let k = 0; k < Math.min(units, 6); k++) c.fillRect(x - 3, y + 8 + k * 3, 6, 2); // crates
@@ -254,7 +283,7 @@ function drawMarket(c, g) {
     drawColonist(c, x * PX, y * PX, g.colors[seat], g.species[seat], role === 1 ? 1 : -1, false, Math.floor(g.time * 4) % 2);
     c.globalAlpha = 1;
     c.setTransform(1, 0, 0, 1, 0, MAP_Y);
-    if (role !== 0) drawText(c, String(price), x, y - 13, TEXT, 1, 'center');
+    if (role !== 0 && !(land && price <= floor)) drawText(c, String(price), x, y - 13, TEXT, 1, 'center');
     drawText(c, String(units), x, 119, g.colors[seat], 1, 'center');
   }
 
@@ -270,7 +299,7 @@ function drawMarket(c, g) {
   c.fillStyle = TEXT;
   c.fillRect(SCREEN_W - 5, 4, 3, 120);
   c.fillStyle = ORANGE;
-  const left120 = Math.max(0, Math.min(1, g.snap[2] / 120));
+  const left120 = Math.max(0, Math.min(1, g.snap[2] / (land ? LAND_TICKS : MARKET_TICKS)));
   c.fillRect(SCREEN_W - 5, 4 + 120 * (1 - left120), 3, 120 * left120);
 }
 
@@ -292,20 +321,34 @@ function hint(g) {
   const me = g.human;
   switch (g.phase) {
     case 0: return me ? 'PRESS THE BUTTON WHEN YOUR PLOT IS LIT' : 'THE COLONISTS CHOOSE THEIR LAND';
-    case 1: return g.snap[6] >= 0 ? `${g.names[g.snap[6]]} BIDS $${g.snap[5]}` : 'LAND FOR SALE. WHO WILL BID?';
+    case 1: return g.snap[6] >= 0 ? `${g.names[g.snap[6]]} BIDS $${g.snap[5]}`
+      : !onLandFloor(g) ? `${TERRAIN_NAME[g.terrain[g.snap[4]]] ?? 'LAND'} PLOT FOR SALE`
+      : me ? `WALK UP TO BID. OPENING BID $${g.snap[8] + 10}` : 'LAND FOR SALE. WHO WILL BID?';
     case 2: return g.interior ? 'WALK INTO A STALL, OR OUT EITHER SIDE'
-      : `STORE HAS ${g.snap[9]} MULES AT $${g.snap[19]}`;
+      : g.snap[9] > 0 ? `STORE HAS ${g.snap[9]} MULES AT $${g.snap[19]}` : 'THE CORRAL IS EMPTY. THE STORE NEEDS SMITHORE';
     case 3: return 'THE MULES ARE AT WORK';
-    case 5: return me ? 'WALK UP TO RAISE YOUR PRICE, DOWN TO LOWER IT' : `STORE BUYS AT $${g.snap[8]}, SELLS AT $${g.snap[8] * 2}`;
+    case 5: return g.snap[11 + g.snap[3]] === 0 ? `STORE IS SOLD OUT. IT BUYS AT $${g.snap[8]}. SELLERS NAME THEIR PRICE`
+      : me ? 'WALK UP TO RAISE YOUR PRICE, DOWN TO LOWER IT' : `STORE BUYS AT $${g.snap[8]}, SELLS AT $${g.snap[22]}`;
     default: return '';
   }
+}
+
+/**
+ * A name cut to seven characters (a status column holds eight, and one is the gap to the
+ * next), so that it still reads as a name: "INDUSTRIALIST" becomes "INDUST." and a second
+ * "HOARDER II" stays "HOAR II".
+ */
+export function shortName(name) {
+  const s = String(name);
+  if (s.length <= 7) return s;
+  return / II$/.test(s) ? `${s.slice(0, -3).slice(0, 4)} II` : `${s.slice(0, 6)}.`;
 }
 
 function drawStatus(c, g) {
   c.setTransform(1, 0, 0, 1, 0, 0);
   for (let seat = 0; seat < g.seats; seat++) {
     const x = seat * COLUMN_W + 1, color = g.colors[seat];
-    const name = String(g.names[seat]).slice(0, 7);
+    const name = shortName(g.names[seat]);
     if (seat === 0 && g.human) {
       // The player's own name is shown inverse, as a selected item is on the Atari.
       c.fillStyle = color;
@@ -313,7 +356,7 @@ function drawStatus(c, g) {
       drawText(c, name, x, STATUS_Y, GROUND);
     } else drawText(c, name, x, STATUS_Y, color);
     const away = g.phase === 2 && (g.seat(seat, 8) === 1 || g.seat(seat, 5) === 0);
-    drawText(c, away ? (g.seat(seat, 8) === 1 ? 'IN PUB' : 'NO FOOD') : `$${g.seat(seat, 0)}`, x, STATUS_Y + 9, color);
+    drawText(c, away ? (g.seat(seat, 8) === 1 ? 'IN PUB' : 'TIME UP') : `$${g.seat(seat, 0)}`, x, STATUS_Y + 9, color);
     drawText(c, `F${g.seat(seat, 1)} E${g.seat(seat, 2)}`, x, STATUS_Y + 18, color);
     drawText(c, `S${g.seat(seat, 3)} C${g.seat(seat, 4)}`, x, STATUS_Y + 27, color);
   }
@@ -327,7 +370,7 @@ export function drawFrame(ctx, g, view) {
   c.fillStyle = GROUND;
   c.fillRect(0, 0, SCREEN_W, SCREEN_H);
 
-  if (g.phase === 5) drawMarket(c, g);
+  if (g.phase === 5 || onLandFloor(g)) drawMarket(c, g);
   else if (g.interior) drawInterior(c, g);
   else drawMap(c, g);
 
@@ -337,7 +380,16 @@ export function drawFrame(ctx, g, view) {
   c.fillRect(0, 0, SCREEN_W, MAP_Y);
   c.fillRect(0, MAP_Y + 128, SCREEN_W, SCREEN_H - MAP_Y - 128);
   drawText(c, title(g), SCREEN_W / 2, 1, TEXT, 1, 'center');
-  if (g.phase !== 5 && g.snap[2] > 0 && g.phase <= 2) drawText(c, String(Math.ceil(g.snap[2] / 10)), SCREEN_W - 2, 1, ORANGE, 1, 'right');
+  // In development the player's clock is their own: hunger takes the end off it.
+  const clock = g.phase === 2 && g.human ? g.seat(0, 15) : g.snap[2];
+  if (g.phase <= 2 && clock > 0 && !onLandFloor(g)) drawText(c, String(Math.ceil(clock / 10)), SCREEN_W - 2, 1, ORANGE, 1, 'right');
+  if (g.phase === 2 && g.human) {
+    // The time bar of the original: a full month wide, already short for a hungry colonist.
+    c.fillStyle = TEXT;
+    c.fillRect(2, 3, 90, 3);
+    c.fillStyle = ORANGE;
+    c.fillRect(2, 3, Math.round(90 * Math.min(1, clock / DEVELOP_TICKS)), 3);
+  }
   drawText(c, (g.message || hint(g)).slice(0, 63), SCREEN_W / 2, MSG_Y, ORANGE, 1, 'center');
   drawStatus(c, g);
 

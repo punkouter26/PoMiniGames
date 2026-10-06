@@ -40,11 +40,11 @@ public sealed class PoMuleMapTests
 
             map.Plots.Count(p => p.Terrain == Terrain.River).Should().BeInRange(16, 24, $"seed {seed}");
             map.Plots.Count(p => p.Terrain == Terrain.Mountain).Should().BeInRange(34, 46, $"seed {seed}");
-            map.Plots.Count(p => p.Terrain == Terrain.Crater).Should().BeInRange(8, 12, $"seed {seed}");
+            map.Plots.Count(p => p.Terrain == Terrain.Crater).Should().BeInRange(4, 6, $"seed {seed}");
 
             map.Plots.Where(p => p.Terrain == Terrain.Mountain).Should().OnlyContain(p => p.Peaks >= 1 && p.Peaks <= 3);
             map.Plots.Where(p => p.Terrain != Terrain.Mountain).Should().OnlyContain(p => p.Peaks == 0);
-            map.Plots.Where(p => p.Terrain == Terrain.Crater).Should().OnlyContain(p => p.Crystite >= 2 && p.Crystite <= 4);
+            map.Plots.Where(p => p.Terrain == Terrain.Crater).Should().OnlyContain(p => p.Crystite >= 1 && p.Crystite <= 3);
             map.Plots.Where(p => p.Terrain is Terrain.River or Terrain.Town).Should().OnlyContain(p => p.Crystite == 0);
             map.Plots.Where(p => p.Terrain is Terrain.Plains or Terrain.Mountain).Should().OnlyContain(p => p.Crystite <= 1);
         }

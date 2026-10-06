@@ -84,10 +84,15 @@
     border: 4px solid var(--pm-ink);
 }
 
+/* Top left: the canvas keeps its clock in the top right corner, and in a demo (the only
+   time this bar shows) nothing is drawn on the left of the title line. Kept slim so it
+   stays inside that line instead of covering the first row of plots. */
 .pm-bar--speed {
-    left: auto;
-    right: 8px;
-    top: 8px;
+    left: 2px;
+    right: auto;
+    top: 2px;
+    padding: 0 0.3rem;
+    border-width: 2px;
     bottom: auto;
     transform: none;
 }
@@ -329,30 +334,22 @@
     color: #f0b878;
 }
 
-/* ── Land auction card ── */
-.pm-root ::deep .pm-auction {
-    position: absolute;
-    top: 12%;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 7;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.35rem;
-    min-width: 260px;
-    padding: 0.6rem 1rem;
-}
-
-.pm-root ::deep .pm-auction-title {
-    font-weight: 900;
-    color: var(--pm-orange);
-}
-
-.pm-root ::deep .pm-auction-line,
-.pm-root ::deep .pm-auction-hint {
+.pm-root ::deep .pm-standings-hint {
     font-size: 0.75rem;
     color: var(--pm-text);
+}
+
+/* ── Classic rules switch ── */
+.pm-root ::deep .pm-classic {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    margin-bottom: 0.4rem;
+    color: var(--pm-ink);
+    font-size: 0.8rem;
+    font-weight: 900;
+    cursor: pointer;
 }
 
 /* ── Standings: the "status summary" screen ── */

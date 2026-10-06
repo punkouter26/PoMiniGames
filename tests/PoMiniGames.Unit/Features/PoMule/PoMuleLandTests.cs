@@ -79,7 +79,7 @@ public sealed class PoMuleLandTests
     }
 
     [Fact]
-    public void Auction_RunsOnEvenMonths_TakesOnlyAffordableRaises_AndChargesTheWinner()
+    public void Auction_RunsOnEvenMonths_IsWalkedNoHigherThanYourCash_AndChargesTheWinner()
     {
         Enumerable.Range(1, 12).Where(PoMuleLand.IsAuctionMonth).Should().Equal(2, 4, 6, 8, 10, 12);
 
@@ -89,18 +89,26 @@ public sealed class PoMuleLandTests
         plots.Should().OnlyContain(p => match.Owner[p] == MatchState.Nobody && match.Map.Plots[p].Terrain != Terrain.Town);
 
         PoMuleLand.OpenAuction(match, plots[0]);
-        PoMuleLand.NextBid(match).Should().Be(PoMuleTuning.AuctionOpeningBid);
+        match.HighBidder.Should().Be(MatchState.Nobody, "standing at the bottom of the floor is no bid");
         match.Players[1].Cash = 500;
         match.Players[2].Cash = 200;
 
-        PoMuleLand.Bid(match, seat: 1, PoMuleTuning.AuctionOpeningBid - 1).Should().BeFalse("below the opening bid");
-        PoMuleLand.Bid(match, seat: 1, 180).Should().BeTrue();
-        PoMuleLand.Bid(match, seat: 2, 180).Should().BeFalse("a bid must beat the standing one");
-        PoMuleLand.Bid(match, seat: 2, 201).Should().BeFalse("more than seat 2 owns");
-        PoMuleLand.Bid(match, seat: 2, 190).Should().BeTrue();
-        PoMuleLand.Bid(match, seat: 1, 240).Should().BeTrue();
-        PoMuleLand.Bid(match, seat: 1, 250).Should().BeFalse("nobody raises their own standing bid");
-        PoMuleLand.NextBid(match).Should().Be(250);
+        // Seats 1 and 2 walk up together: level bids go to whoever is further behind.
+        var inputs = new int[PoMuleTuning.Seats];
+        inputs[1] = inputs[2] = 1;
+        PoMuleLand.AuctionTick(match, inputs).Should().BeTrue();
+        (match.HighBid, match.HighBidder).Should().Be((PoMuleTuning.AuctionOpeningBid, (sbyte)2));
+
+        for (var tick = 0; tick < 100; tick++) PoMuleLand.AuctionTick(match, inputs);
+        match.LanePrice[2].Should().Be(200, "nobody walks past what they can pay");
+        (match.HighBid, match.HighBidder).Should().Be((500, (sbyte)1));
+        PoMuleLand.AuctionTick(match, inputs).Should().BeFalse("both are as high as they can go");
+
+        // A bid can be walked back down, as long as it stays the highest.
+        inputs[1] = -1;
+        inputs[2] = 0;
+        for (var tick = 0; tick < 26; tick++) PoMuleLand.AuctionTick(match, inputs);
+        (match.HighBid, match.HighBidder).Should().Be((240, (sbyte)1));
 
         PoMuleLand.CloseAuction(match).Should().Be(1);
         match.Owner[plots[0]].Should().Be((sbyte)1);

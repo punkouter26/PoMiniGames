@@ -553,7 +553,7 @@ export class BrawlGame {
     // never fires it, and a leftover listener would resume a closed AudioContext.
     this._resumeAudio = () => {
       this.audio.resume();
-      this.audio.startMusic();
+      // No startMusic(): background music is off in every game.
       // The hall bed can only start once the context is unsuspended;
       // starting looping sources on a suspended context leaves them silently
       // stalled and they never recover on resume.

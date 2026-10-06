@@ -22,7 +22,7 @@ public static class PoMuleLand
             var claimants = group.ToList();
             if (Claimable(match, group.Key))
             {
-                var winner = claimants[match.Rng.Next(claimants.Count)];
+                var winner = PoMuleScoring.Trailing(match, claimants);
                 claimants.Remove(winner);
                 Give(match, winner, group.Key, awarded);
             }
@@ -75,28 +75,55 @@ public static class PoMuleLand
         return [.. free.Take(PoMuleTuning.AuctionPlotsPerEvenMonth)];
     }
 
+    /// <summary>Where every bidder starts: one step under the opening bid, which is no bid at all.</summary>
+    public const int AuctionFloor = PoMuleTuning.AuctionOpeningBid - PoMuleTuning.AuctionStep;
+
+    /// <summary>
+    /// The top of the bidding floor as drawn. It starts at twice the opening bid and, like
+    /// the original's, moves up ahead of the bidding, so the lanes always fill the floor
+    /// instead of huddling at the bottom of a scale sized for the richest colonist's purse.
+    /// </summary>
+    public static int AuctionCeiling(MatchState match) =>
+        Math.Max(PoMuleTuning.AuctionOpeningBid * 2, (match.LanePrice.Max() * 5 / 4 + 49) / 50 * 50);
+
+    /// <summary>
+    /// Puts a plot up for sale on the same walking floor as the goods: everyone is a buyer,
+    /// standing at the bottom.
+    /// </summary>
     public static void OpenAuction(MatchState match, int plot)
     {
         match.AuctionPlot = plot;
         match.HighBid = 0;
         match.HighBidder = MatchState.Nobody;
+        Array.Fill(match.LaneRole, PoMuleMarket.Buyer);
+        Array.Fill(match.LanePrice, AuctionFloor);
     }
 
-    /// <summary>The smallest bid the block will take right now.</summary>
-    public static int NextBid(MatchState match) =>
-        Math.Max(PoMuleTuning.AuctionOpeningBid, match.HighBid + PoMuleTuning.AuctionRaise);
-
     /// <summary>
-    /// An open ascending bid. Refused unless it beats the standing bid, the seat can pay it,
-    /// and the seat is not already the high bidder.
+    /// One tenth of a second of bidding. Walking up raises a colonist's bid, never past what
+    /// they can pay; whoever stands highest holds the plot, and a tie goes to the one
+    /// furthest behind in the standings.
     /// </summary>
-    public static bool Bid(MatchState match, int seat, int amount)
+    /// <param name="inputs">Per seat: +1 walks up, -1 walks down, 0 stands still.</param>
+    /// <returns>True when anybody moved.</returns>
+    public static bool AuctionTick(MatchState match, IReadOnlyList<int> inputs)
     {
-        if (match.AuctionPlot < 0 || match.HighBidder == seat || amount < PoMuleTuning.AuctionOpeningBid) return false;
-        if (amount <= match.HighBid || amount > match.Players[seat].Cash) return false;
-        match.HighBid = amount;
-        match.HighBidder = (sbyte)seat;
-        return true;
+        if (match.AuctionPlot < 0) return false;
+        var moved = false;
+        for (var seat = 0; seat < match.Players.Length; seat++)
+        {
+            var price = Math.Clamp(match.LanePrice[seat] + Math.Sign(inputs[seat]) * PoMuleTuning.AuctionStep,
+                AuctionFloor, Math.Max(AuctionFloor, match.Players[seat].Cash));
+            moved |= price != match.LanePrice[seat];
+            match.LanePrice[seat] = price;
+        }
+
+        var top = match.LanePrice.Max();
+        var bidding = top >= PoMuleTuning.AuctionOpeningBid;
+        match.HighBid = bidding ? top : 0;
+        match.HighBidder = !bidding ? MatchState.Nobody
+            : (sbyte)PoMuleScoring.Trailing(match, Enumerable.Range(0, match.Players.Length).Where(s => match.LanePrice[s] == top));
+        return moved;
     }
 
     /// <returns>The winning seat, or -1 when nobody bid.</returns>
@@ -109,6 +136,7 @@ public static class PoMuleLand
             match.Owner[match.AuctionPlot] = winner;
         }
         match.AuctionPlot = -1;
+        Array.Clear(match.LaneRole);
         return winner;
     }
 }

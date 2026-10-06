@@ -84,11 +84,11 @@ tests/pomule-*.test.mjs                  renderer maths tests
 
 | # | Phase | Length *(proposed)* | What happens |
 |---|---|---|---|
-| 1 | Land grant and auction | Sweep of up to 38 s; auction up to 20 s per plot | Every player claims one free plot; some months add an auction |
+| 1 | Land grant and auction | Sweep of up to 38 s; auction up to 20 s per plot | Every player claims one free plot; even months add an auction on the walking floor |
 | 2 | Development | 45 s | All eight avatars are on the map at once |
 | 3 | Production | 6 s | Yields, energy shutdowns, spoilage |
 | 4 | Colony event | 4 s | At most one event |
-| 5 | Market | 4 × 12 s | Food, Energy, Smithore, Crystite, one after another |
+| 5 | Market | 4 × 12 s | Smithore, Crystite, Food, Energy, one after another (the original's order) |
 | 6 | Standings | 6 s or until dismissed | Net Worth ranking and colony status |
 
 A full match is about 25 to 30 minutes.
@@ -98,15 +98,19 @@ A full match is about 25 to 30 minutes.
 - Grid of 24 columns × 8 rows. Column 24 wraps to column 1; rows 1 and 8 are hard edges.
 - Four town hubs at row 4, columns 3, 9, 15 and 21 *(proposed)*, leaving 188 claimable plots.
 - The seed decides the rest *(proposed mix)*: 3 north–south rivers (about 20 tiles), about
-  40 mountain tiles with 1 to 3 peaks, about 10 valleys or craters, the remainder plains.
+  40 mountain tiles with 1 to 3 peaks, 5 valleys or craters, the remainder plains.
 - Base yield per installed M.U.L.E. per month *(proposed)*, each ±1 at random:
 
 | Terrain | Food | Energy | Smithore | Crystite |
 |---|---|---|---|---|
-| River | 4 | 2 | 1 | 0 |
+| River | 4 | 2 | 0 (cannot be mined) | 0 |
 | Plains | 2 | 3 | 1 | hidden 0–1 |
-| Mountain (1 / 2 / 3 peaks) | 0 | 1 | 2 / 3 / 4 | hidden 0–1 |
-| Valley or crater | 1 | 1 | 1 | hidden 2–4 |
+| Mountain (1 / 2 / 3 peaks) | 1 | 1 | 2 / 3 / 4 | hidden 0–1 |
+| Valley or crater | 1 | 1 | 1 | hidden 1–3 (a meteor crater: 4) |
+
+- **Economies of scale** (added 2026-10-05, as in the original): a plot makes 1 more when a
+  neighbouring plot of the same owner makes the same good, and 1 more for every three plots
+  that owner has on that good. No plot makes more than 8 before weather.
 
 - All towns share one Colony Store. Each town has an Outfitter, a Pub and an Assay Office.
 
@@ -115,20 +119,32 @@ A full match is about 25 to 30 minutes.
 - **Grant** (changed 2026-10-05 at the owner's request, to work like the Atari original): one
   highlighter sweeps the free plots from the top left to the bottom right, a row at a time,
   five plots a second. Everyone watches the same highlighter and presses the button (Space or
-  Act) when it is on the plot they want. If several press on the same plot, one of them gets
-  it at random and each loser gets the nearest unowned plot, searching outward with column
+  Act) when it is on the plot they want. If several press on the same plot, the one with the
+  lowest Net Worth gets it and each loser gets the nearest unowned plot, searching outward with column
   wrap. The phase ends when the sweep finishes or all eight have a plot; a player who never
   presses gets nothing that month. This replaces the PRD's eight free-moving cursors and its
   10-second window: the first month's sweep can take up to 38 seconds.
-- **Auction** *(proposed)*: on even months the Store auctions 2 random unowned plots, one at
-  a time. Opening bid 160 credits, open ascending bids, highest bid when the clock stops wins.
+- **Auction** (changed 2026-10-05 to the original's walking floor): on even months the Store
+  auctions 2 random unowned plots, one at a time. The plot is shown on the map for 3 s, then
+  all eight stand at the bottom of the same floor the goods are traded on and walk up to bid,
+  10 credits a tick, never past their cash. Opening bid 160 credits. Whoever stands highest
+  when the clock stops, or after 5 s with nobody moving, pays their bid; level bids go to the
+  colonist with the lowest Net Worth.
+  (Added 2026-10-06.) An AI's limit is its usual share of cash, up to a fifth more for land
+  its personality likes, and it steps up briskly while far under that limit and hesitantly
+  near it, so bidders string out and drop off instead of climbing in a row. The drawn scale
+  starts at twice the opening bid and climbs ahead of the top bid, as the original's did;
+  it used to run to the richest colonist's whole purse, which left every bid at the bottom.
 
 ### 6.4 Development
 
 - One 45 s clock for everyone.
 - **Food:** monthly need is 3 units (months 1–4), 4 (5–8), 5 (9–12) *(proposed, classic
-  values)*. With the full need a player moves at 100%. Short of it, speed scales with the
-  fraction held, floor 40%. With no food the player sits the month out.
+  values)*. With the full need a player has the whole 45 s. Short of it, their share of the
+  clock scales with the fraction held, floor 40% (so no food still leaves 18 s); they walk
+  at the usual pace and are simply done early. The Pub pays for a player's own seconds left.
+  The ration is taken from stock when development ends, not when it starts (changed
+  2026-10-06), so the status line no longer shows a fed colony at "F0" all month.
 - **Outfitter:** buy a M.U.L.E. at the Store's price (starts at 100), then a module: Food 25,
   Energy 50, Smithore 75, Crystite 100 *(proposed, classic values)*. One M.U.L.E. in tow at a
   time. Installing on a plot that already has one swaps them.
@@ -140,19 +156,24 @@ A full match is about 25 to 30 minutes.
 - **Runaway:** a towed M.U.L.E. bolts and is lost when (a) its owner is hit while either
   avatar is dashing, (b) its owner tries to install on a plot they do not own, or (c) the
   clock reaches zero before it is installed.
+  (Changed 2026-10-06, toward the original, which had no bump losses at all.) A colonist can
+  lose only one M.U.L.E. to a bump per month, the Agitator stops hunting once one has bolted
+  that month, and no AI buys a M.U.L.E. with under 15 s left on its clock.
 - **Energy:** each installed M.U.L.E. that is not producing Energy needs 1 Energy per month.
   A player who is short has that many M.U.L.E.s idle that month, lowest-value output first.
 
 ### 6.5 Production and spoilage
 
-- Output per plot = terrain base × weather modifier, with species bonuses applied, 0 if idle.
+- Output per plot = (terrain base + economies of scale) × weather modifier, with species bonuses applied, 0 if idle.
 - After production *(proposed, classic values)*: half of the Food above next month's need
   spoils; a quarter of the Energy above next month's need spoils; Smithore and Crystite above
   50 units are lost.
 
 ### 6.6 Colony events *(proposed list)*
 
-One event with 75% probability each month, chosen evenly:
+One event with 75% probability each month, chosen evenly from those that have not yet struck
+as often as their cap allows (3 times each; 2 for Space Pirates, Store Fire, Meteor Strike and
+Radiation). Month 12 has no event: the ship returns.
 
 | Event | Effect this month |
 |---|---|
@@ -162,6 +183,16 @@ One event with 75% probability each month, chosen evenly:
 | Planetquake | Smithore and Crystite output × 0.5 |
 | Space Pirates | All Crystite held by players is stolen |
 | Store Fire | The Store's Food, Energy and Smithore stock is destroyed |
+| Meteor Strike | An unowned plains or mountain plot becomes a crater with Crystite 4 |
+| Radiation | One installed M.U.L.E. goes crazy and is lost; its plot stands empty |
+
+**Personal luck** (changed 2026-10-05 to the original's): each month one colonist has a
+stroke of luck. Good luck never finds the leader and bad luck never the colonist in last
+place. Fifteen kinds, in the original's spirit: cash (the swamp eel eating contest, the
+tap-dancing M.U.L.E., cat-bugs eating the roof), goods (a care package of 3 Food and 2
+Energy, glac-elves stealing half the Food), per-M.U.L.E. grants and repair bills, and a plot
+of land granted or lost. Cash amounts are multiples of 25 credits, doubling in months 5–8
+and tripling in 9–12; nobody is pushed below zero.
 
 ### 6.7 Market
 
@@ -170,17 +201,26 @@ One event with 75% probability each month, chosen evenly:
 - Sellers start at the top and walk down to lower their ask; buyers start at the bottom and
   walk up to raise their bid. When the highest bid meets the lowest ask, one unit trades at
   that price every 0.25 s until a side moves away, runs out of goods or runs out of cash.
-- The Store buys at its price (the floor of the price axis) and, while it has stock, sells at
-  twice that (the ceiling). Net Worth values goods at the floor.
+- The Store buys at its price (the floor of the price axis) and, while it has stock, sells
+  35 credits above that (140 for Crystite): the ceiling. Once the Store is sold out nothing
+  holds prices down, and the ceiling moves up to four spreads above the floor. Net Worth
+  values goods at the floor.
+- When two colonists stand at the same price, the one with the lower Net Worth trades first.
 - Food and Energy prices move each month: up 15% when the colony holds less than it needs,
   down 10% when it holds twice its need, within 15–150.
 - Store opening stock: Food 32, Energy 32, Smithore 0, Crystite 0, M.U.L.E.s 28. Opening
   prices: Food 30, Energy 25, Smithore 50, Crystite 100.
 - Each month the Store turns every 2 Smithore it holds into 1 M.U.L.E. Smithore is then
-  priced from the corral: 350 ÷ M.U.L.E.s in stock, within 25–250, so ore is dear only when
-  M.U.L.E.s are scarce. A M.U.L.E. costs twice the Smithore price.
-- Crystite gets a new random price of 40–90 each month. (Tuned down from 50–150 during the
-  balance pass: at the higher band the two mining personalities won four matches in five.)
+  priced from the corral: 700 ÷ M.U.L.E.s in stock, within 25–250, so ore is dear only when
+  M.U.L.E.s are scarce. A M.U.L.E. costs twice the Smithore price. (700 since 2026-10-06, up
+  from 350: ore now reaches its opening price of 50 with half the herd left, while there are
+  still M.U.L.E.s to mine with. At 350 the corral ran dry in months 4–8.)
+- A good that neither the Store nor any colonist holds is not auctioned that month, as in the
+  original. In a demo, a floor where nobody has moved or traded for a second skips to the
+  last call, and from there to the bell.
+- Crystite gets a new random price of 50–150 each month, the original's band. (It was 40–90
+  while the map had 10 craters of richness 2–4; with 5 craters of 1–3 the balance check
+  passes at the original prices.)
 - AI sellers keep 2 Food and 3 Energy beyond next month's need, and in the last 5 seconds
   sell the rest of their spare Food and Energy to the Store rather than let it spoil. The
   Hoarder never does.
@@ -193,6 +233,10 @@ Ore-Gorger (no mountain slowdown, +15% Smithore), Crystite-Weaver (800 credits, 
 without assay), Zephyr-Flapper (1,600 credits, +10% speed), Bonz-Crusher (cannot be pushed,
 pushes others), Spheroid-Drifter (no terrain slowdown, runaway chance halved), Humanoid
 Settler (1,200 credits, no modifiers). All others start with 1,000 credits.
+
+**Classic rules** (a switch on the start card, added 2026-10-05): no species has a trait, and
+they carry the 1983 names (Gollumer, Mechtron, Packer, Leggite, Flapper, Bonzoid, Spheroid,
+Humanoid). Only the purse differs: Flapper 1,600, Humanoid 600, everyone else 1,000.
 
 ### 6.9 AI archetypes
 
@@ -209,6 +253,10 @@ Four from the PRD and three new ones *(proposed, for approval)*:
 | **Gambler** *(new)* | Does the minimum on the map, runs to the Pub early for the payout, spends it at auctions |
 
 In Demo mode the eighth seat repeats one archetype chosen by the seed.
+
+Every personality reads the Store's board at the land grant (added 2026-10-06): a mountain
+gains appeal of its ore yield × the Smithore price ÷ 3, so when the corral runs low colonists
+other than the Industrialist claim mountains and mine.
 
 ### 6.10 Scoring
 
@@ -239,7 +287,7 @@ In Demo mode the eighth seat repeats one archetype chosen by the seed.
   card (cash, the four goods against this month's need, M.U.L.E. in tow, plots) and a rivals
   grid. On phones in landscape the map fills the screen with a cash pill, a timer pill, eight
   player dots, a stick on the left and Act and Dash buttons on the right.
-- Components: `PoMulePage`, `PoMuleHud`, `PoMuleAuction`, `PoMuleStandings`. The species
+- Components: `PoMulePage`, `PoMuleHud`, `PoMuleStandings` (the land auction is drawn on the canvas). The species
   picker sits in the start card.
 - Headless mode: with no renderer, each AI errand takes a fixed number of ticks instead of a
   real walk. The unit tests and the 100-match balance check run this way, so the balance
@@ -291,6 +339,15 @@ In Demo mode the eighth seat repeats one archetype chosen by the seed.
     end the colony ship lands and the message line gives the Federation's verdict.
   - Balance re-measured on the same 100 seeds after these rules: colony survived 74, most
     successful personality (Speculator) won 32, Store never below 20 M.U.L.E.s after month 1.
+- Demo review fixes (2026-10-06). Balance on the same 100 seeds, headless: colony survived
+  73; wins Farmer 38, Prospector 34, Speculator 23, Gambler 5 (the 40% limit holds, narrowly);
+  the corral averaged 11 or more M.U.L.E.s after development in every month and under one
+  owned plot a month stood empty (before: about 1 M.U.L.E. and up to 6 empty plots in months
+  4–6). Known and left alone: the Store has no corral limit, so late matches end with 50 or
+  more M.U.L.E.s. On screen: the plots are painted once and kept (a frame's drawing fell from
+  about 44 ms to under 1 ms in a software-rendered browser), names in the status columns are
+  abbreviated to fit ("INDUST.", "HOAR II"), the demo speed buttons sit top left clear of
+  the clock, and a message stays up for seconds of the match rather than of the wall clock.
 - Radzen provides every non-canvas element. The shared start card and end modal stay as the
   outer frame so PoMule opens and closes like the other games.
 - PoMule follows the existing leaderboard and offline score-sync path with no new mechanism.

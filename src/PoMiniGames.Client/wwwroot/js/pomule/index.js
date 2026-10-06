@@ -13,7 +13,7 @@ import { drawFrame } from './render.js';
 import { buildTouchControls, isTouchDevice } from './touch.js';
 
 const TICK = 0.1;
-const HEADER = 22, PER = 15;
+const HEADER = 23, PER = 16;
 const LAND = 0, AUCTION = 1, DEVELOP = 2, PRODUCE = 3, MARKET = 5, STANDINGS = 6, FINISHED = 7;
 const GOAL_OUTFITTER = 1, GOAL_INSTALL = 2, GOAL_ASSAY = 3, GOAL_SURVEY = 4, GOAL_PUB = 5, GOAL_CHASE = 6;
 const RADZEN_CSS_ID = 'pomule-radzen-css';
@@ -160,7 +160,7 @@ function simulate(dt) {
     a.cooldown -= dt;
     a.bumped -= dt;
     if (a.out && a === me) g.interior = null;
-    // Off the map: in the pub, starving, or (the player) inside the store.
+    // Off the map: in the pub, out of time, or (the player) inside the store.
     a.hidden = a.out || (a === me && !!g.interior);
     if (a.out) { a.mule = null; continue; }
     if (a === me && g.interior) { simulateInterior(a, dt, speed); continue; }
@@ -168,7 +168,7 @@ function simulate(dt) {
     const before = { x: a.x, y: a.y };
     const input = a === me ? humanInput() : aiInput(a);
     const terrain = g.terrain[W.tileAt(a.x, a.y).index];
-    P.stepAvatar(a, input, dt, W.WORLD_W, W.WORLD_H, (speed / 100) * P.terrainFactor(terrain, a.species));
+    P.stepAvatar(a, input, dt, W.WORLD_W, W.WORLD_H, (speed / 100) * P.terrainFactor(terrain, a.trait));
     stride(a, before, a === me);
   }
 
@@ -247,7 +247,9 @@ function frame(now) {
     if (g.phase === DEVELOP) for (let left = gameDt; left > 0; left -= 0.05) simulate(Math.min(0.05, left));
     for (const t of g.trades) t.life -= dt;
     g.trades = g.trades.filter((t) => t.life > 0);
-    if (g.messageLife > 0 && (g.messageLife -= dt) <= 0) g.message = '';
+    // A message is worth so many seconds of the match, not of the wall clock: sped up, it
+    // would otherwise still be on the bar two phases later. (Never quicker than 4×, to stay readable.)
+    if (g.messageLife > 0 && (g.messageLife -= dt * Math.min(g.speed, 4)) <= 0) g.message = '';
 
     // Production counts each plot's units up one at a time, with a blip for each.
     if (g.phase === PRODUCE && g.production) {
@@ -286,7 +288,6 @@ function onKeyDown(e) {
     if (e.code === 'Space') {
       // Land grant: claim the plot the highlighter is on, as drawn on this screen.
       if (g.phase === LAND) { if (g.snap[10] >= 0) call('OnLandPick', g.snap[10]); }
-      else if (g.phase === AUCTION) call('OnBid');
       else if (g.phase === DEVELOP && !g.interior && !g.avatars[0].hidden) {
         // On the map the button installs the towed M.U.L.E. (or surveys) where you stand.
         call('OnPlotAction', W.tileAt(g.avatars[0].x, g.avatars[0].y).index);
@@ -310,7 +311,8 @@ function onBlur() {
 }
 
 function sendMarketDir() {
-  if (g.phase !== MARKET || !g.human) return;
+  // The land auction is walked like the market: up the floor to bid more.
+  if ((g.phase !== MARKET && g.phase !== AUCTION) || !g.human) return;
   const dir = -humanInput().dy; // up the screen is up in price
   if (dir !== g.marketDir) {
     g.marketDir = dir;
@@ -325,7 +327,7 @@ window.PoMule = {
   removeRadzen,
 
   /**
-   * @param opts { terrain, peaks, species, colors, names: arrays; human: bool;
+   * @param opts { terrain, peaks, species, traits, colors, names: arrays; human: bool;
    *               speed: number; snapshot: the match's first snapshot }
    */
   start(containerId, dotnetRef, opts) {
@@ -343,7 +345,7 @@ window.PoMule = {
       human: !!opts.human, speed: opts.speed || 1, seats: opts.species.length,
       snap: opts.snapshot, phase: -1, time: 0, phaseTime: 0, acc: 0, pending: 0, busy: false, running: true, paused: false,
       keys: new Set(),
-      avatars: opts.species.map((species, seat) => ({ seat, species, mass: P.massOf(species), x: 0, y: 0, facing: 1, out: false, hidden: false, frame: 0, walked: 0 })),
+      avatars: opts.species.map((species, seat) => ({ seat, species, trait: opts.traits[seat], mass: P.massOf(opts.traits[seat]), x: 0, y: 0, facing: 1, out: false, hidden: false, frame: 0, walked: 0 })),
       runaways: [], trades: [], production: null, units: 0, eventPlot: -1, message: '', messageLife: 0,
       interior: null, canEnter: false, stall: -1, marketDir: 0, touch: false, removeTouch: null,
       seat(seat, field) { return this.snap[HEADER + seat * PER + field]; },
@@ -370,6 +372,7 @@ window.PoMule = {
   setPlots(terrain, owner, installed, crystite) {
     if (!g) return;
     g.terrain = terrain;
+    g.tilesStale = true; // render.js repaints its cached picture of the plots
     g.owner = owner;
     g.installed = installed;
     g.crystite = crystite;

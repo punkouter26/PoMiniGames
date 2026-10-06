@@ -16,8 +16,8 @@ public sealed class PlayerState
 
     // ── This month's development phase ──
 
-    /// <summary>100 is full speed; 0 means starving and sitting the month out.</summary>
-    public int SpeedPercent { get; set; } = 100;
+    /// <summary>The share of the development clock this colonist gets: 100 when fed, less when hungry.</summary>
+    public int TimePercent { get; set; } = 100;
 
     public bool HasMule { get; set; }
 
@@ -29,6 +29,9 @@ public sealed class PlayerState
 
     public bool InPub { get; set; }
     public bool HoldsAssay { get; set; }
+
+    /// <summary>Already lost a M.U.L.E. to a bump this month; a wary colonist does not lose a second.</summary>
+    public bool Spooked { get; set; }
 }
 
 /// <summary>The one Colony Store every town shares.</summary>
@@ -55,6 +58,12 @@ public sealed class MatchState
     public PoMuleRng Rng { get; set; } = new(1);
     public PoMuleMap Map { get; set; } = new([]);
     public PlayerState[] Players { get; set; } = [];
+
+    /// <summary>Classic 1983 rules: no species traits, only the Flapper's and the Humanoid's purses differ.</summary>
+    public bool Classic { get; set; }
+
+    /// <summary>True when this colonist is of that species and its trait is in play.</summary>
+    public bool Has(PlayerState player, Species species) => !Classic && player.Species == species;
 
     /// <summary>Seat that owns each plot, or <see cref="Nobody"/>. Same indexing as the map.</summary>
     public sbyte[] Owner { get; set; } = [];
@@ -86,8 +95,14 @@ public sealed class MatchState
 
     public ColonyEvent LastEvent { get; set; }
 
-    /// <summary>Where the last meteor landed, or -1.</summary>
-    public int MeteorPlot { get; set; } = -1;
+    /// <summary>Where this month's meteor landed or its M.U.L.E. went crazy, or -1.</summary>
+    public int EventPlot { get; set; } = -1;
+
+    /// <summary>How many times each <see cref="ColonyEvent"/> has struck so far.</summary>
+    public int[] EventCounts { get; set; } = new int[PoMuleTuning.EventCap.Count];
+
+    /// <summary>M.U.L.E.s frightened off by a bump so far this month.</summary>
+    public int BumpRunaways { get; set; }
 
     /// <summary>The mountain plot the wampus is showing itself on right now, or -1.</summary>
     public int WampusPlot { get; set; } = -1;
@@ -112,7 +127,7 @@ public sealed class MatchState
     public int TradeMeter { get; set; }
 
     /// <param name="humanSpecies">The player's pick, or null for an all-AI demo match.</param>
-    public static MatchState New(ulong seed, Species? humanSpecies)
+    public static MatchState New(ulong seed, Species? humanSpecies, bool classic = false)
     {
         var rng = new PoMuleRng(seed);
         var map = PoMuleMap.Generate(rng);
@@ -139,7 +154,7 @@ public sealed class MatchState
                     : seat == 0 ? $"{archetypes[seat]} II" : archetypes[seat].ToString(),
                 Species = species[seat],
                 Archetype = archetypes[seat],
-                Cash = PoMuleSpecies.Get(species[seat]).StartingCash,
+                Cash = PoMuleSpecies.StartingCash(species[seat], classic),
                 Goods = goods,
             };
         }
@@ -148,6 +163,6 @@ public sealed class MatchState
         var installed = new sbyte[map.Plots.Length];
         Array.Fill(owner, Nobody);
         Array.Fill(installed, Nobody);
-        return new MatchState { Seed = seed, Rng = rng, Map = map, Players = players, Owner = owner, Installed = installed, Assayed = new bool[map.Plots.Length] };
+        return new MatchState { Classic = classic, Seed = seed, Rng = rng, Map = map, Players = players, Owner = owner, Installed = installed, Assayed = new bool[map.Plots.Length] };
     }
 }

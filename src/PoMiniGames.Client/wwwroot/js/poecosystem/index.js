@@ -342,7 +342,8 @@ function createEngine(container, dotnetRef, opts) {
       state.audio.setEnabled(state.sound);
       // Browsers only allow audio after a user gesture; the canvas handlers below are
       // gestures, so the ambience wakes on the first click/keypress and stays idle before.
-      state.wakeAudio = () => { state.audio.ensure(); if (state.sound) state.music?.start(); };
+      // The score (music.js) is never started: background music is off in every game.
+      state.wakeAudio = () => { state.audio.ensure(); };
       if (typeof document !== 'undefined') {
         document.addEventListener('pointerdown', state.wakeAudio);
         document.addEventListener('keydown', state.wakeAudio);
@@ -622,8 +623,6 @@ function createEngine(container, dotnetRef, opts) {
       state.prefs?.set('sound', state.sound);
       state.audio.ensure();
       state.audio.setEnabled(state.sound);
-      if (state.sound) state.music?.start();
-      state.music?.setEnabled(state.sound);
     },
     stop() {
       if (state.poseTimer) clearInterval(state.poseTimer);

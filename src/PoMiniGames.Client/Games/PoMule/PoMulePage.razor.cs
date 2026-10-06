@@ -16,7 +16,7 @@ namespace PoMiniGamesClient.Games.PoMule;
 /// The renderer's frame loop is the only clock. It calls <see cref="OnTick"/>; nothing here
 /// uses a timer, so a hidden tab or a phone held upright pauses the match for free. The
 /// canvas shows nearly everything (planet, store, auction, status); this page adds only the
-/// start card, the bid and role buttons, the standings and the demo speed buttons.
+/// start card, the role buttons, the standings and the demo speed buttons.
 /// </remarks>
 public partial class PoMulePage : IAsyncDisposable
 {
@@ -48,6 +48,7 @@ public partial class PoMulePage : IAsyncDisposable
     private string _endLine = "";
     private string? _mode;
     private bool _demo;
+    private bool _classic;
     private bool _radzenReady;
     private bool _finished;
     private bool _plotsDirty;
@@ -106,7 +107,7 @@ public partial class PoMulePage : IAsyncDisposable
     }
 
     private Task StartNewAsync() =>
-        BeginAsync(PoMuleMatch.New((ulong)Random.Shared.NextInt64(1, long.MaxValue), _demo ? null : _species, fast: _demo));
+        BeginAsync(PoMuleMatch.New((ulong)Random.Shared.NextInt64(1, long.MaxValue), _demo ? null : _species, fast: _demo, classic: _classic && !_demo));
 
     private Task ContinueAsync() => _saved is { } saved ? BeginAsync(new PoMuleMatch(saved)) : Task.CompletedTask;
 
@@ -129,6 +130,8 @@ public partial class PoMulePage : IAsyncDisposable
             terrain = plots.Select(p => (int)p.Terrain).ToArray(),
             peaks = plots.Select(p => (int)p.Peaks).ToArray(),
             species = match.State.Players.Select(p => (int)p.Species).ToArray(),
+            // What each colonist's species does on the map; -1 under classic rules, where none does anything.
+            traits = match.State.Players.Select(p => match.State.Classic ? -1 : (int)p.Species).ToArray(),
             colors = PoMuleUi.SeatColors,
             names = match.State.Players.Select(p => p.Name).ToArray(),
             human = !_demo,
@@ -173,7 +176,7 @@ public partial class PoMulePage : IAsyncDisposable
             if (state.Phase == Phase.Production && match.Report is { } report)
             {
                 _ = JS.InvokeVoidAsync("PoMule.production", report.PlotOutput);
-                _ = JS.InvokeVoidAsync("PoMule.eventAt", state.LastEvent == ColonyEvent.Meteor ? state.MeteorPlot : report.PestPlot);
+                _ = JS.InvokeVoidAsync("PoMule.eventAt", state.EventPlot >= 0 ? state.EventPlot : report.PestPlot);
             }
         }
         if (_plotsDirty) _ = PushPlotsAsync();
@@ -219,7 +222,7 @@ public partial class PoMulePage : IAsyncDisposable
                 break;
             case NoticeKind.Luck:
                 // Shown after the colony event has had its moment, in the standings pause.
-                _luck = notice.A > 0 ? $"{who} finds ${notice.A} in an old spacesuit." : $"{who} loses ${-notice.A} to a M.U.L.E. vet.";
+                _luck = PoMuleEvents.LuckText((LuckKind)notice.A, who, notice.B);
                 break;
             case NoticeKind.WampusCaught:
                 Say(notice.Seat == 0 && !_demo ? $"You caught the wampus! It pays ${notice.A}." : $"{who} caught the wampus.", "wampus");
@@ -241,9 +244,6 @@ public partial class PoMulePage : IAsyncDisposable
         if (_match?.State is { Phase: Phase.Land } state && plot >= 0 && plot < state.Owner.Length)
             state.LandPicks[0] = plot;
     }
-
-    [JSInvokable]
-    public void OnBid() => Bid();
 
     [JSInvokable]
     public void OnArrive(int seat)
@@ -341,12 +341,6 @@ public partial class PoMulePage : IAsyncDisposable
     public void OnSkip() => SkipStandings();
 
     // ── The page's own buttons ──
-
-    private void Bid()
-    {
-        if (_demo || _match is null) return;
-        if (!_match.HumanBid() && _match.State.HighBidder != 0) Say("You cannot afford the next bid.", "refuse");
-    }
 
     private void SkipStandings()
     {

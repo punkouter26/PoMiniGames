@@ -13,18 +13,36 @@ public static class PoMuleProduction
     /// <summary>What a M.U.L.E. outfitted for <paramref name="good"/> makes on this plot in a plain month.</summary>
     public static int BaseYield(Plot plot, Good good) => (good, plot.Terrain) switch
     {
-        (Good.Crystite, _) => plot.Crystite,
         (_, Terrain.Town) => 0,
+        // Nothing can be mined out of a river.
+        (Good.Smithore or Good.Crystite, Terrain.River) => 0,
+        (Good.Crystite, _) => plot.Crystite,
         (Good.Food, Terrain.River) => 4,
         (Good.Food, Terrain.Plains) => 2,
-        (Good.Food, Terrain.Crater) => 1,
-        (Good.Food, _) => 0,
+        (Good.Food, _) => 1,
         (Good.Energy, Terrain.River) => 2,
         (Good.Energy, Terrain.Plains) => 3,
         (Good.Energy, _) => 1,
         (Good.Smithore, Terrain.Mountain) => 1 + plot.Peaks,
         _ => 1,
     };
+
+    /// <summary>
+    /// Economies of scale, as in the original: a unit more when a neighbouring plot of the
+    /// same owner makes the same good, and a unit more for every three plots they have on it.
+    /// </summary>
+    public static int ScaleBonus(MatchState match, int plot)
+    {
+        var (owner, good) = (match.Owner[plot], match.Installed[plot]);
+        bool Same(int i) => match.Owner[i] == owner && match.Installed[i] == good;
+
+        var (column, row) = (plot % PoMuleMap.Columns, plot - plot % PoMuleMap.Columns);
+        var neighbour = Same(row + (column + 1) % PoMuleMap.Columns)
+            || Same(row + (column + PoMuleMap.Columns - 1) % PoMuleMap.Columns)
+            || (plot >= PoMuleMap.Columns && Same(plot - PoMuleMap.Columns))
+            || (plot + PoMuleMap.Columns < match.Owner.Length && Same(plot + PoMuleMap.Columns));
+        return (neighbour ? 1 : 0) + Enumerable.Range(0, match.Owner.Length).Count(Same) / 3;
+    }
 
     private static int Weather(int units, Plot plot, Good good, ColonyEvent weather) => (weather, good) switch
     {
@@ -50,6 +68,7 @@ public static class PoMuleProduction
             var good = (Good)match.Installed[i];
             var units = BaseYield(plots[i], good);
             if (vary && units > 0) units += match.Rng.Next(3) - 1;
+            if (units > 0) units = Math.Min(PoMuleTuning.MaxPlotYield, units + ScaleBonus(match, i));
             output[i] = Weather(units, plots[i], good, weather);
         }
 
@@ -70,7 +89,7 @@ public static class PoMuleProduction
         var idlePlots = new List<int>();
         foreach (var player in match.Players)
         {
-            if (player.Species == Species.Voltronix) player.Goods[(int)Good.Energy]++;
+            if (match.Has(player, Species.Voltronix)) player.Goods[(int)Good.Energy]++;
 
             // Every M.U.L.E. that is not making Energy burns one. Short of it, the ones whose
             // output is worth least at the Store are the ones left idle.
@@ -95,8 +114,8 @@ public static class PoMuleProduction
                 made[match.Installed[i]] += output[i];
                 if (match.Installed[i] == (sbyte)Good.Food && plots[i].Terrain == Terrain.River) riverFood += output[i];
             }
-            if (player.Species == Species.Gollumoid) made[(int)Good.Food] += Bonus(riverFood);
-            if (player.Species == Species.OreGorger) made[(int)Good.Smithore] += Bonus(made[(int)Good.Smithore]);
+            if (match.Has(player, Species.Gollumoid)) made[(int)Good.Food] += Bonus(riverFood);
+            if (match.Has(player, Species.OreGorger)) made[(int)Good.Smithore] += Bonus(made[(int)Good.Smithore]);
             produced[player.Seat] = made;
 
             for (var g = 0; g < 4; g++)

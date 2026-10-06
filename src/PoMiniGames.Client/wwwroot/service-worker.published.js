@@ -30,6 +30,10 @@ const offlineAssetsExclude = [
     /^service-worker\.js$/,
     // Dev-only config; the published app reads appsettings.json.
     /^appsettings\.Development\.json$/,
+    // Radzen ships thirty theme stylesheets (1.3 MB compressed). PoMule loads one theme and
+    // Radzen's script; nothing else from the package is ever requested, so nothing else is
+    // worth a first-visit download.
+    /^_content\/Radzen\.Blazor\/(?!css\/material-dark-base\.css$|Radzen\.Blazor\.js$)/,
 ];
 
 // ── Never-cache list ──────────────────────────────────────────────────────────

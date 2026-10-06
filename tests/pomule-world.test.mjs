@@ -25,23 +25,6 @@ test('distance goes the short way round the seam, for every pair of columns', ()
   }
 });
 
-test('the camera crosses the seam with no jump or gap', () => {
-  const viewW = 800;
-  // Something 30px east of the camera sits 30px right of centre wherever the camera is.
-  for (const camX of [400, w.WORLD_W - 20, w.WORLD_W - 1, 0, 15]) {
-    assert.equal(w.screenX(camX + 30, camX, viewW), viewW / 2 + 30);
-    assert.equal(w.screenX(w.wrapX(camX + 30), camX, viewW), viewW / 2 + 30);
-  }
-  // Columns drawn at the seam are contiguous, cover the view, and wrap 23 → 0.
-  const cols = w.visibleColumns(w.WORLD_W - 10, viewW);
-  for (let i = 1; i < cols.length; i++) {
-    assert.equal(cols[i].x - cols[i - 1].x, w.TILE);
-    assert.equal(cols[i].col, (cols[i - 1].col + 1) % w.COLS);
-  }
-  assert.ok(cols[0].x <= 0 && cols.at(-1).x + w.TILE >= viewW);
-  assert.ok(cols.some((c) => c.col === 23) && cols.some((c) => c.col === 0));
-});
-
 test('tiles and their centres agree', () => {
   for (const index of [0, 23, 24, 100, 191]) {
     const c = w.tileCenter(index);
@@ -51,19 +34,17 @@ test('tiles and their centres agree', () => {
   assert.equal(w.tileAt(10, 9999).row, w.ROWS - 1, 'and the south');
 });
 
-test('a town tile is Outfitter, Pub, Assay Office left to right; other tiles are not buildings', () => {
-  const left = w.TOWN_COLS[1] * w.TILE, y = w.TOWN_ROW * w.TILE + 10;
-  assert.deepEqual(w.buildingAt(left + 5, y), { town: 1, kind: w.OUTFITTER });
-  assert.deepEqual(w.buildingAt(left + 32, y), { town: 1, kind: w.PUB });
-  assert.deepEqual(w.buildingAt(left + 60, y), { town: 1, kind: w.ASSAY });
-  assert.equal(w.buildingAt(left + 5, y + w.TILE), null);
-  assert.equal(w.buildingAt(left - 5, y), null);
+test('inside the store, each stall is its own action and the middle of the floor is none', () => {
+  assert.deepEqual(w.TOP_STALLS.map((cx) => w.stallAt(cx, 40)), [1, 2, 3, 4], 'outfit for Food, Energy, Smithore, Crystite');
+  assert.deepEqual(w.BOTTOM_STALLS.map((cx) => w.stallAt(cx, w.WORLD_H - 40)), [w.TOWN_ASSAY, w.TOWN_PUB, w.TOWN_BUY_MULE]);
+  assert.equal(w.stallAt(w.WORLD_W / 2, w.WORLD_H / 2), -1, 'where the player walks in');
+  assert.equal(w.stallAt(w.TOP_STALLS[0] + w.STALL_HALF + 30, 40), -1, 'between two stalls');
 });
 
-test('the nearest town is found across the seam, and its door is that building', () => {
+test('the nearest town is found across the seam, and the door is on its plot', () => {
   // Just west of the seam, town 0 (column 2) is closer than town 3 (column 20).
   const pub = w.nearestBuilding(w.WORLD_W - 30, w.PUB);
   assert.equal(pub.town, 0);
-  assert.deepEqual(w.buildingAt(pub.x, pub.y), { town: 0, kind: w.PUB });
+  assert.deepEqual(w.tileAt(pub.x, pub.y), { col: w.TOWN_COLS[0], row: w.TOWN_ROW, index: w.TOWN_ROW * w.COLS + w.TOWN_COLS[0] });
   assert.equal(w.nearestBuilding(13 * w.TILE, w.ASSAY).town, 2);
 });

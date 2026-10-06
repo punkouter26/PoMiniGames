@@ -21,7 +21,7 @@ public sealed class PoMuleMap
     public static readonly IReadOnlyList<int> TownColumns = [2, 8, 14, 20];
 
     private const int MountainCount = 40;
-    private const int CraterCount = 10;
+    private const int CraterCount = 5;
 
     /// <summary>Row-major: index = row × <see cref="Columns"/> + column.</summary>
     public Plot[] Plots { get; }
@@ -66,7 +66,7 @@ public sealed class PoMuleMap
         }
 
         Scatter(plots, rng, MountainCount, crystite => new Plot(Terrain.Mountain, (byte)(1 + rng.Next(3)), crystite));
-        Scatter(plots, rng, CraterCount, _ => new Plot(Terrain.Crater, 0, (byte)(2 + rng.Next(3))));
+        Scatter(plots, rng, CraterCount, _ => new Plot(Terrain.Crater, 0, (byte)(1 + rng.Next(3))));
         return new PoMuleMap(plots);
     }
 

@@ -9,6 +9,9 @@ public readonly record struct Trade(int Seller, int Buyer, int Price);
 /// </summary>
 public static class PoMuleMarket
 {
+    /// <summary>The order the goods come to the floor, as in the original: ore first, then what keeps you alive.</summary>
+    public static readonly Good[] Order = [Good.Smithore, Good.Crystite, Good.Food, Good.Energy];
+
     public const sbyte Seller = 1;
     public const sbyte Buyer = -1;
 
@@ -22,8 +25,12 @@ public static class PoMuleMarket
     /// <summary>What the Store pays for a unit. Also the price Net Worth values goods at.</summary>
     public static int Floor(MatchState match, Good good) => match.Store.Price[(int)good];
 
-    /// <summary>What the Store charges for a unit while it has any.</summary>
-    public static int Ceiling(MatchState match, Good good) => match.Store.Price[(int)good] * 2;
+    /// <summary>
+    /// The top of the floor: what the Store charges for a unit while it has any. Once it is
+    /// sold out there is nothing to undercut, and sellers can walk their price far higher.
+    /// </summary>
+    public static int Ceiling(MatchState match, Good good) => match.Store.Price[(int)good]
+        + PoMuleTuning.StoreSpread[(int)good] * (match.Store.Stock[(int)good] > 0 ? 1 : PoMuleTuning.SoldOutSpreads);
 
     /// <summary>Credits a lane moves per tick: the whole axis takes about four seconds to walk.</summary>
     public static int Step(MatchState match, Good good) => Math.Max(1, (Ceiling(match, good) - Floor(match, good)) / 40);
@@ -113,9 +120,10 @@ public static class PoMuleMarket
         foreach (var player in match.Players)
         {
             if (match.LaneRole[player.Seat] != role || !able(player)) continue;
-            if (best < 0
-                || (lowest && match.LanePrice[player.Seat] < match.LanePrice[best])
-                || (!lowest && match.LanePrice[player.Seat] > match.LanePrice[best]))
+            var (here, there) = (match.LanePrice[player.Seat], best < 0 ? 0 : match.LanePrice[best]);
+            // Level prices: the colonist furthest behind trades first.
+            if (best < 0 || (lowest ? here < there : here > there)
+                || (here == there && PoMuleScoring.Trailing(match, [best, player.Seat]) == player.Seat))
                 best = player.Seat;
         }
         return best;

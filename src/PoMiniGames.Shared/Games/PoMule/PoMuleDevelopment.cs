@@ -10,35 +10,42 @@ public enum Outcome : byte { Ok, NoCash, SoldOut, NotAllowed, Runaway }
 /// </summary>
 public static class PoMuleDevelopment
 {
-    /// <summary>Starts the shared clock, feeds everyone and sets how fast each may move.</summary>
+    /// <summary>
+    /// Starts the shared clock and sets how much of it each one gets from the Food they hold.
+    /// The Food itself is eaten over the month (see <see cref="End"/>), so the status line
+    /// does not show a fed colony at zero.
+    /// </summary>
     public static void Begin(MatchState match)
     {
         match.ClockTicks = PoMuleTuning.DevelopmentSeconds * PoMuleTuning.TicksPerSecond;
+        match.BumpRunaways = 0;
         var need = PoMuleTuning.FoodNeed(match.Month);
         foreach (var player in match.Players)
         {
             var food = player.Goods[(int)Good.Food];
-            var percent = food >= need ? 100
-                : food == 0 ? 0
-                : Math.Max(PoMuleTuning.MinSpeedPercent, 100 * food / need);
-            if (player.Species == Species.ZephyrFlapper) percent = percent * 110 / 100;
-
-            player.SpeedPercent = percent;
+            // Hunger costs time, not pace: a short month, as in the original.
+            player.TimePercent = food >= need ? 100 : Math.Max(PoMuleTuning.MinTimePercent, 100 * food / need);
             player.WentShort = food < need;
-            player.Goods[(int)Good.Food] = Math.Max(0, food - need);
             player.HasMule = false;
             player.Outfit = MatchState.Nobody;
             player.InPub = false;
             player.HoldsAssay = false;
+            player.Spooked = false;
         }
     }
 
-    /// <summary>On the map, fed, and with time on the clock.</summary>
-    public static bool CanAct(MatchState match, int seat)
+    /// <summary>Ticks this colonist has left: the shared clock, less what hunger took off the end.</summary>
+    public static int TimeLeft(MatchState match, int seat)
     {
-        var player = match.Players[seat];
-        return match.ClockTicks > 0 && !player.InPub && player.SpeedPercent > 0;
+        var month = PoMuleTuning.DevelopmentSeconds * PoMuleTuning.TicksPerSecond;
+        return Math.Max(0, match.ClockTicks - month * (100 - match.Players[seat].TimePercent) / 100);
     }
+
+    /// <summary>Walking pace, 100 being normal.</summary>
+    public static int Speed(MatchState match, int seat) => match.Has(match.Players[seat], Species.ZephyrFlapper) ? 110 : 100;
+
+    /// <summary>On the map with time on their clock.</summary>
+    public static bool CanAct(MatchState match, int seat) => TimeLeft(match, seat) > 0 && !match.Players[seat].InPub;
 
     public static Outcome BuyMule(MatchState match, int seat)
     {
@@ -90,31 +97,35 @@ public static class PoMuleDevelopment
     }
 
     /// <summary>
-    /// A collision reported by the renderer. Only a dash-speed hit frightens a M.U.L.E.
+    /// A collision reported by the renderer. Only a dash-speed hit frightens a M.U.L.E., and
+    /// nobody loses a second one to a bump in the same month: the original had no such loss
+    /// at all, so here it stays an upset rather than a way to empty the corral.
     /// </summary>
     /// <returns>True when the victim's M.U.L.E. bolted.</returns>
     public static bool Bump(MatchState match, int victim, bool dashing)
     {
         var player = match.Players[victim];
-        if (!dashing || !player.HasMule) return false;
-        if (player.Species == Species.SpheroidDrifter && match.Rng.Chance(50)) return false;
+        if (!dashing || !player.HasMule || player.Spooked) return false;
+        if (match.Has(player, Species.SpheroidDrifter) && match.Rng.Chance(50)) return false;
         LoseMule(player);
+        player.Spooked = true;
+        match.BumpRunaways++;
         return true;
     }
 
     /// <summary>What the Pub would pay a colonist who walked in right now.</summary>
-    public static int PubPayout(MatchState match) => Math.Min(
+    public static int PubPayout(MatchState match, int seat) => Math.Min(
         PoMuleTuning.PubCap,
-        Math.Max(0, match.ClockTicks) / PoMuleTuning.TicksPerSecond * (3 + match.Month));
+        TimeLeft(match, seat) / PoMuleTuning.TicksPerSecond * (3 + match.Month));
 
     /// <summary>Cashes out for the rest of the month.</summary>
     /// <returns>Credits paid: more the earlier the colonist quits, and more in later months.</returns>
     public static int EnterPub(MatchState match, int seat)
     {
         var player = match.Players[seat];
-        if (player.InPub || player.SpeedPercent == 0) return 0;
+        if (player.InPub) return 0;
 
-        var payout = PubPayout(match);
+        var payout = PubPayout(match, seat);
         player.Cash += payout;
         player.InPub = true;
         LoseMule(player); // a M.U.L.E. left outside the pub wanders off
@@ -139,13 +150,16 @@ public static class PoMuleDevelopment
     }
 
     public static bool CanSeeCrystite(MatchState match, int seat, int plot) =>
-        match.Assayed[plot] || match.Players[seat].Species == Species.CrystiteWeaver;
+        match.Assayed[plot] || match.Has(match.Players[seat], Species.CrystiteWeaver);
 
-    /// <summary>The clock hit zero: every M.U.L.E. still on a tether bolts.</summary>
+    /// <summary>The clock hit zero: the month's Food is eaten and every M.U.L.E. still on a tether bolts.</summary>
     /// <returns>The seats that lost one.</returns>
     public static IReadOnlyList<int> End(MatchState match)
     {
         match.ClockTicks = 0;
+        var need = PoMuleTuning.FoodNeed(match.Month);
+        foreach (var player in match.Players)
+            player.Goods[(int)Good.Food] = Math.Max(0, player.Goods[(int)Good.Food] - need);
         var lost = new List<int>();
         foreach (var player in match.Players.Where(p => p.HasMule))
         {

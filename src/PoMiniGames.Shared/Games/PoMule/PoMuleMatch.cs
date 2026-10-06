@@ -22,6 +22,7 @@ public sealed class PoMuleMatch(MatchState state)
     private const int PlotTrip = 40;
     private const int PubTrip = 30;
     private const int AuctionQuietTicks = 50;
+    private const int MarketQuietTicks = 10;
     private const int ShortPhaseTicks = 10;
 
     private readonly int[] _busy = new int[PoMuleTuning.Seats];
@@ -54,8 +55,8 @@ public sealed class PoMuleMatch(MatchState state)
     /// <summary>Where each AI colonist is heading (development phase only).</summary>
     public Goal[] Goals { get; } = new Goal[PoMuleTuning.Seats];
 
-    public static PoMuleMatch New(ulong seed, Species? humanSpecies, bool headless = false, bool fast = false) =>
-        new(MatchState.New(seed, humanSpecies)) { Headless = headless, Fast = fast };
+    public static PoMuleMatch New(ulong seed, Species? humanSpecies, bool headless = false, bool fast = false, bool classic = false) =>
+        new(MatchState.New(seed, humanSpecies, classic)) { Headless = headless, Fast = fast };
 
     /// <summary>Plays an all-AI match from start to finish with no renderer.</summary>
     public static PoMuleMatch RunToEnd(ulong seed, Species? humanSpecies = null)
@@ -146,6 +147,7 @@ public sealed class PoMuleMatch(MatchState state)
                 break;
 
             case Phase.Auction:
+                HumanMarketInput = 0; // as for the market: a key held last month must not bid
                 _auctionBlock.Clear();
                 foreach (var plot in PoMuleLand.PickAuctionPlots(State)) _auctionBlock.Enqueue(plot);
                 if (!OpenNextAuction()) Go(Phase.Development);
@@ -160,22 +162,23 @@ public sealed class PoMuleMatch(MatchState state)
                 break;
 
             case Phase.Production:
-                State.LastEvent = PoMuleEvents.Roll(State.Rng);
+                State.LastEvent = PoMuleEvents.Roll(State);
                 Report = PoMuleProduction.Run(State, State.LastEvent);
                 PoMuleEvents.Aftermath(State, State.LastEvent);
                 State.ClockTicks = Display(PoMuleTuning.ProductionSeconds);
                 break;
 
             case Phase.Event:
-                Notices.Add(new Notice(NoticeKind.ColonyEvent, -1, (int)State.LastEvent, State.MeteorPlot));
-                var (lucky, credits) = PoMuleEvents.Luck(State);
-                Notices.Add(new Notice(NoticeKind.Luck, lucky, credits));
+                Notices.Add(new Notice(NoticeKind.ColonyEvent, -1, (int)State.LastEvent, State.EventPlot));
+                var (lucky, kind, amount) = PoMuleEvents.Luck(State);
+                Notices.Add(new Notice(NoticeKind.Luck, lucky, (int)kind, amount));
                 State.ClockTicks = Display(PoMuleTuning.EventSeconds);
                 break;
 
             case Phase.Market:
                 HumanMarketInput = 0; // a key held when last month's market closed must not walk this one
-                PoMuleMarket.Open(State, Good.Food);
+                _quiet = 0;
+                PoMuleMarket.Open(State, PoMuleMarket.Order[0]);
                 break;
 
             case Phase.Standings:
@@ -267,26 +270,20 @@ public sealed class PoMuleMatch(MatchState state)
         return true;
     }
 
-    /// <summary>Seat 0 raises the standing bid by one step. False when it cannot.</summary>
-    public bool HumanBid()
-    {
-        if (State.Phase != Phase.Auction || State.AuctionPlot < 0) return false;
-        if (!PoMuleLand.Bid(State, 0, PoMuleLand.NextBid(State))) return false;
-        _quiet = 0;
-        return true;
-    }
-
     private void StepAuction()
     {
         State.ClockTicks--;
-        _quiet++;
-        for (var seat = 0; seat < State.Players.Length; seat++)
+        // First the plot is shown on the map; then the floor opens.
+        if (State.ClockTicks > PoMuleTuning.AuctionSeconds * PoMuleTuning.TicksPerSecond - PoMuleTuning.AuctionPreviewTicks) return;
+
+        var inputs = new int[State.Players.Length];
+        for (var seat = 0; seat < inputs.Length; seat++)
         {
-            // About one look at the block per second each, so bids arrive at a human pace.
-            if (!IsAi(seat) || !State.Rng.Chance(10)) continue;
-            var bid = PoMuleAi.AuctionBid(State, seat);
-            if (bid > 0 && PoMuleLand.Bid(State, seat, bid)) _quiet = 0;
+            // An AI takes a step every few ticks, so the bidding climbs at a pace a person can follow.
+            inputs[seat] = !IsAi(seat) ? HumanMarketInput
+                : State.Rng.Chance(PoMuleAi.AuctionEagerness(State, seat)) ? PoMuleAi.AuctionInput(State, seat) : 0;
         }
+        _quiet = PoMuleLand.AuctionTick(State, inputs) ? 0 : _quiet + 1;
 
         if (State.ClockTicks > 0 && _quiet < AuctionQuietTicks) return;
         var plot = State.AuctionPlot;
@@ -332,7 +329,7 @@ public sealed class PoMuleMatch(MatchState state)
                 GoalKind.Pub => PubTrip,
                 _ => PlotTrip,
             };
-            _busy[seat] = trip * 100 / State.Players[seat].SpeedPercent;
+            _busy[seat] = trip * 100 / PoMuleDevelopment.Speed(State, seat);
         }
 
         var anyoneOut = Enumerable.Range(0, State.Players.Length).Any(seat => PoMuleDevelopment.CanAct(State, seat));
@@ -432,18 +429,31 @@ public sealed class PoMuleMatch(MatchState state)
         var inputs = new int[State.Players.Length];
         for (var seat = 0; seat < inputs.Length; seat++)
             inputs[seat] = IsAi(seat) ? PoMuleAi.MarketInput(State, seat) : HumanMarketInput;
-        foreach (var trade in PoMuleMarket.Tick(State, inputs))
+        var stood = (int[])State.LanePrice.Clone();
+        var trades = PoMuleMarket.Tick(State, inputs);
+        foreach (var trade in trades)
             Notices.Add(new Notice(NoticeKind.Traded, trade.Seller, trade.Buyer, trade.Price));
 
-        // With no human at the table, an empty floor closes at once.
-        var empty = State.Players.All(p => p.Archetype != Archetype.Human) && State.LaneRole.All(r => r == 0);
-        if (State.ClockTicks > 0 && !empty) return;
-
-        var good = (Good)State.MarketGood;
-        PoMuleMarket.Close(State);
-        if (good != Good.Crystite)
+        // With no human at the table, a floor where nobody has moved or traded for a second
+        // has said all it will: the clock skips to the last call, and after that to the bell.
+        _quiet = trades.Count == 0 && State.LanePrice.SequenceEqual(stood) ? _quiet + 1 : 0;
+        if (_quiet >= MarketQuietTicks && State.Players.All(p => p.Archetype != Archetype.Human))
         {
-            PoMuleMarket.Open(State, good + 1);
+            _quiet = 0;
+            State.ClockTicks = State.ClockTicks > PoMuleTuning.MarketLastCallTicks ? PoMuleTuning.MarketLastCallTicks : 0;
+        }
+
+        // As in the original, a good nobody holds is not auctioned at all.
+        var good = State.MarketGood;
+        var nothing = State.Store.Stock[good] == 0 && State.Players.All(p => p.Goods[good] == 0);
+        if (State.ClockTicks > 0 && !nothing) return;
+
+        _quiet = 0;
+        var next = Array.IndexOf(PoMuleMarket.Order, (Good)State.MarketGood) + 1;
+        PoMuleMarket.Close(State);
+        if (next < PoMuleMarket.Order.Length)
+        {
+            PoMuleMarket.Open(State, PoMuleMarket.Order[next]);
             return;
         }
         PoMuleMarket.EndOfMonth(State);
@@ -452,16 +462,17 @@ public sealed class PoMuleMatch(MatchState state)
 
     // ── Renderer feed ──
 
-    public const int SnapshotHeader = 22;
-    public const int SnapshotPerSeat = 15;
+    public const int SnapshotHeader = 23;
+    public const int SnapshotPerSeat = 16;
 
     /// <summary>
     /// Everything the renderer and HUD need each tick, as one flat array (one interop
     /// transfer). Header: month, phase, clock ticks, market good, auction plot, high bid, high
-    /// bidder, last event, market floor price, Store M.U.L.E.s, land highlighter, Store stock ×4,
-    /// Store prices ×4, M.U.L.E. price, wampus plot, crisis months. Then per seat: cash, the four
-    /// goods, speed %, has M.U.L.E., outfit, in pub, lane role, lane price, goal kind, goal
-    /// target, goal good, land pick.
+    /// bidder, last event, floor price (market or land auction), Store M.U.L.E.s, land
+    /// highlighter, Store stock ×4, Store prices ×4, M.U.L.E. price, wampus plot, crisis months,
+    /// ceiling price. Then per seat: cash, the four goods, speed % (0 once their time is up),
+    /// has M.U.L.E., outfit, in pub, lane role, lane price, goal kind, goal target, goal good,
+    /// land pick, development ticks left.
     /// </summary>
     public double[] Snapshot()
     {
@@ -475,7 +486,9 @@ public sealed class PoMuleMatch(MatchState state)
         data[5] = s.HighBid;
         data[6] = s.HighBidder;
         data[7] = (int)s.LastEvent;
-        data[8] = s.MarketGood == MatchState.Nobody ? 0 : PoMuleMarket.Floor(s, (Good)s.MarketGood);
+        var onFloor = s.MarketGood != MatchState.Nobody;
+        data[8] = onFloor ? PoMuleMarket.Floor(s, (Good)s.MarketGood) : PoMuleLand.AuctionFloor;
+        data[22] = onFloor ? PoMuleMarket.Ceiling(s, (Good)s.MarketGood) : PoMuleLand.AuctionCeiling(s);
         data[9] = s.Store.Mules;
         data[10] = s.LandCursor;
         for (var g = 0; g < 4; g++)
@@ -491,7 +504,9 @@ public sealed class PoMuleMatch(MatchState state)
             var o = SnapshotHeader + p.Seat * SnapshotPerSeat;
             data[o] = p.Cash;
             for (var g = 0; g < 4; g++) data[o + 1 + g] = p.Goods[g];
-            data[o + 5] = p.SpeedPercent;
+            var timeLeft = PoMuleDevelopment.TimeLeft(s, p.Seat);
+            data[o + 5] = timeLeft > 0 ? PoMuleDevelopment.Speed(s, p.Seat) : 0;
+            data[o + 15] = timeLeft;
             data[o + 6] = p.HasMule ? 1 : 0;
             data[o + 7] = p.Outfit;
             data[o + 8] = p.InPub ? 1 : 0;

@@ -33,7 +33,7 @@ public sealed class PoMuleMarketTests
         });
         var (floor, ceiling) = (PoMuleMarket.Floor(match, Good.Food), PoMuleMarket.Ceiling(match, Good.Food));
 
-        (floor, ceiling).Should().Be((30, 60));
+        (floor, ceiling).Should().Be((30, 65), "the Store sells 35 above what it pays");
         (match.LaneRole[1], match.LanePrice[1]).Should().Be((PoMuleMarket.Seller, ceiling));
         (match.LaneRole[2], match.LanePrice[2]).Should().Be((PoMuleMarket.Buyer, floor));
         match.LaneRole[0].Should().Be(0, "exactly enough: nothing to sell, nothing to buy");
@@ -117,6 +117,7 @@ public sealed class PoMuleMarketTests
         var bought = Enumerable.Range(0, 30).SelectMany(_ => PoMuleMarket.Tick(match, Still)).ToList();
         bought.Should().Equal(new Trade(store, 2, ceiling), new Trade(store, 2, ceiling));
         match.Store.Stock[(int)Good.Food].Should().Be(0);
+        PoMuleMarket.Ceiling(match, Good.Food).Should().Be(floor + 35 * PoMuleTuning.SoldOutSpreads, "sold out: nothing holds prices down");
 
         // Seller alone at the floor: the Store buys.
         match.LaneRole[2] = 0;
@@ -156,11 +157,11 @@ public sealed class PoMuleMarketTests
         // Thirty M.U.L.E.s in the corral: Smithore is at its floor, and a M.U.L.E. costs twice that.
         match.Store.Price[(int)Good.Smithore].Should().Be(25);
         match.Store.MulePrice.Should().Be(50);
-        (PoMuleMarket.SmithorePrice(7), PoMuleMarket.SmithorePrice(2), PoMuleMarket.SmithorePrice(0))
+        (PoMuleMarket.SmithorePrice(14), PoMuleMarket.SmithorePrice(4), PoMuleMarket.SmithorePrice(0))
             .Should().Be((50, 175, 250), "the scarcer M.U.L.E.s are, the more ore is worth");
 
         var prices = Enumerable.Range(0, 200).Select(_ => { PoMuleMarket.EndOfMonth(match); return match.Store.Price[(int)Good.Crystite]; }).ToList();
-        prices.Should().OnlyContain(p => p >= 40 && p <= 90);
+        prices.Should().OnlyContain(p => p >= 50 && p <= 150);
         prices.Distinct().Count().Should().BeGreaterThan(20);
 
         // Closing a market moves that good's price from what the colony holds.

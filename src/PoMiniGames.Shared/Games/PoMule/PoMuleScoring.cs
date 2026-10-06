@@ -28,6 +28,13 @@ public static class PoMuleScoring
             .Select((p, i) => new Standing(i + 1, p.Seat, p.Name, p.Worth))];
 
     /// <summary>
+    /// Who is losing among <paramref name="seats"/>. The original breaks every tie (a contested
+    /// plot, two equal bids) in favour of the colonist furthest behind.
+    /// </summary>
+    public static int Trailing(MatchState match, IEnumerable<int> seats) =>
+        seats.MinBy(seat => (NetWorth(match, seat), -seat));
+
+    /// <summary>
     /// The colony grade. Individual greed can sink everyone: enough combined wealth and not
     /// too many months of colony-wide shortage, or the winner's title is hollow.
     /// </summary>

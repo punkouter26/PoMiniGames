@@ -113,8 +113,9 @@ public sealed class PoMuleMatchTests
             if (PoMuleScoring.ColonySurvives(standings.Sum(x => x.NetWorth), match.State.CrisisMonths)) survived++;
         }
 
-        survived.Should().BeInRange(40, 90, "the colony should usually, but not always, pull through");
-        wins.Values.Max().Should().BeLessThanOrEqualTo(40, $"wins by personality: {string.Join(", ", wins.Select(w => $"{w.Key} {w.Value}"))}");
+        var summary = $"colonies survived: {survived}; wins by personality: {string.Join(", ", wins.Select(w => $"{w.Key} {w.Value}"))}";
+        survived.Should().BeInRange(40, 90, $"the colony should usually, but not always, pull through ({summary})");
+        wins.Values.Max().Should().BeLessThanOrEqualTo(40, summary);
     }
 
     [Fact]
@@ -164,27 +165,27 @@ public sealed class PoMuleMatchTests
     [Fact]
     public void LuckTheMeteorTheWampusAndThePlotByPlotCount_WorkAsInTheOriginal()
     {
-        // Personal luck: good luck finds the poorer half, bad luck the richer half, and
-        // nobody is ever pushed below zero.
+        // Personal luck: good luck never finds the leader, bad luck never the colonist in
+        // last place, nobody is ever pushed below zero, and every line fits the message bar.
         var luck = MatchState.New(seed: 5, humanSpecies: null);
         for (var roll = 0; roll < 300; roll++)
         {
             for (var seat = 0; seat < 8; seat++) luck.Players[seat].Cash = roll < 150 ? 1000 + seat * 100 : 10;
             var rank = PoMuleScoring.Standings(luck).ToDictionary(s => s.Seat, s => s.Rank);
-            var (lucky, credits) = PoMuleEvents.Luck(luck);
-            credits.Should().NotBe(0);
-            if (credits > 0) rank[lucky].Should().BeGreaterThanOrEqualTo(5, "good luck goes to the poorer half");
-            else rank[lucky].Should().BeLessThanOrEqualTo(4, "bad luck goes to the richer half");
-            Math.Abs(credits).Should().BeLessThanOrEqualTo(PoMuleTuning.LuckCredits);
+            var (lucky, kind, amount) = PoMuleEvents.Luck(luck);
+            if (kind < LuckKind.Elves) rank[lucky].Should().BeGreaterThan(1, "good luck never finds the leader");
+            else rank[lucky].Should().BeLessThan(8, "bad luck never finds last place");
             luck.Players[lucky].Cash.Should().BeGreaterThanOrEqualTo(0);
+            luck.Players[lucky].Goods.Should().OnlyContain(units => units >= 0);
+            PoMuleEvents.LuckText(kind, "Industrialist", amount).Length.Should().BeLessThanOrEqualTo(63);
         }
 
         // The meteor digs a rich crater in open, unowned ground.
         var meteor = MatchState.New(seed: 6, humanSpecies: null);
         PoMuleEvents.Aftermath(meteor, ColonyEvent.Meteor);
-        meteor.MeteorPlot.Should().BeGreaterThanOrEqualTo(0);
-        meteor.Map.Plots[meteor.MeteorPlot].Should().Be(new Plot(Terrain.Crater, 0, 4));
-        meteor.Owner[meteor.MeteorPlot].Should().Be(MatchState.Nobody);
+        meteor.EventPlot.Should().BeGreaterThanOrEqualTo(0);
+        meteor.Map.Plots[meteor.EventPlot].Should().Be(new Plot(Terrain.Crater, 0, 4));
+        meteor.Owner[meteor.EventPlot].Should().Be(MatchState.Nobody);
 
         // Production reports each plot's units, for the dot-by-dot count on the map.
         var farm = MatchState.New(seed: 7, humanSpecies: Species.Humanoid);
@@ -194,6 +195,12 @@ public sealed class PoMuleMatchTests
         (farm.Installed[0], farm.Installed[1]) = ((sbyte)Good.Food, (sbyte)Good.Energy);
         var report = PoMuleProduction.Run(farm, ColonyEvent.None, vary: false);
         (report.PlotOutput[0], report.PlotOutput[1], report.PlotOutput.Sum()).Should().Be((4, 3, 7));
+
+        // Radiation sends one working M.U.L.E. crazy and leaves its plot empty.
+        PoMuleEvents.Aftermath(farm, ColonyEvent.Radiation);
+        farm.EventPlot.Should().BeOneOf(0, 1);
+        farm.Installed[farm.EventPlot].Should().Be(MatchState.Nobody);
+        farm.Installed.Count(i => i != MatchState.Nobody).Should().Be(1);
 
         // The wampus shows on a mountain for part of every ten seconds and pays once a month.
         var match = PoMuleMatch.New(seed: 8, humanSpecies: Species.Humanoid);
@@ -241,7 +248,8 @@ public sealed class PoMuleMatchTests
         (snap[0], snap[1], snap[2]).Should().Be((1d, (double)(int)Phase.Development, (double)state.ClockTicks));
         var o = PoMuleMatch.SnapshotHeader + ai * PoMuleMatch.SnapshotPerSeat;
         snap[o].Should().Be(state.Players[ai].Cash);
-        snap[o + 5].Should().Be(state.Players[ai].SpeedPercent);
+        snap[o + 5].Should().Be(PoMuleDevelopment.Speed(state, ai));
+        snap[o + 15].Should().Be(PoMuleDevelopment.TimeLeft(state, ai));
 
         // A dash bump from the renderer costs the victim its M.U.L.E.; the human's pub visit ends the wait.
         PoMuleDevelopment.BuyMule(state, 0).Should().Be(Outcome.Ok);

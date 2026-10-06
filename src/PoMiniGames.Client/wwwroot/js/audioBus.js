@@ -153,7 +153,9 @@ function buildGraph(ctx) {
     const reverbReturn = ctx.createGain();
     reverbReturn.gain.value = 0.9;
 
-    music.connect(preMaster);
+    // Background music is switched off app-wide: the music bus is deliberately left
+    // unconnected, so everything routed to it (ambientMusic.js, the music director) is
+    // silent. Reconnect it to preMaster to bring the soundtrack back.
     sfx.connect(preMaster);
     ui.connect(preMaster);
 

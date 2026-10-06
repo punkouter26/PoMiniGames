@@ -49,7 +49,7 @@ public sealed class PoMuleAiTests
 
     [Theory]
     [InlineData(Archetype.Industrialist, Terrain.Mountain, Good.Smithore)]
-    [InlineData(Archetype.Industrialist, Terrain.River, Good.Smithore)]   // Smithore wherever it stands
+    [InlineData(Archetype.Industrialist, Terrain.River, Good.Food)]       // but nobody mines a river
     [InlineData(Archetype.Farmer, Terrain.River, Good.Food)]
     [InlineData(Archetype.Farmer, Terrain.Plains, Good.Food)]
     [InlineData(Archetype.Prospector, Terrain.Crater, Good.Crystite)]
@@ -83,14 +83,21 @@ public sealed class PoMuleAiTests
         PoMuleDevelopment.Install(farmer, Ai, plot);
         PoMuleAi.NextGoal(farmer, Ai).Kind.Should().Be(GoalKind.Pub, "nothing left to develop");
 
+        var late = Match(Archetype.Farmer);
+        Own(late, 0, Terrain.River);
+        late.ClockTicks = PoMuleTuning.LastMuleErrandTicks;
+        PoMuleAi.NextGoal(late, Ai).Kind.Should().Be(GoalKind.Pub, "too late to get a M.U.L.E. home");
+
         var broke = Match(Archetype.Farmer);
         Own(broke, 0, Terrain.River);
         broke.Players[Ai].Cash = 50;
         PoMuleAi.NextGoal(broke, Ai).Kind.Should().Be(GoalKind.Pub);
 
-        var starving = Match(Archetype.Farmer);
-        starving.Players[Ai].SpeedPercent = 0;
-        PoMuleAi.NextGoal(starving, Ai).Kind.Should().Be(GoalKind.Idle);
+        // Hunger took the end off this one's month, and the clock has reached it.
+        var hungry = Match(Archetype.Farmer);
+        hungry.Players[Ai].TimePercent = 40;
+        hungry.ClockTicks = 270;
+        PoMuleAi.NextGoal(hungry, Ai).Kind.Should().Be(GoalKind.Idle);
 
         // The Gambler only works in the opening seconds, then cashes the clock in.
         var gambler = Match(Archetype.Gambler);
@@ -104,6 +111,9 @@ public sealed class PoMuleAiTests
         PoMuleAi.NextGoal(agitator, Ai).Should().Be(new Goal(GoalKind.Chase, -1, Good.Food), "nobody to hit: block a town door");
         PoMuleDevelopment.BuyMule(agitator, 3);
         PoMuleAi.NextGoal(agitator, Ai).Should().Be(new Goal(GoalKind.Chase, 3, Good.Food));
+        agitator.BumpRunaways = 1;
+        PoMuleAi.NextGoal(agitator, Ai).Kind.Should().Be(GoalKind.Pub, "one frightened M.U.L.E. a month is enough");
+        agitator.BumpRunaways = 0;
         agitator.ClockTicks = 100;
         PoMuleAi.NextGoal(agitator, Ai).Kind.Should().Be(GoalKind.Pub, "even an Agitator wants the pub money");
 
@@ -121,7 +131,7 @@ public sealed class PoMuleAiTests
     [InlineData(Archetype.Hoarder, Good.Food, 30, 9, -1, 0)]    // spare Food at an ordinary price: stays at the top
     [InlineData(Archetype.Hoarder, Good.Food, 130, 9, -1, -1)]  // near the record price: now it sells
     [InlineData(Archetype.Farmer, Good.Food, 30, 9, -1, -1)]    // walks down to a fair price
-    [InlineData(Archetype.Farmer, Good.Food, 30, 9, 36, 0)]     // and stops there
+    [InlineData(Archetype.Farmer, Good.Food, 30, 9, 37, 0)]     // and stops there
     [InlineData(Archetype.Farmer, Good.Food, 30, 0, -1, 1)]     // short of Food: walks up to buy
     [InlineData(Archetype.Speculator, Good.Crystite, 100, 9, -1, 0)]  // holds Crystite at an ordinary price
     [InlineData(Archetype.Speculator, Good.Crystite, 140, 9, -1, -1)] // sells into a spike
@@ -151,22 +161,22 @@ public sealed class PoMuleAiTests
         match.Players[2].Cash = 1000;
         PoMuleLand.OpenAuction(match, PoMuleLand.PickAuctionPlots(match)[0]);
 
-        PoMuleAi.AuctionBid(match, Ai).Should().Be(PoMuleTuning.AuctionOpeningBid);
+        PoMuleAi.AuctionInput(match, Ai).Should().Be(1, "it walks up to the opening bid");
 
-        // Let the two bid each other up until one stops.
+        // Let the two walk each other up the floor until one stops.
+        var inputs = new int[PoMuleTuning.Seats];
         for (var round = 0; round < 200; round++)
-            foreach (var seat in new[] { Ai, 2 })
-            {
-                var bid = PoMuleAi.AuctionBid(match, seat);
-                if (bid > 0) PoMuleLand.Bid(match, seat, bid).Should().BeTrue("an AI only makes bids the rules accept");
-            }
+        {
+            foreach (var seat in new[] { Ai, 2 }) inputs[seat] = PoMuleAi.AuctionInput(match, seat);
+            PoMuleLand.AuctionTick(match, inputs);
+        }
 
         match.HighBidder.Should().Be((sbyte)Ai);
         match.HighBid.Should().BeInRange(290, 600, "the Farmer drops out at 30% of its cash; the Speculator would go to 42%");
-        PoMuleAi.AuctionBid(match, Ai).Should().Be(0, "it does not bid against itself");
+        PoMuleAi.AuctionInput(match, Ai).Should().Be(0, "it does not bid against itself");
 
         match.Players[2].Cash = 100;
         PoMuleLand.OpenAuction(match, match.AuctionPlot);
-        PoMuleAi.AuctionBid(match, 2).Should().Be(0, "cannot cover the opening bid");
+        PoMuleAi.AuctionInput(match, 2).Should().Be(0, "cannot cover the opening bid");
     }
 }

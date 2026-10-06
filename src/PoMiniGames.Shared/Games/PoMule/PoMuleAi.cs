@@ -47,6 +47,10 @@ public static class PoMuleAi
             var plot = match.Map.Plots[i];
             var score = Appeal(archetype, plot.Terrain) - TownDistance(i) + match.Rng.Next(8);
             if (archetype == Archetype.Industrialist) score += 20 * plot.Peaks;
+            // Everybody can read the Store's board: the dearer Smithore is (the emptier the
+            // corral), the better a mountain looks, whoever you are.
+            if (plot.Terrain == Terrain.Mountain)
+                score += PoMuleProduction.BaseYield(plot, Good.Smithore) * match.Store.Price[(int)Good.Smithore] / PoMuleTuning.OreAppealDivisor;
             if (archetype == Archetype.Prospector && PoMuleDevelopment.CanSeeCrystite(match, seat, i)) score += 30 * plot.Crystite;
             if (score > bestScore) (best, bestScore) = (i, score);
         }
@@ -64,7 +68,7 @@ public static class PoMuleAi
     {
         var tile = match.Map.Plots[plot];
         if (good == Good.Crystite && !PoMuleDevelopment.CanSeeCrystite(match, seat, plot))
-            return tile.Terrain == Terrain.Crater ? 3 : 0;
+            return tile.Terrain == Terrain.Crater ? 2 : 0;
         return PoMuleProduction.BaseYield(tile, good);
     }
 
@@ -84,7 +88,7 @@ public static class PoMuleAi
         if (Making(Good.Energy) < drawing && player.Goods[(int)Good.Energy] < drawing * 2) return Good.Energy;
 
         var miner = player.Archetype is Archetype.Industrialist or Archetype.Prospector;
-        if (player.Archetype == Archetype.Industrialist) return Good.Smithore;
+        if (player.Archetype == Archetype.Industrialist && PoMuleProduction.BaseYield(match.Map.Plots[plot], Good.Smithore) > 0) return Good.Smithore;
         if (player.Archetype == Archetype.Prospector && ExpectedYield(match, seat, plot, Good.Crystite) >= 2) return Good.Crystite;
 
         // Everyone but the miners feeds themselves before chasing profit.
@@ -113,22 +117,24 @@ public static class PoMuleAi
             return new Goal(GoalKind.Install, empty.MaxBy(i => ExpectedYield(match, seat, i, outfit)), outfit);
         }
 
-        var working = player.Archetype != Archetype.Gambler || match.ClockTicks > PoMuleTuning.GamblerWorksUntilTicks;
-        if (working && empty.Count > 0 && match.Store.Mules > 0)
+        var timeLeft = PoMuleDevelopment.TimeLeft(match, seat);
+        var working = player.Archetype != Archetype.Gambler || timeLeft > PoMuleTuning.GamblerWorksUntilTicks;
+        if (working && empty.Count > 0 && match.Store.Mules > 0 && timeLeft > PoMuleTuning.LastMuleErrandTicks)
         {
             var good = ChooseOutfit(match, seat, empty[0]);
             if (player.Cash >= match.Store.MulePrice + PoMuleTuning.OutfitCost[(int)good])
                 return new Goal(GoalKind.Outfitter, -1, good);
         }
 
-        if (player.Archetype == Archetype.Agitator && match.ClockTicks > PoMuleTuning.AgitatorHuntsUntilTicks)
+        // One frightened M.U.L.E. a month is the Agitator's fun; after that it goes for a drink.
+        if (player.Archetype == Archetype.Agitator && timeLeft > PoMuleTuning.AgitatorHuntsUntilTicks && match.BumpRunaways == 0)
         {
             var prey = match.Players.FirstOrDefault(p => p.Seat != seat && p.HasMule);
             return new Goal(GoalKind.Chase, prey?.Seat ?? -1, default);
         }
 
-        if (player.Archetype == Archetype.Prospector && match.ClockTicks > PoMuleTuning.AgitatorHuntsUntilTicks
-            && player.Species != Species.CrystiteWeaver)
+        if (player.Archetype == Archetype.Prospector && timeLeft > PoMuleTuning.AgitatorHuntsUntilTicks
+            && !match.Has(player, Species.CrystiteWeaver))
         {
             var crater = Enumerable.Range(0, match.Assayed.Length)
                 .FirstOrDefault(i => !match.Assayed[i] && match.Map.Plots[i].Terrain == Terrain.Crater, -1);
@@ -179,10 +185,9 @@ public static class PoMuleAi
         return Math.Sign(target - here);
     }
 
-    /// <summary>The bid this colonist would make right now at the land auction, or 0 to pass.</summary>
-    public static int AuctionBid(MatchState match, int seat)
+    /// <summary>The most this colonist will pay for the plot on the block: a share of its cash, more for land it likes.</summary>
+    public static int AuctionLimit(MatchState match, int seat)
     {
-        if (match.AuctionPlot < 0 || match.HighBidder == seat) return 0;
         var player = match.Players[seat];
         var percent = player.Archetype switch
         {
@@ -191,7 +196,27 @@ public static class PoMuleAi
             Archetype.Agitator => 20,
             _ => 30,
         };
-        var next = PoMuleLand.NextBid(match);
-        return next <= player.Cash * percent / 100 ? next : 0;
+        // Terrain appeal runs 20–100: land this personality lives on is worth up to a fifth more.
+        var appeal = match.AuctionPlot < 0 ? 20 : Appeal(player.Archetype, match.Map.Plots[match.AuctionPlot].Terrain);
+        return player.Cash * percent / 100 * (100 + appeal / 5) / 100;
+    }
+
+    /// <summary>
+    /// Percent chance per tick that this colonist takes its next step up the land-auction
+    /// floor: brisk with plenty of room under its limit, hesitant close to it, so the bidders
+    /// string out instead of climbing in a row.
+    /// </summary>
+    public static int AuctionEagerness(MatchState match, int seat)
+    {
+        var limit = AuctionLimit(match, seat);
+        var span = Math.Max(1, limit - PoMuleLand.AuctionFloor);
+        return Math.Clamp(10 + 30 * (limit - match.LanePrice[seat]) / span, 10, 40);
+    }
+
+    /// <summary>Which way this colonist walks on the land-auction floor: +1 to raise its bid, 0 to stand.</summary>
+    public static int AuctionInput(MatchState match, int seat)
+    {
+        if (match.AuctionPlot < 0 || match.HighBidder == seat) return 0;
+        return match.LanePrice[seat] + PoMuleTuning.AuctionStep <= AuctionLimit(match, seat) ? 1 : 0;
     }
 }

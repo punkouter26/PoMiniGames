@@ -69,6 +69,12 @@ const MIN_REFINE_VOXEL_M = 0.12;
 const IMPORT_HEIGHT_M = 1.9;
 const IMPORT_COPIES = 2;
 
+/** The import with this name (drop/Kim.glb) is not garrison: it is one giant statue. */
+const STATUE_NAME = 'Kim';
+const STATUE_HEIGHT_M = 40; // the keep is 34
+const STATUE_X = -38;
+const STATUE_Z = 68;
+
 function refine(volume) {
   if (REFINE <= 1) return volume;
   const [nx, ny, nz] = volume.dims;
@@ -226,6 +232,18 @@ export function buildWorld(scene, physicsWorld, volumes, seed, physicsMaterials 
   // IMPORT_HEIGHT_M means an imported human is exactly as tall as the player, which is
   // the whole point of putting one in a courtyard: the 15 m curtain wall only reads as
   // 15 m if there is something of KNOWN size standing next to it.
+  // The one exception: the colossus. It is pulled out of the garrison list and stood
+  // outside the walls beside the spawn, facing the player, taller than the keep.
+  const statueVolume = volumes.find((v) => v.name === STATUE_NAME);
+  volumes = volumes.filter((v) => v !== statueVolume);
+  if (statueVolume) {
+    placements.push({
+      volume: statueVolume, x: STATUE_X, z: STATUE_Z,
+      rotationY: Math.atan2(-STATUE_X, SPAWN_Z - STATUE_Z),
+      tag: 'statue', explicitScale: STATUE_HEIGHT_M / Math.max(1, statueVolume.dims[1]),
+    });
+  }
+
   const importSpots = [];
   for (let i = 0; i < volumes.length * IMPORT_COPIES; i++) {
     // Alternate wards so the garrison is spread through the fortress rather than ringed
@@ -266,6 +284,8 @@ export function buildWorld(scene, physicsWorld, volumes, seed, physicsMaterials 
     if (p.tag === 'ward') {
       const maxDim = Math.max(...p.volume.dims);
       p.y = terrain.flatten(p.x, p.z, maxDim * p.explicitScale * 0.6);
+    } else if (p.tag === 'statue') {
+      p.y = terrain.flatten(p.x, p.z, 7); // a pad under the feet, so both legs are grounded
     } else if (p.tag === 'import') {
       // Imports stand on the plateau the fortress is built on. No pad: a 2 m figure does
       // not need one, and flattening a disc under each would pock the courtyards.

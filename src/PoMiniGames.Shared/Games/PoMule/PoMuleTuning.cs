@@ -35,19 +35,33 @@ public static class PoMuleTuning
     public const int AuctionOpeningBid = 160;
     public const int AuctionPlotsPerEvenMonth = 2;
 
-    public const int AuctionRaise = 10;
+    /// <summary>Credits a bidder's lane moves per tick on the land-auction floor.</summary>
+    public const int AuctionStep = 10;
+
+    /// <summary>Ticks the plot for sale is shown on the map before the bidding floor opens.</summary>
+    public const int AuctionPreviewTicks = 30;
 
     // AI timing, in clock ticks left: the Gambler works only the first 15 s; the Agitator
     // and the Prospector give up their errands with 15 s to go and head for the pub.
     public const int GamblerWorksUntilTicks = 300;
     public const int AgitatorHuntsUntilTicks = 150;
 
+    /// <summary>
+    /// How strongly the Smithore price pulls AI colonists toward mountains at the land grant:
+    /// a plot's ore yield × the price ÷ this is added to its appeal (a river scores 100).
+    /// </summary>
+    public const int OreAppealDivisor = 3;
+
+    /// <summary>No AI colonist buys a M.U.L.E. with less clock than this: it would never get it home.</summary>
+    public const int LastMuleErrandTicks = 150;
+
     // Development.
     public const int PubCap = 250;
-    public const int MinSpeedPercent = 40;
+    /// <summary>The least share of the month's clock a hungry colonist still gets.</summary>
+    public const int MinTimePercent = 40;
 
-    /// <summary>Credits a stroke of personal luck is worth in months 1–4; double in 5–8, triple in 9–12.</summary>
-    public const int LuckCredits = 50;
+    /// <summary>The unit a stroke of personal luck is counted in during months 1–4; double in 5–8, triple in 9–12.</summary>
+    public const int LuckCredits = 25;
 
     /// <summary>The wampus shows itself on a mountain for 3 s in every 10 s of development.</summary>
     public const int WampusCycleTicks = 100;
@@ -60,12 +74,28 @@ public static class PoMuleTuning
     public const int WarehouseCap = 50;
     public const int EventChancePercent = 75;
 
+    /// <summary>How often each <see cref="ColonyEvent"/> may strike in one match, indexed by the event.</summary>
+    public static readonly IReadOnlyList<int> EventCap = [0, 3, 3, 3, 3, 2, 2, 2, 2, 1];
+
+    /// <summary>No plot makes more than this in a plain month, however well placed.</summary>
+    public const int MaxPlotYield = 8;
+
     /// <summary>This many colonists short of Food or Energy in one month is a colony crisis.</summary>
     public const int CrisisShortColonists = 3;
 
     // Market. Limits on the Store's buying price for Food / Energy / Smithore / Crystite.
-    public static readonly IReadOnlyList<int> PriceMin = [15, 15, 25, 40];
-    public static readonly IReadOnlyList<int> PriceMax = [150, 150, 250, 90];
+    public static readonly IReadOnlyList<int> PriceMin = [15, 15, 25, 50];
+    public static readonly IReadOnlyList<int> PriceMax = [150, 150, 250, 150];
+
+    /// <summary>What the Store adds to its buying price when it sells, per good.</summary>
+    public static readonly IReadOnlyList<int> StoreSpread = [35, 35, 35, 140];
+
+    /// <summary>
+    /// With the Store sold out nothing holds prices down: the floor's top moves up to this
+    /// many spreads above the Store's buying price.
+    /// </summary>
+    // ponytail: a tall fixed axis, not a truly limitless one; scroll the floor if it is ever hit.
+    public const int SoldOutSpreads = 4;
     public const int SmithorePerMule = 2;
 
     /// <summary>Clock ticks left when sellers of Food and Energy give up waiting for a buyer.</summary>
@@ -74,8 +104,11 @@ public static class PoMuleTuning
     /// <summary>Food and Energy an AI colonist will not sell, beyond next month's need.</summary>
     public static readonly IReadOnlyList<int> AiReserve = [2, 3];
 
-    /// <summary>Smithore price × M.U.L.E.s in the corral: 7 M.U.L.E.s price Smithore at 50.</summary>
-    public const int SmithorePriceTimesMules = 350;
+    /// <summary>
+    /// Smithore price × M.U.L.E.s in the corral: 14 M.U.L.E.s (half the opening herd) price
+    /// Smithore at 50, so ore pays while there is still a M.U.L.E. left to mine it with.
+    /// </summary>
+    public const int SmithorePriceTimesMules = 700;
 
     // Scoring.
     public const int LandValue = 500;

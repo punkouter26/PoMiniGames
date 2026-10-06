@@ -1,4 +1,4 @@
-@* PoCabinetSettingsPanel — the settings that are Cabinet's own: race music, HUD size,
+@* PoCabinetSettingsPanel — the settings that are Cabinet's own: HUD size,
    weather, controls and driver aids. Bound two-way via Value + ValueChanged;
    persistence and JS-side application are the page's job — this component only edits
    the view model and raises the change. Native Blazor + design tokens, no Radzen.
@@ -10,16 +10,11 @@
    work: either source turns the option on, so with the app's switch on, turning
    Cabinet's off would do nothing. One button opens the sheet.
 
-   Compact (the pause overlay): music and the app-settings button up front, everything
+   Compact (the pause overlay): the app-settings button up front, everything
    else folded under "More settings", so pausing doesn't open a 12-row form. *@
 @inject SettingsService AppSettings
 
 <div class="pocabinet-settings" role="group" aria-label="Cabinet settings">
-    <div class="pocabinet-settings__row">
-        <label for="pocabinet-music">Race music</label>
-        <input id="pocabinet-music" type="checkbox" checked="@Value.Music" @onchange="OnMusicChanged" />
-    </div>
-
     <div class="pocabinet-settings__row">
         <span>Volume, mute, motion and colours</span>
         <button type="button" class="pocabinet-secondary" @onclick="AppSettings.RequestOpen">App settings</button>
@@ -118,9 +113,6 @@
         mutate(Value);
         if (ValueChanged.HasDelegate) await ValueChanged.InvokeAsync(Value);
     }
-
-    private Task OnMusicChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.Music = e.Value is bool b && b);
 
     private Task OnHudScaleChanged(ChangeEventArgs e) =>
         RaiseAsync(s => s.HudScale = ParseDouble(e.Value?.ToString(), s.HudScale));

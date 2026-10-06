@@ -12,7 +12,7 @@ export const TOWN_COLS = [2, 8, 14, 20];
 // Mirrors Terrain in PoMuleMap.cs.
 export const PLAINS = 0, RIVER = 1, MOUNTAIN = 2, CRATER = 3, TOWN = 4;
 
-// A town tile is three doors side by side: Outfitter, Pub, Assay Office.
+// Where on a town plot an AI colonist walks to for each errand (left, middle, right third).
 export const OUTFITTER = 0, PUB = 1, ASSAY = 2;
 
 /** Brings any x back onto the planet: leaving the east edge re-enters at the west. */
@@ -27,11 +27,6 @@ export function wrapDelta(from, to, width = WORLD_W) {
   return d;
 }
 
-/** Where a world x lands on screen for a camera centred on camX. Continuous across the seam. */
-export function screenX(worldX, camX, viewW, width = WORLD_W) {
-  return viewW / 2 + wrapDelta(camX, worldX, width);
-}
-
 export function tileAt(x, y) {
   const col = Math.floor(wrapX(x) / TILE);
   const row = Math.min(ROWS - 1, Math.max(0, Math.floor(y / TILE)));
@@ -40,26 +35,6 @@ export function tileAt(x, y) {
 
 export function tileCenter(index) {
   return { x: (index % COLS) * TILE + TILE / 2, y: Math.floor(index / COLS) * TILE + TILE / 2 };
-}
-
-/** Columns to draw for a view, left to right, with the screen x of each one's left edge. */
-export function visibleColumns(camX, viewW) {
-  const out = [];
-  const first = Math.floor((camX - viewW / 2) / TILE);
-  const last = Math.floor((camX + viewW / 2) / TILE);
-  for (let c = first; c <= last; c++) {
-    out.push({ col: ((c % COLS) + COLS) % COLS, x: viewW / 2 + (c * TILE - camX) });
-  }
-  return out;
-}
-
-/** The town building under a point, or null: { town, kind }. */
-export function buildingAt(x, y) {
-  const t = tileAt(x, y);
-  const town = TOWN_COLS.indexOf(t.col);
-  if (t.row !== TOWN_ROW || town < 0) return null;
-  const within = wrapX(x) - t.col * TILE;
-  return { town, kind: Math.min(2, Math.floor(within / (TILE / 3))) };
 }
 
 /** The point to walk to for a building of this kind in the town nearest to x. */

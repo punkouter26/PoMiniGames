@@ -218,6 +218,52 @@ public partial class StorageService
     public Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry, string? day = null) =>
         SaveHighScoreAsync(PoVoxelStrikeScores, entry, partition: PoVoxelStrikeDayPartition(day));
 
+    private static readonly HighScoreDescriptor<PoMuleHighScore> PoMuleScores = new(
+        Table: PoMuleTable,
+        Partition: PoMulePartition,
+        Sanitize: e => e with
+        {
+            PlayerName = DisplayName24(e.PlayerName),
+            UserId = e.UserId ?? "",
+            NetWorth = Math.Clamp(e.NetWorth, PoMuleHighScore.MinNetWorth, PoMuleHighScore.MaxNetWorth),
+            Species = e.Species ?? "",
+            AchievedAtUtc = e.AchievedAtUtc == default ? DateTimeOffset.UtcNow : e.AchievedAtUtc,
+        },
+        ToFields: e => new Dictionary<string, object?>
+        {
+            ["PlayerName"] = e.PlayerName,
+            ["UserId"] = e.UserId,
+            ["IsGuest"] = e.IsGuest,
+            ["NetWorth"] = e.NetWorth,
+            ["Species"] = e.Species,
+            ["ColonySurvived"] = e.ColonySurvived,
+            ["Date"] = e.AchievedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+        },
+        FromEntity: e => new PoMuleHighScore
+        {
+            PlayerName = e.GetString("PlayerName") ?? "",
+            UserId = e.GetString("UserId") ?? "",
+            IsGuest = e.GetBoolean("IsGuest") ?? true,
+            NetWorth = e.GetInt32("NetWorth") ?? 0,
+            Species = e.GetString("Species") ?? "",
+            ColonySurvived = e.GetBoolean("ColonySurvived") ?? false,
+            AchievedAtUtc = DateTimeOffset.TryParse(e.GetString("Date"), out var d) ? d : default,
+        },
+        // One row per player, never keyed on the score (same reasoning as PoVoxelStrikeScores).
+        RowKeyFields: ["PlayerName", "UserId", "IsGuest"],
+        Rank: s => s.OrderByDescending(x => x.NetWorth).ThenBy(x => x.AchievedAtUtc))
+    {
+        // Best-result ratchet: a later, poorer match must not erase a richer one.
+        ShouldOverwrite = (existing, incoming) =>
+            (incoming.TryGetValue("NetWorth", out var v) ? v as int? ?? 0 : 0) > (existing.GetInt32("NetWorth") ?? -1),
+    };
+
+    public Task<List<PoMuleHighScore>> GetPoMuleHighScoresAsync(int limit = 10) =>
+        GetHighScoresAsync(PoMuleScores, limit);
+
+    public Task<PoMuleHighScore> SavePoMuleHighScoreAsync(PoMuleHighScore entry) =>
+        SaveHighScoreAsync(PoMuleScores, entry);
+
     public Task<List<MarbleRaceHighScore>> GetMarbleRaceHighScoresAsync(int limit = 10) =>
         GetHighScoresAsync(MarbleRaceScores, limit);
 

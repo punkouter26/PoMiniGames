@@ -35,6 +35,7 @@ public partial class StorageService : IStorageService
     private const string PoSportsTable = "PoSportsHighScores";
     private const string PoVoxelStrikeTable = "PoVoxelStrikeHighScores";
     private const string PoCabinetTable = "PoCabinetHighScores";
+    private const string PoMuleTable = "PoMuleHighScores";
 
     // High scores share a single partition per game so a leaderboard is one partition scan.
     private const string MarbleRacePartition = "marblerace";
@@ -46,6 +47,7 @@ public partial class StorageService : IStorageService
     private const string PoSportsPartition = "posports";
     private const string PoVoxelStrikePartition = "povoxelstrike";
     private const string PoCabinetPartition = "pocabinet";
+    private const string PoMulePartition = "pomule";
 
     private readonly TableServiceClient _serviceClient;
     private readonly EloCalculator _eloCalculator;

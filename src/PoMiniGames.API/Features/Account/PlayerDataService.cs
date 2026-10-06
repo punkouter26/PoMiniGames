@@ -100,6 +100,7 @@ public sealed class PlayerDataService(
         new("PoSportsHighScores", ["posports"], ["PlayerName"]),
         // Every partition: the Daily Siege boards are one partition per day beside the main one.
         new("PoVoxelStrikeHighScores", null, ["PlayerName"]),
+        new("PoMuleHighScores", ["pomule"], ["PlayerName"]),
 
         // The ladder keeps one row per player keyed by sanitised name (see StorageService).
         new("PoBrawlLadder", ["pobrawlladder"], ["PlayerName", "PlayerInitials"], RowKeyIsName: true),

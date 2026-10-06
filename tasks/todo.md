@@ -43,7 +43,7 @@ in brackets; total 38 of the 40 new slots.
 - [x] **T10 Domain.** Files: `Domain/Primitives/GameKey.cs`, `Domain/Models/PoMuleHighScore.cs`,
   `Domain/Services/ScoreRules.cs`, `tests/…/Domain/ScoreRulesTests.cs` (rows only). [0]
   *Accept:* `GameKey.TryParse("pomule")` works; bounds 0 to 500,000, higher is better.
-- [ ] **T11 Storage.** Files: `IStorageService.cs`, `StorageService.cs`,
+- [x] **T11 Storage.** Files: `IStorageService.cs`, `StorageService.cs`,
   `StorageService.HighScores.cs`, `Features/Account/PlayerDataService.cs`,
   `tests/PoMiniGames.Integration/Features/PoMule/PoMuleHighScoreTests.cs`. *Accept:* save, read
   and best-score ratchet against Azurite (+2 integration methods → 48/50). *Deps:* T10.

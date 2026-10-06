@@ -104,6 +104,10 @@ public interface IStorageService
     Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10, string? day = null);
     Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry, string? day = null);
 
+    // PoMule High Scores (highest end-of-match Net Worth wins, one ratcheted row per player)
+    Task<List<PoMuleHighScore>> GetPoMuleHighScoresAsync(int limit = 10);
+    Task<PoMuleHighScore> SavePoMuleHighScoreAsync(PoMuleHighScore entry);
+
     // PoCabinet High Scores (lowest best-lap wins, partitioned by TrackId)
     Task<List<PoCabinetHighScore>> GetPoCabinetHighScoresAsync(int limit = 10, string? trackId = null);
     Task<PoCabinetHighScore> SavePoCabinetHighScoreAsync(PoCabinetHighScore entry);

@@ -53,7 +53,7 @@ in brackets; total 38 of the 40 new slots.
   PoMule (+1 method → 25/25). *Deps:* T11.
 - [x] **T13 Client API.** Files: `Client/Models/GameKey.cs`, `GameModels.cs`,
   `ApiJsonContext.cs`, `ApiService.cs`. *Accept:* builds trim-clean. *Deps:* T12.
-- [ ] **T14 Score sync.** Files: `PendingScore.cs`, `ScoreSyncService.cs`,
+- [x] **T14 Score sync.** Files: `PendingScore.cs`, `ScoreSyncService.cs`,
   `GameResultService.cs`. *Accept:* `RecordAndSubmitPoMuleAsync` parks when offline. *Deps:* T13.
 - [ ] **T15 JS world and physics.** Files: `js/pomule/world.js`, `js/pomule/physics.js`,
   `tests/pomule-world.test.mjs`, `tests/pomule-physics.test.mjs`. *Accept:* wrap, camera across

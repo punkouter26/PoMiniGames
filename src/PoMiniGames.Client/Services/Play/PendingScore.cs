@@ -11,6 +11,7 @@ public enum PendingScoreKind
     PoVoxelStrike,
     PoRacer,
     PoCabinet,
+    PoMule,
 }
 
 /// <summary>

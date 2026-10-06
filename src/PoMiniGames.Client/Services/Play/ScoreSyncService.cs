@@ -61,6 +61,9 @@ public sealed class ScoreSyncService
     public void EnqueuePoVoxelStrike(PoVoxelStrikeRunRequest entry) =>
         Enqueue(PendingScoreKind.PoVoxelStrike, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoVoxelStrikeRunRequest));
 
+    public void EnqueuePoMule(PoMuleRunRequest entry) =>
+        Enqueue(PendingScoreKind.PoMule, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoMuleRunRequest));
+
     public void EnqueuePoRacer(PoMiniGames.Shared.Games.PoRacerScoreDto entry) =>
         Enqueue(PendingScoreKind.PoRacer, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoRacerScoreDto));
 
@@ -168,6 +171,7 @@ public sealed class ScoreSyncService
         PendingScoreKind.PoSports => await SubmitPoSportsAsync(item.PayloadJson),
         PendingScoreKind.PoVoxelStrike => await SubmitPoVoxelStrikeAsync(item.PayloadJson),
         PendingScoreKind.PoCabinet => await SubmitPoCabinetAsync(item.PayloadJson),
+        PendingScoreKind.PoMule => await SubmitPoMuleAsync(item.PayloadJson),
         _ => Disposition.Drop, // unknown kind: drop rather than wedge the queue forever
     };
 
@@ -179,6 +183,14 @@ public sealed class ScoreSyncService
         return result.IsSaved ? Disposition.Synced
             : result.ShouldRetry ? Disposition.Retry
             : Disposition.Drop;
+    }
+
+    private async Task<Disposition> SubmitPoMuleAsync(string payloadJson)
+    {
+        var request = JsonSerializer.Deserialize(payloadJson, ApiJsonContext.Default.PoMuleRunRequest);
+        if (request is null) return Disposition.Drop;
+        var result = await _api.SubmitPoMuleRunAsync(request);
+        return result.IsSaved ? Disposition.Synced : result.ShouldRetry ? Disposition.Retry : Disposition.Drop;
     }
 
     private async Task<Disposition> SubmitPoRacerAsync(string payloadJson)

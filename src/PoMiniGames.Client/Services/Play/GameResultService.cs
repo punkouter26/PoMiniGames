@@ -257,6 +257,26 @@ public sealed class GameResultService
             },
             () => _sync.EnqueuePoVoxelStrike(run!));
 
+    /// <summary>
+    /// Records a finished PoMule match locally and posts its Net Worth. Offline or a server
+    /// error parks the score for later; <paramref name="onNewBest"/> fires only when the
+    /// server confirms this match is now the player's best.
+    /// </summary>
+    public Task<PlayerStats> RecordAndSubmitPoMuleAsync(
+        string playerName, GameResult result, PoMuleRunRequest run, Action<bool>? onNewBest = null) =>
+        RecordAndSubmitCoreAsync("pomule", playerName, result, true,
+            async () =>
+            {
+                var submitted = await _api.SubmitPoMuleRunAsync(run);
+                if (submitted.IsSaved)
+                {
+                    onNewBest?.Invoke(submitted.Value is { } saved && saved.NetWorth == run.NetWorth);
+                    return SubmitOutcome.Saved;
+                }
+                return submitted.ShouldRetry ? SubmitOutcome.Park : SubmitOutcome.Rejected;
+            },
+            () => _sync.EnqueuePoMule(run));
+
     /// <summary>Records the PoBrawl outcome locally and submits the fastest-KO score together.</summary>
     /// <remarks>The PoBrawl submit API only signals reachability (null response), so a
     /// failure always parks for replay — there is no explicit-rejection path here.</remarks>

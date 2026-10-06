@@ -1,0 +1,88 @@
+@namespace PoMiniGamesClient.Games.PoMule
+@using PoMiniGames.Shared.Games.PoMule
+
+@* Phase 6 of every month, and the final results: who is worth what, how each colonist's
+   Net Worth has moved, and whether the colony as a whole is holding together. *@
+<div class="pm-standings" role="dialog" aria-label="Monthly standings">
+    <RadzenCard Variant="Variant.Filled" class="pm-standings-card">
+        <div class="pm-standings-head">
+            <div class="pm-standings-title">@(Final ? "Final results" : $"Month {State.Month} standings")</div>
+            <RadzenBadge BadgeStyle="@(Survives ? BadgeStyle.Success : BadgeStyle.Danger)"
+                         Text="@ColonyLine" />
+        </div>
+
+        <div class="pm-standings-body">
+            <RadzenDataGrid Data="@Rows" TItem="PoMuleRow" Density="Density.Compact" AllowSorting="false" AllowPaging="false">
+                <Columns>
+                    <RadzenDataGridColumn TItem="PoMuleRow" Title="#" Width="40px">
+                        <Template Context="r">@r.Rank</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="PoMuleRow" Title="Colonist">
+                        <Template Context="r">
+                            <span class="pm-dot" style="background: @r.Color"></span>
+                            <span>@r.Name</span>
+                            @if (Final && r.Rank == 1)
+                            {
+                                <RadzenBadge BadgeStyle="BadgeStyle.Warning" Text="First Founder" class="rz-ml-2" />
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="PoMuleRow" Title="Species" Width="150px">
+                        <Template Context="r">@r.SpeciesName</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="PoMuleRow" Title="Plots" Width="60px" TextAlign="TextAlign.Right">
+                        <Template Context="r">@r.Plots</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="PoMuleRow" Title="Net Worth" Width="110px" TextAlign="TextAlign.Right">
+                        <Template Context="r"><strong>@r.NetWorth.ToString("N0")</strong></Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+
+            @if (State.History.Count > 1)
+            {
+                <RadzenChart Style="height: 220px">
+                    @foreach (var p in State.Players)
+                    {
+                        var seat = p.Seat;
+                        <RadzenLineSeries Data="@Line(seat)" CategoryProperty="Month" ValueProperty="Worth" Title="@p.Name"
+                                          Stroke="@PoMuleUi.SeatColors[seat]" StrokeWidth="@(seat == 0 ? 4 : 2)" />
+                    }
+                    <RadzenCategoryAxis Step="1" />
+                    <RadzenValueAxis>
+                        <RadzenGridLines Visible="true" />
+                    </RadzenValueAxis>
+                    <RadzenLegend Visible="false" />
+                </RadzenChart>
+            }
+        </div>
+
+        @if (!Final && CanContinue)
+        {
+            <div class="pm-standings-actions">
+                <RadzenButton Text="Next month" ButtonStyle="ButtonStyle.Warning" Click="@(_ => OnContinue.InvokeAsync())" />
+                <span class="pm-auction-hint">or press Space</span>
+            </div>
+        }
+    </RadzenCard>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MatchState State { get; set; } = null!;
+    [Parameter, EditorRequired] public List<PoMuleRow> Rows { get; set; } = [];
+    [Parameter] public bool Final { get; set; }
+    [Parameter] public bool CanContinue { get; set; }
+    [Parameter] public EventCallback OnContinue { get; set; }
+
+    // Mid-match the wealth target is still ahead; only the crisis count can already be lost.
+    private bool Survives => Final
+        ? PoMuleScoring.ColonySurvives(Rows.Sum(r => r.NetWorth), State.CrisisMonths)
+        : State.CrisisMonths <= PoMuleTuning.MaxCrisisMonths;
+
+    private string ColonyLine => Final
+        ? (Survives ? "The colony survives" : "The colony collapsed")
+        : $"Crisis months: {State.CrisisMonths} of {PoMuleTuning.MaxCrisisMonths} allowed";
+
+    private IEnumerable<WorthPoint> Line(int seat) =>
+        State.History.Select((worths, i) => new WorthPoint(i + 1, worths[seat]));
+}

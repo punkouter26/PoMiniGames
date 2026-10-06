@@ -103,6 +103,9 @@ public sealed class PoMuleMatch(MatchState state)
                 var awarded = PoMuleLand.Grant(State, State.LandPicks);
                 for (var seat = 0; seat < awarded.Length; seat++)
                     if (awarded[seat] >= 0) Notices.Add(new Notice(NoticeKind.LandGranted, seat, awarded[seat]));
+                // Cleared here, not when the next grant begins: the player may already be
+                // pointing at a plot before that phase's first tick.
+                Array.Fill(State.LandPicks, -1);
                 Go(PoMuleLand.IsAuctionMonth(State.Month) ? Phase.Auction : Phase.Development);
                 break;
             case Phase.Auction: StepAuction(); break;
@@ -141,7 +144,7 @@ public sealed class PoMuleMatch(MatchState state)
                 }
                 State.ClockTicks = PoMuleTuning.LandSeconds * PoMuleTuning.TicksPerSecond;
                 for (var seat = 0; seat < State.LandPicks.Length; seat++)
-                    State.LandPicks[seat] = IsAi(seat) ? PoMuleAi.PickLand(State, seat) : -1;
+                    if (IsAi(seat)) State.LandPicks[seat] = PoMuleAi.PickLand(State, seat);
                 break;
 
             case Phase.Auction:
@@ -346,14 +349,15 @@ public sealed class PoMuleMatch(MatchState state)
 
     // ── Renderer feed ──
 
-    public const int SnapshotHeader = 8;
-    public const int SnapshotPerSeat = 14;
+    public const int SnapshotHeader = 10;
+    public const int SnapshotPerSeat = 15;
 
     /// <summary>
     /// Everything the renderer and HUD need each tick, as one flat array (one interop
     /// transfer). Header: month, phase, clock ticks, market good, auction plot, high bid, high
-    /// bidder, last event. Then per seat: cash, the four goods, speed %, has M.U.L.E., outfit,
-    /// in pub, lane role, lane price, goal kind, goal target, goal good.
+    /// bidder, last event, market floor price, Store M.U.L.E.s. Then per seat: cash, the four
+    /// goods, speed %, has M.U.L.E., outfit, in pub, lane role, lane price, goal kind, goal
+    /// target, goal good, land pick.
     /// </summary>
     public double[] Snapshot()
     {
@@ -367,6 +371,8 @@ public sealed class PoMuleMatch(MatchState state)
         data[5] = s.HighBid;
         data[6] = s.HighBidder;
         data[7] = (int)s.LastEvent;
+        data[8] = s.MarketGood == MatchState.Nobody ? 0 : PoMuleMarket.Floor(s, (Good)s.MarketGood);
+        data[9] = s.Store.Mules;
         foreach (var p in s.Players)
         {
             var o = SnapshotHeader + p.Seat * SnapshotPerSeat;
@@ -381,6 +387,7 @@ public sealed class PoMuleMatch(MatchState state)
             data[o + 11] = (int)Goals[p.Seat].Kind;
             data[o + 12] = Goals[p.Seat].Target;
             data[o + 13] = (int)Goals[p.Seat].Good;
+            data[o + 14] = s.LandPicks[p.Seat];
         }
         return data;
     }

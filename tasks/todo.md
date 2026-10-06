@@ -59,25 +59,25 @@ in brackets; total 38 of the 40 new slots.
   `tests/pomule-world.test.mjs`, `tests/pomule-physics.test.mjs`. *Accept:* wrap, camera across
   the seam, mass-based push, Bonz never displaced, tether snap. *Verify:* `node --test
   tests/pomule-*.test.mjs`. *Deps:* T2.
-- [ ] **T16 Page shell.** Files: `Games/PoMule/PoMulePage.razor`, `.razor.cs`, `.razor.css`,
+- [x] **T16 Page shell.** Files: `Games/PoMule/PoMulePage.razor`, `.razor.cs`, `.razor.css`,
   `Models/GameCatalog.cs` (1 Player only), `js/pomule/index.js` (+ `engineLoader.js` and
   `MainLayout.razor` one-line entries). *Accept:* `/pomule/1player` shows the start card with
   a Radzen species picker; map draws and scrolls across the seam; leaving the page removes
   Radzen CSS. Screenshot. *Deps:* T1, T9, T14, T15, Phase 3.
-- [ ] **T17 Development live.** Files: `js/pomule/index.js`, `js/pomule/avatars.js`,
+- [x] **T17 Development live.** Files: `js/pomule/index.js`, `js/pomule/avatars.js`,
   `PoMulePage.razor.cs`, `Games/PoMule/PoMuleHud.razor` (+ css). *Accept:* 8 avatars move at
   once; buying, installing, pub and runaways work by hand; HUD banners, timer and
   announcement bar update. *Deps:* T16.
-- [ ] **T18 Land UI.** Files: `js/pomule/land.js`, `Games/PoMule/PoMuleAuction.razor`,
+- [x] **T18 Land UI.** Files: `js/pomule/land.js`, `Games/PoMule/PoMuleAuction.razor`,
   `PoMulePage.razor.cs`. *Accept:* 8 cursors, 10 s grant, auction bids. *Deps:* T17.
-- [ ] **T19 Market UI.** Files: `js/pomule/market.js`, `PoMulePage.razor.cs`. *Accept:* 8
+- [x] **T19 Market UI.** Files: `js/pomule/market.js`, `PoMulePage.razor.cs`. *Accept:* 8
   lanes, Store in the middle, trades visible. Screenshot. *Deps:* T18.
-- [ ] **T20 Standings, submit, resume.** Files: `Games/PoMule/PoMuleStandings.razor`,
+- [x] **T20 Standings, submit, resume.** Files: `Games/PoMule/PoMuleStandings.razor`,
   `Games/PoMule/PoMuleSaveStore.cs`, `PoMulePage.razor.cs`, `Program.cs`. *Accept:* grid and
   chart each month; score on the board after month 12; reload offers Continue. *Deps:* T19.
-- [ ] **T21 Touch.** Files: `js/pomule/touch.js`, `PoMulePage.razor.css`, `js/pomule/index.js`.
+- [x] **T21 Touch.** Files: `js/pomule/touch.js`, `PoMulePage.razor.css`, `js/pomule/index.js`.
   *Accept:* stick, action and dash on coarse pointers; rotate prompt in portrait. *Deps:* T17.
-- [ ] **T22 Demo and reel.** Files: `PoMulePage.razor.cs`, `Models/GameCatalog.cs` (Demo mode
+- [x] **T22 Demo and reel.** Files: `PoMulePage.razor.cs`, `Models/GameCatalog.cs` (Demo mode
   and reel array), `Pages/Index.razor.css` (grid for 16 cells),
   `tests/PoMiniGames.E2EUI/PoMuleUiTests.cs`. *Accept:* `/pomule/demo` plays 12 months in 5–8
   min with no score post; `Kiosk.MarkFinished()` at the end; 2 Playwright methods (→ 25/25).
@@ -87,3 +87,8 @@ in brackets; total 38 of the 40 new slots.
   `LeaderboardsPage.razor`. *Accept:* `css-lint.ps1` passes. *Deps:* T22.
 
 Blast radius: only the files listed. Anything else needed is raised first.
+
+Build notes for T16–T22: the page work landed as one commit because the pieces only run together.
+The renderer is `index.js` (loop, input, interop), `render.js` (map, avatars, trading floor,
+panorama) and `touch.js`; the planned `avatars.js`, `land.js` and `market.js` were folded into
+`render.js`. Client-side row types and the save store share `PoMuleSaveStore.cs`.

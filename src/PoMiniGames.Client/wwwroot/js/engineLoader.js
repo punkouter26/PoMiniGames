@@ -32,6 +32,7 @@ const REGISTRY = {
     posports: ['js/posports/index.js', 'PoSports'],
     poracer: ['js/poracer/index.js', 'PoRacer'],
     povoxelstrike: ['js/povoxelstrike/index.js', 'PoVoxelStrike'],
+    pomule: ['js/pomule/index.js', 'PoMule'],
     poecosystem: ['js/poecosystem/index.js', 'PoEcosystem'],
     // ConnectFive physics. matter.js drives the disc drop + chain-reaction
     // collision with existing discs in the same column; the CSS keyframe drop

@@ -122,7 +122,11 @@ public sealed class PoMuleMatchTests
     {
         var match = PoMuleMatch.New(seed: 8, humanSpecies: Species.Humanoid);
         var state = match.State;
+        // The player can point at a plot before the land phase has ticked even once.
+        state.LandPicks[0] = PoMuleMap.Index(5, 6);
         while (state.Phase != Phase.Development) match.Advance(1);
+        state.Owner.Count(o => o == 0).Should().Be(1, "a pick made in the first instant still counts");
+        state.LandPicks.Should().OnlyContain(p => p == -1, "picks do not carry into next month");
         match.Advance(1);
         var ai = state.Players.First(p => p.Archetype == Archetype.Farmer).Seat;
         var plot = Array.IndexOf(state.Owner, (sbyte)ai);

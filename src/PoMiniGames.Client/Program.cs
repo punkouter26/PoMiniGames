@@ -133,6 +133,7 @@ builder.Services.AddBlazoredLocalStorage();
 // Radzen dialog / notification / tooltip services. Only PoMule uses them so far; its
 // page loads the Radzen stylesheet itself so the other games keep their plain CSS.
 builder.Services.AddRadzenComponents();
+builder.Services.AddScoped<PoMiniGamesClient.Games.PoMule.PoMuleSaveStore>();
 // Viewport-width helper so leaderboards can render
 // top-3 on mobile and top-10 on desktop without a JS-only media query.
 builder.Services.AddScoped<BrowserViewport>();

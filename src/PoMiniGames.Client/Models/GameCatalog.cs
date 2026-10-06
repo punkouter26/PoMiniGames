@@ -172,6 +172,14 @@ public static class GameCatalog
             new(GameMode.Demo, "/povoxelstrike/demo"),
         ]),
 
+        // PoMule runs entirely in the browser (rules in PoMiniGames.Shared); only the final
+        // score needs the server, and that parks offline like every other board.
+        new(GameKeys.PoMule, "Mule", "🫏",
+        [
+            new(GameMode.OnePlayer, "/pomule/1player"),
+            new(GameMode.Demo, "/pomule/demo"),
+        ]),
+
         // Joker's set is fetched from a joke API mid-performance in every mode — there
         // is no offline joke bank to fall back on.
         new(GameKeys.PoJoker, "Joker", "🃏",
@@ -258,7 +266,7 @@ public static class GameCatalog
         {
             GameKeys.TicTacToe, GameKeys.ConnectFive, GameKeys.PoRacer, GameKeys.PoMarbleRace,
             GameKeys.PoVoxelStrike, GameKeys.PoJoker, GameKeys.PoBrawl, GameKeys.PoSports,
-            GameKeys.PoCabinet, GameKeys.PoEcosystem, GameKeys.SandPlayground,
+            GameKeys.PoCabinet, GameKeys.PoMule, GameKeys.PoEcosystem, GameKeys.SandPlayground,
         }
         .Select(key => All.First(g => g.Key == key))
         .Select(g =>

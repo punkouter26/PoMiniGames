@@ -88,11 +88,15 @@ public sealed class PoMuleMarketTests
         inputs[1] = +1;
         Enumerable.Range(0, 20).SelectMany(_ => PoMuleMarket.Tick(match, inputs)).Should().BeEmpty();
 
-        // Back together, the seller sells out and trading stops on an empty crate stack.
+        // Back together, the seller sells what it can spare and no more: the crates it needs
+        // for next month are not on the floor, however long a buyer stands there.
         match.LanePrice[1] = 46;
         var rest = Enumerable.Range(0, 40).SelectMany(_ => PoMuleMarket.Tick(match, Still)).ToList();
-        rest.Should().HaveCount(4);
-        Food(match, 1).Should().Be(0);
+        rest.Should().HaveCount(1);
+        Food(match, 1).Should().Be(PoMuleTuning.FoodNeed(2));
+        // Not to the Store either.
+        match.LanePrice[1] = PoMuleMarket.Floor(match, Good.Food);
+        Enumerable.Range(0, 20).SelectMany(_ => PoMuleMarket.Tick(match, Still)).Should().BeEmpty();
     }
 
     [Fact]

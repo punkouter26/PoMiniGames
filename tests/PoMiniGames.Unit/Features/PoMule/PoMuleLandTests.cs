@@ -89,6 +89,7 @@ public sealed class PoMuleLandTests
         plots.Should().OnlyContain(p => match.Owner[p] == MatchState.Nobody && match.Map.Plots[p].Terrain != Terrain.Town);
 
         PoMuleLand.OpenAuction(match, plots[0]);
+        PoMuleLand.NextBid(match).Should().Be(PoMuleTuning.AuctionOpeningBid);
         match.Players[1].Cash = 500;
         match.Players[2].Cash = 200;
 
@@ -98,6 +99,8 @@ public sealed class PoMuleLandTests
         PoMuleLand.Bid(match, seat: 2, 201).Should().BeFalse("more than seat 2 owns");
         PoMuleLand.Bid(match, seat: 2, 190).Should().BeTrue();
         PoMuleLand.Bid(match, seat: 1, 240).Should().BeTrue();
+        PoMuleLand.Bid(match, seat: 1, 250).Should().BeFalse("nobody raises their own standing bid");
+        PoMuleLand.NextBid(match).Should().Be(250);
 
         PoMuleLand.CloseAuction(match).Should().Be(1);
         match.Owner[plots[0]].Should().Be((sbyte)1);

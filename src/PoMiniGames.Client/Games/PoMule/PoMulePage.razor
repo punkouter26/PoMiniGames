@@ -30,7 +30,7 @@
         @if (_stage == Stage.Intro && _radzenReady)
         {
             <GameIntro CueScope="pomule"
-                       Title=@TitleContent
+                       Title=@LogoContent
                        Objective="Twelve months on planet Irata. Claim land, put M.U.L.E.s to work, trade on the floor. Richest colonist wins, if the colony survives."
                        Controls=@ControlsContent
                        Options="@(_demo ? null : SpeciesPicker)"
@@ -79,13 +79,27 @@
                         </div>
                     </div>
 
-                    @if (!_demo)
+                    @if (_demo)
+                    {
+                        <div class="pm-speed">
+                            <span class="pm-hint">Speed</span>
+                            <RadzenSelectBar TValue="int" Value="@_demoSpeed" Change="@(v => SetDemoSpeedAsync(v))" Size="ButtonSize.Small">
+                                <Items>
+                                    @foreach (var speed in DemoSpeeds)
+                                    {
+                                        <RadzenSelectBarItem Text="@(speed + "×")" Value="speed" />
+                                    }
+                                </Items>
+                            </RadzenSelectBar>
+                        </div>
+                    }
+                    else
                     {
                         <div class="pm-context">
                             @switch (state.Phase)
                             {
                                 case Phase.Land:
-                                    <span class="pm-hint">Move the cursor to a plot. When the clock stops you get it, or the nearest free one if someone else wanted it too.</span>
+                                    <span class="pm-hint">@(match.HasClaimed(0) ? "Plot claimed. The others are still choosing." : "The highlighter sweeps the planet row by row. Press Space (or Act) when it is on the plot you want.")</span>
                                     break;
 
                                 case Phase.Development when me.SpeedPercent == 0:
@@ -180,10 +194,13 @@
 @code {
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoMule);
 
+    // The start card's heading, after the Atari title screen.
+    private RenderFragment LogoContent => @<span class="pm-logo" aria-label="M.U.L.E.">M.U.L.E.</span>;
+
     private RenderFragment ControlsContent => @<div>
-        <p class="keys-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows move · <kbd>Space</kbd> acts (buy, install, bid, enter) · <kbd>Shift</kbd> dashes · <kbd>1</kbd>–<kbd>4</kbd> pick an outfit.</p>
-        <p class="touch-only">Stick moves · <strong>Act</strong> buys, installs, bids and enters · <strong>Dash</strong> sprints.</p>
-        <p>Each month: claim a plot, buy a M.U.L.E. at a town and install it on your land, then sell what you can spare. A dash-speed bump makes a towed M.U.L.E. bolt.</p>
+        <p class="keys-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows move · <kbd>Space</kbd> acts (claim, buy, install, bid, enter) · <kbd>Shift</kbd> dashes · <kbd>1</kbd>–<kbd>4</kbd> pick an outfit.</p>
+        <p class="touch-only">Stick moves · <strong>Act</strong> claims, buys, installs, bids and enters · <strong>Dash</strong> sprints.</p>
+        <p>Each month: press when the highlighter is on the plot you want, buy a M.U.L.E. at a town and install it on your land, then sell what you can spare. A dash-speed bump makes a towed M.U.L.E. bolt.</p>
     </div>;
 
     private RenderFragment SpeciesPicker => @<div class="pm-species">
@@ -206,14 +223,5 @@
         </RadzenDataList>
     </div>;
 
-    private RenderFragment EndSummary => @<div>
-        @if (_match is { } match)
-        {
-            <p>@_endLine</p>
-            @if (_newBest)
-            {
-                <p><strong>New personal best!</strong></p>
-            }
-        }
-    </div>;
+    private RenderFragment EndSummary => @<p>@_endLine</p>;
 }

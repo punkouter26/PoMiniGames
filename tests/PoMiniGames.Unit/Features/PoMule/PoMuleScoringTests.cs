@@ -59,9 +59,9 @@ public sealed class PoMuleScoringTests
 
     [Theory]
     [InlineData(60_000, 0, true)]
-    [InlineData(60_000, 3, true)]
+    [InlineData(60_000, 1, true)]
     [InlineData(59_999, 0, false)]
-    [InlineData(90_000, 4, false)]
+    [InlineData(90_000, 2, false)]
     public void Colony_SurvivesOnlyWithEnoughCombinedWealth_AndFewCrisisMonths(int combined, int crisisMonths, bool survives) =>
         PoMuleScoring.ColonySurvives(combined, crisisMonths).Should().Be(survives);
 }

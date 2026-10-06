@@ -118,15 +118,54 @@ public sealed class PoMuleMatchTests
     }
 
     [Fact]
+    public void TheLandGrant_SweepsAHighlighterRowByRow_AndGivesThePlotToWhoeverPressesOnIt()
+    {
+        var match = PoMuleMatch.New(seed: 8, humanSpecies: Species.Humanoid);
+        var state = match.State;
+        match.Advance(1);
+        state.Phase.Should().Be(Phase.Land);
+
+        // Top left first, then along the row and down, never backwards, skipping towns and owned plots.
+        var visited = new List<int>();
+        var wanted = -1;
+        while (state.Phase == Phase.Land)
+        {
+            var cursor = state.LandCursor;
+            if (cursor >= 0 && (visited.Count == 0 || visited[^1] != cursor)) visited.Add(cursor);
+            // Row 3 has the towns; the player waits for the first plot of row 4 and presses there.
+            if (cursor >= PoMuleMap.Index(0, 4) && wanted < 0 && !match.HasClaimed(0))
+            {
+                wanted = cursor;
+                state.LandPicks[0] = cursor;
+            }
+            match.Advance(1);
+        }
+
+        visited[0].Should().Be(0, "the sweep starts at the top left");
+        visited.Should().BeInAscendingOrder("left to right along a row, then the next row down");
+        visited.Should().OnlyContain(i => state.Map.Plots[i].Terrain != Terrain.Town);
+        visited.Zip(visited.Skip(1), (a, b) => b - a).Take(20).Should().OnlyContain(step => step >= 1 && step <= 3,
+            "it moves one plot at a time, hopping only over plots that cannot be claimed");
+        state.Owner[wanted].Should().Be((sbyte)0, "pressing while a plot is lit claims it");
+        state.Owner.Count(o => o == 0).Should().Be(1, "one plot a month");
+        state.Owner.Count(o => o != MatchState.Nobody).Should().Be(PoMuleTuning.Seats, "every AI pressed on the plot it was waiting for");
+        (state.LandCursor, state.LandPicks.All(p => p == -1)).Should().Be((-1, true), "nothing carries into next month");
+
+        // A press on a plot the highlighter left more than a step ago is too late.
+        var late = PoMuleMatch.New(seed: 8, humanSpecies: Species.Humanoid);
+        late.Advance(1);
+        while (late.State.LandCursor < 12) late.Advance(1);
+        late.State.LandPicks[0] = 2;
+        late.Advance(1);
+        late.State.Owner[2].Should().NotBe((sbyte)0);
+    }
+
+    [Fact]
     public void WithARenderer_TheMatchWaitsForArrivals_AndFeedsOneFlatSnapshot()
     {
         var match = PoMuleMatch.New(seed: 8, humanSpecies: Species.Humanoid);
         var state = match.State;
-        // The player can point at a plot before the land phase has ticked even once.
-        state.LandPicks[0] = PoMuleMap.Index(5, 6);
         while (state.Phase != Phase.Development) match.Advance(1);
-        state.Owner.Count(o => o == 0).Should().Be(1, "a pick made in the first instant still counts");
-        state.LandPicks.Should().OnlyContain(p => p == -1, "picks do not carry into next month");
         match.Advance(1);
         var ai = state.Players.First(p => p.Archetype == Archetype.Farmer).Seat;
         var plot = Array.IndexOf(state.Owner, (sbyte)ai);

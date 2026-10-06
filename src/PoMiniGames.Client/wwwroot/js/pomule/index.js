@@ -11,7 +11,7 @@ import { drawWorld, drawMarket, drawPanorama, STRIP_H } from './render.js';
 import { buildTouchControls, isTouchDevice } from './touch.js';
 
 const TICK = 0.1;
-const HEADER = 10, PER = 15;
+const HEADER = 11, PER = 15;
 const LAND = 0, AUCTION = 1, DEVELOP = 2, MARKET = 5, STANDINGS = 6, FINISHED = 7;
 const GOAL_OUTFITTER = 1, GOAL_INSTALL = 2, GOAL_ASSAY = 3, GOAL_SURVEY = 4, GOAL_PUB = 5, GOAL_CHASE = 6;
 const RADZEN_CSS_ID = 'pomule-radzen-css';
@@ -161,8 +161,7 @@ function followCamera(dt) {
     const lead = g.human ? g.avatars[0] : g.avatars.find((a) => !a.out) ?? g.avatars[0];
     target = lead.x;
   } else if (g.phase === AUCTION && g.snap[4] >= 0) target = W.tileCenter(g.snap[4]).x;
-  else if (g.phase === LAND && g.human) target = g.cursor.col * W.TILE + W.TILE / 2;
-  else if (g.phase === LAND) target = g.cam.x + 60 * dt;
+  else if (g.phase === LAND && g.snap[10] >= 0) target = W.tileCenter(g.snap[10]).x; // follow the highlighter
   g.cam.x = W.wrapX(g.cam.x + W.wrapDelta(g.cam.x, target) * Math.min(1, dt * 6));
 }
 
@@ -172,11 +171,10 @@ function onSnapshot(snap) {
   g.phase = snap[1];
   if (g.phase === before) return;
   if (g.phase === DEVELOP) placeAvatars();
-  if (g.phase === LAND && g.human) {
-    const t = W.tileAt(g.cam.x, W.WORLD_H / 2);
-    g.cursor = { col: t.col, row: t.row };
-  }
+  // The engine zeroes the player's market direction when a market opens; start level and
+  // resend if a key is already down.
   g.marketDir = 0;
+  sendMarketDir();
   g.trades = [];
 }
 
@@ -191,8 +189,6 @@ function frame(now) {
     const gameDt = dt * g.speed;
     g.time += dt;
     if (g.phase === DEVELOP) for (let left = gameDt; left > 0; left -= 0.05) simulate(Math.min(0.05, left));
-    // Holding a direction (or the touch stick) walks the land cursor; key repeat is ignored.
-    if (g.phase === LAND && g.human && (g.cursorWait -= dt) <= 0) { g.cursorWait = 0.12; moveCursor(); }
     followCamera(dt);
     for (const t of g.trades) t.life -= dt;
     g.trades = g.trades.filter((t) => t.life > 0);
@@ -218,16 +214,19 @@ function frame(now) {
 
 function onKeyDown(e) {
   if (!g || e.target?.closest?.('input, textarea, select')) return;
+  // A focused button or link owns Space: on the Bid button it must be one bid, not the
+  // button's click plus this handler's. Movement keys still work from there.
   const move = MOVE_KEYS[e.code];
+  if (e.code === 'Space' && e.target?.closest?.('button, a')) return;
   if (move || e.code === 'Space') e.preventDefault();
   if (g.paused || !g.human) return;
 
   if (!e.repeat) {
     g.keys.add(e.code);
-    if (move && g.phase === LAND) { moveCursor(); g.cursorWait = 0.3; }
     const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(e.code);
-    if (e.code === 'Space' || e.code === 'Enter') {
-      if (g.phase === LAND) call('OnLandPick', g.cursor.row * W.COLS + g.cursor.col);
+    if (e.code === 'Space') {
+      // Land grant: claim the plot the highlighter is on, as drawn on this screen.
+      if (g.phase === LAND) { if (g.snap[10] >= 0) call('OnLandPick', g.snap[10]); }
       else if (g.phase === AUCTION) call('OnBid');
       else if (g.phase === DEVELOP) call('OnAction', 0);
       else if (g.phase === STANDINGS) call('OnSkip');
@@ -236,18 +235,16 @@ function onKeyDown(e) {
   sendMarketDir();
 }
 
-/** Steps the land cursor one tile in the held direction and tells the engine where it points. */
-function moveCursor() {
-  const { dx, dy } = humanInput();
-  if (!dx && !dy) return;
-  g.cursor.col = (g.cursor.col + dx + W.COLS) % W.COLS;
-  g.cursor.row = Math.min(W.ROWS - 1, Math.max(0, g.cursor.row + dy));
-  call('OnLandPick', g.cursor.row * W.COLS + g.cursor.col);
-}
-
 function onKeyUp(e) {
   if (!g) return;
   g.keys.delete(e.code);
+  sendMarketDir();
+}
+
+/** The window lost focus: no keyup will arrive for whatever was held, so let go of it all. */
+function onBlur() {
+  if (!g) return;
+  g.keys.clear();
   sendMarketDir();
 }
 
@@ -279,9 +276,9 @@ window.PoMule = {
       owner: new Array(plots).fill(-1), installed: new Array(plots).fill(-1), crystite: new Array(plots).fill(0),
       human: !!opts.human, speed: opts.speed || 1, seats: opts.species.length,
       snap: opts.snapshot, phase: -1, time: 0, acc: 0, pending: 0, busy: false, running: true, paused: false,
-      keys: new Set(), cam: { x: W.TOWN_COLS[0] * W.TILE }, cursor: { col: W.TOWN_COLS[0], row: 2 },
+      keys: new Set(), cam: { x: W.TILE / 2 },
       avatars: opts.species.map((species, seat) => ({ seat, species, mass: P.massOf(species), x: 0, y: 0, facing: 1, out: false })),
-      runaways: [], trades: [], where: '', marketDir: 0, cursorWait: 0, touch: false, removeTouch: null,
+      runaways: [], trades: [], where: '', marketDir: 0, touch: false, removeTouch: null,
       seat(seat, field) { return this.snap[HEADER + seat * PER + field]; },
     };
     placeAvatars();
@@ -291,6 +288,7 @@ window.PoMule = {
     window.addEventListener('resize', g.onResize);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
     if (g.human && isTouchDevice()) {
       g.touch = true;
       g.removeTouch = buildTouchControls(host);
@@ -306,6 +304,11 @@ window.PoMule = {
     g.owner = owner;
     g.installed = installed;
     g.crystite = crystite;
+  },
+
+  /** How many times faster than real time the match runs (the demo's speed buttons). */
+  setSpeed(speed) {
+    if (g) g.speed = Math.min(16, Math.max(1, speed));
   },
 
   /** A M.U.L.E. bolts from this seat's avatar and runs off. */
@@ -328,6 +331,7 @@ window.PoMule = {
     window.removeEventListener('resize', g.onResize);
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);
+    window.removeEventListener('blur', onBlur);
     g.removeTouch?.();
     g.canvas.remove();
     g = null;

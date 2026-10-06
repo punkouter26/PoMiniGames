@@ -162,7 +162,7 @@ public sealed class PoMuleAiTests
             }
 
         match.HighBidder.Should().Be((sbyte)Ai);
-        match.HighBid.Should().BeInRange(290, 600, "the Farmer drops out at 30% of its cash; the Speculator would go to 60%");
+        match.HighBid.Should().BeInRange(290, 600, "the Farmer drops out at 30% of its cash; the Speculator would go to 42%");
         PoMuleAi.AuctionBid(match, Ai).Should().Be(0, "it does not bid against itself");
 
         match.Players[2].Cash = 100;

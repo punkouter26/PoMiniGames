@@ -58,6 +58,7 @@ public static class PoMuleDevelopment
     {
         var player = match.Players[seat];
         if (!CanAct(match, seat) || !player.HasMule) return Outcome.NotAllowed;
+        if (player.Outfit == (sbyte)good) return Outcome.Ok; // already wearing it: nothing to pay for
         var cost = PoMuleTuning.OutfitCost[(int)good];
         if (player.Cash < cost) return Outcome.NoCash;
 
@@ -101,6 +102,11 @@ public static class PoMuleDevelopment
         return true;
     }
 
+    /// <summary>What the Pub would pay a colonist who walked in right now.</summary>
+    public static int PubPayout(MatchState match) => Math.Min(
+        PoMuleTuning.PubCap,
+        Math.Max(0, match.ClockTicks) / PoMuleTuning.TicksPerSecond * (3 + match.Month));
+
     /// <summary>Cashes out for the rest of the month.</summary>
     /// <returns>Credits paid: more the earlier the colonist quits, and more in later months.</returns>
     public static int EnterPub(MatchState match, int seat)
@@ -108,8 +114,7 @@ public static class PoMuleDevelopment
         var player = match.Players[seat];
         if (player.InPub || player.SpeedPercent == 0) return 0;
 
-        var secondsLeft = Math.Max(0, match.ClockTicks) / PoMuleTuning.TicksPerSecond;
-        var payout = Math.Min(PoMuleTuning.PubCap, secondsLeft * (3 + match.Month));
+        var payout = PubPayout(match);
         player.Cash += payout;
         player.InPub = true;
         LoseMule(player); // a M.U.L.E. left outside the pub wanders off

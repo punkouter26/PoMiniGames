@@ -75,7 +75,13 @@ public sealed class MatchState
     /// <summary>Months in which the colony as a whole was short of Food or Energy.</summary>
     public int CrisisMonths { get; set; }
 
-    /// <summary>Where each seat's land-grant cursor is pointing, or -1.</summary>
+    /// <summary>The plot the land-grant highlighter is on, or -1 outside that phase.</summary>
+    public int LandCursor { get; set; } = -1;
+
+    /// <summary>
+    /// Land grant: for an AI, the plot it is waiting for; for the player, the plot they just
+    /// pressed the button on (consumed on the next tick). -1 = none.
+    /// </summary>
     public int[] LandPicks { get; set; } = Enumerable.Repeat(-1, PoMuleTuning.Seats).ToArray();
 
     public ColonyEvent LastEvent { get; set; }

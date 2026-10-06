@@ -28,7 +28,8 @@ Two modes ship in v1:
 3. **Finish.** After month 12 the standings grid shows final Net Worth, the First Founder and
    the colony grade. The shared end modal offers Play Again and Home. If signed in, the score
    is posted; if offline, it is parked and sent later.
-4. **Watch.** Demo mode plays without input at 4× speed, about 6 minutes a match. Any key or
+4. **Watch.** Demo mode plays without input at 4× speed by default (buttons switch between
+   1×, 2×, 4×, 8× and 16×). Any key or
    tap offers "Play it yourself".
 6. **Come back.** A player who reloads or returns later sees "Continue" on the start card and
    resumes at the start of the month they were in.
@@ -83,7 +84,7 @@ tests/pomule-*.test.mjs                  renderer maths tests
 
 | # | Phase | Length *(proposed)* | What happens |
 |---|---|---|---|
-| 1 | Land grant and auction | 10 s grant; auction up to 20 s per plot | Every player claims one free plot; some months add an auction |
+| 1 | Land grant and auction | Sweep of up to 38 s; auction up to 20 s per plot | Every player claims one free plot; some months add an auction |
 | 2 | Development | 45 s | All eight avatars are on the map at once |
 | 3 | Production | 6 s | Yields, energy shutdowns, spoilage |
 | 4 | Colony event | 4 s | At most one event |
@@ -111,10 +112,14 @@ A full match is about 25 to 30 minutes.
 
 ### 6.3 Land
 
-- **Grant:** all eight cursors move for 10 s. A tile picked by one player goes to that
-  player. A tile picked by several goes to one of them at random; each loser gets the nearest
-  unowned plot, searching outward in a spiral with column wrap. A player who picks nothing
-  gets nothing that month.
+- **Grant** (changed 2026-10-05 at the owner's request, to work like the Atari original): one
+  highlighter sweeps the free plots from the top left to the bottom right, a row at a time,
+  five plots a second. Everyone watches the same highlighter and presses the button (Space or
+  Act) when it is on the plot they want. If several press on the same plot, one of them gets
+  it at random and each loser gets the nearest unowned plot, searching outward with column
+  wrap. The phase ends when the sweep finishes or all eight have a plot; a player who never
+  presses gets nothing that month. This replaces the PRD's eight free-moving cursors and its
+  10-second window: the first month's sweep can take up to 38 seconds.
 - **Auction** *(proposed)*: on even months the Store auctions 2 random unowned plots, one at
   a time. Opening bid 160 credits, open ascending bids, highest bid when the clock stops wins.
 
@@ -210,7 +215,8 @@ In Demo mode the eighth seat repeats one archetype chosen by the seed.
 - **Net Worth** = cash + 500 per plot + 350 per installed M.U.L.E. + goods at current Store
   prices *(values proposed)*. Highest is First Founder.
 - **Colony grade** *(proposed)*: the colony survives if combined Net Worth is at least 60,000
-  and there were at most 3 crisis months. A crisis month is one in which at least 3 of the 8
+  and there was at most 1 crisis month (tuned down from 3 once sellers could no longer be
+  sold below their own need). A crisis month is one in which at least 3 of the 8
   colonists started short of Food or had a M.U.L.E. idle for lack of Energy. (Changed during
   the build from "colony totals below need": totals do not move when one colonist hoards, and
   hoarding is what the PRD says should sink the colony.) Otherwise it collapses, and the results say so above the
@@ -242,6 +248,16 @@ In Demo mode the eighth seat repeats one archetype chosen by the seed.
   month 1, the colony survived 64 matches, and the most successful personality (Prospector)
   won 36. The Hoarder and the Agitator won none. Combined wealth was above the 60,000 target
   in every match, so today only crisis months decide the colony grade.
+- Re-measured after the review fixes and the sweeping land grant, same 100 seeds: the Store
+  never had fewer than 20 M.U.L.E.s after month 1, the colony survived 71 matches, and the
+  most successful personality (Speculator) won 33. These figures replace the ones above.
+- Sellers on the floor only ever sell what they hold beyond next month's need.
+- Look (owner's request, 2026-10-05): after the Atari 800 original. The planet is drawn at a
+  quarter resolution and scaled up without smoothing: pale grey ground, plots fenced in
+  their owner's colour with the M.U.L.E.'s glyph inside, a dotted orange river, grey
+  mountain bumps, black store blocks. The start card is flat orange-brown with a striped
+  M.U.L.E. logo.
+- Demo mode has speed buttons: 1×, 2×, 4× (the default), 8× and 16×.
 - Radzen provides every non-canvas element. The shared start card and end modal stay as the
   outer frame so PoMule opens and closes like the other games.
 - PoMule follows the existing leaderboard and offline score-sync path with no new mechanism.

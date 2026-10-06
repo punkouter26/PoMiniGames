@@ -78,8 +78,10 @@ public static class PoMuleMarket
         match.TradeMeter += MeterPerTick;
         if (match.TradeMeter < MeterPerTrade) return [];
 
-        // Lowest ask among sellers with goods; highest bid among buyers who can pay it.
-        var seller = Best(match, Seller, p => p.Goods[g] > 0, lowest: true);
+        // Lowest ask among sellers with something to spare; highest bid among buyers who can
+        // pay it. Only the surplus is on the floor: what a colonist needs for next month
+        // stays home, so standing in a lane can never starve them.
+        var seller = Best(match, Seller, p => Surplus(match, p.Seat, good) > 0, lowest: true);
         var buyer = Best(match, Buyer, p => p.Cash >= match.LanePrice[p.Seat], lowest: false);
 
         Trade? trade = null;

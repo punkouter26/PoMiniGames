@@ -480,3 +480,150 @@
         display: grid;
     }
 }
+
+/* ── Demo speed buttons ── */
+.pm-speed {
+    position: absolute;
+    left: 8px;
+    bottom: 40px;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.5rem;
+    background: rgba(18, 20, 26, 0.92);
+    border: 2px solid #2c3240;
+}
+
+/* ── Start card, after the Atari 800 title screen: flat orange-brown, the striped
+   M.U.L.E. logo, and blocky capitals. Only the shared card's colours and type change;
+   its structure and behaviour stay the shell's. ── */
+.pm-root ::deep .gps-intro-card {
+    background: #b07810;
+    color: #3c1800;
+    border: 4px solid #000;
+    border-radius: 0;
+    box-shadow: none;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.pm-root ::deep .gps-intro-title {
+    justify-content: center;
+}
+
+.pm-root ::deep .pm-logo {
+    display: block;
+    font: 900 clamp(2.6rem, 9vw, 4.2rem)/1 ui-monospace, "Cascadia Mono", Consolas, monospace;
+    letter-spacing: 0.08em;
+    /* Horizontal bands, pink over dark red over peach, as on the original's letters. */
+    background: linear-gradient(to bottom,
+        #f8a8b0 0 16%, #d04858 16% 30%, #7c1420 30% 42%, #f0b878 42% 58%,
+        #d04858 58% 74%, #7c1420 74% 84%, #f8a8b0 84% 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-stroke: 2px #000;
+    filter: drop-shadow(3px 3px 0 #000);
+}
+
+.pm-root ::deep .gps-intro-objective,
+.pm-root ::deep .gps-intro-controls,
+.pm-root ::deep .gps-intro-controls p {
+    color: #3c1800;
+    text-transform: uppercase;
+    font-size: 0.82rem;
+}
+
+.pm-root ::deep .gps-intro-section-label,
+.pm-root ::deep .pm-species-label {
+    color: #1c48a8;
+    font-weight: 900;
+}
+
+.pm-root ::deep .gps-intro-controls kbd {
+    background: #3c1800;
+    color: #f0b878;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.pm-root ::deep .gps-intro-card .app-btn--primary {
+    background: #000;
+    color: #f0b878;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+
+.pm-root ::deep .pm-species-card {
+    background: #8c5c08;
+    border-color: #3c1800;
+    color: #000;
+    text-transform: uppercase;
+}
+
+.pm-root ::deep .pm-species-card--on {
+    background: #000;
+    border-color: #f0b878;
+    color: #f0b878;
+}
+
+.pm-root ::deep .pm-species-card .pm-species-cash {
+    color: #1c48a8;
+}
+
+.pm-root ::deep .pm-species-card--on .pm-species-cash,
+.pm-root ::deep .pm-species-card--on .pm-species-trait {
+    color: #f0b878;
+}
+
+.pm-root ::deep .pm-species-card .pm-species-trait {
+    color: #3c1800;
+    text-transform: none;
+}
+
+/* ── Messages over the map, in the Atari's orange capitals ── */
+.pm-banner {
+    background: #dcdce0;
+    border: 4px solid #c86000;
+    color: #c86000;
+    text-transform: uppercase;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+}
+
+.pm-banner-title {
+    color: #c86000;
+}
+/* The start card is wider than the shell's default so the logo, the controls and all eight
+   species fit without scrolling on a laptop; its button row takes the card's colour. */
+.pm-root ::deep .gps-intro-card {
+    width: min(760px, 94vw);
+    max-width: none;
+}
+
+.pm-root ::deep .gps-intro-actions {
+    background: #b07810;
+    box-shadow: none;
+    border: 0;
+}
+
+.pm-root ::deep .pm-species ul.rz-datalist-data {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.pm-root ::deep .pm-species-card.pm-species-card--on .pm-species-trait,
+.pm-root ::deep .pm-species-card.pm-species-card--on .pm-species-cash {
+    color: #f0b878;
+}
+
+@media (max-width: 700px) {
+    .pm-root ::deep .pm-species ul.rz-datalist-data {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

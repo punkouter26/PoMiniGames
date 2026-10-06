@@ -82,10 +82,17 @@ public static class PoMuleLand
         match.HighBidder = MatchState.Nobody;
     }
 
-    /// <summary>An open ascending bid. Refused unless it beats the standing bid and the seat can pay it.</summary>
+    /// <summary>The smallest bid the block will take right now.</summary>
+    public static int NextBid(MatchState match) =>
+        Math.Max(PoMuleTuning.AuctionOpeningBid, match.HighBid + PoMuleTuning.AuctionRaise);
+
+    /// <summary>
+    /// An open ascending bid. Refused unless it beats the standing bid, the seat can pay it,
+    /// and the seat is not already the high bidder.
+    /// </summary>
     public static bool Bid(MatchState match, int seat, int amount)
     {
-        if (match.AuctionPlot < 0 || amount < PoMuleTuning.AuctionOpeningBid) return false;
+        if (match.AuctionPlot < 0 || match.HighBidder == seat || amount < PoMuleTuning.AuctionOpeningBid) return false;
         if (amount <= match.HighBid || amount > match.Players[seat].Cash) return false;
         match.HighBid = amount;
         match.HighBidder = (sbyte)seat;

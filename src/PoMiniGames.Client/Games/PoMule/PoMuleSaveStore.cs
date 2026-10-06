@@ -52,9 +52,12 @@ public sealed record WorthPoint(int Month, int Worth);
 
 public static class PoMuleUi
 {
-    /// <summary>Seat colours, chosen to differ in lightness as well as hue.</summary>
+    /// <summary>
+    /// Seat colours: the Atari game's red, blue, green and purple, plus four more for the
+    /// extra seats. Saturated mid-tones, so they read on the pale map and on the dark panel.
+    /// </summary>
     public static readonly string[] SeatColors =
-        ["#e8eaf0", "#ffb300", "#26c6da", "#ef5350", "#66bb6a", "#ab47bc", "#ff7043", "#8d9db6"];
+        ["#e02828", "#2468f0", "#28a010", "#a828e0", "#e07000", "#0898a0", "#d83898", "#806020"];
 
     public static readonly string[] GoodNames = ["Food", "Energy", "Smithore", "Crystite"];
 
@@ -73,7 +76,6 @@ public static class PoMuleUi
     /// <summary>Seconds a timed phase starts with, for the progress bar. 0 = not timed.</summary>
     public static int PhaseSeconds(Phase phase) => phase switch
     {
-        Phase.Land => PoMuleTuning.LandSeconds,
         Phase.Auction => PoMuleTuning.AuctionSeconds,
         Phase.Development => PoMuleTuning.DevelopmentSeconds,
         Phase.Market => PoMuleTuning.MarketSeconds,

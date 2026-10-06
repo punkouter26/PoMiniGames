@@ -11,7 +11,8 @@ public static class PoMuleTuning
     public const int TicksPerSecond = 10;
 
     // Phase lengths, seconds.
-    public const int LandSeconds = 10;
+    /// <summary>Ticks the land-grant highlighter rests on each free plot (five plots a second).</summary>
+    public const int LandStepTicks = 2;
     public const int AuctionSeconds = 20;
     public const int DevelopmentSeconds = 45;
     public const int MarketSeconds = 12;
@@ -70,7 +71,7 @@ public static class PoMuleTuning
     public const int LandValue = 500;
     public const int MuleValue = 350;
     public const int FederationTarget = 60_000;
-    public const int MaxCrisisMonths = 3;
+    public const int MaxCrisisMonths = 1;
 
     /// <summary>Food a colonist must hold to work a full month: 3, then 4, then 5.</summary>
     public static int FoodNeed(int month) => 3 + (Math.Clamp(month, 1, Months) - 1) / 4;

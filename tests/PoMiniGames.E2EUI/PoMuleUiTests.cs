@@ -50,20 +50,23 @@ public class PoMuleUiTests
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "1-start-card.png") });
         await page.GetByRole(AriaRole.Button, new() { Name = "Start match" }).ClickAsync();
 
-        // Land grant: move the cursor, then let the clock run out.
+        // Land grant: the highlighter sweeps the plots row by row; Space claims the one it is on.
         await WaitForPhase(page, Land, 1);
-        await page.Keyboard.PressAsync("d");
-        await page.Keyboard.PressAsync("s");
+        await page.WaitForFunctionAsync("() => window.__pomule().snap[10] >= 3", null, new() { Timeout = 30_000 });
+        var first = await page.EvaluateAsync<int>("() => window.__pomule().snap[10]");
+        await page.WaitForFunctionAsync($"() => window.__pomule().snap[10] > {first}", null, new() { Timeout = 30_000 });
+        (await page.EvaluateAsync<int>("() => window.__pomule().snap[10]")).Should().BeInRange(first + 1, first + 4, "it moves along the row a plot at a time");
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "2-land-grant.png") });
-        await page.EvaluateAsync("() => { window.__pomule().speed = 6; }");
+        await page.Keyboard.PressAsync("Space");
+        await page.WaitForFunctionAsync("() => window.__pomule().owner.filter(o => o === 0).length === 1", null, new() { Timeout = 15_000 });
+        await page.EvaluateAsync("() => { window.__pomule().speed = 8; }");
 
         // Development: everyone is on the map at once under one clock.
         await WaitForPhase(page, Development, 1);
         await page.EvaluateAsync("() => { window.__pomule().speed = 1; }");
         (await page.Locator(".pm-hud .rz-data-grid").CountAsync()).Should().Be(1, "the side panel lists the colonists in a Radzen grid");
         (await page.Locator(".pm-hud").InnerTextAsync()).Should().Contain("1,600 cr", "the Zephyr-Flapper starts with 1,600 credits");
-        // The grant reaches the renderer a moment after the phase does.
-        await page.WaitForFunctionAsync("() => window.__pomule().owner.filter(o => o === 0).length === 1", null, new() { Timeout = 15_000 });
+
 
         const string positions = "() => window.__pomule().avatars.map(a => [a.x, a.y])";
         var before = await page.EvaluateAsync<double[][]>(positions);
@@ -109,7 +112,11 @@ public class PoMuleUiTests
         await mobile.Locator(".pm-species-card").First.WaitForAsync(new() { Timeout = 60_000 });
         await mobile.GetByRole(AriaRole.Button, new() { Name = "Start match" }).TapAsync();
         await WaitForPhase(mobile, Land, 1);
-        await mobile.EvaluateAsync("() => { window.__pomule().speed = 6; }");
+        // The Act button claims the lit plot, the same as Space.
+        await mobile.WaitForFunctionAsync("() => window.__pomule().snap[10] >= 0", null, new() { Timeout = 30_000 });
+        await mobile.Locator(".pm-touch-act").TapAsync();
+        await mobile.WaitForFunctionAsync("() => window.__pomule().owner.filter(o => o === 0).length === 1", null, new() { Timeout = 15_000 });
+        await mobile.EvaluateAsync("() => { window.__pomule().speed = 8; }");
         await WaitForPhase(mobile, Development, 1);
         await mobile.EvaluateAsync("() => { window.__pomule().speed = 1; }");
 
@@ -154,6 +161,11 @@ public class PoMuleUiTests
         (await page.EvaluateAsync<double>("() => window.__pomule().speed")).Should().Be(4, "a demo runs at four times speed");
         await page.WaitForTimeoutAsync(1500);
         await page.ScreenshotAsync(new() { Path = Path.Combine(Shots(), "7-demo-development.png") });
+
+        // The speed buttons: 1x, 2x, 4x, 8x, 16x.
+        (await page.Locator(".pm-speed .rz-button").CountAsync()).Should().Be(5);
+        await page.Locator(".pm-speed .rz-button", new() { HasText = "16×" }).ClickAsync();
+        await page.WaitForFunctionAsync("() => window.__pomule().speed === 16", null, new() { Timeout = 10_000 });
 
         // Run the other eleven months faster than a viewer would watch them.
         await page.EvaluateAsync("() => { window.__pomule().speed = 30; }");

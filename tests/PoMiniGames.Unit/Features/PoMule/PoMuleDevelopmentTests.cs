@@ -51,7 +51,8 @@ public sealed class PoMuleDevelopmentTests
 
         PoMuleDevelopment.BuyMule(match, 0).Should().Be(Outcome.Ok);
         PoMuleDevelopment.Outfit(match, 0, Good.Food).Should().Be(Outcome.Ok);
-        you.Cash.Should().Be(1200 - 100 - 25);
+        PoMuleDevelopment.Outfit(match, 0, Good.Food).Should().Be(Outcome.Ok, "already outfitted for Food");
+        you.Cash.Should().Be(1200 - 100 - 25, "and not charged twice for it");
         match.Store.Mules.Should().Be(27);
         (you.HasMule, you.Outfit).Should().Be((true, (sbyte)Good.Food));
 
@@ -156,6 +157,7 @@ public sealed class PoMuleDevelopmentTests
         match.ClockTicks = ticksLeft;
         var cash = match.Players[0].Cash;
 
+        PoMuleDevelopment.PubPayout(match).Should().Be(payout, "the offer shown is the amount paid");
         PoMuleDevelopment.EnterPub(match, 0).Should().Be(payout);
 
         match.Players[0].Cash.Should().Be(cash + payout);

@@ -35,12 +35,13 @@ public static class PoMuleAi
     };
 
     /// <summary>The plot this colonist points its land-grant cursor at.</summary>
-    public static int PickLand(MatchState match, int seat)
+    /// <param name="from">Only plots the highlighter has not passed yet (index at or after this).</param>
+    public static int PickLand(MatchState match, int seat, int from = 0)
     {
         var archetype = match.Players[seat].Archetype;
         var best = -1;
         var bestScore = int.MinValue;
-        for (var i = 0; i < match.Owner.Length; i++)
+        for (var i = Math.Max(0, from); i < match.Owner.Length; i++)
         {
             if (!PoMuleLand.Claimable(match, i)) continue;
             var plot = match.Map.Plots[i];
@@ -185,12 +186,12 @@ public static class PoMuleAi
         var player = match.Players[seat];
         var percent = player.Archetype switch
         {
-            Archetype.Speculator => 60,
-            Archetype.Gambler => 50,
+            Archetype.Speculator => 42,
+            Archetype.Gambler => 38,
             Archetype.Agitator => 20,
             _ => 30,
         };
-        var next = Math.Max(PoMuleTuning.AuctionOpeningBid, match.HighBid + PoMuleTuning.AuctionRaise);
+        var next = PoMuleLand.NextBid(match);
         return next <= player.Cash * percent / 100 ? next : 0;
     }
 }

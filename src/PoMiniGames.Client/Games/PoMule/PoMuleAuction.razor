@@ -39,5 +39,5 @@
 
     [Parameter] public EventCallback OnBid { get; set; }
 
-    private int NextBid => Math.Max(PoMuleTuning.AuctionOpeningBid, State.HighBid + PoMuleTuning.AuctionRaise);
+    private int NextBid => PoMuleLand.NextBid(State);
 }

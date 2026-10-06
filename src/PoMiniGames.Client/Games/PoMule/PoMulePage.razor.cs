@@ -47,17 +47,15 @@ public partial class PoMulePage : IAsyncDisposable
     private bool _demo;
     private bool _radzenReady;
     private bool _finished;
-    private bool _newBest;
     private bool _plotsDirty;
     private bool _disposed;
+    private int _demoSpeed = 4;
     private int _whereKind = -1;
     private int _wherePlot;
     private Phase _shownPhase;
     private long _lastRender;
 
-    private int PubPayout => _match is { } m
-        ? Math.Min(PoMuleTuning.PubCap, m.State.ClockTicks / PoMuleTuning.TicksPerSecond * (3 + m.State.Month))
-        : 0;
+    private int PubPayout => _match is { } m ? PoMuleDevelopment.PubPayout(m.State) : 0;
 
     protected override void OnInitialized() => _playerName = PlayerNameService.GetPlayerName();
 
@@ -118,7 +116,6 @@ public partial class PoMulePage : IAsyncDisposable
         _match = match;
         _saved = null;
         _finished = false;
-        _newBest = false;
         _outcome = GameResult.InProgress;
         _whereKind = -1;
         _shownPhase = match.State.Phase;
@@ -136,7 +133,7 @@ public partial class PoMulePage : IAsyncDisposable
             species = match.State.Players.Select(p => (int)p.Species).ToArray(),
             colors = PoMuleUi.SeatColors,
             human = !_demo,
-            speed = _demo ? 4 : 1,
+            speed = _demo ? _demoSpeed : 1,
             snapshot = match.Snapshot(),
         });
         await PushPlotsAsync();
@@ -227,8 +224,10 @@ public partial class PoMulePage : IAsyncDisposable
     public void OnArrive(int seat)
     {
         if (_match is null || seat is < 0 or >= PoMuleTuning.Seats) return;
+        // Only what this arrival added: the list also holds everything since the last tick.
+        var seen = _match.Notices.Count;
         _match.Arrive(seat);
-        foreach (var notice in _match.Notices.Where(n => n.Kind == NoticeKind.MuleRanAway)) Announce(notice);
+        foreach (var notice in _match.Notices.Skip(seen).ToList()) Announce(notice);
         _plotsDirty = true;
     }
 
@@ -236,7 +235,9 @@ public partial class PoMulePage : IAsyncDisposable
     public void OnBump(int seat)
     {
         if (_match is null || seat is < 0 or >= PoMuleTuning.Seats) return;
-        if (_match.Bump(seat, dashing: true)) Announce(new Notice(NoticeKind.MuleRanAway, seat));
+        var seen = _match.Notices.Count;
+        _match.Bump(seat, dashing: true);
+        foreach (var notice in _match.Notices.Skip(seen).ToList()) Announce(notice);
     }
 
     [JSInvokable]
@@ -279,6 +280,15 @@ public partial class PoMulePage : IAsyncDisposable
             PoMuleMarket.SetRole(state, 0, role);
     }
 
+    private static readonly int[] DemoSpeeds = [1, 2, 4, 8, 16];
+
+    private async Task SetDemoSpeedAsync(int speed)
+    {
+        _demoSpeed = speed;
+        try { await JS.InvokeVoidAsync("PoMule.setSpeed", speed); }
+        catch (JSException) { }
+    }
+
     private ButtonStyle RoleStyle(sbyte role) =>
         _match?.State.LaneRole[0] == role ? ButtonStyle.Warning : ButtonStyle.Secondary;
 
@@ -301,8 +311,9 @@ public partial class PoMulePage : IAsyncDisposable
                 Notify(NotificationSeverity.Info, "Outfitter", "Press 1 to 4 to outfit your M.U.L.E.");
                 break;
             case AtPub when action == 0:
+                var seen = _match.Notices.Count;
                 _match.HumanPub();
-                foreach (var notice in _match.Notices.Where(n => n.Kind == NoticeKind.PubVisit)) Announce(notice);
+                foreach (var notice in _match.Notices.Skip(seen).ToList()) Announce(notice);
                 break;
             case AtAssay when action == 0:
                 if (PoMuleDevelopment.VisitAssayOffice(state, 0) == Outcome.Ok)
@@ -391,9 +402,7 @@ public partial class PoMulePage : IAsyncDisposable
         try
         {
             await GameResults.RecordAndSubmitPoMuleAsync(_playerName, _outcome,
-                new PoMuleRunRequest(Math.Clamp(mine.NetWorth, 0, PoMiniGames.Domain.Models.PoMuleHighScore.MaxNetWorth), (int)state.Players[0].Species, survived),
-                onNewBest: best => _newBest = best);
-            StateHasChanged();
+                new PoMuleRunRequest(Math.Clamp(mine.NetWorth, 0, PoMiniGames.Domain.Models.PoMuleHighScore.MaxNetWorth), (int)state.Players[0].Species, survived));
         }
         catch (Exception ex)
         {

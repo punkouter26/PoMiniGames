@@ -29,6 +29,9 @@ public sealed class PoMuleMatch(MatchState state)
     private readonly Queue<int> _auctionBlock = new();
     private bool _begun;
     private int _quiet;
+    private readonly bool[] _claimed = new bool[PoMuleTuning.Seats];
+    private int _landPrev = -1;
+    private int _landWait;
 
     public MatchState State { get; } = state;
 
@@ -98,16 +101,7 @@ public sealed class PoMuleMatch(MatchState state)
 
         switch (State.Phase)
         {
-            case Phase.Land:
-                if (--State.ClockTicks > 0) break;
-                var awarded = PoMuleLand.Grant(State, State.LandPicks);
-                for (var seat = 0; seat < awarded.Length; seat++)
-                    if (awarded[seat] >= 0) Notices.Add(new Notice(NoticeKind.LandGranted, seat, awarded[seat]));
-                // Cleared here, not when the next grant begins: the player may already be
-                // pointing at a plot before that phase's first tick.
-                Array.Fill(State.LandPicks, -1);
-                Go(PoMuleLand.IsAuctionMonth(State.Month) ? Phase.Auction : Phase.Development);
-                break;
+            case Phase.Land: StepLand(); break;
             case Phase.Auction: StepAuction(); break;
             case Phase.Development: StepDevelopment(); break;
             case Phase.Production:
@@ -142,9 +136,12 @@ public sealed class PoMuleMatch(MatchState state)
                     Go(Phase.Development);
                     break;
                 }
-                State.ClockTicks = PoMuleTuning.LandSeconds * PoMuleTuning.TicksPerSecond;
+                Array.Clear(_claimed);
+                _landPrev = -1;
+                _landWait = PoMuleTuning.LandStepTicks;
+                State.LandCursor = NextClaimable(-1);
                 for (var seat = 0; seat < State.LandPicks.Length; seat++)
-                    if (IsAi(seat)) State.LandPicks[seat] = PoMuleAi.PickLand(State, seat);
+                    State.LandPicks[seat] = IsAi(seat) ? PoMuleAi.PickLand(State, seat) : -1;
                 break;
 
             case Phase.Auction:
@@ -172,6 +169,7 @@ public sealed class PoMuleMatch(MatchState state)
                 break;
 
             case Phase.Market:
+                HumanMarketInput = 0; // a key held when last month's market closed must not walk this one
                 PoMuleMarket.Open(State, Good.Food);
                 break;
 
@@ -180,6 +178,76 @@ public sealed class PoMuleMatch(MatchState state)
                 State.ClockTicks = Display(PoMuleTuning.StandingsSeconds);
                 break;
         }
+    }
+
+    // ── Land grant ──
+
+    /// <summary>True once this seat has its plot for the month.</summary>
+    public bool HasClaimed(int seat) => _claimed[seat];
+
+    private int NextClaimable(int after)
+    {
+        for (var i = after + 1; i < State.Owner.Length; i++)
+            if (PoMuleLand.Claimable(State, i)) return i;
+        return -1;
+    }
+
+    /// <summary>
+    /// The land grant, as on the Atari: one highlighter sweeps the free plots from the top
+    /// left to the bottom right, a row at a time, and a colonist takes the plot it is on by
+    /// pressing the button. Everyone watches the same highlighter; if several press on the
+    /// same plot, one wins it and the others get the nearest free plot.
+    /// </summary>
+    private void StepLand()
+    {
+        var cursor = State.LandCursor;
+        var picks = new int[State.Players.Length];
+        Array.Fill(picks, -1);
+        for (var seat = 0; seat < picks.Length; seat++)
+        {
+            if (_claimed[seat]) continue;
+            var want = State.LandPicks[seat];
+            if (IsAi(seat))
+            {
+                // An AI waits for the plot it chose; if that went to someone else, or the
+                // highlighter has passed it, it settles on the best plot still to come.
+                if (want >= 0 && (want < cursor || !PoMuleLand.Claimable(State, want)))
+                    State.LandPicks[seat] = want = PoMuleAi.PickLand(State, seat, from: cursor);
+                if (want == cursor) picks[seat] = cursor;
+            }
+            else
+            {
+                // The player's press names the plot they saw lit. One step of grace: the
+                // screen is a tick or two behind the highlighter.
+                if (want >= 0 && (want == cursor || want == _landPrev) && PoMuleLand.Claimable(State, want)) picks[seat] = want;
+                State.LandPicks[seat] = -1;
+            }
+        }
+
+        if (picks.Any(p => p >= 0))
+        {
+            var awarded = PoMuleLand.Grant(State, picks);
+            for (var seat = 0; seat < awarded.Length; seat++)
+            {
+                if (awarded[seat] < 0) continue;
+                _claimed[seat] = true;
+                Notices.Add(new Notice(NoticeKind.LandGranted, seat, awarded[seat]));
+            }
+        }
+
+        if (--_landWait <= 0)
+        {
+            _landWait = PoMuleTuning.LandStepTicks;
+            _landPrev = cursor;
+            State.LandCursor = NextClaimable(cursor);
+        }
+        State.ClockTicks = Enumerable.Range(Math.Max(0, State.LandCursor), State.Owner.Length - Math.Max(0, State.LandCursor))
+            .Count(i => PoMuleLand.Claimable(State, i)) * PoMuleTuning.LandStepTicks;
+
+        if (State.LandCursor >= 0 && !_claimed.All(c => c)) return;
+        State.LandCursor = -1;
+        Array.Fill(State.LandPicks, -1);
+        Go(PoMuleLand.IsAuctionMonth(State.Month) ? Phase.Auction : Phase.Development);
     }
 
     // ── Auction ──
@@ -198,8 +266,7 @@ public sealed class PoMuleMatch(MatchState state)
     public bool HumanBid()
     {
         if (State.Phase != Phase.Auction || State.AuctionPlot < 0) return false;
-        var bid = Math.Max(PoMuleTuning.AuctionOpeningBid, State.HighBid + PoMuleTuning.AuctionRaise);
-        if (!PoMuleLand.Bid(State, 0, bid)) return false;
+        if (!PoMuleLand.Bid(State, 0, PoMuleLand.NextBid(State))) return false;
         _quiet = 0;
         return true;
     }
@@ -349,13 +416,13 @@ public sealed class PoMuleMatch(MatchState state)
 
     // ── Renderer feed ──
 
-    public const int SnapshotHeader = 10;
+    public const int SnapshotHeader = 11;
     public const int SnapshotPerSeat = 15;
 
     /// <summary>
     /// Everything the renderer and HUD need each tick, as one flat array (one interop
     /// transfer). Header: month, phase, clock ticks, market good, auction plot, high bid, high
-    /// bidder, last event, market floor price, Store M.U.L.E.s. Then per seat: cash, the four
+    /// bidder, last event, market floor price, Store M.U.L.E.s, land highlighter. Then per seat: cash, the four
     /// goods, speed %, has M.U.L.E., outfit, in pub, lane role, lane price, goal kind, goal
     /// target, goal good, land pick.
     /// </summary>
@@ -373,6 +440,7 @@ public sealed class PoMuleMatch(MatchState state)
         data[7] = (int)s.LastEvent;
         data[8] = s.MarketGood == MatchState.Nobody ? 0 : PoMuleMarket.Floor(s, (Good)s.MarketGood);
         data[9] = s.Store.Mules;
+        data[10] = s.LandCursor;
         foreach (var p in s.Players)
         {
             var o = SnapshotHeader + p.Seat * SnapshotPerSeat;

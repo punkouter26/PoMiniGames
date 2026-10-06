@@ -51,7 +51,7 @@ in brackets; total 38 of the 40 new slots.
   `UnifiedLeaderboardEndpoints.cs`, `tests/PoMiniGames.E2EAPI/PoMuleEndpointsTests.cs`.
   *Accept:* anonymous is refused, valid POST is 201, out-of-range is 400, unified board lists
   PoMule (+1 method → 25/25). *Deps:* T11.
-- [ ] **T13 Client API.** Files: `Client/Models/GameKey.cs`, `GameModels.cs`,
+- [x] **T13 Client API.** Files: `Client/Models/GameKey.cs`, `GameModels.cs`,
   `ApiJsonContext.cs`, `ApiService.cs`. *Accept:* builds trim-clean. *Deps:* T12.
 - [ ] **T14 Score sync.** Files: `PendingScore.cs`, `ScoreSyncService.cs`,
   `GameResultService.cs`. *Accept:* `RecordAndSubmitPoMuleAsync` parks when offline. *Deps:* T13.

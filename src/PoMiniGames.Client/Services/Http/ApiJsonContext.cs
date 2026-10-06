@@ -69,6 +69,8 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(PoMiniGames.Domain.Models.PoVoxelStrikeHighScore))]
 [JsonSerializable(typeof(PoMiniGames.Domain.Models.PoVoxelStrikeHighScore[]))]
 [JsonSerializable(typeof(PoVoxelStrikeRunRequest))]
+[JsonSerializable(typeof(PoMiniGames.Domain.Models.PoMuleHighScore))]
+[JsonSerializable(typeof(PoMuleRunRequest))]
 [JsonSerializable(typeof(PendingPlayerStats))]
 [JsonSerializable(typeof(LeaderboardEntryDto))]
 [JsonSerializable(typeof(GameLeaderboardDto))]

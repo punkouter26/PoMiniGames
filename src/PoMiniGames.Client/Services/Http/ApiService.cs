@@ -441,6 +441,33 @@ public class ApiService
         }
     }
 
+    /// <summary>
+    /// Submits a finished PoMule match. Same outcome contract as the other boards:
+    /// Saved / Rejected (4xx, never retry) / Unavailable (park and replay).
+    /// </summary>
+    public async Task<ScoreSubmitResult<PoMiniGames.Domain.Models.PoMuleHighScore>> SubmitPoMuleRunAsync(PoMuleRunRequest entry)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync("/api/pomule/highscores", entry, ApiJsonContext.Default.PoMuleRunRequest);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var saved = await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoMuleHighScore);
+                return ScoreSubmitResult<PoMiniGames.Domain.Models.PoMuleHighScore>.Saved(saved);
+            }
+
+            if ((int)response.StatusCode is >= 400 and < 500)
+                return ScoreSubmitResult<PoMiniGames.Domain.Models.PoMuleHighScore>.Rejected(response.StatusCode);
+
+            return ScoreSubmitResult<PoMiniGames.Domain.Models.PoMuleHighScore>.Unavailable(response.StatusCode);
+        }
+        catch
+        {
+            return ScoreSubmitResult<PoMiniGames.Domain.Models.PoMuleHighScore>.Unavailable(null);
+        }
+    }
+
     public async Task<PoBrawlHighScore[]?> GetPoBrawlHighScoresAsync(int count = 10)
     {
         try

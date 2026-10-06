@@ -123,6 +123,10 @@ public sealed record PoVoxelStrikeRunRequest(
     int Score, double SurvivalSeconds, int Kills, int BruteKills, int CrushKills, int VoxelsDestroyed,
     bool Won = false, string? Day = null);
 
+// PoMule board rows use PoMiniGames.Domain.Models.PoMuleHighScore directly. This is the
+// client mirror of the API slice's PoMuleRunRequest; Species is the roster index.
+public sealed record PoMuleRunRequest(int NetWorth, int Species, bool ColonySurvived);
+
 
 /// <summary>
 /// Queued PlayerStats PUT for the offline score-sync pipeline: a stats snapshot

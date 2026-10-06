@@ -1,6 +1,6 @@
 namespace PoMiniGames.Shared.Games.PoMule;
 
-public enum NoticeKind : byte { LandGranted, AuctionOpened, AuctionWon, MuleRanAway, PubVisit, Traded, ColonyEvent, MonthEnded }
+public enum NoticeKind : byte { LandGranted, AuctionOpened, AuctionWon, MuleRanAway, PubVisit, Traded, ColonyEvent, MonthEnded, Luck, WampusCaught }
 
 /// <summary>Something that just happened, for the page to announce. <c>A</c> and <c>B</c> depend on the kind.</summary>
 public readonly record struct Notice(NoticeKind Kind, int Seat, int A = 0, int B = 0);
@@ -32,6 +32,7 @@ public sealed class PoMuleMatch(MatchState state)
     private readonly bool[] _claimed = new bool[PoMuleTuning.Seats];
     private int _landPrev = -1;
     private int _landWait;
+    private bool _wampusCaught;
 
     public MatchState State { get; } = state;
 
@@ -152,6 +153,8 @@ public sealed class PoMuleMatch(MatchState state)
 
             case Phase.Development:
                 PoMuleDevelopment.Begin(State);
+                State.WampusPlot = -1;
+                _wampusCaught = false;
                 Array.Clear(_busy);
                 Array.Clear(_errand);
                 break;
@@ -164,7 +167,9 @@ public sealed class PoMuleMatch(MatchState state)
                 break;
 
             case Phase.Event:
-                Notices.Add(new Notice(NoticeKind.ColonyEvent, -1, (int)State.LastEvent));
+                Notices.Add(new Notice(NoticeKind.ColonyEvent, -1, (int)State.LastEvent, State.MeteorPlot));
+                var (lucky, credits) = PoMuleEvents.Luck(State);
+                Notices.Add(new Notice(NoticeKind.Luck, lucky, credits));
                 State.ClockTicks = Display(PoMuleTuning.EventSeconds);
                 break;
 
@@ -296,6 +301,7 @@ public sealed class PoMuleMatch(MatchState state)
     private void StepDevelopment()
     {
         State.ClockTicks--;
+        StepWampus();
         for (var seat = 0; seat < State.Players.Length; seat++)
         {
             if (!IsAi(seat)) continue;
@@ -333,7 +339,37 @@ public sealed class PoMuleMatch(MatchState state)
         if (State.ClockTicks > 0 && anyoneOut) return;
         foreach (var seat in PoMuleDevelopment.End(State))
             Notices.Add(new Notice(NoticeKind.MuleRanAway, seat));
+        State.WampusPlot = -1;
         Go(Phase.Production);
+    }
+
+    /// <summary>
+    /// The wampus: it shows itself on a mountain for a few seconds in every ten, somewhere
+    /// new each time, until someone catches it or the month ends.
+    /// </summary>
+    private void StepWampus()
+    {
+        if (_wampusCaught) return;
+        var beat = (PoMuleTuning.DevelopmentSeconds * PoMuleTuning.TicksPerSecond - State.ClockTicks) % PoMuleTuning.WampusCycleTicks;
+        if (beat == PoMuleTuning.WampusCycleTicks - PoMuleTuning.WampusVisibleTicks)
+        {
+            var mountains = Enumerable.Range(0, State.Owner.Length).Where(i => State.Map.Plots[i].Terrain == Terrain.Mountain).ToList();
+            State.WampusPlot = mountains.Count == 0 ? -1 : mountains[State.Rng.Next(mountains.Count)];
+        }
+        else if (beat == 0) State.WampusPlot = -1;
+    }
+
+    /// <summary>A colonist reaches the wampus while it is showing. Returns the bounty paid, or 0.</summary>
+    public int CatchWampus(int seat)
+    {
+        if (State.Phase != Phase.Development || State.WampusPlot < 0 || _wampusCaught) return 0;
+        if (!PoMuleDevelopment.CanAct(State, seat)) return 0;
+        var bounty = PoMuleTuning.WampusBounty(State.Month);
+        State.Players[seat].Cash += bounty;
+        State.WampusPlot = -1;
+        _wampusCaught = true;
+        Notices.Add(new Notice(NoticeKind.WampusCaught, seat, bounty));
+        return bounty;
     }
 
     /// <summary>The renderer reports that an AI colonist reached where it was heading.</summary>
@@ -416,13 +452,14 @@ public sealed class PoMuleMatch(MatchState state)
 
     // ── Renderer feed ──
 
-    public const int SnapshotHeader = 11;
+    public const int SnapshotHeader = 22;
     public const int SnapshotPerSeat = 15;
 
     /// <summary>
     /// Everything the renderer and HUD need each tick, as one flat array (one interop
     /// transfer). Header: month, phase, clock ticks, market good, auction plot, high bid, high
-    /// bidder, last event, market floor price, Store M.U.L.E.s, land highlighter. Then per seat: cash, the four
+    /// bidder, last event, market floor price, Store M.U.L.E.s, land highlighter, Store stock ×4,
+    /// Store prices ×4, M.U.L.E. price, wampus plot, crisis months. Then per seat: cash, the four
     /// goods, speed %, has M.U.L.E., outfit, in pub, lane role, lane price, goal kind, goal
     /// target, goal good, land pick.
     /// </summary>
@@ -441,6 +478,14 @@ public sealed class PoMuleMatch(MatchState state)
         data[8] = s.MarketGood == MatchState.Nobody ? 0 : PoMuleMarket.Floor(s, (Good)s.MarketGood);
         data[9] = s.Store.Mules;
         data[10] = s.LandCursor;
+        for (var g = 0; g < 4; g++)
+        {
+            data[11 + g] = s.Store.Stock[g];
+            data[15 + g] = s.Store.Price[g];
+        }
+        data[19] = s.Store.MulePrice;
+        data[20] = s.WampusPlot;
+        data[21] = s.CrisisMonths;
         foreach (var p in s.Players)
         {
             var o = SnapshotHeader + p.Seat * SnapshotPerSeat;

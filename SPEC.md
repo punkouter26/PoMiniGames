@@ -258,6 +258,39 @@ In Demo mode the eighth seat repeats one archetype chosen by the seed.
   mountain bumps, black store blocks. The start card is flat orange-brown with a striped
   M.U.L.E. logo.
 - Demo mode has speed buttons: 1×, 2×, 4× (the default), 8× and 16×.
+- Atari pass (owner's request, 2026-10-05), which supersedes the layout and component notes
+  above where they differ:
+  - **One screen.** The whole 24×8 planet is drawn at once on a single 384×190 fat-pixel
+    canvas; there is no scrolling camera, no panorama strip and no side panel. The planet
+    still wraps: walking off one edge comes back on the other. The four towns and the rivers
+    stay as the PRD has them.
+  - **Status on the canvas.** A title line ("DEVELOPMENT #3"), an orange message line and
+    one column per colonist (name, money, goods) are drawn in a home-made 5×7 block font.
+    `PoMuleHud` is gone. Blazor keeps the start card, the land-auction card, the auction's
+    Sell / Sit out / Buy buttons, the standings (Radzen grid and chart) and the demo speed
+    buttons, all restyled flat and square. Those still use an ordinary monospace font.
+  - **Walk-in store.** Stepping onto a town plot shows the store's interior: four
+    outfitting stalls, the Assay Office, the Pub and the M.U.L.E. corral. The player buys,
+    outfits, gambles and takes an assay kit by walking into a stall, and leaves by either
+    side. On the map the button installs the towed M.U.L.E. or uses the assay kit. AI
+    colonists still act at the town's door.
+  - **Auction floor** drawn after the original: Store block between lanes 4 and 5, its two
+    prices as dotted lines, the best bid and ask as dashed lines, crates under sellers, and
+    a timer bar draining down the right edge.
+  - **Production** counts each plot's units up one at a time with a blip.
+  - **Sprites and sound.** Colonists and M.U.L.E.s have a two-frame walk. Square-wave sound:
+    footsteps, production blips, trades, the auction price as pitch, a bray on a runaway, a
+    short fanfare at the start. All drawn and composed here; nothing is copied from the
+    original, and the eight species keep the PRD's names.
+  - **New rules:** a Meteor event (a rich crater appears on open, unowned ground); one
+    stroke of personal luck a month (credits to a colonist in the poorer half, or from one
+    in the richer half; 50, 100 then 150 as the match goes on); and the wampus, which shows
+    on a mountain for 3 seconds in every 10 of development and pays 100, 200 then 300 to the
+    player who touches it, once a month. AI colonists do not hunt it.
+  - **Title and ending.** Three colonists march under the logo on the start card; at the
+    end the colony ship lands and the message line gives the Federation's verdict.
+  - Balance re-measured on the same 100 seeds after these rules: colony survived 74, most
+    successful personality (Speculator) won 32, Store never below 20 M.U.L.E.s after month 1.
 - Radzen provides every non-canvas element. The shared start card and end modal stay as the
   outer frame so PoMule opens and closes like the other games.
 - PoMule follows the existing leaderboard and offline score-sync path with no new mechanism.

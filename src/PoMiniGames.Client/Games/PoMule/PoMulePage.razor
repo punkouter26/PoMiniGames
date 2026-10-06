@@ -12,21 +12,14 @@
            BackTo="/"
            Fullscreen="true"
            GameOver="@(_finished && !_demo)"
-           GameOverDelayMs="2500"
+           GameOverDelayMs="6000"
            Outcome="@_outcome"
            GameKey="@(_demo ? null : "pomule")"
            Stats="@_endStats"
            GameSummary="@EndSummary"
            Announcement="@_announcement">
 
-    <div class="pm-root @(_demo ? "pm-root--demo" : "")">
-        @* Radzen's dialog and notification hosts. Rendered only once its stylesheet is in,
-           and only on this page: the rest of the app has not moved to Radzen yet. *@
-        @if (_radzenReady)
-        {
-            <RadzenComponents />
-        }
-
+    <div class="pm-root">
         @if (_stage == Stage.Intro && _radzenReady)
         {
             <GameIntro CueScope="pomule"
@@ -35,7 +28,7 @@
                        Controls=@ControlsContent
                        Options="@(_demo ? null : SpeciesPicker)"
                        Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
-                       StartLabel="@(_saved is null ? "Start match" : "New match")"
+                       StartLabel="@(_saved is null ? "Start" : "New match")"
                        ForceShow="true"
                        OnStart="StartNewAsync" />
         }
@@ -47,160 +40,72 @@
             </div>
         }
 
-        <div class="pm-split">
-            <div class="pm-map">
-                <div id="pomule-canvas" class="pm-canvas-host" role="img"
-                     aria-label="Planet Irata: a wrap-around map of plots, towns and colonists"></div>
+        @* The whole game is drawn on this canvas: the planet, the store, the auction floor,
+           the title line, the message line and the eight colonists' status columns. *@
+        <div id="pomule-canvas" class="pm-canvas-host" role="img"
+             aria-label="Planet Irata: plots, towns and colonists, with each colonist's money and goods below"></div>
 
-                @if (_match is { } match && _stage == Stage.Playing)
-                {
-                    var state = match.State;
-                    var me = state.Players[0];
+        @if (_match is { } match && _stage == Stage.Playing && _radzenReady)
+        {
+            var state = match.State;
 
-                    @* Phone landscape stand-in for the side panel. *@
-                    <div class="pm-pills" aria-hidden="true">
-                        <div class="pm-pill">
-                            @if (!_demo)
-                            {
-                                <strong>@me.Cash.ToString("N0") cr</strong>
-                                <span>F@(me.Goods[0]) E@(me.Goods[1]) S@(me.Goods[2]) C@(me.Goods[3])</span>
-                            }
-                            else
-                            {
-                                <strong>Demo</strong>
-                            }
-                        </div>
-                        <div class="pm-pill pm-pill--clock">M@(state.Month) · @PoMuleUi.PhaseName(state.Phase) · @((state.ClockTicks + 9) / 10) s</div>
-                        <div class="pm-pill pm-pill--dots">
-                            @foreach (var color in PoMuleUi.SeatColors)
-                            {
-                                <span class="pm-dot" style="background: @color"></span>
-                            }
-                        </div>
-                    </div>
-
-                    @if (_demo)
-                    {
-                        <div class="pm-speed">
-                            <span class="pm-hint">Speed</span>
-                            <RadzenSelectBar TValue="int" Value="@_demoSpeed" Change="@(v => SetDemoSpeedAsync(v))" Size="ButtonSize.Small">
-                                <Items>
-                                    @foreach (var speed in DemoSpeeds)
-                                    {
-                                        <RadzenSelectBarItem Text="@(speed + "×")" Value="speed" />
-                                    }
-                                </Items>
-                            </RadzenSelectBar>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="pm-context">
-                            @switch (state.Phase)
-                            {
-                                case Phase.Land:
-                                    <span class="pm-hint">@(match.HasClaimed(0) ? "Plot claimed. The others are still choosing." : "The highlighter sweeps the planet row by row. Press Space (or Act) when it is on the plot you want.")</span>
-                                    break;
-
-                                case Phase.Development when me.SpeedPercent == 0:
-                                    <span class="pm-hint">No Food, no work: you sit this month out. Buy Food at the market.</span>
-                                    break;
-
-                                case Phase.Development when me.InPub:
-                                    <span class="pm-hint">You are in the pub. The others are still out there.</span>
-                                    break;
-
-                                case Phase.Development when _whereKind == 0:
-                                    @if (!me.HasMule)
-                                    {
-                                        <RadzenButton Text="@($"Buy M.U.L.E. {state.Store.MulePrice} cr")" ButtonStyle="ButtonStyle.Warning" Size="ButtonSize.Small"
-                                                      Disabled="@(state.Store.Mules == 0)" Click="@(_ => Act(0))" />
-                                    }
-                                    else
-                                    {
-                                        @for (var g = 0; g < 4; g++)
-                                        {
-                                            var good = g;
-                                            <RadzenButton Text="@($"{good + 1} {PoMuleUi.GoodNames[good]} {PoMuleTuning.OutfitCost[good]}")" Size="ButtonSize.Small"
-                                                          ButtonStyle="@(me.Outfit == good ? ButtonStyle.Warning : ButtonStyle.Secondary)" Click="@(_ => Act(good + 1))" />
-                                        }
-                                    }
-                                    break;
-
-                                case Phase.Development when _whereKind == 1:
-                                    <RadzenButton Text="@($"Enter the pub (+{PubPayout} cr)")" ButtonStyle="ButtonStyle.Warning" Size="ButtonSize.Small" Click="@(_ => Act(0))" />
-                                    <span class="pm-hint">Ends your month.</span>
-                                    break;
-
-                                case Phase.Development when _whereKind == 2:
-                                    <RadzenButton Text="Take an assay kit" ButtonStyle="ButtonStyle.Warning" Size="ButtonSize.Small"
-                                                  Disabled="@me.HoldsAssay" Click="@(_ => Act(0))" />
-                                    break;
-
-                                case Phase.Development when _whereKind == 3 && me.HasMule && me.Outfit >= 0:
-                                    <RadzenButton Text="@(state.Owner[_wherePlot] == 0 ? "Install M.U.L.E. here" : "Not your land: it will bolt!")" Size="ButtonSize.Small"
-                                                  ButtonStyle="@(state.Owner[_wherePlot] == 0 ? ButtonStyle.Warning : ButtonStyle.Danger)" Click="@(_ => Act(0))" />
-                                    break;
-
-                                case Phase.Development when _whereKind == 3 && me.HoldsAssay:
-                                    <RadzenButton Text="Survey this plot" ButtonStyle="ButtonStyle.Warning" Size="ButtonSize.Small" Click="@(_ => Act(0))" />
-                                    break;
-
-                                case Phase.Development:
-                                    <span class="pm-hint">@(me.HasMule ? "Outfit your M.U.L.E. at a town before installing it." : "Walk to a town: Outfitter, Pub or Assay Office.")</span>
-                                    break;
-
-                                case Phase.Market when state.MarketGood >= 0:
-                                    <span class="pm-hint">@PoMuleUi.GoodNames[state.MarketGood]:</span>
-                                    <RadzenButton Text="Sell" Size="ButtonSize.Small" ButtonStyle="@RoleStyle(PoMuleMarket.Seller)" Click="@(_ => SetRole(PoMuleMarket.Seller))" />
-                                    <RadzenButton Text="Sit out" Size="ButtonSize.Small" ButtonStyle="@RoleStyle(0)" Click="@(_ => SetRole(0))" />
-                                    <RadzenButton Text="Buy" Size="ButtonSize.Small" ButtonStyle="@RoleStyle(PoMuleMarket.Buyer)" Click="@(_ => SetRole(PoMuleMarket.Buyer))" />
-                                    <span class="pm-hint">Walk up to raise your price, down to lower it.</span>
-                                    break;
-                            }
-                        </div>
-                    }
-
-                    @if (state.Phase == Phase.Auction)
-                    {
-                        <PoMuleAuction State="state" CanBid="@(!_demo)" OnBid="Bid" />
-                    }
-
-                    @if (state.Phase is Phase.Production or Phase.Event)
-                    {
-                        <div class="pm-banner" role="status">
-                            <div class="pm-banner-title">@(state.Phase == Phase.Production ? "Production" : PoMuleEvents.Headline(state.LastEvent))</div>
-                            <div>@(state.Phase == Phase.Production ? "The M.U.L.E.s are at work." : PoMuleEvents.Detail(state.LastEvent))</div>
-                        </div>
-                    }
-
-                    @if (state.Phase is Phase.Standings or Phase.Finished)
-                    {
-                        <PoMuleStandings State="state" Rows="_rows" Final="@(state.Phase == Phase.Finished)" CanContinue="@(!_demo)" OnContinue="SkipStandings" />
-                    }
-
-                    <div class="pm-rotate" role="status">Turn your phone sideways to play.</div>
-                }
-            </div>
-
-            @if (_match is { } hudMatch && _stage == Stage.Playing && _radzenReady)
+            @if (_demo)
             {
-                <PoMuleHud State="hudMatch.State" Rows="_rows" />
+                <div class="pm-bar pm-bar--speed">
+                    <span class="pm-hint">Speed</span>
+                    <RadzenSelectBar TValue="int" Value="@_demoSpeed" Change="@(v => SetDemoSpeedAsync(v))" Size="ButtonSize.Small">
+                        <Items>
+                            @foreach (var speed in DemoSpeeds)
+                            {
+                                <RadzenSelectBarItem Text="@(speed + "×")" Value="speed" />
+                            }
+                        </Items>
+                    </RadzenSelectBar>
+                </div>
             }
-        </div>
+            else if (state.Phase == Phase.Market && state.MarketGood >= 0)
+            {
+                @* Which side of the auction to stand on. Everything else is done by walking. *@
+                <div class="pm-bar">
+                    <RadzenButton Text="Sell" Size="ButtonSize.Small" ButtonStyle="@RoleStyle(PoMuleMarket.Seller)" Click="@(_ => SetRole(PoMuleMarket.Seller))" />
+                    <RadzenButton Text="Sit out" Size="ButtonSize.Small" ButtonStyle="@RoleStyle(0)" Click="@(_ => SetRole(0))" />
+                    <RadzenButton Text="Buy" Size="ButtonSize.Small" ButtonStyle="@RoleStyle(PoMuleMarket.Buyer)" Click="@(_ => SetRole(PoMuleMarket.Buyer))" />
+                </div>
+            }
+
+            @if (state.Phase == Phase.Auction)
+            {
+                <PoMuleAuction State="state" CanBid="@(!_demo)" OnBid="Bid" />
+            }
+
+            @if (state.Phase is Phase.Standings or Phase.Finished)
+            {
+                <PoMuleStandings State="state" Rows="_rows" Final="@(state.Phase == Phase.Finished)" CanContinue="@(!_demo)" OnContinue="SkipStandings" />
+            }
+
+            <div class="pm-rotate" role="status">Turn your phone sideways to play.</div>
+        }
     </div>
 </GameShell>
 
 @code {
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoMule);
 
-    // The start card's heading, after the Atari title screen.
-    private RenderFragment LogoContent => @<span class="pm-logo" aria-label="M.U.L.E.">M.U.L.E.</span>;
+    // The start card's heading, after the Atari title screen: the striped logo with three
+    // colonists marching under it.
+    private RenderFragment LogoContent => @<span class="pm-title">
+        <span class="pm-logo" aria-label="M.U.L.E.">M.U.L.E.</span>
+        <span class="pm-parade" aria-hidden="true">
+            <span class="pm-walker pm-walker--a"></span>
+            <span class="pm-walker pm-walker--b"></span>
+            <span class="pm-walker pm-walker--c"></span>
+        </span>
+    </span>;
 
     private RenderFragment ControlsContent => @<div>
-        <p class="keys-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows move · <kbd>Space</kbd> acts (claim, buy, install, bid, enter) · <kbd>Shift</kbd> dashes · <kbd>1</kbd>–<kbd>4</kbd> pick an outfit.</p>
-        <p class="touch-only">Stick moves · <strong>Act</strong> claims, buys, installs, bids and enters · <strong>Dash</strong> sprints.</p>
-        <p>Each month: press when the highlighter is on the plot you want, buy a M.U.L.E. at a town and install it on your land, then sell what you can spare. A dash-speed bump makes a towed M.U.L.E. bolt.</p>
+        <p class="keys-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows move · <kbd>Space</kbd> is the button (claim, install, bid) · <kbd>Shift</kbd> dashes.</p>
+        <p class="touch-only">Stick moves · <strong>Act</strong> is the button (claim, install, bid) · <strong>Dash</strong> sprints.</p>
+        <p>Each month: press the button when the highlighter is on the plot you want. Walk into a town, get a M.U.L.E. at the corral, walk it into an outfitting stall, then out to your plot and press the button. Sell what you can spare at the auction. A dash-speed bump makes a towed M.U.L.E. bolt.</p>
     </div>;
 
     private RenderFragment SpeciesPicker => @<div class="pm-species">
@@ -221,6 +126,7 @@
                 </button>
             </Template>
         </RadzenDataList>
+        <div class="pm-press">Press Start to go on</div>
     </div>;
 
     private RenderFragment EndSummary => @<p>@_endLine</p>;

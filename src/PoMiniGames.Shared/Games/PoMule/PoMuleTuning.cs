@@ -46,6 +46,16 @@ public static class PoMuleTuning
     public const int PubCap = 250;
     public const int MinSpeedPercent = 40;
 
+    /// <summary>Credits a stroke of personal luck is worth in months 1–4; double in 5–8, triple in 9–12.</summary>
+    public const int LuckCredits = 50;
+
+    /// <summary>The wampus shows itself on a mountain for 3 s in every 10 s of development.</summary>
+    public const int WampusCycleTicks = 100;
+    public const int WampusVisibleTicks = 30;
+
+    /// <summary>What catching the wampus pays: 100, 200, then 300 credits as the match goes on.</summary>
+    public static int WampusBounty(int month) => 100 * (1 + (Math.Clamp(month, 1, Months) - 1) / 4);
+
     // Production and events.
     public const int WarehouseCap = 50;
     public const int EventChancePercent = 75;

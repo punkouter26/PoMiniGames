@@ -5,7 +5,8 @@ namespace PoMiniGames.Shared.Games.PoMule;
 /// <param name="IdleMules">M.U.L.E.s per seat that sat idle for lack of Energy.</param>
 /// <param name="IdlePlots">The plots those M.U.L.E.s stand on.</param>
 /// <param name="PestPlot">The plot a Pest Attack stripped, or -1.</param>
-public sealed record ProductionReport(int[][] Produced, int[] IdleMules, IReadOnlyList<int> IdlePlots, int PestPlot);
+/// <param name="PlotOutput">Units each plot made (0 for idle or empty plots), for the unit-by-unit count on the map.</param>
+public sealed record ProductionReport(int[][] Produced, int[] IdleMules, IReadOnlyList<int> IdlePlots, int PestPlot, int[] PlotOutput);
 
 public static class PoMuleProduction
 {
@@ -111,7 +112,7 @@ public static class PoMuleProduction
         }
 
         if (match.Players.Count(p => p.WentShort) >= PoMuleTuning.CrisisShortColonists) match.CrisisMonths++;
-        return new ProductionReport(produced, idleMules, idlePlots, pestPlot);
+        return new ProductionReport(produced, idleMules, idlePlots, pestPlot, output);
     }
 
     /// <summary>

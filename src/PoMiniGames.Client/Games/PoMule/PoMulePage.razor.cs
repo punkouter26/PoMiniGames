@@ -14,14 +14,18 @@ namespace PoMiniGamesClient.Games.PoMule;
 /// </summary>
 /// <remarks>
 /// The renderer's frame loop is the only clock. It calls <see cref="OnTick"/>; nothing here
-/// uses a timer, so a hidden tab or a phone held upright pauses the match for free.
+/// uses a timer, so a hidden tab or a phone held upright pauses the match for free. The
+/// canvas shows nearly everything (planet, store, auction, status); this page adds only the
+/// start card, the bid and role buttons, the standings and the demo speed buttons.
 /// </remarks>
 public partial class PoMulePage : IAsyncDisposable
 {
     private enum Stage { Loading, Intro, Playing, Failed }
 
-    // What the player's avatar is standing on, as the renderer reports it.
-    private const int AtOutfitter = 0, AtPub = 1, AtAssay = 2, AtPlot = 3;
+    // What walking into a stall inside the store does (mirrors js/pomule/world.js).
+    private const int TownBuyMule = 0, TownPub = 5, TownAssay = 6;
+
+    private static readonly int[] DemoSpeeds = [1, 2, 4, 8, 16];
 
     [Parameter] public string? Mode { get; set; }
 
@@ -29,7 +33,6 @@ public partial class PoMulePage : IAsyncDisposable
     [Inject] private PlayerNameService PlayerNameService { get; set; } = null!;
     [Inject] private GameResultService GameResults { get; set; } = null!;
     [Inject] private KioskCoordinator Kiosk { get; set; } = null!;
-    [Inject] private NotificationService Notifications { get; set; } = null!;
     [Inject] private PoMuleSaveStore Saves { get; set; } = null!;
 
     private DotNetObjectReference<PoMulePage>? _ref;
@@ -50,12 +53,8 @@ public partial class PoMulePage : IAsyncDisposable
     private bool _plotsDirty;
     private bool _disposed;
     private int _demoSpeed = 4;
-    private int _whereKind = -1;
-    private int _wherePlot;
     private Phase _shownPhase;
     private long _lastRender;
-
-    private int PubPayout => _match is { } m ? PoMuleDevelopment.PubPayout(m.State) : 0;
 
     protected override void OnInitialized() => _playerName = PlayerNameService.GetPlayerName();
 
@@ -117,7 +116,6 @@ public partial class PoMulePage : IAsyncDisposable
         _saved = null;
         _finished = false;
         _outcome = GameResult.InProgress;
-        _whereKind = -1;
         _shownPhase = match.State.Phase;
         if (!_demo) match.State.Players[0].Name = string.IsNullOrWhiteSpace(_playerName) ? "You" : _playerName;
         _rows = PoMuleUi.Rows(match.State);
@@ -132,6 +130,7 @@ public partial class PoMulePage : IAsyncDisposable
             peaks = plots.Select(p => (int)p.Peaks).ToArray(),
             species = match.State.Players.Select(p => (int)p.Species).ToArray(),
             colors = PoMuleUi.SeatColors,
+            names = match.State.Players.Select(p => p.Name).ToArray(),
             human = !_demo,
             speed = _demo ? _demoSpeed : 1,
             snapshot = match.Snapshot(),
@@ -150,7 +149,6 @@ public partial class PoMulePage : IAsyncDisposable
         var monthStarted = match.Advance(ticks);
 
         foreach (var notice in match.Notices) Announce(notice);
-        if (_plotsDirty) _ = PushPlotsAsync();
 
         if (state.Phase == Phase.Finished)
         {
@@ -161,16 +159,29 @@ public partial class PoMulePage : IAsyncDisposable
             _ = Saves.SaveAsync(state);
         }
 
-        // The panel does not need sixty updates a second: redraw on a phase change, else four times a second.
-        var now = Environment.TickCount64;
-        if (state.Phase != _shownPhase || now - _lastRender > 250)
+        if (state.Phase != _shownPhase)
         {
-            if (state.Phase != _shownPhase)
+            _shownPhase = state.Phase;
+            _announcement = $"Month {state.Month}, {PoMuleUi.PhaseName(state.Phase)}.";
+            _plotsDirty = true;
+            if (state.Phase == Phase.Standings && _luck is { } luck)
             {
-                _shownPhase = state.Phase;
-                _announcement = $"Month {state.Month}, {PoMuleUi.PhaseName(state.Phase)}.";
-                _plotsDirty = true;
+                Say(luck, seconds: 6);
+                _luck = null;
             }
+            // The renderer counts production up plot by plot, and marks where an event struck.
+            if (state.Phase == Phase.Production && match.Report is { } report)
+            {
+                _ = JS.InvokeVoidAsync("PoMule.production", report.PlotOutput);
+                _ = JS.InvokeVoidAsync("PoMule.eventAt", state.LastEvent == ColonyEvent.Meteor ? state.MeteorPlot : report.PestPlot);
+            }
+        }
+        if (_plotsDirty) _ = PushPlotsAsync();
+
+        // The Blazor parts (standings, bid card) redraw on a phase change, else four times a second.
+        var now = Environment.TickCount64;
+        if (now - _lastRender > 250 || _plotsDirty)
+        {
             _lastRender = now;
             _rows = PoMuleUi.Rows(state);
             StateHasChanged();
@@ -178,37 +189,51 @@ public partial class PoMulePage : IAsyncDisposable
         return match.Snapshot();
     }
 
+    /// <summary>Puts what just happened on the canvas's orange message line.</summary>
     private void Announce(Notice notice)
     {
         var state = _match!.State;
+        var who = notice.Seat >= 0 ? state.Players[notice.Seat].Name : "";
         switch (notice.Kind)
         {
             case NoticeKind.LandGranted:
                 _plotsDirty = true;
+                if (notice.Seat == 0 && !_demo) Say("The plot is yours.", "claim");
                 break;
             case NoticeKind.AuctionWon:
                 _plotsDirty = true;
-                Notify(NotificationSeverity.Info, "Sold", $"{state.Players[notice.Seat].Name} wins the plot for {notice.B:N0} cr.");
+                Say($"{who} buys the plot for ${notice.B}.", "buy");
                 break;
             case NoticeKind.MuleRanAway:
                 _ = JS.InvokeVoidAsync("PoMule.runaway", notice.Seat);
-                if (notice.Seat == 0 && !_demo) Notify(NotificationSeverity.Warning, "Your M.U.L.E. bolted", "It is gone, and so is what you paid for it.");
+                Say(notice.Seat == 0 && !_demo ? "Your M.U.L.E. ran away!" : $"{who}'s M.U.L.E. ran away!");
                 break;
             case NoticeKind.PubVisit when notice.Seat == 0 && !_demo:
-                Notify(NotificationSeverity.Success, "Pub", $"You win {notice.A:N0} cr at the tables.");
+                Say($"You win ${notice.A} gambling at the pub.", "buy");
                 break;
             case NoticeKind.Traded:
                 _ = JS.InvokeVoidAsync("PoMule.trade", notice.Seat, notice.A, notice.B);
                 break;
             case NoticeKind.ColonyEvent when (ColonyEvent)notice.A != ColonyEvent.None:
-                var colonyEvent = (ColonyEvent)notice.A;
-                Notify(NotificationSeverity.Warning, PoMuleEvents.Headline(colonyEvent), PoMuleEvents.Detail(colonyEvent));
+                Say($"{PoMuleEvents.Headline((ColonyEvent)notice.A)}! {PoMuleEvents.Detail((ColonyEvent)notice.A)}", "refuse", seconds: 6);
+                break;
+            case NoticeKind.Luck:
+                // Shown after the colony event has had its moment, in the standings pause.
+                _luck = notice.A > 0 ? $"{who} finds ${notice.A} in an old spacesuit." : $"{who} loses ${-notice.A} to a M.U.L.E. vet.";
+                break;
+            case NoticeKind.WampusCaught:
+                Say(notice.Seat == 0 && !_demo ? $"You caught the wampus! It pays ${notice.A}." : $"{who} caught the wampus.", "wampus");
                 break;
         }
     }
 
-    private void Notify(NotificationSeverity severity, string summary, string detail) =>
-        Notifications.Notify(new NotificationMessage { Severity = severity, Summary = summary, Detail = detail, Duration = 4000 });
+    private string? _luck;
+
+    private void Say(string text, string sound = "", int seconds = 4)
+    {
+        if (_disposed) return;
+        _ = JS.InvokeVoidAsync("PoMule.say", text, seconds, sound);
+    }
 
     [JSInvokable]
     public void OnLandPick(int plot)
@@ -224,10 +249,7 @@ public partial class PoMulePage : IAsyncDisposable
     public void OnArrive(int seat)
     {
         if (_match is null || seat is < 0 or >= PoMuleTuning.Seats) return;
-        // Only what this arrival added: the list also holds everything since the last tick.
-        var seen = _match.Notices.Count;
-        _match.Arrive(seat);
-        foreach (var notice in _match.Notices.Skip(seen).ToList()) Announce(notice);
+        Report(() => _match.Arrive(seat));
         _plotsDirty = true;
     }
 
@@ -235,21 +257,79 @@ public partial class PoMulePage : IAsyncDisposable
     public void OnBump(int seat)
     {
         if (_match is null || seat is < 0 or >= PoMuleTuning.Seats) return;
-        var seen = _match.Notices.Count;
-        _match.Bump(seat, dashing: true);
+        Report(() => _match.Bump(seat, dashing: true));
+    }
+
+    [JSInvokable]
+    public void OnWampus()
+    {
+        if (!_demo && _match is not null) Report(() => _match.CatchWampus(0));
+    }
+
+    /// <summary>Runs an engine call and announces only the notices that call added.</summary>
+    private void Report(Action call)
+    {
+        var seen = _match!.Notices.Count;
+        call();
         foreach (var notice in _match.Notices.Skip(seen).ToList()) Announce(notice);
     }
 
+    /// <summary>The player walked into a stall inside the store.</summary>
     [JSInvokable]
-    public void OnWhere(int kind, int plot)
+    public void OnTown(int stall)
     {
-        if (_match is null || plot < 0 || plot >= _match.State.Owner.Length) return;
-        (_whereKind, _wherePlot) = (kind, plot);
-        StateHasChanged();
+        if (_demo || _match?.State is not { Phase: Phase.Development } state) return;
+        var me = state.Players[0];
+        switch (stall)
+        {
+            case TownBuyMule:
+                if (me.HasMule) Say("You already have a M.U.L.E. in tow.");
+                else if (Check(PoMuleDevelopment.BuyMule(state, 0))) Say($"One M.U.L.E. for ${state.Store.MulePrice}. Now outfit it.", "buy");
+                break;
+            case >= 1 and <= 4:
+                var good = (Good)(stall - 1);
+                if (!me.HasMule) Say("Get a M.U.L.E. from the corral first.", "refuse");
+                else if (Check(PoMuleDevelopment.Outfit(state, 0, good))) Say($"Outfitted for {PoMuleUi.GoodNames[stall - 1]}. Take it to your plot.", "buy");
+                break;
+            case TownPub:
+                Report(() => _match.HumanPub());
+                break;
+            case TownAssay:
+                if (PoMuleDevelopment.VisitAssayOffice(state, 0) == Outcome.Ok) Say("Assay kit in hand. Press the button on any plot.", "buy");
+                break;
+        }
     }
 
+    /// <summary>The player pressed the button out on the map: install the towed M.U.L.E., or survey.</summary>
     [JSInvokable]
-    public void OnAction(int action) => Act(action);
+    public void OnPlotAction(int plot)
+    {
+        if (_demo || _match?.State is not { Phase: Phase.Development } state || plot < 0 || plot >= state.Owner.Length) return;
+        var me = state.Players[0];
+        if (me.HasMule)
+        {
+            if (me.Outfit < 0) { Say("Outfit your M.U.L.E. in town first.", "refuse"); return; }
+            var outcome = PoMuleDevelopment.Install(state, 0, plot);
+            if (outcome == Outcome.Runaway) Announce(new Notice(NoticeKind.MuleRanAway, 0));
+            else if (outcome == Outcome.Ok) Say("M.U.L.E. installed.", "claim");
+        }
+        else if (me.HoldsAssay && PoMuleDevelopment.Survey(state, 0, plot) == Outcome.Ok)
+        {
+            Say($"Crystite level here: {state.Map.Plots[plot].Crystite} of 4.", "claim");
+        }
+        _plotsDirty = true;
+    }
+
+    private bool Check(Outcome outcome)
+    {
+        switch (outcome)
+        {
+            case Outcome.NoCash: Say("You cannot afford that.", "refuse"); break;
+            case Outcome.SoldOut: Say("The corral is empty. The Store needs Smithore.", "refuse"); break;
+            case Outcome.NotAllowed: Say("Not now.", "refuse"); break;
+        }
+        return outcome == Outcome.Ok;
+    }
 
     [JSInvokable]
     public void OnMarketInput(int direction)
@@ -260,13 +340,12 @@ public partial class PoMulePage : IAsyncDisposable
     [JSInvokable]
     public void OnSkip() => SkipStandings();
 
-    // ── The player's own actions (keys, touch buttons and the on-screen buttons all land here) ──
+    // ── The page's own buttons ──
 
     private void Bid()
     {
         if (_demo || _match is null) return;
-        if (!_match.HumanBid() && _match.State.HighBidder != 0)
-            Notify(NotificationSeverity.Warning, "Cannot bid", "You do not have the credits for the next raise.");
+        if (!_match.HumanBid() && _match.State.HighBidder != 0) Say("You cannot afford the next bid.", "refuse");
     }
 
     private void SkipStandings()
@@ -280,69 +359,14 @@ public partial class PoMulePage : IAsyncDisposable
             PoMuleMarket.SetRole(state, 0, role);
     }
 
-    private static readonly int[] DemoSpeeds = [1, 2, 4, 8, 16];
+    private ButtonStyle RoleStyle(sbyte role) =>
+        _match?.State.LaneRole[0] == role ? ButtonStyle.Warning : ButtonStyle.Secondary;
 
     private async Task SetDemoSpeedAsync(int speed)
     {
         _demoSpeed = speed;
         try { await JS.InvokeVoidAsync("PoMule.setSpeed", speed); }
         catch (JSException) { }
-    }
-
-    private ButtonStyle RoleStyle(sbyte role) =>
-        _match?.State.LaneRole[0] == role ? ButtonStyle.Warning : ButtonStyle.Secondary;
-
-    /// <param name="action">0 = the main action for where the avatar stands; 1–4 = outfit for that good.</param>
-    private void Act(int action)
-    {
-        if (_demo || _match?.State is not { Phase: Phase.Development } state) return;
-        var me = state.Players[0];
-        switch (_whereKind)
-        {
-            case AtOutfitter when action == 0 && !me.HasMule:
-                Report(PoMuleDevelopment.BuyMule(state, 0));
-                break;
-            case AtOutfitter when action is >= 1 and <= 4:
-                // Picking an outfit with nothing in tow buys the M.U.L.E. first.
-                if (!me.HasMule && Report(PoMuleDevelopment.BuyMule(state, 0)) != Outcome.Ok) break;
-                Report(PoMuleDevelopment.Outfit(state, 0, (Good)(action - 1)));
-                break;
-            case AtOutfitter:
-                Notify(NotificationSeverity.Info, "Outfitter", "Press 1 to 4 to outfit your M.U.L.E.");
-                break;
-            case AtPub when action == 0:
-                var seen = _match.Notices.Count;
-                _match.HumanPub();
-                foreach (var notice in _match.Notices.Skip(seen).ToList()) Announce(notice);
-                break;
-            case AtAssay when action == 0:
-                if (PoMuleDevelopment.VisitAssayOffice(state, 0) == Outcome.Ok)
-                    Notify(NotificationSeverity.Info, "Assay kit", "Walk to any plot and act there to survey it.");
-                break;
-            case AtPlot when action == 0 && me.HasMule:
-                if (Report(PoMuleDevelopment.Install(state, 0, _wherePlot)) == Outcome.Runaway)
-                    Announce(new Notice(NoticeKind.MuleRanAway, 0));
-                break;
-            case AtPlot when action == 0 && me.HoldsAssay:
-                if (PoMuleDevelopment.Survey(state, 0, _wherePlot) == Outcome.Ok)
-                    Notify(NotificationSeverity.Info, "Survey", $"Crystite level {state.Map.Plots[_wherePlot].Crystite} of 4.");
-                break;
-        }
-        _plotsDirty = true;
-        _ = PushPlotsAsync();
-        _rows = PoMuleUi.Rows(state);
-        StateHasChanged();
-    }
-
-    private Outcome Report(Outcome outcome)
-    {
-        switch (outcome)
-        {
-            case Outcome.NoCash: Notify(NotificationSeverity.Warning, "Not enough credits", "Sell something at the market first."); break;
-            case Outcome.SoldOut: Notify(NotificationSeverity.Warning, "Sold out", "The Store has no M.U.L.E.s. It needs Smithore to build more."); break;
-            case Outcome.NotAllowed: Notify(NotificationSeverity.Info, "Not now", "You cannot do that here."); break;
-        }
-        return outcome;
     }
 
     // ── Engine → renderer ──
@@ -362,7 +386,10 @@ public partial class PoMulePage : IAsyncDisposable
         try
         {
             await JS.InvokeVoidAsync("PoMule.setPlots",
-                state.Owner.Select(o => (int)o).ToArray(), state.Installed.Select(o => (int)o).ToArray(), crystite);
+                state.Map.Plots.Select(p => (int)p.Terrain).ToArray(),
+                state.Owner.Select(o => (int)o).ToArray(),
+                state.Installed.Select(o => (int)o).ToArray(),
+                crystite);
         }
         catch (JSException) { /* the page is going away */ }
         catch (JSDisconnectedException) { }
@@ -374,13 +401,14 @@ public partial class PoMulePage : IAsyncDisposable
         var state = _match!.State;
         _rows = PoMuleUi.Rows(state);
         var survived = PoMuleScoring.ColonySurvives(_rows.Sum(r => r.NetWorth), state.CrisisMonths);
+        Say(survived ? "The colony survived and will prosper." : "The colony failed. The Federation is displeased.", survived ? "wampus" : "refuse", seconds: 60);
         StateHasChanged();
 
         if (_demo)
         {
             Kiosk.MarkFinished();
             // Outside the reel a demo keeps going: show the result, then play another.
-            await Task.Delay(8000);
+            await Task.Delay(10000);
             if (!_disposed && _demo && _finished && !Kiosk.IsActive) await StartNewAsync();
             return;
         }

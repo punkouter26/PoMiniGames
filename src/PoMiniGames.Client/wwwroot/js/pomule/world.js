@@ -74,3 +74,28 @@ export function nearestBuilding(x, kind) {
 function townX(town, kind) {
   return TOWN_COLS[town] * TILE + (kind + 0.5) * (TILE / 3);
 }
+
+// ── Inside a town ──────────────────────────────────────────────────────────────────
+// Walking onto a town plot takes the player into the store, drawn on the same canvas as
+// the planet and measured in the same units. Four outfitting stalls line the top wall, the
+// Assay Office, the Pub and the M.U.L.E. corral the bottom; the way out is either side.
+export const STALL_HALF = 100;
+export const TOP_STALLS = [192, 576, 960, 1344];   // centre x of Food, Energy, Smithore, Crystite
+export const BOTTOM_STALLS = [256, 768, 1280];     // centre x of Assay Office, Pub, corral
+export const STALL_DEPTH = 150;
+
+// What walking into a stall does (the codes PoMulePage.OnTown takes).
+export const TOWN_BUY_MULE = 0, TOWN_PUB = 5, TOWN_ASSAY = 6; // 1–4 = outfit for that good
+
+/** The stall under a point inside the store, as a town action code, or -1. */
+export function stallAt(x, y) {
+  if (y < STALL_DEPTH - 40) {
+    const k = TOP_STALLS.findIndex((cx) => Math.abs(x - cx) < STALL_HALF - 20);
+    return k < 0 ? -1 : k + 1;
+  }
+  if (y > WORLD_H - STALL_DEPTH + 40) {
+    const k = BOTTOM_STALLS.findIndex((cx) => Math.abs(x - cx) < STALL_HALF - 20);
+    return k < 0 ? -1 : [TOWN_ASSAY, TOWN_PUB, TOWN_BUY_MULE][k];
+  }
+  return -1;
+}

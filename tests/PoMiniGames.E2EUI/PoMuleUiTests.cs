@@ -48,7 +48,7 @@ public class PoMuleUiTests
         (await page.Locator(".pm-species-card").CountAsync()).Should().Be(8);
         await page.Locator(".pm-species-card", new() { HasText = "Zephyr-Flapper" }).ClickAsync();
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "1-start-card.png") });
-        await page.GetByRole(AriaRole.Button, new() { Name = "Start match" }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start", Exact = true }).ClickAsync();
 
         // Land grant: the highlighter sweeps the plots row by row; Space claims the one it is on.
         await WaitForPhase(page, Land, 1);
@@ -64,9 +64,9 @@ public class PoMuleUiTests
         // Development: everyone is on the map at once under one clock.
         await WaitForPhase(page, Development, 1);
         await page.EvaluateAsync("() => { window.__pomule().speed = 1; }");
-        (await page.Locator(".pm-hud .rz-data-grid").CountAsync()).Should().Be(1, "the side panel lists the colonists in a Radzen grid");
-        (await page.Locator(".pm-hud").InnerTextAsync()).Should().Contain("1,600 cr", "the Zephyr-Flapper starts with 1,600 credits");
-
+        (await page.EvaluateAsync<double>("() => window.__pomule().seat(0, 0)")).Should().Be(1600, "the Zephyr-Flapper starts with 1,600 credits");
+        (await page.EvaluateAsync<bool>("() => window.__pomule().lo.width === 384"))
+            .Should().BeTrue("the whole screen is one 384-pixel-wide picture, the planet included");
 
         const string positions = "() => window.__pomule().avatars.map(a => [a.x, a.y])";
         var before = await page.EvaluateAsync<double[][]>(positions);
@@ -78,6 +78,23 @@ public class PoMuleUiTests
         moved.Should().BeGreaterThanOrEqualTo(6, "all colonists develop at the same time, not in turns");
         after[0][0].Should().NotBe(before[0][0], "the D key walks the player's avatar east");
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "3-development.png") });
+
+        // Walk back and up through the town's door: the store's interior takes over the screen.
+        await page.Keyboard.DownAsync("a");
+        await page.WaitForTimeoutAsync(1000);
+        await page.Keyboard.UpAsync("a");
+        await page.Keyboard.DownAsync("w");
+        await page.WaitForFunctionAsync("() => !!window.__pomule().interior", null, new() { Timeout = 10_000 });
+        await page.Keyboard.UpAsync("w");
+        // East and down into the corral: walking into the stall buys the M.U.L.E.
+        await page.Keyboard.DownAsync("d");
+        await page.WaitForFunctionAsync("() => window.__pomule().avatars[0].x > 1270", null, new() { Timeout = 10_000 });
+        await page.Keyboard.UpAsync("d");
+        await page.Keyboard.DownAsync("s");
+        await page.WaitForFunctionAsync("() => window.__pomule().seat(0, 6) === 1", null, new() { Timeout = 10_000 });
+        await page.Keyboard.UpAsync("s");
+        (await page.EvaluateAsync<double>("() => window.__pomule().seat(0, 0)")).Should().Be(1500, "a M.U.L.E. costs 100");
+        await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "3b-store.png") });
 
         // The rest of the month: production, event, the four markets, standings; then month 2.
         await page.EvaluateAsync("() => { window.__pomule().speed = 8; }");
@@ -110,7 +127,7 @@ public class PoMuleUiTests
         var mobile = await phone.NewPageAsync();
         await mobile.GotoAsync($"{origin}/pomule/1player?autoGuest=1", new() { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
         await mobile.Locator(".pm-species-card").First.WaitForAsync(new() { Timeout = 60_000 });
-        await mobile.GetByRole(AriaRole.Button, new() { Name = "Start match" }).TapAsync();
+        await mobile.GetByRole(AriaRole.Button, new() { Name = "Start", Exact = true }).TapAsync();
         await WaitForPhase(mobile, Land, 1);
         // The Act button claims the lit plot, the same as Space.
         await mobile.WaitForFunctionAsync("() => window.__pomule().snap[10] >= 0", null, new() { Timeout = 30_000 });
@@ -122,8 +139,6 @@ public class PoMuleUiTests
 
         (await mobile.Locator(".pm-stick").IsVisibleAsync()).Should().BeTrue();
         (await mobile.Locator(".pm-touch-act").IsVisibleAsync()).Should().BeTrue();
-        (await mobile.Locator(".pm-pills").IsVisibleAsync()).Should().BeTrue("the pills replace the side panel on a phone");
-        (await mobile.Locator(".pm-hud").IsVisibleAsync()).Should().BeFalse();
 
         // Push the stick right: the avatar walks east, exactly as the D key does.
         var stick = (await mobile.Locator(".pm-stick").BoundingBoxAsync())!;
@@ -163,8 +178,8 @@ public class PoMuleUiTests
         await page.ScreenshotAsync(new() { Path = Path.Combine(Shots(), "7-demo-development.png") });
 
         // The speed buttons: 1x, 2x, 4x, 8x, 16x.
-        (await page.Locator(".pm-speed .rz-button").CountAsync()).Should().Be(5);
-        await page.Locator(".pm-speed .rz-button", new() { HasText = "16×" }).ClickAsync();
+        (await page.Locator(".pm-bar--speed .rz-button").CountAsync()).Should().Be(5);
+        await page.Locator(".pm-bar--speed .rz-button", new() { HasText = "16×" }).ClickAsync();
         await page.WaitForFunctionAsync("() => window.__pomule().speed === 16", null, new() { Timeout = 10_000 });
 
         // Run the other eleven months faster than a viewer would watch them.

@@ -160,6 +160,61 @@ public sealed class PoMuleMatchTests
         late.State.Owner[2].Should().NotBe((sbyte)0);
     }
 
+    /// <summary>The touches carried over from the 1983 game. One method: the tier's last slot.</summary>
+    [Fact]
+    public void LuckTheMeteorTheWampusAndThePlotByPlotCount_WorkAsInTheOriginal()
+    {
+        // Personal luck: good luck finds the poorer half, bad luck the richer half, and
+        // nobody is ever pushed below zero.
+        var luck = MatchState.New(seed: 5, humanSpecies: null);
+        for (var roll = 0; roll < 300; roll++)
+        {
+            for (var seat = 0; seat < 8; seat++) luck.Players[seat].Cash = roll < 150 ? 1000 + seat * 100 : 10;
+            var rank = PoMuleScoring.Standings(luck).ToDictionary(s => s.Seat, s => s.Rank);
+            var (lucky, credits) = PoMuleEvents.Luck(luck);
+            credits.Should().NotBe(0);
+            if (credits > 0) rank[lucky].Should().BeGreaterThanOrEqualTo(5, "good luck goes to the poorer half");
+            else rank[lucky].Should().BeLessThanOrEqualTo(4, "bad luck goes to the richer half");
+            Math.Abs(credits).Should().BeLessThanOrEqualTo(PoMuleTuning.LuckCredits);
+            luck.Players[lucky].Cash.Should().BeGreaterThanOrEqualTo(0);
+        }
+
+        // The meteor digs a rich crater in open, unowned ground.
+        var meteor = MatchState.New(seed: 6, humanSpecies: null);
+        PoMuleEvents.Aftermath(meteor, ColonyEvent.Meteor);
+        meteor.MeteorPlot.Should().BeGreaterThanOrEqualTo(0);
+        meteor.Map.Plots[meteor.MeteorPlot].Should().Be(new Plot(Terrain.Crater, 0, 4));
+        meteor.Owner[meteor.MeteorPlot].Should().Be(MatchState.Nobody);
+
+        // Production reports each plot's units, for the dot-by-dot count on the map.
+        var farm = MatchState.New(seed: 7, humanSpecies: Species.Humanoid);
+        farm.Map.Plots[0] = new Plot(Terrain.River, 0, 0);
+        farm.Map.Plots[1] = new Plot(Terrain.Plains, 0, 0);
+        (farm.Owner[0], farm.Owner[1]) = (0, 0);
+        (farm.Installed[0], farm.Installed[1]) = ((sbyte)Good.Food, (sbyte)Good.Energy);
+        var report = PoMuleProduction.Run(farm, ColonyEvent.None, vary: false);
+        (report.PlotOutput[0], report.PlotOutput[1], report.PlotOutput.Sum()).Should().Be((4, 3, 7));
+
+        // The wampus shows on a mountain for part of every ten seconds and pays once a month.
+        var match = PoMuleMatch.New(seed: 8, humanSpecies: Species.Humanoid);
+        var state = match.State;
+        while (state.Phase != Phase.Development) match.Advance(1);
+        match.Advance(1);
+        match.CatchWampus(0).Should().Be(0, "it is not showing yet");
+        var waited = 0;
+        while (state.WampusPlot < 0 && waited++ < PoMuleTuning.WampusCycleTicks) match.Advance(1);
+        state.Map.Plots[state.WampusPlot].Terrain.Should().Be(Terrain.Mountain);
+        match.Snapshot()[20].Should().Be(state.WampusPlot);
+        var cash = state.Players[0].Cash;
+        match.CatchWampus(0).Should().Be(PoMuleTuning.WampusBounty(1));
+        state.Players[0].Cash.Should().Be(cash + 100);
+        match.Notices.Should().Contain(new Notice(NoticeKind.WampusCaught, 0, 100));
+        match.CatchWampus(0).Should().Be(0, "one wampus a month");
+        match.Advance(200);
+        state.WampusPlot.Should().Be(-1, "caught, it does not come back this month");
+        (PoMuleTuning.WampusBounty(5), PoMuleTuning.WampusBounty(12)).Should().Be((200, 300));
+    }
+
     [Fact]
     public void WithARenderer_TheMatchWaitsForArrivals_AndFeedsOneFlatSnapshot()
     {

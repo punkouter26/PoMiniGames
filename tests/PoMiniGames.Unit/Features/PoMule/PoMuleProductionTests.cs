@@ -142,7 +142,7 @@ public sealed class PoMuleProductionTests
         var rolls = Enumerable.Range(0, 7000).Select(_ => PoMuleEvents.Roll(rng)).ToList();
         rolls.Count(e => e == ColonyEvent.None).Should().BeInRange(1500, 2000);
         foreach (var e in Enum.GetValues<ColonyEvent>().Where(e => e != ColonyEvent.None))
-            rolls.Count(r => r == e).Should().BeInRange(700, 1050, e.ToString());
+            rolls.Count(r => r == e).Should().BeInRange(620, 900, e.ToString()); // seven events share three rolls in four
         Enum.GetValues<ColonyEvent>().Should().OnlyContain(e => PoMuleEvents.Headline(e).Length > 0);
     }
 }

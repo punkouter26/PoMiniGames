@@ -3,16 +3,18 @@
 // The rules live in C# (PoMiniGames.Shared/Games/PoMule). This module is the match's only
 // clock: every tenth of a second of game time it calls OnTick on the page and gets back one
 // flat snapshot array (layout: PoMuleMatch.Snapshot). During development it also runs the
-// avatars (movement, collisions, the M.U.L.E. tether) and reports what they reached; the
-// engine decides what that means. Nothing here changes cash, land or goods.
+// avatars (movement, collisions, the M.U.L.E. tether, the walk through the store) and
+// reports what they reached; the engine decides what that means. Nothing here changes cash,
+// land or goods.
 import * as W from './world.js';
 import * as P from './physics.js';
-import { drawWorld, drawMarket, drawPanorama, STRIP_H } from './render.js';
+import * as Sfx from './audio.js';
+import { drawFrame } from './render.js';
 import { buildTouchControls, isTouchDevice } from './touch.js';
 
 const TICK = 0.1;
-const HEADER = 11, PER = 15;
-const LAND = 0, AUCTION = 1, DEVELOP = 2, MARKET = 5, STANDINGS = 6, FINISHED = 7;
+const HEADER = 22, PER = 15;
+const LAND = 0, AUCTION = 1, DEVELOP = 2, PRODUCE = 3, MARKET = 5, STANDINGS = 6, FINISHED = 7;
 const GOAL_OUTFITTER = 1, GOAL_INSTALL = 2, GOAL_ASSAY = 3, GOAL_SURVEY = 4, GOAL_PUB = 5, GOAL_CHASE = 6;
 const RADZEN_CSS_ID = 'pomule-radzen-css';
 const MOVE_KEYS = { KeyW: [0, -1], ArrowUp: [0, -1], KeyS: [0, 1], ArrowDown: [0, 1], KeyA: [-1, 0], ArrowLeft: [-1, 0], KeyD: [1, 0], ArrowRight: [1, 0] };
@@ -55,24 +57,27 @@ function resize() {
   const w = g.host.clientWidth, h = g.host.clientHeight;
   g.canvas.width = Math.max(1, Math.round(w * dpr));
   g.canvas.height = Math.max(1, Math.round(h * dpr));
-  g.view = { w, h, dpr, zoom: Math.max(0.2, (h - STRIP_H) / W.WORLD_H) };
+  g.view = { w, h, dpr };
 }
 
-/** Puts everyone outside a town door at the start of a development phase. */
+/** Puts everyone outside a town at the start of a development phase. */
 function placeAvatars() {
   for (const a of g.avatars) {
-    const door = W.TOWN_COLS[a.seat % 4] * W.TILE + W.TILE / 2;
-    a.x = W.wrapX(door + (a.seat < 4 ? -22 : 22));
-    a.y = (W.TOWN_ROW + 1) * W.TILE + 22;
+    a.x = W.wrapX(W.TOWN_COLS[a.seat % 4] * W.TILE + W.TILE / 2 + (a.seat < 4 ? -20 : 20));
+    a.y = (W.TOWN_ROW + 1) * W.TILE + 24;
     a.stamina = P.DASH_SECONDS;
     a.winded = false;
     a.dashing = false;
     a.mule = null;
     a.cooldown = 0;
     a.bumped = 0;
+    a.walked = 0;
+    a.frame = 0;
   }
   g.runaways = [];
-  g.where = '';
+  g.interior = null;
+  g.canEnter = false; // step off the town plot first
+  g.stall = -1;
 }
 
 function humanInput() {
@@ -91,7 +96,7 @@ function aiInput(a) {
   else if (kind === GOAL_OUTFITTER) ({ x: tx, y: ty } = W.nearestBuilding(a.x, W.OUTFITTER));
   else if (kind === GOAL_ASSAY) ({ x: tx, y: ty } = W.nearestBuilding(a.x, W.ASSAY));
   else if (kind === GOAL_PUB) ({ x: tx, y: ty } = W.nearestBuilding(a.x, W.PUB));
-  else if (kind === GOAL_CHASE && target >= 0 && !g.avatars[target].out) {
+  else if (kind === GOAL_CHASE && target >= 0 && !g.avatars[target].hidden) {
     ({ x: tx, y: ty } = g.avatars[target]);
     dash = Math.hypot(W.wrapDelta(a.x, tx), ty - a.y) < 160;
   } else if (kind === GOAL_CHASE) {
@@ -108,61 +113,107 @@ function aiInput(a) {
   return { dx: s.dx, dy: s.dy, dash };
 }
 
+/** Counts off the walk cycle and its footstep blips. */
+function stride(a, before, loud) {
+  const moved = Math.hypot(a.x - before.x, a.y - before.y);
+  if (moved <= 0 || moved > W.TILE) return; // standing still, or wrapped round the seam
+  a.walked += moved;
+  const frame = Math.floor(a.walked / 14) % 2;
+  if (frame !== a.frame && loud) Sfx.step();
+  a.frame = frame;
+}
+
+/** The player inside the store: walk into a stall to use it, out either side to leave. */
+function simulateInterior(me, dt, speed) {
+  const before = { x: me.x, y: me.y };
+  // A width with no seam in reach: the store does not wrap.
+  P.stepAvatar(me, humanInput(), dt, 1e9, W.WORLD_H, speed / 100);
+  stride(me, before, true);
+  if (me.hasMule) {
+    me.mule ??= { x: me.x - me.facing * P.TETHER, y: me.y };
+    P.stepTether(me.mule, me, dt, 1e9);
+  } else me.mule = null;
+
+  if (me.x < 12 || me.x > W.WORLD_W - 12) {
+    // Back out onto the planet, just below the town.
+    me.x = W.TOWN_COLS[g.interior.town] * W.TILE + W.TILE / 2;
+    me.y = (W.TOWN_ROW + 1) * W.TILE + 24;
+    me.mule = null;
+    g.interior = null;
+    g.canEnter = false;
+    return;
+  }
+  const stall = W.stallAt(me.x, me.y);
+  if (stall !== g.stall) {
+    g.stall = stall;
+    if (stall >= 0) call('OnTown', stall);
+  }
+}
+
 /** One slice of the development phase: move, collide, drag M.U.L.E.s, tell the engine. */
 function simulate(dt) {
+  const me = g.human ? g.avatars[0] : null;
   for (const a of g.avatars) {
     const speed = g.seat(a.seat, 5);
     a.out = g.seat(a.seat, 8) === 1 || speed === 0;
     a.hasMule = g.seat(a.seat, 6) === 1;
-    a.outfit = g.seat(a.seat, 7);
     a.cooldown -= dt;
     a.bumped -= dt;
+    if (a.out && a === me) g.interior = null;
+    // Off the map: in the pub, starving, or (the player) inside the store.
+    a.hidden = a.out || (a === me && !!g.interior);
     if (a.out) { a.mule = null; continue; }
-    const input = a.seat === 0 && g.human ? humanInput() : aiInput(a);
+    if (a === me && g.interior) { simulateInterior(a, dt, speed); continue; }
+
+    const before = { x: a.x, y: a.y };
+    const input = a === me ? humanInput() : aiInput(a);
     const terrain = g.terrain[W.tileAt(a.x, a.y).index];
     P.stepAvatar(a, input, dt, W.WORLD_W, W.WORLD_H, (speed / 100) * P.terrainFactor(terrain, a.species));
+    stride(a, before, a === me);
   }
+
+  // Collisions are between colonists out on the map; `out` is what the physics skips.
+  for (const a of g.avatars) a.out = a.hidden;
+  const bumps = P.resolveCollisions(g.avatars, W.WORLD_W);
 
   const reportBump = (a) => {
     if (!a.hasMule || a.bumped > 0) return;
     a.bumped = 1;
     call('OnBump', a.seat);
   };
-  for (const b of P.resolveCollisions(g.avatars, W.WORLD_W)) {
+  for (const b of bumps) {
     if (!b.dashA && !b.dashB) continue;
     reportBump(g.avatars[b.a]);
     reportBump(g.avatars[b.b]);
   }
 
   for (const a of g.avatars) {
-    if (a.out || !a.hasMule) { a.mule = null; continue; }
+    if (a.hidden) continue;
+    if (!a.hasMule) { a.mule = null; continue; }
     a.mule ??= { x: W.wrapX(a.x - a.facing * P.TETHER), y: a.y };
     if (P.stepTether(a.mule, a, dt, W.WORLD_W)) reportBump(a);
   }
   for (const r of g.runaways) { r.x = W.wrapX(r.x + r.vx * dt); r.life -= dt; }
   g.runaways = g.runaways.filter((r) => r.life > 0);
 
-  if (g.human) {
-    const me = g.avatars[0];
-    const b = me.out ? null : W.buildingAt(me.x, me.y);
-    const where = me.out ? '-1:0' : b ? `${b.kind}:0` : `3:${W.tileAt(me.x, me.y).index}`;
-    if (where !== g.where) {
-      g.where = where;
-      const [kind, plot] = where.split(':').map(Number);
-      call('OnWhere', kind, plot);
+  if (me && !me.hidden) {
+    const here = W.tileAt(me.x, me.y);
+    const town = here.row === W.TOWN_ROW ? W.TOWN_COLS.indexOf(here.col) : -1;
+    if (town < 0) g.canEnter = true;
+    else if (g.canEnter) {
+      // Through the door: the store's interior takes over the screen.
+      g.interior = { town };
+      g.stall = -1;
+      me.x = W.WORLD_W / 2;
+      me.y = W.WORLD_H / 2;
+      me.mule = null;
+    }
+    // Touching the wampus while it shows is how it is caught.
+    if (g.snap[20] === here.index && me.cooldown <= 0) {
+      me.cooldown = 0.5;
+      call('OnWampus');
     }
   }
-}
-
-function followCamera(dt) {
-  let target = g.cam.x;
-  if (g.phase === DEVELOP) {
-    // A demo follows whoever is still out on the map.
-    const lead = g.human ? g.avatars[0] : g.avatars.find((a) => !a.out) ?? g.avatars[0];
-    target = lead.x;
-  } else if (g.phase === AUCTION && g.snap[4] >= 0) target = W.tileCenter(g.snap[4]).x;
-  else if (g.phase === LAND && g.snap[10] >= 0) target = W.tileCenter(g.snap[10]).x; // follow the highlighter
-  g.cam.x = W.wrapX(g.cam.x + W.wrapDelta(g.cam.x, target) * Math.min(1, dt * 6));
 }
 
 function onSnapshot(snap) {
@@ -170,7 +221,11 @@ function onSnapshot(snap) {
   g.snap = snap;
   g.phase = snap[1];
   if (g.phase === before) return;
+  g.phaseTime = 0;
+  g.units = 0;
+  g.interior = null;
   if (g.phase === DEVELOP) placeAvatars();
+  if (g.phase !== PRODUCE) g.production = null;
   // The engine zeroes the player's market direction when a market opens; start level and
   // resend if a key is already down.
   g.marketDir = 0;
@@ -188,10 +243,18 @@ function frame(now) {
   if (!g.paused) {
     const gameDt = dt * g.speed;
     g.time += dt;
+    g.phaseTime += gameDt;
     if (g.phase === DEVELOP) for (let left = gameDt; left > 0; left -= 0.05) simulate(Math.min(0.05, left));
-    followCamera(dt);
     for (const t of g.trades) t.life -= dt;
     g.trades = g.trades.filter((t) => t.life > 0);
+    if (g.messageLife > 0 && (g.messageLife -= dt) <= 0) g.message = '';
+
+    // Production counts each plot's units up one at a time, with a blip for each.
+    if (g.phase === PRODUCE && g.production) {
+      const shown = Math.min(7, Math.floor(g.phaseTime / 0.35));
+      if (shown > g.units && g.production.some((n) => n >= shown)) Sfx.unit(shown);
+      g.units = Math.max(g.units, shown);
+    }
 
     g.acc += gameDt;
     while (g.acc >= TICK) { g.acc -= TICK; g.pending++; }
@@ -205,11 +268,8 @@ function frame(now) {
     }
   }
 
-  const ctx = g.ctx;
-  ctx.setTransform(g.view.dpr, 0, 0, g.view.dpr, 0, 0);
-  if (g.phase === MARKET) drawMarket(ctx, g, g.view);
-  else drawWorld(ctx, g, g.view);
-  drawPanorama(ctx, g, g.view);
+  g.ctx.setTransform(g.view.dpr, 0, 0, g.view.dpr, 0, 0);
+  drawFrame(g.ctx, g, g.view);
 }
 
 function onKeyDown(e) {
@@ -223,14 +283,15 @@ function onKeyDown(e) {
 
   if (!e.repeat) {
     g.keys.add(e.code);
-    const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(e.code);
     if (e.code === 'Space') {
       // Land grant: claim the plot the highlighter is on, as drawn on this screen.
       if (g.phase === LAND) { if (g.snap[10] >= 0) call('OnLandPick', g.snap[10]); }
       else if (g.phase === AUCTION) call('OnBid');
-      else if (g.phase === DEVELOP) call('OnAction', 0);
-      else if (g.phase === STANDINGS) call('OnSkip');
-    } else if (digit >= 0 && g.phase === DEVELOP) call('OnAction', digit + 1);
+      else if (g.phase === DEVELOP && !g.interior && !g.avatars[0].hidden) {
+        // On the map the button installs the towed M.U.L.E. (or surveys) where you stand.
+        call('OnPlotAction', W.tileAt(g.avatars[0].x, g.avatars[0].y).index);
+      } else if (g.phase === STANDINGS) call('OnSkip');
+    }
   }
   sendMarketDir();
 }
@@ -251,7 +312,12 @@ function onBlur() {
 function sendMarketDir() {
   if (g.phase !== MARKET || !g.human) return;
   const dir = -humanInput().dy; // up the screen is up in price
-  if (dir !== g.marketDir) { g.marketDir = dir; call('OnMarketInput', dir); }
+  if (dir !== g.marketDir) {
+    g.marketDir = dir;
+    call('OnMarketInput', dir);
+    // The original sings the price: higher on the floor, higher the note.
+    if (dir !== 0) Sfx.price((g.seat(0, 10) - g.snap[8]) / Math.max(1, g.snap[8]));
+  }
 }
 
 window.PoMule = {
@@ -259,8 +325,8 @@ window.PoMule = {
   removeRadzen,
 
   /**
-   * @param opts { terrain, peaks, species, colors: arrays; human: bool; speed: number;
-   *               snapshot: the match's first snapshot }
+   * @param opts { terrain, peaks, species, colors, names: arrays; human: bool;
+   *               speed: number; snapshot: the match's first snapshot }
    */
   start(containerId, dotnetRef, opts) {
     this.stop();
@@ -272,13 +338,14 @@ window.PoMule = {
     const plots = W.COLS * W.ROWS;
     g = {
       host, canvas, ctx: canvas.getContext('2d'), ref: dotnetRef,
-      terrain: opts.terrain, peaks: opts.peaks, species: opts.species, colors: opts.colors,
+      terrain: opts.terrain, peaks: opts.peaks, species: opts.species, colors: opts.colors, names: opts.names,
       owner: new Array(plots).fill(-1), installed: new Array(plots).fill(-1), crystite: new Array(plots).fill(0),
       human: !!opts.human, speed: opts.speed || 1, seats: opts.species.length,
-      snap: opts.snapshot, phase: -1, time: 0, acc: 0, pending: 0, busy: false, running: true, paused: false,
-      keys: new Set(), cam: { x: W.TILE / 2 },
-      avatars: opts.species.map((species, seat) => ({ seat, species, mass: P.massOf(species), x: 0, y: 0, facing: 1, out: false })),
-      runaways: [], trades: [], where: '', marketDir: 0, touch: false, removeTouch: null,
+      snap: opts.snapshot, phase: -1, time: 0, phaseTime: 0, acc: 0, pending: 0, busy: false, running: true, paused: false,
+      keys: new Set(),
+      avatars: opts.species.map((species, seat) => ({ seat, species, mass: P.massOf(species), x: 0, y: 0, facing: 1, out: false, hidden: false, frame: 0, walked: 0 })),
+      runaways: [], trades: [], production: null, units: 0, eventPlot: -1, message: '', messageLife: 0,
+      interior: null, canEnter: false, stall: -1, marketDir: 0, touch: false, removeTouch: null,
       seat(seat, field) { return this.snap[HEADER + seat * PER + field]; },
     };
     placeAvatars();
@@ -293,14 +360,16 @@ window.PoMule = {
       g.touch = true;
       g.removeTouch = buildTouchControls(host);
     }
+    if (g.human) Sfx.tune();
     g.last = performance.now();
     g.raf = requestAnimationFrame(frame);
     return true;
   },
 
-  /** Who owns what, what is installed where, and the Crystite the viewer is allowed to see. */
-  setPlots(owner, installed, crystite) {
+  /** Terrain (a meteor can change it), owners, installed M.U.L.E.s and the Crystite the viewer may see. */
+  setPlots(terrain, owner, installed, crystite) {
     if (!g) return;
+    g.terrain = terrain;
     g.owner = owner;
     g.installed = installed;
     g.crystite = crystite;
@@ -311,17 +380,38 @@ window.PoMule = {
     if (g) g.speed = Math.min(16, Math.max(1, speed));
   },
 
+  /** Puts a line on the orange message bar for a few seconds. `sound`: a name from audio.js. */
+  say(text, seconds = 4, sound = '') {
+    if (!g) return;
+    g.message = String(text);
+    g.messageLife = seconds;
+    Sfx[sound]?.();
+  },
+
+  /** This month's output per plot, for the unit-by-unit count on the map. */
+  production(perPlot) {
+    if (g) { g.production = perPlot; g.units = 0; }
+  },
+
+  /** The plot this month's event struck (a meteor, the pests), or -1. */
+  eventAt(plot) {
+    if (g) g.eventPlot = plot;
+  },
+
   /** A M.U.L.E. bolts from this seat's avatar and runs off. */
   runaway(seat) {
     const a = g?.avatars[seat];
     if (!a) return;
-    g.runaways.push({ x: a.mule?.x ?? a.x, y: a.mule?.y ?? a.y, vx: -a.facing * 260, life: 2 });
+    if (!a.hidden) g.runaways.push({ x: a.mule?.x ?? a.x, y: a.mule?.y ?? a.y, vx: -a.facing * 260, life: 2 });
     a.mule = null;
+    if (seat === 0 && g.human) Sfx.bray();
   },
 
   /** Flash a trade on the floor. A seat of -1 is the Store. */
   trade(seller, buyer, price) {
-    g?.trades.push({ seller, buyer, price, life: 0.33 });
+    if (!g) return;
+    g.trades.push({ seller, buyer, price, life: 0.33 });
+    Sfx.trade();
   },
 
   stop() {

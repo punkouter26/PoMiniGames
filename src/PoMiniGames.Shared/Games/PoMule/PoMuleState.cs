@@ -86,6 +86,12 @@ public sealed class MatchState
 
     public ColonyEvent LastEvent { get; set; }
 
+    /// <summary>Where the last meteor landed, or -1.</summary>
+    public int MeteorPlot { get; set; } = -1;
+
+    /// <summary>The mountain plot the wampus is showing itself on right now, or -1.</summary>
+    public int WampusPlot { get; set; } = -1;
+
     /// <summary>Net Worth of every seat at the end of each finished month, for the chart.</summary>
     public List<int[]> History { get; set; } = [];
 

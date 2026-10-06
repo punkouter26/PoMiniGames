@@ -102,7 +102,7 @@
 }
 
 /* ── Game grid ─────────────────────────────────────────────────────────────
-   Fifteen cells: fourteen games and the demo reel. The column count is set per
+   Sixteen cells: fifteen games and the demo reel. The column count is set per
    breakpoint rather than by auto-fill, because the reel's place depends on it:
    three columns make 3×5 with the reel as the last cell, two columns put it
    across the top and leave 2×7.
@@ -439,7 +439,8 @@
 
 /* ── Phones ──────────────────────────────────────────────────────────────────
    One game per row: icon, title, then its chips on the right, each chip as tall
-   as the row. Fourteen rows and the reel share the screen: on a 390×844 phone a
+   as the row. Fifteen rows and the reel share the screen (the sizes that follow were
+   measured with fourteen): on a 390×844 phone a
    row is 44px and a chip 36px tall and 36 to 57px wide, with 12.5px text.
 
    Two-up with the chips under the title is the layout that fits a short phone

@@ -18,4 +18,4 @@ foreach ($tier in 'Unit', 'Integration', 'E2EAPI', 'E2EUI') {
         throw "$tier must discover exactly one ceiling guard."
     }
 }
-Write-Host 'All test-method caps passed: Unit 100, Integration 50, API E2E 25, UI E2E 25.'
+Write-Host 'All test-method caps passed: Unit 140, Integration 50, API E2E 25, UI E2E 25.'

@@ -82,7 +82,7 @@ in brackets; total 38 of the 40 new slots.
   `tests/PoMiniGames.E2EUI/PoMuleUiTests.cs`. *Accept:* `/pomule/demo` plays 12 months in 5–8
   min with no score post; `Kiosk.MarkFinished()` at the end; 2 Playwright methods (→ 25/25).
   *Deps:* T20.
-- [ ] **T23 Docs and trim.** Files: `README.md` (fifteen games, Radzen note, Unit cap 140),
+- [x] **T23 Docs and trim.** Files: `README.md` (fifteen games, Radzen note, Unit cap 140),
   `js/paletteBus.js`, `js/gameCues.js`, the "Unit 100" message in `scripts/test-ceilings.ps1`, stale "fourteen" comments in `Index.razor` and
   `LeaderboardsPage.razor`. *Accept:* `css-lint.ps1` passes. *Deps:* T22.
 

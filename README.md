@@ -7,7 +7,7 @@ AI-powered games.
 
 ## Overview
 
-Fourteen small games on one website. The browser runs each game in full, including its
+Fifteen small games on one website. The browser runs each game in full, including its
 computer opponents; the server signs players in, referees online play, checks and stores
 scores, and talks to AI models on the player's behalf.
 
@@ -55,6 +55,7 @@ scores, and talks to AI models on the player's behalf.
 | PoSports | Sprite-based sports mini-game |
 | PoVoxelStrike | Third-person survival shooter with fully destructible voxel structures |
 | PoJevArena | Design creatures, draft 10 v 10, and watch TypeSafe's Jev make every tactical call; post-match Black Box scrubber |
+| PoMule | Eight-player M.U.L.E.: claim land, work M.U.L.E.s and trade on a walking-floor market for twelve months vs seven AI personalities; all-AI demo |
 | PoEcosystem | Watch-only island simulation: species, tribes and an AI-written chronicle; cloud save slots and a shared gallery |
 | SandPlayground | GPU sand-and-water sandbox |
 
@@ -79,7 +80,7 @@ src/
 ├── PoMiniGames.Domain/         Domain primitives (EloCalculator, GameKey, ...)
 └── PoMiniGames.Shared/         DTOs shared between client and server
 tests/
-├── PoMiniGames.Unit/           ≤100 tests (hermetic)
+├── PoMiniGames.Unit/           ≤140 tests (hermetic)
 ├── PoMiniGames.Integration/    ≤50 tests (Testcontainers Azurite)
 ├── PoMiniGames.E2EAPI/         ≤25 tests (HTTP contract)
 ├── PoMiniGames.E2EUI/          ≤25 tests (Playwright)
@@ -94,7 +95,13 @@ scripts/                        Working scripts only — see scripts/README.md
   Guest login exists only in Development/Test and only from loopback. The whole app sits
   behind the sign-in gate; leaderboard reads are anonymous at the API, and all game-data
   writes require auth + antiforgery.
-- UI is native Blazor + plain CSS by design — no heavy component libraries.
+- UI is native Blazor + plain CSS for fourteen of the games. PoMule is the first screen built
+  on Radzen (Material Dark); the hub, settings, leaderboards and the other games move to
+  Radzen next. Until then PoMule's page loads the Radzen stylesheet itself and removes it on
+  the way out.
+- **Each game is a Razor page plus a JavaScript engine, except PoMule**, whose rules are C# in
+  `PoMiniGames.Shared/Games/PoMule` (unit-tested, seeded, deterministic) with JavaScript only
+  drawing and moving the avatars. See `SPEC.md`, `CAPABILITY-MAP.md` and `tasks/`.
 - Offline-friendly PWA: finished scores park locally and sync on reconnect/sign-in.
 - Deploy: `azd up` (App Service F1, resource group `PoMiniGames`).
 
@@ -113,4 +120,5 @@ JavaScript; only the four visible standings rows return to Blazor. All cars stil
 interpolation, rendering, and audio, and the HUD's field size comes from the complete roster.
 Run `node --test tests\poracer-snapshot.test.mjs` for focused native snapshot coverage.
 Run `pwsh scripts/test-ceilings.ps1` to check all four test-method budgets without Docker.
+Run `node --test tests/pomule-world.test.mjs tests/pomule-physics.test.mjs` for PoMule's renderer maths.
 CI validates Bicep and deploys application code; use `azd up` for resource provisioning.

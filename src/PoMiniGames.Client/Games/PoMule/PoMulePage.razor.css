@@ -178,16 +178,18 @@
     padding-bottom: 0.25rem;
 }
 
-.pm-root ::deep .pm-species .rz-datalist-data {
-    display: grid;
+/* Radzen lays a data list out as a column; the picker wants two, so it fits the start card
+   without pushing the controls off the top. */
+.pm-root ::deep .pm-species ul.rz-datalist-data {
+    display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.4rem;
     padding: 0;
 }
 
-.pm-root ::deep .pm-species .rz-datalist-data > li {
+.pm-root ::deep .pm-species ul.rz-datalist-data > li {
     padding: 0;
-    margin: 0;
+    margin: 0 !important;
     background: none;
     box-shadow: none;
 }

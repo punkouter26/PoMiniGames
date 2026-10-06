@@ -194,7 +194,7 @@
             </div>
         }
         <div class="pm-species-label">Choose your species</div>
-        <RadzenDataList Data="@PoMuleSpecies.All" TItem="SpeciesInfo" WrapItems="true" AllowPaging="false">
+        <RadzenDataList Data="@PoMuleSpecies.All" TItem="SpeciesInfo" AllowPaging="false">
             <Template Context="s">
                 <button type="button" class="pm-species-card @(s.Id == _species ? "pm-species-card--on" : "")"
                         aria-pressed="@(s.Id == _species ? "true" : "false")" @onclick="@(() => _species = s.Id)">

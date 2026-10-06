@@ -8,10 +8,16 @@ namespace PoMiniGames.Shared.Games.PoMule;
 /// <see cref="State"/> and must continue the same sequence after a reload, on any .NET
 /// version. <c>new Random(seed)</c> does not promise that.
 /// </remarks>
-public sealed class PoMuleRng(ulong seed)
+public sealed class PoMuleRng
 {
+    /// <summary>For a saved match: the loader sets <see cref="State"/> straight after.</summary>
+    [System.Text.Json.Serialization.JsonConstructor]
+    public PoMuleRng() : this(0) { }
+
+    public PoMuleRng(ulong seed) => State = seed == 0 ? 0x9E3779B97F4A7C15UL : seed;
+
     /// <summary>Everything needed to resume the sequence. Never zero.</summary>
-    public ulong State { get; set; } = seed == 0 ? 0x9E3779B97F4A7C15UL : seed;
+    public ulong State { get; set; }
 
     public uint Next()
     {

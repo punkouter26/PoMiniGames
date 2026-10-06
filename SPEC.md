@@ -165,12 +165,20 @@ One event with 75% probability each month, chosen evenly:
 - Sellers start at the top and walk down to lower their ask; buyers start at the bottom and
   walk up to raise their bid. When the highest bid meets the lowest ask, one unit trades at
   that price every 0.25 s until a side moves away, runs out of goods or runs out of cash.
-- The Store buys at its low price and sells at its high price while it has stock. Its prices
-  move each month with colony supply against colony need.
-- Store opening stock *(proposed)*: Food 32, Energy 32, Smithore 0, Crystite 0, M.U.L.E.s 28.
-  Opening prices: Food 30, Energy 25, Smithore 50, Crystite 50–150 (random each month).
-  Each month the Store turns every 2 Smithore it holds into 1 M.U.L.E.; the M.U.L.E. price
-  follows the Smithore price.
+- The Store buys at its price (the floor of the price axis) and, while it has stock, sells at
+  twice that (the ceiling). Net Worth values goods at the floor.
+- Food and Energy prices move each month: up 15% when the colony holds less than it needs,
+  down 10% when it holds twice its need, within 15–150.
+- Store opening stock: Food 32, Energy 32, Smithore 0, Crystite 0, M.U.L.E.s 28. Opening
+  prices: Food 30, Energy 25, Smithore 50, Crystite 100.
+- Each month the Store turns every 2 Smithore it holds into 1 M.U.L.E. Smithore is then
+  priced from the corral: 350 ÷ M.U.L.E.s in stock, within 25–250, so ore is dear only when
+  M.U.L.E.s are scarce. A M.U.L.E. costs twice the Smithore price.
+- Crystite gets a new random price of 40–90 each month. (Tuned down from 50–150 during the
+  balance pass: at the higher band the two mining personalities won four matches in five.)
+- AI sellers keep 2 Food and 3 Energy beyond next month's need, and in the last 5 seconds
+  sell the rest of their spare Food and Energy to the Store rather than let it spoil. The
+  Hoarder never does.
 - Players start with 4 Food and 2 Energy *(proposed)*.
 
 ### 6.8 Species
@@ -227,6 +235,13 @@ In Demo mode the eighth seat repeats one archetype chosen by the seed.
   player dots, a stick on the left and Act and Dash buttons on the right.
 - Components: `PoMulePage`, `PoMuleHud`, `PoMuleAuction`, `PoMuleStandings`. The species
   picker sits in the start card.
+- Headless mode: with no renderer, each AI errand takes a fixed number of ticks instead of a
+  real walk. The unit tests and the 100-match balance check run this way, so the balance
+  figures describe the rules and AI choices, not the on-screen movement and collisions.
+  Measured 2026-10-05 over seeds 1–100: the Store never had fewer than 20 M.U.L.E.s after
+  month 1, the colony survived 64 matches, and the most successful personality (Prospector)
+  won 36. The Hoarder and the Agitator won none. Combined wealth was above the 60,000 target
+  in every match, so today only crisis months decide the colony grade.
 - Radzen provides every non-canvas element. The shared start card and end modal stay as the
   outer frame so PoMule opens and closes like the other games.
 - PoMule follows the existing leaderboard and offline score-sync path with no new mechanism.

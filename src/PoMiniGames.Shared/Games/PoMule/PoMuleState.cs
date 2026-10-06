@@ -47,6 +47,10 @@ public sealed class MatchState
 {
     public const sbyte Nobody = -1;
 
+    /// <summary>Bump when a rules change makes older saved matches unplayable; they are then discarded.</summary>
+    public const int CurrentVersion = 1;
+
+    public int Version { get; set; } = CurrentVersion;
     public ulong Seed { get; set; }
     public PoMuleRng Rng { get; set; } = new(1);
     public PoMuleMap Map { get; set; } = new([]);
@@ -70,6 +74,14 @@ public sealed class MatchState
 
     /// <summary>Months in which the colony as a whole was short of Food or Energy.</summary>
     public int CrisisMonths { get; set; }
+
+    /// <summary>Where each seat's land-grant cursor is pointing, or -1.</summary>
+    public int[] LandPicks { get; set; } = Enumerable.Repeat(-1, PoMuleTuning.Seats).ToArray();
+
+    public ColonyEvent LastEvent { get; set; }
+
+    /// <summary>Net Worth of every seat at the end of each finished month, for the chart.</summary>
+    public List<int[]> History { get; set; } = [];
 
     /// <summary>Plot on the auction block, or -1 when no auction is open.</summary>
     public int AuctionPlot { get; set; } = -1;

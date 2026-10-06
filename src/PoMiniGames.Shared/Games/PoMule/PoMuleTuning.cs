@@ -53,12 +53,18 @@ public static class PoMuleTuning
     public const int CrisisShortColonists = 3;
 
     // Market. Limits on the Store's buying price for Food / Energy / Smithore / Crystite.
-    public static readonly IReadOnlyList<int> PriceMin = [15, 15, 25, 50];
-    public static readonly IReadOnlyList<int> PriceMax = [150, 150, 250, 150];
+    public static readonly IReadOnlyList<int> PriceMin = [15, 15, 25, 40];
+    public static readonly IReadOnlyList<int> PriceMax = [150, 150, 250, 90];
     public const int SmithorePerMule = 2;
 
-    /// <summary>Smithore the colony wants on hand each month (enough for four new M.U.L.E.s).</summary>
-    public const int SmithoreNeed = 8;
+    /// <summary>Clock ticks left when sellers of Food and Energy give up waiting for a buyer.</summary>
+    public const int MarketLastCallTicks = 50;
+
+    /// <summary>Food and Energy an AI colonist will not sell, beyond next month's need.</summary>
+    public static readonly IReadOnlyList<int> AiReserve = [2, 3];
+
+    /// <summary>Smithore price × M.U.L.E.s in the corral: 7 M.U.L.E.s price Smithore at 50.</summary>
+    public const int SmithorePriceTimesMules = 350;
 
     // Scoring.
     public const int LandValue = 500;

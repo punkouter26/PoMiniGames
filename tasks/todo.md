@@ -35,7 +35,7 @@ in brackets; total 38 of the 40 new slots.
 - [x] **T8 AI.** Files: `PoMuleAi.cs`, `PoMuleAiTests.cs`. [5] *Accept:* each of 7 archetypes
   shows its defining behaviour in a scripted state (for example Hoarder holds Food below the
   cap price). *Deps:* T7, T4.
-- [ ] **T9 Match driver and balance.** Files: `PoMuleMatch.cs`, `PoMuleSave.cs` (with JSON
+- [x] **T9 Match driver and balance.** Files: `PoMuleMatch.cs`, `PoMuleSave.cs` (with JSON
   context), `PoMuleMatchTests.cs`, Verify snapshot file. [6] *Accept:* phase order; snapshot
   layout; determinism; save round trip; 100 seeded matches meet criteria 8 and 11; Demo
   timing rule. *Verify:* add `--collect:"XPlat Code Coverage"`; ≥ 90% on the engine folder.

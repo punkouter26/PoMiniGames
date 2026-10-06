@@ -124,12 +124,12 @@ public static class PoMuleMarket
     {
         if (match.MarketGood == MatchState.Nobody) return;
         var good = (Good)match.MarketGood;
-        if (good != Good.Crystite)
+        // Food and Energy follow what the colony holds. Smithore and Crystite are priced at
+        // month end, from the M.U.L.E. corral and the Federation (see EndOfMonth).
+        if (good is Good.Food or Good.Energy)
         {
             var supply = match.Store.Stock[(int)good] + match.Players.Sum(p => p.Goods[(int)good]);
-            var need = good == Good.Smithore
-                ? PoMuleTuning.SmithoreNeed
-                : Enumerable.Range(0, match.Players.Length).Sum(seat => Need(match, seat, good));
+            var need = Enumerable.Range(0, match.Players.Length).Sum(seat => Need(match, seat, good));
             match.Store.Price[(int)good] = NextPrice(good, match.Store.Price[(int)good], supply, need);
         }
         match.MarketGood = MatchState.Nobody;
@@ -146,6 +146,14 @@ public static class PoMuleMarket
     }
 
     /// <summary>
+    /// Smithore is worth what the corral lacks: dear when M.U.L.E.s are scarce, cheap when the
+    /// Store has plenty. 7 in the corral gives the opening price.
+    /// </summary>
+    public static int SmithorePrice(int mulesInCorral) => Math.Clamp(
+        PoMuleTuning.SmithorePriceTimesMules / Math.Max(1, mulesInCorral),
+        PoMuleTuning.PriceMin[(int)Good.Smithore], PoMuleTuning.PriceMax[(int)Good.Smithore]);
+
+    /// <summary>
     /// After the last market of the month: the Store turns Smithore into M.U.L.E.s, prices
     /// them off Smithore, and the Federation posts a new Crystite price.
     /// </summary>
@@ -155,6 +163,7 @@ public static class PoMuleMarket
         var built = store.Stock[(int)Good.Smithore] / PoMuleTuning.SmithorePerMule;
         store.Mules += built;
         store.Stock[(int)Good.Smithore] -= built * PoMuleTuning.SmithorePerMule;
+        store.Price[(int)Good.Smithore] = SmithorePrice(store.Mules);
         store.MulePrice = store.Price[(int)Good.Smithore] * 2;
         store.Price[(int)Good.Crystite] = PoMuleTuning.PriceMin[(int)Good.Crystite]
             + match.Rng.Next(PoMuleTuning.PriceMax[(int)Good.Crystite] - PoMuleTuning.PriceMin[(int)Good.Crystite] + 1);

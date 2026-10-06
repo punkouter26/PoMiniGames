@@ -149,10 +149,14 @@ public sealed class PoMuleMarketTests
 
         match.Store.Mules.Should().Be(PoMuleTuning.StoreStartMules + 2);
         match.Store.Stock[(int)Good.Smithore].Should().Be(1);
-        match.Store.MulePrice.Should().Be(140);
+        // Thirty M.U.L.E.s in the corral: Smithore is at its floor, and a M.U.L.E. costs twice that.
+        match.Store.Price[(int)Good.Smithore].Should().Be(25);
+        match.Store.MulePrice.Should().Be(50);
+        (PoMuleMarket.SmithorePrice(7), PoMuleMarket.SmithorePrice(2), PoMuleMarket.SmithorePrice(0))
+            .Should().Be((50, 175, 250), "the scarcer M.U.L.E.s are, the more ore is worth");
 
         var prices = Enumerable.Range(0, 200).Select(_ => { PoMuleMarket.EndOfMonth(match); return match.Store.Price[(int)Good.Crystite]; }).ToList();
-        prices.Should().OnlyContain(p => p >= 50 && p <= 150);
+        prices.Should().OnlyContain(p => p >= 40 && p <= 90);
         prices.Distinct().Count().Should().BeGreaterThan(20);
 
         // Closing a market moves that good's price from what the colony holds.

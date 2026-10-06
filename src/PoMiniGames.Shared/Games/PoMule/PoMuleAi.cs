@@ -77,9 +77,10 @@ public static class PoMuleAi
         var worked = Plots(match, seat).Where(i => match.Installed[i] != MatchState.Nobody).ToList();
         int Making(Good g) => worked.Where(i => match.Installed[i] == (sbyte)g).Sum(i => PoMuleProduction.BaseYield(match.Map.Plots[i], g));
 
-        // Nobody runs M.U.L.E.s they cannot power: stock plus output must cover this one too.
+        // Nobody runs M.U.L.E.s they cannot power: Energy output must cover this one too,
+        // unless there is a couple of months of it in stock.
         var drawing = worked.Count(i => match.Installed[i] != (sbyte)Good.Energy) + 1;
-        if (player.Goods[(int)Good.Energy] + Making(Good.Energy) < drawing) return Good.Energy;
+        if (Making(Good.Energy) < drawing && player.Goods[(int)Good.Energy] < drawing * 2) return Good.Energy;
 
         var miner = player.Archetype is Archetype.Industrialist or Archetype.Prospector;
         if (player.Archetype == Archetype.Industrialist) return Good.Smithore;
@@ -154,9 +155,14 @@ public static class PoMuleAi
             return here < Math.Min(player.Cash, ceiling) ? 1 : 0;
         }
 
-        if (surplus <= 0) return 1;
         var essential = good is Good.Food or Good.Energy;
+        // Keep a little Food and Energy back: next month brings a bad harvest or a new M.U.L.E.
+        if (surplus <= (essential ? PoMuleTuning.AiReserve[(int)good] : 0)) return 1;
         var price = match.Store.Price[(int)good];
+        // Spare Food and Energy rot, so with the bell about to ring everyone but the
+        // Hoarder takes the Store's price rather than carry it home.
+        if (essential && player.Archetype != Archetype.Hoarder && match.ClockTicks < PoMuleTuning.MarketLastCallTicks)
+            return Math.Sign(floor - here);
         var target = (player.Archetype, essential) switch
         {
             // Sits on Food and Energy until the price is close to its record high.

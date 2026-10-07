@@ -263,10 +263,14 @@ app.MapScalarApiReference(options =>
 // and the non-fingerprinted .css/.js are how the browser discovers the current
 // fingerprinted asset names. If they sit in the HTTP cache, a rebuild changes
 // the fingerprints and an already-open tab keeps requesting the old (now 404)
-// files → "An unhandled error has occurred" on load. In Development we force
-// revalidation so a plain reload always lands on the freshest build. Production
-// keeps normal caching (fingerprinted assets are immutable and safe to cache).
-if (app.Environment.IsDevelopment())
+// files → "An unhandled error has occurred" on load. The same mix happens after a
+// deploy: StaticWebAssetsFingerprintingEnabled is off, so js/*.js and the shell
+// carry no fingerprint and, with no Cache-Control, browsers keep them "fresh" by
+// heuristic for hours. A reload then boots the new client against the old
+// js/engineLoader.js (whose registry lacks any game added since) and the game page
+// shows "could not load". Every environment therefore forces revalidation on the
+// boot chain; the fingerprinted assets stay cacheable, and ETag revalidation makes
+// the cost one 304 per file.
 {
     app.Use(async (ctx, next) =>
     {
@@ -284,7 +288,7 @@ if (app.Environment.IsDevelopment())
         {
             ctx.Response.OnStarting(() =>
             {
-                ctx.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+                ctx.Response.Headers.CacheControl = "no-cache";
                 return Task.CompletedTask;
             });
         }

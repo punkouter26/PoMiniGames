@@ -47,13 +47,10 @@
     var chain = load('js/qualityTiers.js')
         .then(function () { return load('js/paletteBus.js'); });
     if (!reduceMotion) {
-        // ambientMusic.js is the score the director conducts (window.PoAmbientMusic). It
-        // must be loaded here: without it the director, and every game that drives its
-        // tension, conducts silence. An ES module (it imports the audio bus), hence the
-        // flag; it only makes sound once the director starts it on the first gesture.
-        chain = chain.then(function () { return load('js/spatialAudio.js'); })
-                     .then(function () { return load('js/ambientMusic.js', true); })
-                     .then(function () { return load('js/musicDirector.js'); });
+        // Background music is removed: ambientMusic.js and musicDirector.js are no longer
+        // loaded. Every PoMusicDirector / PoAmbientMusic caller already guards for the
+        // global being absent. Load both here again to bring the soundtrack back.
+        chain = chain.then(function () { return load('js/spatialAudio.js'); });
     }
     // The route wipe. Loaded for everyone including reduced-motion users: the
     // module no-ops itself in that case, and MainLayout calls it unconditionally —

@@ -102,12 +102,14 @@ jobs:
       # 1.4 MB of that 20 — deleting game code will not move this number much, so a
       # regression here almost always means a new dependency or a lost trim.
       #
-      # Budget stays 25 MB: ~5 MB of headroom to catch regression, not to squeeze
-      # the baseline.
+      # Re-baselined to ~29 MB when PoMule brought in Radzen.Blazor (1.4 MB plus
+      # System.Linq.Expressions, Microsoft.CSharp and System.Private.Xml behind it) and
+      # the client assembly grew to ~3 MB with the Mule rules. Budget is 35 MB: ~6 MB of
+      # headroom to catch regression, not to squeeze the baseline.
       - name: WASM bundle-size budget
         shell: bash
         env:
-          FRAMEWORK_BUDGET_MB: 25
+          FRAMEWORK_BUDGET_MB: 35
         run: |
           SIZE_MB=$(du -sm ./client-trim-audit/wwwroot/_framework | cut -f1)
           echo "Trimmed _framework size: ${SIZE_MB} MB (budget ${FRAMEWORK_BUDGET_MB} MB)"

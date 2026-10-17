@@ -174,3 +174,6 @@ src/PoMiniGames.API/App_Data/povoxelstrike/converted/
 # the negation below.
 infra/*.json
 !infra/main.parameters.json
+
+# Claude Code agent worktrees (temporary, merged into master)
+.claude/worktrees/

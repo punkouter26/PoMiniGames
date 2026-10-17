@@ -1,4 +1,5 @@
 using FluentAssertions;
+using PoMiniGames.Features.PoMule;
 using PoMiniGames.Shared.Games.PoMule;
 
 namespace PoMiniGames.Unit;
@@ -220,6 +221,67 @@ public sealed class PoMuleMatchTests
         match.Advance(200);
         state.WampusPlot.Should().Be(-1, "caught, it does not come back this month");
         (PoMuleTuning.WampusBounty(5), PoMuleTuning.WampusBounty(12)).Should().Be((200, 300));
+    }
+
+    /// <summary>
+    /// F10: the server replays a played match from its seed and action log (PoMuleRunVerifier),
+    /// across a save and resume too, and only the true result verifies.
+    /// </summary>
+    [Theory]
+    [InlineData("honest", true)]
+    [InlineData("resumed", true)]
+    [InlineData("empty-log", false)]
+    [InlineData("wrong-seed", false)]
+    [InlineData("garbage", null)]
+    [InlineData("bad-species", null)]
+    public void APlayedMatch_ReplaysFromItsSeedAndLog_AndOnlyTheTrueResultVerifies(string variant, bool? matches)
+    {
+        const ulong seed = 31;
+        var rng = new Random(5);
+        var match = PoMuleMatch.New(seed, Species.Humanoid);
+        while (match.State.Phase != Phase.Finished)
+        {
+            var s = match.State;
+            var me = s.Players[0];
+            // The renderer's reports, and a human pressing things at irregular moments.
+            switch (s.Phase)
+            {
+                case Phase.Land when s.LandCursor >= 0 && rng.Next(8) == 0: match.PickLand(s.LandCursor); break;
+                case Phase.Auction or Phase.Market when rng.Next(12) == 0: match.HumanMarketInput = rng.Next(3) - 1; break;
+                case Phase.Standings when rng.Next(20) == 0: match.SkipStandings(); break;
+                case Phase.Development:
+                    if (rng.Next(25) == 0) for (var seat = 1; seat < PoMuleTuning.Seats; seat++) match.Arrive(seat);
+                    if (rng.Next(60) == 0) match.Bump(rng.Next(PoMuleTuning.Seats), dashing: true);
+                    if (s.WampusPlot >= 0 && rng.Next(10) == 0) match.CatchWampus(0);
+                    var mine = Array.IndexOf(s.Owner, (sbyte)0);
+                    if (!me.HasMule && rng.Next(40) == 0) { match.BuyMule(); match.Outfit((Good)rng.Next(4)); }
+                    else if (me.HasMule && me.Outfit >= 0 && mine >= 0 && rng.Next(30) == 0) match.Install(mine);
+                    else if (rng.Next(200) == 0) { match.VisitAssay(); match.Survey(rng.Next(s.Owner.Length)); }
+                    break;
+            }
+            if (s.Phase == Phase.Market && rng.Next(40) == 0) match.SetRole((sbyte)(rng.Next(3) - 1));
+            // The browser saves at a month start; "resumed" carries on from the reloaded save.
+            if (match.Advance(1 + rng.Next(3)) && variant == "resumed" && s.Month == 5)
+                match = new PoMuleMatch(PoMuleSave.FromJson(PoMuleSave.ToJson(s))!);
+        }
+
+        var standings = PoMuleScoring.Standings(match.State);
+        var played = new PoMuleReplayed(standings.First(x => x.Seat == 0).NetWorth,
+            PoMuleScoring.ColonySurvives(standings.Sum(x => x.NetWorth), match.State.CrisisMonths));
+        var log = match.ActionLog;
+        log.Should().MatchRegex("^[0-9a-z]+[A-M]-?[0-9a-z]+(\\.[0-9a-z]+[A-M]-?[0-9a-z]+)+$");
+        match.State.Recorded.Should().BeTrue();
+
+        var replayed = variant switch
+        {
+            "empty-log" => PoMuleRunVerifier.Replay(seed, (int)Species.Humanoid, false, ""),
+            "wrong-seed" => PoMuleRunVerifier.Replay(seed + 1, (int)Species.Humanoid, false, log),
+            "garbage" => PoMuleRunVerifier.Replay(seed, (int)Species.Humanoid, false, "3kB2.zz!"),
+            "bad-species" => PoMuleRunVerifier.Replay(seed, PoMuleSpecies.All.Count, false, log),
+            _ => PoMuleRunVerifier.Replay(seed, (int)Species.Humanoid, false, log),
+        };
+        if (matches is null) replayed.Should().BeNull();
+        else (replayed == played).Should().Be(matches.Value, $"{variant}: played {played}, replayed {replayed}");
     }
 
     [Fact]

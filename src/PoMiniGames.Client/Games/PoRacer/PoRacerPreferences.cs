@@ -25,6 +25,10 @@ internal static class PoRacerPreferences
     public static bool LoadTrial() => LocalStorageService.GetItem<string>("PoRacer.Mode") == "trial";
     public static void SaveTrial(bool trial) => LocalStorageService.SetItem("PoRacer.Mode", trial ? "trial" : "race");
 
+    /// <summary>The ghost of your best lap: on unless switched off in the pause menu.</summary>
+    public static bool LoadGhost() => LocalStorageService.GetItem<string>("PoRacer.Ghost") != "off";
+    public static void SaveGhost(bool on) => LocalStorageService.SetItem("PoRacer.Ghost", on ? "on" : "off");
+
     /// <summary>Best lap per track id, for the tracks that have one.</summary>
     public static Dictionary<string, double> LoadBests() => PoRacerCatalog.Tracks
         .Select(t => (t.Id, Lap: Best(t.Id)))

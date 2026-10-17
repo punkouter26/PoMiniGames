@@ -104,6 +104,13 @@
                             <button class="racer-primary" @ref="_resumeButton" @onclick="TogglePauseAsync">Resume</button>
                             <button class="racer-ghost" @onclick="RestartRaceAsync">Back to start</button>
                         </div>
+                        @if (CanGhost)
+                        {
+                            <label class="racer-ghost-toggle">
+                                <input type="checkbox" checked="@_ghost" @onchange="e => SetGhostAsync(e.Value is true)" />
+                                Ghost: race your best lap on this track
+                            </label>
+                        }
                         @if (!_isDemo) { <PoRacerControls /> }
                     </div>
                 </div>

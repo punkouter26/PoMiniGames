@@ -10,6 +10,7 @@ import * as Audio from './audio.js';
 import { sampleAt } from './interpolation.js';
 import { prepareSnapshot } from './snapshot.js';
 import { startInput, stopInput, setInputEnabled, getSize, pollPad } from './input.js';
+import { encodeTrack, resample, sampleAt, unwrap, loadGhost, saveGhost } from '../ghostTrack.js';
 import '../weather.js';
 
 // Rivals are drawn this far behind the newest snapshot, so there is always a pair of
@@ -31,6 +32,64 @@ const BUFFER_MAX = 6;
 /** Numbers per car in a pushed snapshot: x, y, heading, speed, boost, skid, damage, sand, position, lap, finished, tow, drift, boost seconds left. */
 const STRIDE = 14;
 const snapshotDecoder = new TextDecoder('utf-8', { fatal: true });
+
+// ── Ghost: your best lap on this track, driven beside you in a solo race ──
+// Recorded here from the snapshots of your own car (they arrive at the server's 20 Hz), one lap
+// at a time, and kept per track in localStorage when the lap beats the stored one (ghostTrack.js).
+// Played back against the current lap's clock. The page arms it for solo races only, so an online
+// field never gets a car nobody else can see.
+const GHOST_HZ = 20;
+const GHOST_SCALES = [10, 10, 1000];   // a tenth of a unit, a milliradian
+const ghost = {
+    key: null, show: false, best: null,
+    lap: -1, lapStart: 0, times: [], vals: [], hPrev: null,
+    out: [0, 0, 0], car: null,
+};
+
+function ghostReset() {
+    ghost.lap = -1; ghost.lapStart = 0; ghost.times = []; ghost.vals = []; ghost.hPrev = null;
+}
+
+/** One snapshot of the local car. A lap counts only if it was recorded from its first moments. */
+function ghostRecord(me, elapsed, lapNow, running) {
+    if (!ghost.key || !me) return;
+    if (me.lap !== ghost.lap) {
+        if (me.lap === ghost.lap + 1 && ghost.times.length > GHOST_HZ && ghost.times[0] < 0.25) {
+            // The server rebases the lap clock as the car crosses the line; on the final crossing
+            // it instead holds the finished lap's time (PoRacerSim CurrentLapSeconds).
+            const lapTime = me.finished ? lapNow : (elapsed - lapNow) - ghost.lapStart;
+            ghostKeep(lapTime);
+        }
+        ghostReset();
+        ghost.lap = me.lap;
+    }
+    if (!running || me.finished) return;
+    ghost.lapStart = elapsed - lapNow;
+    const t = lapNow, n = ghost.times.length;
+    if (n && t <= ghost.times[n - 1]) return;
+    const h = ghost.hPrev === null ? me.h : unwrap(ghost.hPrev, me.h);
+    ghost.hPrev = h;
+    ghost.times.push(t);
+    ghost.vals.push(me.x, me.y, h);
+}
+
+function ghostKeep(lapTime) {
+    if (!(lapTime > 1) || (ghost.best && ghost.best.time <= lapTime)) return;
+    const kept = saveGhost(ghost.key, lapTime, encodeTrack(resample(ghost.times, ghost.vals, 3, GHOST_HZ), 3, GHOST_HZ, GHOST_SCALES));
+    if (kept) ghost.best = kept;
+}
+
+/** Where the ghost is at this frame, painted like the player's car, or null. */
+function ghostAt(me, newest, ts) {
+    if (!ghost.show || !ghost.best || !me || me.finished) return null;
+    const ahead = newest.running ? Math.max(-0.1, Math.min(0.25, (ts - PLAYER_DELAY_MS - newest.st) / 1000)) : 0;
+    const p = sampleAt(ghost.best.track, Math.max(0, newest.lapNow + ahead), ghost.out);
+    if (!p) return null;
+    const car = ghost.car && ghost.car.color === me.color && ghost.car.livery === me.livery
+        ? ghost.car : (ghost.car = { id: -1, color: me.color, colorDark: me.colorDark, livery: me.livery, damage: 0, braking: false });
+    car.x = p[0]; car.y = p[1]; car.h = p[2];
+    return car;
+}
 
 /** Ascending by `st` (server clock, ms). Newest last. */
 let buf = [];
@@ -115,7 +174,7 @@ function frame() {
 
     const { w, h } = getSize();
     const renderStart = profiling ? performance.now() : 0;
-    Render.draw(cars, w, h);
+    Render.draw(cars, w, h, localIdx >= 0 ? ghostAt(cars[localIdx], newest, ts) : null);
     if (profiling) profile.renderMs += performance.now() - renderStart;
 
     const me = localIdx >= 0 ? cars[localIdx] : cars.reduce((a, c) => c.position < a.position ? c : a, cars[0]);
@@ -162,6 +221,7 @@ function stop() {
     buf = []; clockOffset = null; roster = []; localIdx = -1;
     finishing = false; hudEls = chipEls = null; mainId = null;
     interpolatedCars = []; playerCars = []; lastAudioAt = lastProfileAt = 0;
+    ghost.key = null; ghost.best = null; ghost.car = null; ghostReset();
     profile.rafFrames = profile.renderedFrames = profile.interpolationMs = profile.renderMs = profile.audioMs = 0;
     profile.startedAt = performance.now();
     lastProfile = null;
@@ -193,6 +253,21 @@ window.PoRacer = {
         if (track && !reducedMotion()) {
             window.PoWeather?.apply({ seed: JSON.stringify(theme) + new Date().toISOString().slice(0, 10), after: track });
         }
+    },
+
+    /**
+     * Arm the ghost for this race: `trackId` for a solo race (null for online and demo, which
+     * neither record nor show one), `show` from the pause menu's switch. Recording runs whenever
+     * a track is armed, so switching the ghost on later already has this race's laps.
+     */
+    setGhost(trackId, show) {
+        const key = trackId ? 'poracer.ghost.v1.' + trackId : null;
+        if (key !== ghost.key) {
+            ghost.key = key;
+            ghost.best = key ? loadGhost(key) : null;
+            ghostReset();
+        }
+        ghost.show = !!show && !!key;
     },
 
     /** Names and paint, on join and again whenever a driver's paint arrives. */
@@ -269,6 +344,7 @@ window.PoRacer = {
             }
         }
         buf.push({ st, t, elapsed, lapNow, running, cars });
+        if (localIdx >= 0) ghostRecord(cars[localIdx], elapsed, lapNow, running);
         if (buf.length > BUFFER_MAX) buf.shift();
 
         Audio.lights(countdownMs > 0 ? Math.min(5, Math.floor((3000 - countdownMs) / 500)) : 0);

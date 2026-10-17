@@ -845,9 +845,10 @@ const FINISH_MS = 2200;
 /**
  * Draw one frame. `cars` is the roster merged with an interpolated snapshot:
  * { id, x, y, h, v, color, colorDark, livery, isPlayer, position, damage, braking }.
- * `w`/`h` are CSS pixels (input.js getSize()).
+ * `w`/`h` are CSS pixels (input.js getSize()). `ghost` is your best lap's car at this moment
+ * ({ x, y, h, color, colorDark, livery }), or null; it is drawn faint and under the field.
  */
-export function draw(cars, w, h) {
+export function draw(cars, w, h, ghost) {
     const g = mainCtx;
     if (!g || !cars || cars.length === 0 || !w || !h) return;
     const totalStart = profiled ? performance.now() : 0;
@@ -933,6 +934,11 @@ export function draw(cars, w, h) {
     const carMargin = (currentTheme === 'neonskyline' ? 100 : 40) * scale;
     const carStart = profiled ? performance.now() : 0;
     const detailedBelow = 18;
+    if (ghost && !zooming) {
+        g.globalAlpha = 0.38;
+        drawCar(g, ghost, camX, camY, scale, w, h, true);
+        g.globalAlpha = 1;
+    }
     for (const c of cars) {
         const x = (c.x - camX) * scale, y = (c.y - camY) * scale;
         if (x < -hw - carMargin || x > hw + carMargin || y < -hh - carMargin || y > hh + carMargin) continue;

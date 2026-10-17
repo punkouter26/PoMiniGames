@@ -126,6 +126,24 @@ public sealed class MatchState
 
     public int TradeMeter { get; set; }
 
+    /// <summary>Ticks stepped since the match began: the clock the action log is keyed on.</summary>
+    public long Ticks { get; set; }
+
+    /// <summary>
+    /// The player's actions so far (<see cref="PoMuleReplay"/> format), as of the last month start.
+    /// Kept in the save so a resumed match can still be verified from its first tick.
+    /// </summary>
+    public string Log { get; set; } = "";
+
+    /// <summary>The tick of the last entry in <see cref="Log"/>; entries store the gap since the one before.</summary>
+    public long LogTick { get; set; }
+
+    /// <summary>
+    /// True when <see cref="Log"/> covers the match from its first tick. A match saved before the
+    /// log existed loads with false, and its score goes to the board range-checked only.
+    /// </summary>
+    public bool Recorded { get; set; }
+
     /// <param name="humanSpecies">The player's pick, or null for an all-AI demo match.</param>
     public static MatchState New(ulong seed, Species? humanSpecies, bool classic = false)
     {
@@ -163,6 +181,6 @@ public sealed class MatchState
         var installed = new sbyte[map.Plots.Length];
         Array.Fill(owner, Nobody);
         Array.Fill(installed, Nobody);
-        return new MatchState { Classic = classic, Seed = seed, Rng = rng, Map = map, Players = players, Owner = owner, Installed = installed, Assayed = new bool[map.Plots.Length] };
+        return new MatchState { Recorded = true, Classic = classic, Seed = seed, Rng = rng, Map = map, Players = players, Owner = owner, Installed = installed, Assayed = new bool[map.Plots.Length] };
     }
 }

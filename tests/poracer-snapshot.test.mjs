@@ -77,3 +77,45 @@ test('invalid field sizes and changed car order fail explicitly', () => {
     snapshot.cars[0].id = 999;
     assert.throws(() => prepareSnapshot(snapshot, roster, -1), /order changed/);
 });
+
+// The ghost lap (js/ghostTrack.js): quantized Int16 deltas in base64, decoded back for playback.
+const ghostSource = await readFile(new URL('../src/PoMiniGames.Client/wwwroot/js/ghostTrack.js', import.meta.url), 'utf8');
+const ghost = await import(`data:text/javascript;base64,${Buffer.from(ghostSource).toString('base64')}`);
+
+test('a ghost lap survives encode and decode within one quantization step, with no drift', () => {
+    // A 40 s lap at 20 Hz round a 3000-unit circuit, heading unwrapped past several turns,
+    // plus one 5000-unit jump (a respawn) that no single Int16 delta can carry.
+    const times = [], values = [];
+    let h = 0;
+    for (let i = 0; i <= 2000; i++) {
+        const t = i * 0.02 + (i % 3) * 0.003;
+        const a = t / 40 * Math.PI * 2;
+        const jump = t > 20 && t < 20.5 ? 5000 : 0;
+        h = ghost.unwrap(h, a + Math.PI / 2);
+        times.push(t);
+        values.push(1500 * Math.cos(a) + jump, 900 * Math.sin(a), h);
+    }
+    const grid = ghost.resample(times, values, 3, 20);
+    assert.equal(grid.length / 3, Math.floor(times.at(-1) * 20) + 1);
+    const text = ghost.encodeTrack(grid, 3, 20, [10, 10, 1000]);
+    assert.match(text, /^[A-Za-z0-9+/]+=*$/);
+    assert.ok(text.length < grid.length * 2 * 1.4 + 64, 'about two bytes a number, base64');
+
+    const track = ghost.decodeTrack(text);
+    assert.deepEqual([track.channels, track.hz, track.frames], [3, 20, grid.length / 3]);
+    let worst = 0;
+    for (let f = 0; f < track.frames; f++) {
+        const t = f / 20;
+        if (t > 19.9 && t < 21.5) continue;   // the respawn is caught up over a few frames
+        for (let c = 0; c < 3; c++) worst = Math.max(worst, Math.abs(track.data[f * 3 + c] - grid[f * 3 + c]) * (c === 2 ? 1000 : 10));
+    }
+    assert.ok(worst <= 0.5001, `max error ${worst} quantization steps`);
+    // Last frame exact to the step: deltas are taken against the reconstruction, so nothing drifts.
+    assert.ok(Math.abs(track.data.at(-3) - grid.at(-3)) <= 0.05);
+
+    const out = [0, 0, 0];
+    assert.deepEqual(ghost.sampleAt(track, 0, out).map(v => Math.round(v)), [1500, 0, 2]);
+    assert.equal(ghost.sampleAt(track, -1, out), null);
+    assert.equal(ghost.sampleAt(track, track.frames / 20 + 1, out), null);
+    for (const bad of ['', 'not base64!', text.slice(0, 20), null]) assert.equal(ghost.decodeTrack(bad), null);
+});

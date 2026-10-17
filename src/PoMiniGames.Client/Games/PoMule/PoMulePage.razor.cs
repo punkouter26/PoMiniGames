@@ -14,7 +14,9 @@ namespace PoMiniGamesClient.Games.PoMule;
 /// </summary>
 /// <remarks>
 /// The renderer's frame loop is the only clock. It calls <see cref="OnTick"/>; nothing here
-/// uses a timer, so a hidden tab or a phone held upright pauses the match for free. The
+/// uses a timer, so a hidden tab or a phone held upright pauses the match for free. Every change
+/// to the match goes through a <see cref="PoMuleMatch"/> method, never straight into its state,
+/// because those methods write the action log the server replays to verify the score. The
 /// canvas shows nearly everything (planet, store, auction, status); this page adds only the
 /// start card, the role buttons, the standings and the demo speed buttons.
 /// </remarks>
@@ -241,8 +243,8 @@ public partial class PoMulePage : IAsyncDisposable
     [JSInvokable]
     public void OnLandPick(int plot)
     {
-        if (_match?.State is { Phase: Phase.Land } state && plot >= 0 && plot < state.Owner.Length)
-            state.LandPicks[0] = plot;
+        if (_match is { State: { Phase: Phase.Land } state } match && plot >= 0 && plot < state.Owner.Length)
+            match.PickLand(plot);
     }
 
     [JSInvokable]
@@ -284,18 +286,18 @@ public partial class PoMulePage : IAsyncDisposable
         {
             case TownBuyMule:
                 if (me.HasMule) Say("You already have a M.U.L.E. in tow.");
-                else if (Check(PoMuleDevelopment.BuyMule(state, 0))) Say($"One M.U.L.E. for ${state.Store.MulePrice}. Now outfit it.", "buy");
+                else if (Check(_match.BuyMule())) Say($"One M.U.L.E. for ${state.Store.MulePrice}. Now outfit it.", "buy");
                 break;
             case >= 1 and <= 4:
                 var good = (Good)(stall - 1);
                 if (!me.HasMule) Say("Get a M.U.L.E. from the corral first.", "refuse");
-                else if (Check(PoMuleDevelopment.Outfit(state, 0, good))) Say($"Outfitted for {PoMuleUi.GoodNames[stall - 1]}. Take it to your plot.", "buy");
+                else if (Check(_match.Outfit(good))) Say($"Outfitted for {PoMuleUi.GoodNames[stall - 1]}. Take it to your plot.", "buy");
                 break;
             case TownPub:
                 Report(() => _match.HumanPub());
                 break;
             case TownAssay:
-                if (PoMuleDevelopment.VisitAssayOffice(state, 0) == Outcome.Ok) Say("Assay kit in hand. Press the button on any plot.", "buy");
+                if (_match.VisitAssay() == Outcome.Ok) Say("Assay kit in hand. Press the button on any plot.", "buy");
                 break;
         }
     }
@@ -309,11 +311,11 @@ public partial class PoMulePage : IAsyncDisposable
         if (me.HasMule)
         {
             if (me.Outfit < 0) { Say("Outfit your M.U.L.E. in town first.", "refuse"); return; }
-            var outcome = PoMuleDevelopment.Install(state, 0, plot);
+            var outcome = _match.Install(plot);
             if (outcome == Outcome.Runaway) Announce(new Notice(NoticeKind.MuleRanAway, 0));
             else if (outcome == Outcome.Ok) Say("M.U.L.E. installed.", "claim");
         }
-        else if (me.HoldsAssay && PoMuleDevelopment.Survey(state, 0, plot) == Outcome.Ok)
+        else if (me.HoldsAssay && _match.Survey(plot) == Outcome.Ok)
         {
             Say($"Crystite level here: {state.Map.Plots[plot].Crystite} of 4.", "claim");
         }
@@ -344,13 +346,13 @@ public partial class PoMulePage : IAsyncDisposable
 
     private void SkipStandings()
     {
-        if (!_demo && _match?.State is { Phase: Phase.Standings } state) state.ClockTicks = 1;
+        if (!_demo && _match is { State.Phase: Phase.Standings } match) match.SkipStandings();
     }
 
     private void SetRole(sbyte role)
     {
-        if (!_demo && _match?.State is { Phase: Phase.Market, MarketGood: >= 0 } state)
-            PoMuleMarket.SetRole(state, 0, role);
+        if (!_demo && _match is { State: { Phase: Phase.Market, MarketGood: >= 0 } } match)
+            match.SetRole(role);
     }
 
     private ButtonStyle RoleStyle(sbyte role) =>
@@ -423,8 +425,12 @@ public partial class PoMulePage : IAsyncDisposable
 
         try
         {
+            // The seed and the action log let the server replay the match and keep its own Net
+            // Worth. A match resumed from a save older than the log goes without (range-checked only).
+            var recorded = state.Recorded;
             await GameResults.RecordAndSubmitPoMuleAsync(_playerName, _outcome,
-                new PoMuleRunRequest(Math.Clamp(mine.NetWorth, 0, PoMiniGames.Domain.Models.PoMuleHighScore.MaxNetWorth), (int)state.Players[0].Species, survived));
+                new PoMuleRunRequest(Math.Clamp(mine.NetWorth, 0, PoMiniGames.Domain.Models.PoMuleHighScore.MaxNetWorth), (int)state.Players[0].Species, survived,
+                    recorded ? state.Seed : null, state.Classic, recorded ? _match.ActionLog : null));
         }
         catch (Exception ex)
         {

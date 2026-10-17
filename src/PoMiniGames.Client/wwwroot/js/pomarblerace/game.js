@@ -7,6 +7,7 @@ import { createWorld, stepWorld } from './physics.js';
 import { mapById, DEFAULT_MAP_ID } from './maps.js';
 import { createMarbles, MARBLE_COUNT, PLAYER_INDEX, SKINS } from './marbles.js';
 import { createAudio } from './audio.js';
+import { encodeTrack, resample, sampleAt, loadGhost, saveGhost } from '../ghostTrack.js';
 // Weather + glass: classic-style IIFE modules imported as modules, they self-register
 // on window and run once.
 import '../weather.js';
@@ -22,6 +23,16 @@ const MARBLE_KEY = 'pomarblerace_marble';            // { skin, weight } — the
 const LEADERS = 3;          // rivals drawn in glass and trailed (marbles.js)
 const AIR_HOLD = 0.12;      // s without floor contact before the rolling bed calls it airborne
 const SECTORS_KEY = 'pomarblerace_sectors';          // { [mapId]: [best sector seconds] }
+// ── Ghost ──
+// Your fastest finish on an authored course, replayed as a faint marble in a local race. The path
+// is kept per map (ghostTrack.js) at 20 Hz of race clock, so slow motion and hit-stop play back
+// exactly as they ran. Procedural maps build a new course every race, so a ghost there would roll
+// through scenery that is no longer there: they neither record nor show one. Online never does
+// either (the guest has no physics; the ghost would be one more marble only one player can see).
+const GHOST_HZ = 20;
+const GHOST_SCALES = [10, 10, 10];
+const GHOST_KEY = 'pomarblerace.ghost.v1.';
+const GHOST_PREF = 'pomarblerace_ghost';            // '0' = switched off with G
 
 // ── Staying on the map ──
 // A marble is only retired when it is BOTH outside the course envelope AND has touched nothing
@@ -198,6 +209,8 @@ export class Game {
     this._surface = 'surface'; // what the camera's marble is rolling on, for the audio bed
     this._airT = 0;
     this._nearFinish = 0;
+    this._ghostOn = (() => { try { return localStorage.getItem(GHOST_PREF) !== '0'; } catch { return true; } })();
+    this._ghost = null;        // { best: {time, track}|null, mesh, times, vals, next } for the race in progress
     // Only procedural maps re-roll between races (map.regenerate). The authored course is fixed
     // content, so _nextTrack() resets the field on the SAME track rather than rebuilding it —
     // which also spares it rebuilding hundreds of trimesh colliders every race.
@@ -295,6 +308,68 @@ export class Game {
     this.scene.punchFov();   // a quick FOV widen as the race kicks off
     this.audio.resume();
     this.audio.playGun();
+    this._armGhost();
+  }
+
+  // A local race on an authored course: load the best run to race against and start recording this one.
+  _armGhost() {
+    this._dropGhost();
+    if (this.demo || this.online || this.track.regenerate || this.chosen < 0) return;
+    const best = loadGhost(GHOST_KEY + this.map.id);
+    const me = this.marbleSet.marbles[this.chosen];
+    let mesh = null;
+    if (best) {
+      mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(me.radius, 20, 14),
+        new THREE.MeshBasicMaterial({ color: 0xdff6ff, transparent: true, opacity: 0.32, depthWrite: false }));
+      mesh.visible = false;
+      this.scene.add(mesh);
+    }
+    this._ghost = { best, mesh, times: [], vals: [], next: 0 };
+  }
+
+  _dropGhost() {
+    const g = this._ghost;
+    this._ghost = null;
+    if (!g || !g.mesh) return;
+    this.scene.remove(g.mesh);
+    g.mesh.geometry.dispose();
+    g.mesh.material.dispose();
+  }
+
+  // Once per racing frame, after the step: sample your marble, and move the ghost to the same clock.
+  _tickGhost() {
+    const g = this._ghost;
+    if (!g) return;
+    const me = this.marbleSet.marbles[this.chosen];
+    if (me && !me.finished && !me.eliminated && this.raceClock >= g.next) {
+      const p = me.body.position;
+      g.times.push(this.raceClock);
+      g.vals.push(p.x, p.y, p.z);
+      g.next = this.raceClock + 1 / GHOST_HZ;
+    }
+    if (!g.mesh) return;
+    const at = this._ghostOn ? sampleAt(g.best.track, this.raceClock, [0, 0, 0]) : null;
+    g.mesh.visible = !!at;
+    if (at) g.mesh.position.set(at[0], at[1], at[2]);
+  }
+
+  // Your marble crossed the line: keep the run if it is this course's fastest.
+  _keepGhost(time) {
+    const g = this._ghost;
+    if (!g || g.times.length < GHOST_HZ) return;
+    g.times.push(time);
+    const p = this.marbleSet.marbles[this.chosen].body.position;
+    g.vals.push(p.x, p.y, p.z);
+    saveGhost(GHOST_KEY + this.map.id, time,
+      encodeTrack(resample(g.times, g.vals, 3, GHOST_HZ), 3, GHOST_HZ, GHOST_SCALES));
+    g.times = [];
+  }
+
+  toggleGhost() {
+    this._ghostOn = !this._ghostOn;
+    try { localStorage.setItem(GHOST_PREF, this._ghostOn ? '1' : '0'); } catch { }
+    if (this._ghost?.mesh && !this._ghostOn) this._ghost.mesh.visible = false;
   }
 
   // The player's in-race input: hold a direction to steer the picked marble sideways. dir is
@@ -376,6 +451,7 @@ export class Game {
     this.disposed = true;
     if (this._raf) cancelAnimationFrame(this._raf);
     this._unbindKeys();
+    this._dropGhost();
     if (this.marbleSet) this.marbleSet.dispose();
     if (this.track) this.track.dispose();
     this.audio.dispose();
@@ -394,6 +470,7 @@ export class Game {
   // reused, which also spares it rebuilding hundreds of trimesh colliders every race.
   _buildTrack() {
     this._podiumSent = false; // reset the top-3 podium for the new race
+    this._dropGhost();
     if (this.track && this.track.regenerate) {
       this.scene.remove(this.track.group);
       this.track.dispose();
@@ -812,8 +889,9 @@ export class Game {
         // #9 — spatialized, so a pack crossing ahead of you spreads across the stereo field
         // instead of stacking a hundred identical chimes dead centre.
         this.audio.playFinish(this.scene.audioCue(m.mesh.position));
-        if (m.index === this.chosen) this._celebrateOwnFinish(m, m.finishOrder + 1);
+        if (m.index === this.chosen) { this._celebrateOwnFinish(m, m.finishOrder + 1); this._keepGhost(m.finishTime); }
       }
+      this._tickGhost();
       // Rack the focus for the WINNER only. Firing it per finisher
       // would re-trigger it a hundred times as the pack crosses, which reads as
       // the image pumping rather than as a photo finish.
@@ -989,6 +1067,7 @@ export class Game {
 
   _resolve() {
     this.audio.silenceBeds();
+    if (this._ghost?.mesh) this._ghost.mesh.visible = false;
     const order = this.marbleSet.leaderboard();   // final standings — assigns place to every marble
     const me = this.marbleSet.marbles[this.chosen];
     // A marble that fell off the track has no placing: it neither finished nor holds a rank.
@@ -1243,6 +1322,8 @@ export class Game {
       // M was documented as the mute key but was never actually bound to anything, and the
       // only other caller (a Settings drawer) had been deleted — so mute was unreachable.
       if (e.key === 'm' || e.key === 'M') { e.preventDefault(); this.audio.toggleMuted(); }
+      // G: show or hide the ghost of your best run (local races on the authored courses).
+      if (e.key === 'g' || e.key === 'G') { e.preventDefault(); this.toggleGhost(); }
       // Held-key steering: keydown starts the hold (auto-repeat re-sets the same flag, which
       // is idempotent), keyup below ends it.
       if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { e.preventDefault(); this.setSteer(-1, true); }

@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace PoMiniGames.Shared.Games.PoMule;
 
 public enum NoticeKind : byte { LandGranted, AuctionOpened, AuctionWon, MuleRanAway, PubVisit, Traded, ColonyEvent, MonthEnded, Luck, WampusCaught }
@@ -14,6 +16,12 @@ public readonly record struct Notice(NoticeKind Kind, int Seat, int A = 0, int B
 /// they got to (<see cref="Arrive"/>, <see cref="Bump"/>). With <see cref="Headless"/> set,
 /// AI colonists instead "travel" for a fixed number of ticks per errand, so a whole match can
 /// run with no renderer at all — that is what the tests and the balance check use.
+/// <para>
+/// Everything the page does to the match goes through the public methods below, and each one
+/// is written to an action log keyed on the tick it landed (<see cref="ActionLog"/>). The rules are
+/// deterministic and seeded, so the seed plus that log is the whole match: the server replays it
+/// (<see cref="PoMuleReplay"/>) and stores the Net Worth it gets, not the one it is told.
+/// </para>
 /// </remarks>
 public sealed class PoMuleMatch(MatchState state)
 {
@@ -34,6 +42,9 @@ public sealed class PoMuleMatch(MatchState state)
     private int _landPrev = -1;
     private int _landWait;
     private bool _wampusCaught;
+    private int _humanInput;
+    private readonly StringBuilder _log = new(state.Log);
+    private long _logTick = state.LogTick;
 
     public MatchState State { get; } = state;
 
@@ -44,7 +55,26 @@ public sealed class PoMuleMatch(MatchState state)
     public bool Fast { get; init; }
 
     /// <summary>Seat 0's direction on the trading floor: +1 up, -1 down, 0 still.</summary>
-    public int HumanMarketInput { get; set; }
+    public int HumanMarketInput
+    {
+        get => _humanInput;
+        set
+        {
+            if (value == _humanInput) return;
+            Record(PoMuleCommand.MarketInput, value);
+            _humanInput = value;
+        }
+    }
+
+    /// <summary>Every action so far, from the first tick (<see cref="PoMuleReplay"/> format).</summary>
+    public string ActionLog
+    {
+        get
+        {
+            SyncLog();
+            return State.Log;
+        }
+    }
 
     /// <summary>What happened during the last <see cref="Advance"/> call.</summary>
     public List<Notice> Notices { get; } = [];
@@ -80,9 +110,53 @@ public sealed class PoMuleMatch(MatchState state)
         {
             var month = State.Month;
             Step();
-            if (State.Month != month || State.Phase == Phase.Finished) return true;
+            if (State.Month != month || State.Phase == Phase.Finished)
+            {
+                SyncLog(); // the caller saves here
+                return true;
+            }
         }
         return false;
+    }
+
+    private void SyncLog()
+    {
+        State.Log = _log.ToString();
+        State.LogTick = _logTick;
+    }
+
+    /// <summary>One log entry: ticks since the last one (base 36), the command letter, the argument.</summary>
+    private void Record(PoMuleCommand command, int arg)
+    {
+        if (_log.Length > 0) _log.Append('.');
+        PoMuleReplay.AppendBase36(_log, State.Ticks - _logTick);
+        _log.Append((char)('A' + (int)command));
+        if (arg < 0) _log.Append('-');
+        PoMuleReplay.AppendBase36(_log, Math.Abs((long)arg));
+        _logTick = State.Ticks;
+    }
+
+    /// <summary>Replays one logged command. False for one the log format does not know.</summary>
+    internal bool Apply(PoMuleCommand command, int arg)
+    {
+        switch (command)
+        {
+            case PoMuleCommand.LandPick: PickLand(arg); break;
+            case PoMuleCommand.Arrive when arg is >= 0 and < PoMuleTuning.Seats: Arrive(arg); break;
+            case PoMuleCommand.Bump when arg is >= 0 and < PoMuleTuning.Seats * 2: Bump(arg >> 1, (arg & 1) == 1); break;
+            case PoMuleCommand.Wampus when arg is >= 0 and < PoMuleTuning.Seats: CatchWampus(arg); break;
+            case PoMuleCommand.BuyMule: BuyMule(); break;
+            case PoMuleCommand.Outfit when arg is >= 0 and <= (int)Good.Crystite: Outfit((Good)arg); break;
+            case PoMuleCommand.Pub: HumanPub(); break;
+            case PoMuleCommand.Assay: VisitAssay(); break;
+            case PoMuleCommand.Install when arg >= 0 && arg < State.Owner.Length: Install(arg); break;
+            case PoMuleCommand.Survey when arg >= 0 && arg < State.Owner.Length: Survey(arg); break;
+            case PoMuleCommand.MarketInput when arg is >= -1 and <= 1: HumanMarketInput = arg; break;
+            case PoMuleCommand.SkipStandings: SkipStandings(); break;
+            case PoMuleCommand.Role when arg is >= -1 and <= 1: SetRole((sbyte)arg); break;
+            default: return false;
+        }
+        return true;
     }
 
     private void Go(Phase phase)
@@ -93,6 +167,7 @@ public sealed class PoMuleMatch(MatchState state)
 
     private void Step()
     {
+        State.Ticks++;
         if (!_begun)
         {
             _begun = true;
@@ -147,7 +222,7 @@ public sealed class PoMuleMatch(MatchState state)
                 break;
 
             case Phase.Auction:
-                HumanMarketInput = 0; // as for the market: a key held last month must not bid
+                _humanInput = 0; // as for the market: a key held last month must not bid
                 _auctionBlock.Clear();
                 foreach (var plot in PoMuleLand.PickAuctionPlots(State)) _auctionBlock.Enqueue(plot);
                 if (!OpenNextAuction()) Go(Phase.Development);
@@ -176,7 +251,7 @@ public sealed class PoMuleMatch(MatchState state)
                 break;
 
             case Phase.Market:
-                HumanMarketInput = 0; // a key held when last month's market closed must not walk this one
+                _humanInput = 0; // a key held when last month's market closed must not walk this one
                 _quiet = 0;
                 PoMuleMarket.Open(State, PoMuleMarket.Order[0]);
                 break;
@@ -192,6 +267,13 @@ public sealed class PoMuleMatch(MatchState state)
 
     /// <summary>True once this seat has its plot for the month.</summary>
     public bool HasClaimed(int seat) => _claimed[seat];
+
+    /// <summary>The player pressed the button: they want the plot they saw lit.</summary>
+    public void PickLand(int plot)
+    {
+        Record(PoMuleCommand.LandPick, plot);
+        if (State.Phase == Phase.Land && plot >= 0 && plot < State.Owner.Length) State.LandPicks[0] = plot;
+    }
 
     private int NextClaimable(int after)
     {
@@ -280,7 +362,7 @@ public sealed class PoMuleMatch(MatchState state)
         for (var seat = 0; seat < inputs.Length; seat++)
         {
             // An AI takes a step every few ticks, so the bidding climbs at a pace a person can follow.
-            inputs[seat] = !IsAi(seat) ? HumanMarketInput
+            inputs[seat] = !IsAi(seat) ? _humanInput
                 : State.Rng.Chance(PoMuleAi.AuctionEagerness(State, seat)) ? PoMuleAi.AuctionInput(State, seat) : 0;
         }
         _quiet = PoMuleLand.AuctionTick(State, inputs) ? 0 : _quiet + 1;
@@ -359,6 +441,7 @@ public sealed class PoMuleMatch(MatchState state)
     /// <summary>A colonist reaches the wampus while it is showing. Returns the bounty paid, or 0.</summary>
     public int CatchWampus(int seat)
     {
+        Record(PoMuleCommand.Wampus, seat);
         if (State.Phase != Phase.Development || State.WampusPlot < 0 || _wampusCaught) return 0;
         if (!PoMuleDevelopment.CanAct(State, seat)) return 0;
         var bounty = PoMuleTuning.WampusBounty(State.Month);
@@ -372,12 +455,19 @@ public sealed class PoMuleMatch(MatchState state)
     /// <summary>The renderer reports that an AI colonist reached where it was heading.</summary>
     public void Arrive(int seat)
     {
+        Record(PoMuleCommand.Arrive, seat);
         if (State.Phase == Phase.Development && IsAi(seat) && PoMuleDevelopment.CanAct(State, seat))
             Perform(seat, PoMuleAi.NextGoal(State, seat));
     }
 
     /// <summary>The renderer reports a collision. True when the victim's M.U.L.E. bolted.</summary>
     public bool Bump(int victim, bool dashing)
+    {
+        Record(PoMuleCommand.Bump, victim * 2 + (dashing ? 1 : 0));
+        return BumpCore(victim, dashing);
+    }
+
+    private bool BumpCore(int victim, bool dashing)
     {
         if (State.Phase != Phase.Development || !PoMuleDevelopment.Bump(State, victim, dashing)) return false;
         Notices.Add(new Notice(NoticeKind.MuleRanAway, victim));
@@ -387,10 +477,58 @@ public sealed class PoMuleMatch(MatchState state)
     /// <summary>Seat 0 walks into the Pub.</summary>
     public int HumanPub()
     {
+        Record(PoMuleCommand.Pub, 0);
         if (State.Phase != Phase.Development) return 0;
         var payout = PoMuleDevelopment.EnterPub(State, 0);
         Notices.Add(new Notice(NoticeKind.PubVisit, 0, payout));
         return payout;
+    }
+
+    // ── The player's errands (seat 0), logged ──
+
+    /// <summary>The corral: one M.U.L.E. on a tether.</summary>
+    public Outcome BuyMule()
+    {
+        Record(PoMuleCommand.BuyMule, 0);
+        return State.Phase == Phase.Development ? PoMuleDevelopment.BuyMule(State, 0) : Outcome.NotAllowed;
+    }
+
+    public Outcome Outfit(Good good)
+    {
+        Record(PoMuleCommand.Outfit, (int)good);
+        return State.Phase == Phase.Development ? PoMuleDevelopment.Outfit(State, 0, good) : Outcome.NotAllowed;
+    }
+
+    public Outcome VisitAssay()
+    {
+        Record(PoMuleCommand.Assay, 0);
+        return State.Phase == Phase.Development ? PoMuleDevelopment.VisitAssayOffice(State, 0) : Outcome.NotAllowed;
+    }
+
+    public Outcome Install(int plot)
+    {
+        Record(PoMuleCommand.Install, plot);
+        return State.Phase == Phase.Development ? PoMuleDevelopment.Install(State, 0, plot) : Outcome.NotAllowed;
+    }
+
+    public Outcome Survey(int plot)
+    {
+        Record(PoMuleCommand.Survey, plot);
+        return State.Phase == Phase.Development ? PoMuleDevelopment.Survey(State, 0, plot) : Outcome.NotAllowed;
+    }
+
+    /// <summary>The standings screen's Continue: the month ends on the next tick.</summary>
+    public void SkipStandings()
+    {
+        Record(PoMuleCommand.SkipStandings, 0);
+        if (State.Phase == Phase.Standings) State.ClockTicks = 1;
+    }
+
+    /// <summary>Sell, buy or sit out on the trading floor.</summary>
+    public void SetRole(sbyte role)
+    {
+        Record(PoMuleCommand.Role, role);
+        if (State.Phase == Phase.Market && State.MarketGood >= 0) PoMuleMarket.SetRole(State, 0, role);
     }
 
     private void Perform(int seat, Goal goal)
@@ -417,7 +555,7 @@ public sealed class PoMuleMatch(MatchState state)
                 break;
             case GoalKind.Chase:
                 // With no renderer there is no collision to report, so a chase lands sometimes.
-                if (Headless && goal.Target >= 0 && State.Rng.Chance(40)) Bump(goal.Target, dashing: true);
+                if (Headless && goal.Target >= 0 && State.Rng.Chance(40)) BumpCore(goal.Target, dashing: true);
                 break;
         }
     }
@@ -428,7 +566,7 @@ public sealed class PoMuleMatch(MatchState state)
     {
         var inputs = new int[State.Players.Length];
         for (var seat = 0; seat < inputs.Length; seat++)
-            inputs[seat] = IsAi(seat) ? PoMuleAi.MarketInput(State, seat) : HumanMarketInput;
+            inputs[seat] = IsAi(seat) ? PoMuleAi.MarketInput(State, seat) : _humanInput;
         var stood = (int[])State.LanePrice.Clone();
         var trades = PoMuleMarket.Tick(State, inputs);
         foreach (var trade in trades)

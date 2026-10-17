@@ -125,7 +125,10 @@ public sealed record PoVoxelStrikeRunRequest(
 
 // PoMule board rows use PoMiniGames.Domain.Models.PoMuleHighScore directly. This is the
 // client mirror of the API slice's PoMuleRunRequest; Species is the roster index.
-public sealed record PoMuleRunRequest(int NetWorth, int Species, bool ColonySurvived);
+// Seed, Classic and Log let the server replay the match (PoMuleReplay); a client that sends no
+// log is range-checked only.
+public sealed record PoMuleRunRequest(int NetWorth, int Species, bool ColonySurvived,
+    ulong? Seed = null, bool Classic = false, string? Log = null);
 
 
 /// <summary>

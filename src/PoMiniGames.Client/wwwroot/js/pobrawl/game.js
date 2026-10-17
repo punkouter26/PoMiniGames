@@ -7,7 +7,7 @@ import { buildArena, animateCrowd, updateAtmosphere, updateRopes, updateBanners,
 import { buildProps, resetProps, updateProps, disposeProps } from './props.js';
 import { buildFighter, updateJiggles, setExpression, CHARACTERS, CHARACTER_IDS } from './fighters.js';
 import { Animator } from './animation.js';
-import { KeyboardController, buildTouchControls } from './input.js';
+import { KeyboardController, buildTouchControls, LAYOUTS, padCodes } from './input.js';
 import { AiController } from './ai.js';
 import { RandomGenerator } from './rng.js';
 import { CombatPlay, REGIONS, regionEffect } from './combat.js';
@@ -32,7 +32,7 @@ import { HitResolution } from './hitResolution.js';
 import { Training } from './training.js';
 import { SIM_DT, MAX_HP, ATTACKS, HEAVY_HIT_DMG } from './constants.js';
 import { SceneSetup, ENV_INTENSITY } from './sceneSetup.js';
-import { GamepadBridge } from './gamepad.js';
+import { KeyBridge } from '../gamepadBus.js';
 import { MatWear } from './matWear.js';
 import { NewsDesk } from './news.js';
 import { KoClipRecorder } from './clip.js';
@@ -438,10 +438,10 @@ export class BrawlGame {
       this.touchEl = buildTouchControls(this.container, this.options.mode === 'online');
     }
 
-    // Controllers drive the same key codes as the keyboard (gamepad.js).
+    // Controllers drive the same key codes as the keyboard (gamepadBus.js KeyBridge + padCodes).
     // 1P: the first pad is player 1. 2P: first pad P1, second P2. Demo: none.
     if (this.options.mode !== 'demo') {
-      this.gamepads = new GamepadBridge(this.options.mode === '2p' ? [1, 2] : [1]);
+      this.gamepads = new KeyBridge(this.options.mode === '2p' ? [1, 2] : [1], (pad, layout) => padCodes(pad, LAYOUTS[layout]));
     }
 
     // The Breaking News result package (news.js).

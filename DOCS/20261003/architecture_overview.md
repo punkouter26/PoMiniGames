@@ -436,3 +436,73 @@ Found while reading the code for this snapshot:
   cannot be replayed exactly.
 - PoBrawl demo mode can pair in BOB, whom the server's rating endpoint rejects.
 - PoSports "hard" has a slightly higher typing error rate (0.01) than "medium" (0.008).
+
+### 3.6 MarbleRace physics: Rapier migration plan
+
+Status (2026-10-17): **planned, not started.** PoMarbleRace still runs on cannon-es 0.20.0, and
+every other 3D game keeps cannon-es too. The swap was investigated and deliberately not
+half-done: it cannot be verified without a browser, and a partial switch would leave two
+physics engines fighting over the same marbles.
+
+**Why switch.** cannon-es steps a variable number of substeps per frame (`stepWorld` in
+`pomarblerace/physics.js` throws away the time it cannot catch up) and promises nothing about
+identical float results across browsers. That is why online play is a host-authoritative relay
+(`PoMarbleRaceShared.cs`: the host simulates, streams 101 positions at 15 Hz, the guest only
+steers) and why the ghost of your best run (F5, `ghostTrack.js`) is a recorded *path* rather than
+a replayed input log. Rapier's WASM build steps the same inputs to the same result on every
+machine, which would let a ghost, a guest and the server all share one simulation.
+
+**What it touches.** cannon-es is not wrapped behind an interface; game code reads and writes
+cannon bodies directly.
+
+| File | cannon-es use |
+|---|---|
+| `physics.js` | world, gravity, solver, seven contact materials (friction and restitution per pair) |
+| `marbles.js` | 101 sphere bodies, mass spread, damping, `body.velocity` / `position` / `quaternion` |
+| `track-glb.js` | chunked `CANNON.Trimesh` colliders (Int16 index cap, octree patch), static bodies |
+| `track-procedural.js` | boxes, spheres, hinged turnstile paddles with motors (`driveMotors`) |
+| `game.js` | steering, boost, brakes, kickers and unstick all add to `body.velocity`; `world.contacts` drives the on-track test, the elimination sweep and the audio surface |
+
+**Plan, in order. Each step ships on its own and keeps online play working.**
+
+1. **Physics port behind a seam.** Add `pomarblerace/physics-api.js` with what game code needs:
+   `addSphere`, `addTrimesh`, `addBox`, `addHinge(motor)`, `velocity(body)` / `setVelocity`,
+   `position`, `rotation`, `contactsOf(body) → material names`, `step()`. Implement it on
+   cannon-es first and move every direct `body.*` and `world.contacts` access in `game.js`,
+   `marbles.js` and the two track builders onto it. No behaviour change; this is the large,
+   reviewable part.
+2. **Fixed step, input-driven.** Replace the frame-dt accumulator with whole fixed steps at
+   1/60 s and a step counter. Slow motion and hit-stop change how many steps a frame runs, never
+   the step size. Steering, boost and kickers are applied per step from the step counter, not
+   from wall time. The one `Math.random()` that touches play (the demo's random pick) takes a
+   seeded generator; spark spawning stays random because it is visual only.
+3. **Rapier implementation of the seam.** Load `@dimforge/rapier3d-compat` pinned to one exact
+   version (for example `0.14.0`) from `cdn.jsdelivr.net/npm`, by a dynamic `import()` inside the
+   MarbleRace engine only, never through the shared import map, so the other games never fetch
+   it. `await RAPIER.init()` before the first `Game` is built (index.js `start()` already awaits
+   the map load, so it goes there). Map cannon's pieces: sphere bodies to
+   `RigidBodyDesc.dynamic()` + `ColliderDesc.ball`, trimesh chunks to `ColliderDesc.trimesh`
+   (no Int16 cap, so the chunking can be relaxed), paddles to a revolute joint with a motor,
+   contact-material pairs to per-collider friction/restitution with `CoefficientCombineRule`, and
+   `world.contacts` to `world.contactPairsWith`. Enable CCD on marbles; the speed clamp and
+   `sweepGuard` stay until measurements show CCD alone holds the shell.
+   Cross-browser bit-exactness needs Rapier's enhanced-determinism build; check which compat
+   package exposes it at the pinned version before relying on lockstep (step 6).
+4. **Retune and verify headless-free.** A node test (`tests/pomarblerace-physics.test.mjs`)
+   loads the compat build (it inlines its WASM, so node can run it), builds the procedural chute
+   from a fixed seed with no renderer, steps 60 s of race twice and asserts identical marble
+   positions, then checks the course invariants the cannon tuning was written for: no marble
+   trapped on the shallowest descent (friction bracket 0.077–0.11 in `physics.js`), none
+   tunnelling at 120 u/s, the field finishing inside `RACE_TIMEOUT`. Then one recorded headless browser
+   pass per map for frame cost: 101 marbles against a trimesh course cost ~16.5 ms a step on
+   cannon-es, and Rapier has to come in under that or the race runs in slow motion.
+5. **Switch the default, keep a flag.** `?physics=cannon` keeps the old engine for one release;
+   ghosts recorded on cannon stay valid because they are paths, not input logs.
+6. **Then, and only then, lockstep.** With a deterministic step, online can send steering
+   inputs per step instead of 101 positions at 15 Hz, and the ghost can become an input log
+   replayed through the real simulation. Keep the relay as the fallback until both browsers'
+   step checksums have been compared in production for a while.
+
+**Online today, unchanged by any of this until step 6:** the host's `_netSend` streams Float32
+positions plus a flag byte per marble through `PoMarbleRaceOnlineHub`; the guest eases toward
+them in `_guestRacingFrame` and runs no physics at all.

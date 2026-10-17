@@ -30,6 +30,8 @@ public partial class PoRacerPage
     private DotNetObjectReference<PoRacerPage>? _reference;
     private ElementReference _resumeButton;
     private bool _disposed, _engineReady, _isStarting, _isDemo, _trial, _pauseOpen, _focusResume, _showResults;
+    // Race your best lap on this track (js/ghostTrack.js). Solo only; the switch is in the pause menu.
+    private bool _ghost = true;
     // The opening card (GameIntro) gates everything: no lobby seat is taken and no race is
     // joined until it is dismissed. _reopenIntro is the card coming back on purpose (Back to
     // start, a failed start, leaving the lobby), where a "don't show this again" must not
@@ -73,6 +75,7 @@ public partial class PoRacerPage
         _difficulty = PoRacerPreferences.LoadDifficulty();
         _trial = PoRacerPreferences.LoadTrial();
         _bests = PoRacerPreferences.LoadBests();
+        _ghost = PoRacerPreferences.LoadGhost();
         GameStats.SaveLastPlayedGame("poracer");
         Nav.LocationChanged += OnLocationChanged;
     }
@@ -298,6 +301,7 @@ public partial class PoRacerPage
             _totalLaps = world.TotalLaps;
             await JS.InvokeVoidAsync("PoRacer.setStatic", world.CenterXY, world.TrackWidth, world.WallsXY,
                 world.BoostPads, world.SurfaceZones, world.Theme, world.TotalLaps);
+            await JS.InvokeVoidAsync("PoRacer.setGhost", CanGhost ? world.TrackId : null, _ghost);
             await ApplyRosterAsync(world.Roster);
         }
         await ApplySnapshotAsync(snapshot);
@@ -364,6 +368,15 @@ public partial class PoRacerPage
         await JS.InvokeVoidAsync("PoRacer.setInputEnabled", !_pauseOpen && !_isDemo);
         if (CanPause && _session is { } session) await session.SetPausedAsync(_pauseOpen);
         StateHasChanged();
+    }
+
+    /// <summary>The ghost is a solo thing: online, every car on the track has to be one the others see too.</summary>
+    private bool CanGhost => !_isDemo && !_raceOnline;
+
+    private async Task SetGhostAsync(bool on)
+    {
+        PoRacerPreferences.SaveGhost(_ghost = on);
+        if (CanGhost) await JS.InvokeVoidAsync("PoRacer.setGhost", _raceTrackId, _ghost);
     }
 
     [JSInvokable]

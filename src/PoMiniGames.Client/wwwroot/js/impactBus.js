@@ -387,6 +387,9 @@ export function vibrate(pattern) {
         // below would emit a console error. Skip the call entirely on any
         // /{game}/demo or ?kiosk=N route — the attract reel has no one to vibrate.
         if (isOnKioskRoute()) return;
+        // A controller in hand rumbles too (gamepadBus.js, published once a pad has connected).
+        // Before the gesture gate: a pad's actuator needs no user activation.
+        window.PoGamepad?.rumblePattern?.(pattern);
         // The kiosk guard above covers the attract reel but not every
         // gesture-less caller. /login fires a cue while the sign-in gate is
         // still mounting, and an ungated call logs "Blocked call to

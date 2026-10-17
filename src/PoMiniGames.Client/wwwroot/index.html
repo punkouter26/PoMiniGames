@@ -252,6 +252,9 @@
     <!-- §GFX-6 pointer-tracked tilt for [data-fx-tilt] surfaces. One delegated
          listener; idle until something is hovered. -->
     <script type="module" src="js/fxTilt.js"></script>
+    <!-- Controllers: gamepadBus.js (D-pad focus navigation, pad rumble for impactBus haptics) is
+         fetched on the first gamepadconnected only, so a player without a pad pays nothing. -->
+    <script type="module">addEventListener('gamepadconnected', () => import('./js/gamepadBus.js').then((m) => m.startNav()), { once: true });</script>
     <!-- §GFX-12…21 the quality/palette/sound bootstrap. Decides the device's
          quality tier BEFORE any game asks for it, owns the dynamic accent
          palette, and

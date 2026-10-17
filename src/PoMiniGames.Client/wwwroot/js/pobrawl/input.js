@@ -25,8 +25,10 @@
 //
 // Camera-relative is the point: an axis derived from the line between the
 // fighters would flip on screen whenever they swap sides.
-//
-// Exported because the touch panel (below) and gamepad.js press these same codes.
+
+import { BUTTONS, pressed } from '../gamepadBus.js';
+
+// Exported because the touch panel (below) and padCodes (the controller) press these same codes.
 export const LAYOUTS = {
   1: {
     left: 'KeyA', right: 'KeyD',
@@ -39,6 +41,32 @@ export const LAYOUTS = {
     block: 'Semicolon', punch: 'KeyK', kick: 'KeyL',
   },
 };
+
+// ── Controllers ──
+// A pad drives the same key codes as the keyboard: game.js hands padCodes to the shared
+// KeyBridge (../gamepadBus.js), which presses and releases them for it.
+//
+// Stick deadzone. 0.4 rather than a tight 0.15: a worn stick resting at 0.25 would otherwise walk
+// the fighter on its own, and nothing here is analogue (the keyboard model is on/off, so there is
+// no precision to buy with a small one).
+const PAD_DEADZONE = 0.4;
+
+/** The key codes of layout `k` that this pad is holding. */
+export function padCodes(pad, k) {
+  const want = new Set();
+  const ax = pad.axes[0] || 0, ay = pad.axes[1] || 0;
+  if (ax < -PAD_DEADZONE || pressed(pad, BUTTONS.left)) want.add(k.left);
+  if (ax > PAD_DEADZONE || pressed(pad, BUTTONS.right)) want.add(k.right);
+  if (ay < -PAD_DEADZONE || pressed(pad, BUTTONS.up)) want.add(k.depthAway);
+  if (ay > PAD_DEADZONE || pressed(pad, BUTTONS.down)) want.add(k.depthToward);
+  // Face buttons: south/west punch, east/north kick, so both the "A punches" and the
+  // "square punches" instincts land on the same move.
+  if (pressed(pad, BUTTONS.south) || pressed(pad, BUTTONS.west)) want.add(k.punch);
+  if (pressed(pad, BUTTONS.east) || pressed(pad, BUTTONS.north)) want.add(k.kick);
+  // Any shoulder or trigger guards: it is a HOLD, and a trigger is the natural thing to hold down.
+  if (pressed(pad, BUTTONS.lb) || pressed(pad, BUTTONS.rb) || pressed(pad, BUTTONS.lt) || pressed(pad, BUTTONS.rt)) want.add(k.block);
+  return want;
+}
 
 export class KeyboardController {
   // game.js `_autoSuperReady` reads this: humans get an automatic super, AI

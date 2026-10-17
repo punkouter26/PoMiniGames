@@ -96,10 +96,6 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(List<PoRacerScoreDto>))]
 // PoBrawlOnline: the 1v1 result ingest (write only; it answers 204).
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlMatchResultDto))]
-// PoCabinet officials' radio pool and race debrief.
-[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoCabinetBanterPool))]
-[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoCabinetDebriefRequest))]
-[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoCabinetDebriefReply))]
 // PoBrawl cross-device ladder progress.
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlProgressDto))]
 // Player Card & Online MMR

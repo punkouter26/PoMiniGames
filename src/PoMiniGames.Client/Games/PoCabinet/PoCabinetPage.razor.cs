@@ -40,7 +40,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     [Inject] private PoCabinetSession Session { get; set; } = default!;
     [Inject] private PoCabinetCareerState Career { get; set; } = default!;
     [Inject] private PoMiniGamesClient.Services.Auth.AuthStateService AuthState { get; set; } = default!;
-    [Inject] private PoMiniGamesClient.Services.Http.ApiService Api { get; set; } = default!;
 
     [Parameter] public string? ModeSegment { get; set; }
 
@@ -273,7 +272,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
                 {
                     _telemetrySummary = res.TryGetProperty("summary", out var s) ? s.GetString() : null;
                     _hasReferenceLap = res.TryGetProperty("hasReference", out var r) && r.ValueKind == JsonValueKind.True;
-                    if (res.TryGetProperty("facts", out var facts) && facts.ValueKind == JsonValueKind.Object && _debrief is null) _ = LoadDebriefAsync(facts);
+                    if (res.TryGetProperty("facts", out var facts) && facts.ValueKind == JsonValueKind.Object && _debrief is null) BuildDebrief(facts);
                 }
             }
             catch { _telemetrySummary = null; }
@@ -366,7 +365,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
                 color = PlayerColorHex,
                 settings = Settings.ToJs(),
             });
-            _ = LoadBanterAsync(trackId);
+            // The officials' scripted line pool, built in the browser (PoCabinetTalkService).
+            if (_phase is Phase.Racing) await SafeJsAsync("PoCabinet.setBanter", PoCabinetTalkService.Banter().Lines);
         }
         catch (Exception ex)
         {
@@ -376,16 +376,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             _phase = Phase.Start;
             await InvokeAsync(StateHasChanged);
         }
-    }
-
-    /// <summary>
-    /// The officials' scripted line pool for the solo race. Not awaited by the start: a race
-    /// that starts without banter only misses the grid line.
-    /// </summary>
-    private async Task LoadBanterAsync(string trackId)
-    {
-        var pool = await Api.GetPoCabinetBanterAsync(trackId);
-        if (pool is not null && _phase is Phase.Racing) await SafeJsAsync("PoCabinet.setBanter", pool.Lines);
     }
 
     /// <summary>
@@ -765,10 +755,11 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
-    /// The race engineer: the telemetry numbers (race.js) plus the result go to the server, which
-    /// writes the headline and tips from them. Demo races don't ask — nobody drove.
+    /// The race engineer: the telemetry numbers (race.js) plus the result become the headline
+    /// and tips, written right here in the browser (<see cref="PoCabinetTalkService"/>). Demo
+    /// races get none — nobody drove. The caller renders straight after.
     /// </summary>
-    private async Task LoadDebriefAsync(JsonElement facts)
+    private void BuildDebrief(JsonElement facts)
     {
         if (Mode == GameMode.Demo) return;
         static int Int(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? (int)Math.Round(v.GetDouble()) : 0;
@@ -782,10 +773,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             Int(facts, "fullThrottlePct"), Int(facts, "brakePct"), Int(facts, "topKmh"), Int(facts, "slowestKmh"),
             facts.TryGetProperty("worstPointPct", out var w) && w.ValueKind == JsonValueKind.Number ? (int)w.GetDouble() : -1,
             Int(facts, "wallHits"), _lapTimes.Count);
-        var reply = await Api.GetPoCabinetDebriefAsync(request);
-        if (reply is null || _phase is not (Phase.Finished or Phase.Replay)) return;
+        var reply = PoCabinetTalkService.Debrief(request);
         _debrief = new Debrief(reply.Headline, reply.Tips);
-        await InvokeAsync(StateHasChanged);
     }
 
     // ─── Telemetry: sectors, laps, personal records ──────────────────────────

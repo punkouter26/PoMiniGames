@@ -122,7 +122,7 @@ export function startReplay() { return race ? race.startReplay() : false; }
 export function replayCommand(cmd, value) { race?.replayCommand(cmd, value); }
 export function stopReplay() { race?.stopReplay(); }
 export function recordClip() { return race ? race.recordClip() : Promise.resolve('unavailable'); }
-/** The officials' line pool for this track (GET /api/pocabinet/banter), when it arrives. */
+/** The officials' scripted line pool (PoCabinetTalkService.Banter, built by the page right after the start). */
 export function setBanter(lines) { race?.setBanter(lines); }
 /** Solo lap proof for the score submit: { inputs: base64 | null, wet }. */
 export function lapProof() { return race ? race.lapProof() : { inputs: null, wet: false }; }

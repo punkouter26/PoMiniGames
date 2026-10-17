@@ -125,19 +125,8 @@ public sealed record EcosystemTelemetryDeltaDto(
     int Season = 0,
     float SeasonProgress = 0f);
 
-/// <summary>Cultural identity, deity, totem, taboo, and war cry for a tribe.</summary>
-public sealed record EcoCultureProfile(
-    int TribeId,
-    string Name,
-    string Deity,
-    string SacredTotem,
-    string Taboo,
-    string WarCry);
-
 [System.Text.Json.Serialization.JsonSerializable(typeof(EcoWorldMeta))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(EcoSharedWorld))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(EcoCultureProfile))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(List<EcoCultureProfile>))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TribeStateDto))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(BuildingStateDto))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TradeCaravanDto))]

@@ -1,5 +1,4 @@
 using FluentAssertions;
-using PoMiniGames.Features.PoCabinet;
 using PoMiniGames.Shared.Games;
 using Xunit;
 

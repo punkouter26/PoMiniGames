@@ -1,12 +1,12 @@
 using System.Globalization;
-using PoMiniGames.Shared.Games;
 
-namespace PoMiniGames.Features.PoCabinet;
+namespace PoMiniGames.Shared.Games;
 
 /// <summary>
 /// The officials' radio lines and the "race engineer" debrief, both scripted: the radio pool is
 /// the hand-written <see cref="PoCabinetDialogue"/> (ADR-4, "scripted dialogue only"), and the
-/// debrief turns the race numbers into tips by thresholds. No model is called.
+/// debrief turns the race numbers into tips by thresholds. No model and no server is called —
+/// the solo race runs both in the browser.
 /// </summary>
 public static class PoCabinetTalkService
 {
@@ -22,7 +22,7 @@ public static class PoCabinetTalkService
     /// <summary>The kinds a pool carries, in the order the client asks for them.</summary>
     public static IEnumerable<string> Kinds => KindMap.Select(k => k.Wire);
 
-    // Built once: the pools are constants, so every request can share the same reply.
+    // Built once: the pools are constants, so every race can share the same pool.
     private static readonly PoCabinetBanterPool Pool = BuildPool();
 
     /// <summary>The hand-written pools, mapped onto the client's kinds.</summary>
@@ -41,14 +41,14 @@ public static class PoCabinetTalkService
         return pool;
     }
 
-    /// <summary>A request with every number clamped and the track resolved server-side.</summary>
-    internal sealed record Facts(
+    /// <summary>A request with every number clamped and the track resolved from the catalog.</summary>
+    public sealed record Facts(
         string TrackName, int Position, int TotalCars, double BestLap, double Pb, double[] Sectors,
         int FullThrottle, int Brake, int TopKmh, int SlowestKmh, int WorstPoint, int WallHits, int Laps);
 
     public static PoCabinetDebriefReply Debrief(PoCabinetDebriefRequest request) => Debrief(Clamp(request));
 
-    internal static Facts Clamp(PoCabinetDebriefRequest r)
+    public static Facts Clamp(PoCabinetDebriefRequest r)
     {
         static double Sec(double v, double max) => double.IsFinite(v) ? Math.Clamp(Math.Round(v, 2), 0, max) : 0;
         static int Pct(int v) => Math.Clamp(v, 0, 100);
@@ -64,7 +64,7 @@ public static class PoCabinetTalkService
     }
 
     /// <summary>The same numbers, turned into tips by thresholds.</summary>
-    internal static PoCabinetDebriefReply Debrief(Facts f)
+    public static PoCabinetDebriefReply Debrief(Facts f)
     {
         var inv = CultureInfo.InvariantCulture;
         var tips = new List<string>();

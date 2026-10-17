@@ -1,4 +1,4 @@
-namespace PoMiniGames.Features.PoCabinet;
+namespace PoMiniGames.Shared.Games;
 
 /// <summary>
 /// Race-event dialogue kinds. The dialogue pipeline selects one line per
@@ -201,11 +201,8 @@ public static class PoCabinetDialogue
         // FNV-1a, not HashCode.Combine: the latter is seeded randomly per process, so the
         // "same race, same script" promise held only until the next restart, and the
         // tick-0 vs tick-999 contract test failed whenever that process's seed collided.
-        uint hash = 2166136261;
-        foreach (var ch in officialId) hash = (hash ^ ch) * 16777619;
-        hash = (hash ^ (uint)kind) * 16777619;
-        foreach (var b in BitConverter.GetBytes(raceTick)) hash = (hash ^ b) * 16777619;
-        return pool[(int)(hash % (uint)pool.Count)];
+        var hash = StableHash.AddBytes(StableHash.Add(StableHash.Of(officialId), (uint)kind), raceTick);
+        return StableHash.Pick(pool, hash);
     }
 
     /// <summary>True if every line in every pool passes the banned-token scan.</summary>

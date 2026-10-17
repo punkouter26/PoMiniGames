@@ -88,23 +88,12 @@ public sealed class PoEcosystemApiClient
         }
         catch { return null; }
     }
-
-    public async Task<EcoCultureProfile[]?> GetCultureAsync(int seed, CancellationToken ct = default)
-    {
-        try
-        {
-            return await _http.GetFromJsonAsync($"/api/ecosystem/culture/{seed}", EcoApiJsonContext.Default.EcoCultureProfileArray, ct);
-        }
-        catch { return null; }
-    }
 }
 
 [JsonSerializable(typeof(EcoWorldMeta))]
 [JsonSerializable(typeof(EcoWorldMeta[]))]
 [JsonSerializable(typeof(EcoSharedWorld[]))]
 [JsonSerializable(typeof(EcoShareRequest))]
-[JsonSerializable(typeof(EcoCultureProfile))]
-[JsonSerializable(typeof(EcoCultureProfile[]))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true)]
 internal sealed partial class EcoApiJsonContext : JsonSerializerContext;
 

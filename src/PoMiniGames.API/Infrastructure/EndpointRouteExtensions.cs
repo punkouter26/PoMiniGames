@@ -106,7 +106,6 @@ internal static class EndpointRouteExtensions
         gameApi.MapFunQuizEndpoints();
         gameApi.MapPoRacerScoreEndpoints();
         gameApi.MapPoCabinetScoreEndpoints();
-        gameApi.MapPoCabinetTalkEndpoints();
         gameApi.MapPoSportsHighScoresEndpoints();
         gameApi.MapPoVoxelStrikeScoreEndpoints();
         gameApi.MapPoMuleScoreEndpoints();

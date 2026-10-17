@@ -73,7 +73,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private int _selected = -1;
     private int _lastStanding = -1;
     private HashSet<int> _watched = [];
-    private List<EcoCultureProfile> _cultures = [];
+    private const string LegacyLegendKind = "legend";
 
     // ── finder, lenses, map layers, ambient, time machine, wagers, alerts ──
     private HudBar? _hudBar;
@@ -191,7 +191,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         _milestones.ResetWorld();
         _alerts.ResetWorld();
         _wagers.Open(seed);
-        _ = LoadCultureAsync();
         InvokeAsync(StateHasChanged);
     }
 
@@ -251,7 +250,12 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
     private void OnHistory(EcoHistory history)
     {
-        _history = history;
+        // Islands saved while the paid Herald still wrote legends carry "legend" landmarks. The
+        // kind has no colour or filter any more, so they are dropped here — chart, landmark log
+        // and printed journal alike.
+        _history = history.Landmarks.Any(l => l.Kind == LegacyLegendKind)
+            ? history with { Landmarks = [.. history.Landmarks.Where(l => l.Kind != LegacyLegendKind)] }
+            : history;
         if (!ReadOnly) foreach (var line in _wagers.Settle(history.Years)) Ticker($"🎲 {line}");
         if (_dashboardOpen) InvokeAsync(StateHasChanged);
     }
@@ -936,23 +940,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             await FocusTribeByIdAsync(nearest.Id);
         else
             await Interop.SetCameraPoseAsync(100, 110, 200, -0.85, 0);
-    }
-
-    private async Task LoadCultureAsync()
-    {
-        try
-        {
-            var seed = int.TryParse(_seedInput, out var s) ? s : 1;
-            var profiles = await Api.GetCultureAsync(seed);
-            if (profiles is not null)
-            {
-                _cultures = [.. profiles];
-            }
-        }
-        catch
-        {
-            // best-effort
-        }
     }
 
     public async ValueTask DisposeAsync()

@@ -219,9 +219,9 @@ public sealed record PoCabinetFinalEntry(
 // ──────────────────────────────  Banter + debrief  ──────────────────────────────
 
 /// <summary>
-/// The officials' scripted radio lines (GET /api/pocabinet/banter): official id →
+/// The officials' scripted radio lines (<see cref="PoCabinetTalkService.Banter"/>): official id →
 /// kind (<c>preRace</c>, <c>passed</c>, <c>lead</c>, <c>finish</c>) → lines. The solo race picks
-/// from it client-side, so a whole race costs at most this one request.
+/// from it in the browser; no request is made.
 /// </summary>
 public sealed class PoCabinetBanterPool
 {
@@ -229,8 +229,8 @@ public sealed class PoCabinetBanterPool
 }
 
 /// <summary>
-/// Numbers only (POST /api/pocabinet/debrief) — the server clamps them and writes the tips from
-/// them. <see cref="SectorDeltas"/> is seconds vs the personal-best lap per third of the
+/// Numbers only (<see cref="PoCabinetTalkService.Debrief(PoCabinetDebriefRequest)"/>) — they are
+/// clamped first and the tips are written from them. <see cref="SectorDeltas"/> is seconds vs the personal-best lap per third of the
 /// lap (+ = slower); empty when there is no reference lap. Percentages are 0–100;
 /// <see cref="WorstPointPct"/> is where on the lap the most time went (-1 = unknown).
 /// </summary>

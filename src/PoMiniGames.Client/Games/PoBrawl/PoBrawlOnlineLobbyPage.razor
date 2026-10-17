@@ -104,8 +104,8 @@ else
     private static readonly IReadOnlyList<PoBrawlFighter> RosterForPicker =
         new[] { PoBrawlRoster.Bob }.Concat(PoBrawlRoster.Fighters).ToList();
 
-    private static string FighterName(string id) =>
-        string.Equals(id, PoBrawlRoster.Bob.Id, StringComparison.OrdinalIgnoreCase) ? PoBrawlRoster.Bob.Name : PoBrawlRoster.DisplayName(id);
+    // An id this build no longer knows still renders, as itself.
+    private static string FighterName(string id) => PoBrawlRoster.NameOf(id) ?? id;
 
     private string Name => AuthState.User?.DisplayName ?? "Player";
     private bool IsGuest => !AuthState.IsAuthenticated;

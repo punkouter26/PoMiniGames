@@ -7,7 +7,7 @@ namespace PoMiniGames.Unit.Features.PoEcosystem;
 
 /// <summary>
 /// The island's pure edges, one theory because the Unit tier sits at its ceiling: the wire
-/// contracts, the per-seed culture tables, how a wager is settled from the island's per-year
+/// contracts, how a wager is settled from the island's per-year
 /// rows, and when a watch alert fires. All of it only ever reads what the sim reports — the
 /// island is observed, never steered — so "what the page concludes from the numbers" is all
 /// there is to test.
@@ -16,7 +16,6 @@ public sealed class PoEcosystemPureEdgesTests
 {
     [Theory]
     [InlineData("contracts")]
-    [InlineData("culture")]
     [InlineData("wager")]
     [InlineData("alerts")]
     public void Ecosystem_PureEdges_HoldTheirContracts(string edge)
@@ -72,15 +71,6 @@ public sealed class PoEcosystemPureEdgesTests
                     restored.Tribes[0].Tech.Should().Be(TechTier.Primitive);
                     restored.Buildings.Should().HaveCount(1);
                     restored.Buildings[0].Kind.Should().Be(BuildingKind.Hut);
-                    break;
-                }
-            case "culture":
-                {
-                    // Three clans, in id order, and the same seed always names the same pantheon.
-                    var a = EcosystemCulture.ForSeed(77);
-                    a.Select(c => c.Name).Should().Equal("Amber Clan", "Cobalt Clan", "Verdant Clan");
-                    a.Select(c => c.Deity).Should().Equal(EcosystemCulture.ForSeed(77).Select(c => c.Deity));
-                    a.Should().OnlyContain(c => !string.IsNullOrWhiteSpace(c.Deity) && !string.IsNullOrWhiteSpace(c.WarCry));
                     break;
                 }
             case "wager":

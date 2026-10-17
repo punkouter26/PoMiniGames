@@ -95,10 +95,6 @@ public static class EcosystemEndpoints
             .Produces<EcoWorldMeta>()
             .RequireRateLimiting("highscores");
 
-        group.MapGet("/culture/{seed:int}", (int seed) => Results.Ok(EcosystemCulture.ForSeed(seed)))
-            .WithName("PoEcosystemCulture")
-            .Produces<EcoCultureProfile[]>();
-
         return app;
     }
 

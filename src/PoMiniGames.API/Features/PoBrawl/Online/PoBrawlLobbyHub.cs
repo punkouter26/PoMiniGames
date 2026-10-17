@@ -57,20 +57,8 @@ public sealed class PoBrawlLobbyHub : LobbyHub<PoBrawlLobbyPlayer, PoBrawlLobbyS
     /// <summary>Pick a fighter: any rateable president, or Bob (the 1P/2P avatar).</summary>
     public async Task PickFighter(string fighterId)
     {
-        PoBrawlFighter fighter;
-        var canonicalId = PoBrawlRoster.Canonicalize(fighterId);
-        if (canonicalId is not null)
-        {
-            fighter = new PoBrawlFighter(canonicalId, PoBrawlRoster.DisplayName(canonicalId));
-        }
-        else if (string.Equals(fighterId, PoBrawlRoster.Bob.Id, StringComparison.OrdinalIgnoreCase))
-        {
-            fighter = PoBrawlRoster.Bob;
-        }
-        else
-        {
-            throw new HubException($"'{fighterId}' is not a PoBrawl fighter.");
-        }
+        var fighter = PoBrawlRoster.Find(fighterId)
+            ?? throw new HubException($"'{fighterId}' is not a PoBrawl fighter.");
 
         var (ok, msg) = Lobby.PickFighter(Context.ConnectionId, fighter);
         await BroadcastStateAsync();

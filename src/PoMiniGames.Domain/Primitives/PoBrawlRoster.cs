@@ -68,6 +68,20 @@ public static class PoBrawlRoster
     private static readonly Dictionary<string, string> NamesById =
         Fighters.ToDictionary(f => f.Id, f => f.Name, StringComparer.OrdinalIgnoreCase);
 
+    // Every fighter a player can pick: the presidents plus Bob. Declared after both.
+    private static readonly Dictionary<string, PoBrawlFighter> PickableById =
+        Fighters.Append(Bob).ToDictionary(f => f.Id, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The fighter for <paramref name="fighterId"/> (any casing), Bob included, or <c>null</c>
+    /// when it names nobody. The returned record carries the canonical id and display name.
+    /// </summary>
+    public static PoBrawlFighter? Find(string? fighterId) =>
+        fighterId is not null && PickableById.TryGetValue(fighterId, out var fighter) ? fighter : null;
+
+    /// <summary>The display name for any fighter id, Bob included, or <c>null</c> when it names nobody.</summary>
+    public static string? NameOf(string? fighterId) => Find(fighterId)?.Name;
+
     /// <summary>Number of rateable fighters — the hard ceiling on rows in the Elo partition.</summary>
     public static int Count => Fighters.Count;
 

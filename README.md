@@ -2,14 +2,14 @@
 
 Instant-play mini-games platform: a .NET 10 Minimal API host that also serves its
 Blazor WebAssembly client from a single origin (port 5080), with SignalR for real-time
-multiplayer, Azure Table Storage for persistence, and Azure AI Foundry behind the
-AI-powered games.
+multiplayer, Azure Table Storage for persistence, and opt-in Azure AI Foundry models behind
+the two quizzes.
 
 ## Overview
 
 Fourteen small games on one website. The browser runs each game in full, including its
 computer opponents; the server signs players in, referees online play, checks and stores
-scores, and talks to AI models on the player's behalf.
+scores, and, only when a player opts in, talks to AI models on the player's behalf.
 
 - **One origin.** The API host serves the Blazor client it is then called by, so there is no
   cross-site setup in production.
@@ -21,10 +21,21 @@ scores, and talks to AI models on the player's behalf.
   PoEcosystem world files live in Blob Storage. A player is whoever the sign-in token says
   they are; there is no Player table.
 - **Computer opponents are hand-written rules, not trained models.** Difficulty is a table of
-  numbers in source. The exceptions are hosted models: Azure AI Foundry chat models write
-  quizzes, banter and chronicles, and TypeSafe's Jev can make PoJevArena's battle calls (opt-in;
-  free local rules by default, set by `PoMiniGames:Jev:Brain`).
-  Each has a daily cap per player and a scripted fallback.
+  numbers in source.
+- **Free by default; paid AI is opt-in.** PoFunQuiz deals from a permanent question bank
+  (Open Trivia DB plus a bundled set, stored in the `PoFunQuizBank` table), and PoCoupleQuiz
+  uses a curated bank with free fuzzy answer matching (`AnswerMatcher`). A signed-in player can
+  pick *Fresh AI* questions or the *AI judge* (Azure AI Foundry, `gpt-5.4-nano`). PoJevArena's
+  battle calls come from a free local rules brain; TypeSafe's Jev (OpenRouter) answers only when
+  `PoMiniGames:Jev:Brain` is `Jev` and the player picks it in Settings, and an on-device WebLLM
+  model (`js/localAi.js`, off by default) can serve it in the browser instead. Paid calls have a
+  daily cap per player and fall back to the free path. Ecosystem, Brawl and Cabinet use no AI
+  service: their commentary is scripted.
+- **Around the games.** The hub has a *Today* card (one seeded daily game for everyone, with a
+  cross-game streak), a *Continue* strip, pins and filters, and launches games without
+  rebooting the app. Leaderboards have all-time and weekly boards. The profile shows
+  achievements. PoRacer and PoMarbleRace race your best-run ghost. Gamepads work in every game
+  and on the hub. The game-over sheet can share a result card. Settings is a side drawer.
 - **Works offline.** A score that cannot reach the server is parked in the browser and sent
   automatically later.
 
@@ -47,8 +58,8 @@ scores, and talks to AI models on the player's behalf.
 | TicTacToe | 4-in-a-row on 6×6 vs AI, hot-seat, or online quick-match (SignalR) |
 | ConnectFive | Five-in-a-row vs AI, hot-seat, or online quick-match (SignalR) |
 | PoBrawl | Physics brawler with a presidents ladder + fighter Elo demo board |
-| PoCoupleQuiz | Two-player realtime couples quiz (SignalR) |
-| PoFunQuiz | AI-generated multiplayer quiz lobby |
+| PoCoupleQuiz | Two-player realtime couples quiz (SignalR); curated questions, free answer matching, opt-in AI judge |
+| PoFunQuiz | Multiplayer trivia lobby from a free question bank (opt-in Fresh AI questions) |
 | PoMarbleRace | Physics marble race on baked GLB tracks; online 2-player via host-streamed physics |
 | PoRacer | Canvas racer with WebGL effects, solo races, and a multiplayer lobby |
 | PoCabinet | 3D circuit racer: solo career across four tracks, AI officials, and a server-simulated online lobby |
@@ -56,13 +67,13 @@ scores, and talks to AI models on the player's behalf.
 | PoVoxelStrike | Third-person survival shooter with fully destructible voxel structures |
 | PoJevArena | Design creatures, draft 10 v 10, and watch the arena brain (free local rules, or TypeSafe's Jev when picked in Settings) make every tactical call; post-match Black Box scrubber |
 | PoMule | Eight-player M.U.L.E.: claim land, work M.U.L.E.s and trade on a walking-floor market for twelve months vs seven AI personalities; all-AI demo |
-| PoEcosystem | Watch-only island simulation: species, tribes and an AI-written chronicle; cloud save slots and a shared gallery |
+| PoEcosystem | Watch-only island simulation: species, tribes and chronicle cards for landmark events; cloud save slots and a shared gallery |
 | SandPlayground | GPU sand-and-water sandbox |
 
 ## Quick start
 
 ```powershell
-# prerequisites: .NET SDK 10.0.400 (global.json), Docker
+# prerequisites: .NET SDK 10.0.100 or a later feature band (global.json), Docker
 docker compose up -d azurite                                  # local table storage
 dotnet run --project src/PoMiniGames.API/PoMiniGames.API.csproj
 # → http://localhost:5080  (API + client, one origin)
@@ -80,7 +91,7 @@ src/
 ├── PoMiniGames.Domain/         Domain primitives (EloCalculator, GameKey, ...)
 └── PoMiniGames.Shared/         DTOs shared between client and server
 tests/
-├── PoMiniGames.Unit/           ≤140 tests (hermetic)
+├── PoMiniGames.Unit/           ≤100 tests (hermetic)
 ├── PoMiniGames.Integration/    ≤50 tests (Testcontainers Azurite)
 ├── PoMiniGames.E2EAPI/         ≤25 tests (HTTP contract)
 ├── PoMiniGames.E2EUI/          ≤25 tests (Playwright)
@@ -101,7 +112,8 @@ scripts/                        Working scripts only — see scripts/README.md
   the way out.
 - **Each game is a Razor page plus a JavaScript engine, except PoMule**, whose rules are C# in
   `PoMiniGames.Shared/Games/PoMule` (unit-tested, seeded, deterministic) with JavaScript only
-  drawing and moving the avatars. See `SPEC.md`, `CAPABILITY-MAP.md` and `tasks/`.
+  drawing and moving the avatars. The server replays a submitted match from its seed and
+  action log (`PoMuleRunVerifier`). See `SPEC.md` and `CAPABILITY-MAP.md`.
 - Offline-friendly PWA: finished scores park locally and sync on reconnect/sign-in.
 - Deploy: `azd up` (App Service F1, resource group `PoMiniGames`).
 
@@ -122,3 +134,27 @@ Run `node --test tests\poracer-snapshot.test.mjs` for focused native snapshot co
 Run `pwsh scripts/test-ceilings.ps1` to check all four test-method budgets without Docker.
 Run `node --test tests/pomule-world.test.mjs tests/pomule-physics.test.mjs` for PoMule's renderer maths.
 CI validates Bicep and deploys application code; use `azd up` for resource provisioning.
+
+## Configuration and endpoint changes (2026-10-17)
+
+| Key | Meaning |
+|---|---|
+| `PoFunQuiz:QuestionSource`, `AllowFreshAi`, `BankTargetPerCategory` | `Bank` (free, default) or `FreshAi`; Fresh AI only for signed-in players while allowed; bank size per category |
+| `PoFunQuiz:OpenTriviaDb:*` | `Enabled`, `BaseUrl`, `TimeoutSeconds` for the free question source |
+| `PoCoupleQuiz:Features:QuestionSource`, `AllowFreshAi`, `AnswerMatching`, `AllowAiJudge` | `Bank` and `Smart` (free) by default; `FreshAi` and `AiJudge` only for a signed-in host |
+| `PoMiniGames:AI:QuizPrebake:*` | Background bank filler: `Enabled` (on), `Interval`, `DelayBetweenCategories`, `Categories`, `AllowAiTopUp` (off, the only part that spends) |
+| `PoMiniGames:Jev:Brain` | `Local` (free rules, default) or `Jev` (paid; also needs `ApiKey` and the player's choice) |
+| `PoMiniGames:AI:Deployments` | `funquiz`, `couplequiz` and `couplequiz.similarity` all run on `gpt-5.4-nano` |
+
+| Endpoint | Change |
+|---|---|
+| `GET /api/diag/ai` | New home of the AI usage and cost read-model |
+| `GET /api/health/ai` | Removed (moved to `/api/diag/ai`) |
+| `/api/joker/*` | Removed with the Joker game |
+| `GET /api/ecosystem/culture/{seed}` and the ecosystem chronicle, thought, treaty and lore routes | Removed; PoEcosystem calls no AI |
+| `GET /api/pocabinet/banter`, `POST /api/pocabinet/debrief` | Removed; Cabinet's radio lines are scripted in the browser |
+| `POST /api/pobrawl/presser`, `POST /api/pobrawl/intro` | Removed; Brawl's press lines are scripted |
+| `GET /api/leaderboards` and `/api/leaderboards/{game}` | New `period=week` query for this ISO week's boards |
+
+Trivia questions in PoFunQuiz come in part from the [Open Trivia Database](https://opentdb.com/),
+licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).

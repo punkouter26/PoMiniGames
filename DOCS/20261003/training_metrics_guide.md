@@ -140,8 +140,8 @@ end in a healthy way. **Confusion** = how consistent the behaviour is (Low is go
 | PoRacer bots | Medium: lap times noted in code comments | Healthy: 180 s cap, rescue after 2 s stuck | Medium: unseeded wobble | Low | Yes, already live |
 | PoMarbleRace marbles | High: every map must finish 96 of 101 in tests | Healthy: 180 s cap, nudge when stalled | Low | None: no brain | Yes, already live |
 | PoEcosystem creatures | Medium: extinction counts noted in a code comment | Healthy: ends only when the animals are gone | Low: repeatable per seed | Medium: mutation plus personality | Yes, already live |
-| Jev (PoJevArena) | Low: answer quality is not measured anywhere | Healthy: 180 s cap | Not known: external model | Not known: external model | Yes, already live; quality unmeasured |
-| Chat-model agents (jokes, quizzes, banter, chronicle) | Low: tests cover parsing and fallbacks, not quality | Healthy: 20 s cap with fallbacks | Not known: external model | Not known: temperature is never set | Yes, already live; quality unmeasured |
+| Jev (PoJevArena, opt-in; local rules by default) | Low: answer quality is not measured anywhere | Healthy: 180 s cap | Not known: external model | Not known: external model | Yes, already live; quality unmeasured |
+| Chat-model agents (opt-in Fresh AI quizzes, couple-quiz AI judge) | Low: tests cover parsing and fallbacks, not quality | Healthy: 20 s cap with fallbacks | Not known: external model | Not known: temperature is never set | Opt-in only; quality unmeasured |
 
 **Reading the grid.** The weakest column is the Scoreboard. Most agents have never had their
 skill measured. If you want to know how good an opponent really is, that is the gap to close

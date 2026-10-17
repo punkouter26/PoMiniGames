@@ -105,7 +105,8 @@
     <div class="cards" id="exec-cards"></div>
 
     <h2>Hosted-model agents</h2>
-    <p>These write text or pick tactics. They have no body and no arena, so they sit outside the grid.</p>
+    <p>These write text or pick tactics. They have no body and no arena, so they sit outside the grid.
+      Each is opt-in: a signed-in player has to choose it, and the free default runs otherwise.</p>
     <div class="scroll"><table id="llm"></table></div>
   </section>
 
@@ -250,24 +251,20 @@ const AGENTS = [
       dof: "Death ragdoll: 7 boxes, 6 cone-twist joints (cosmetic)",
       settings: "3 tribes of 6; tension above 0.45 is rivalry, above 0.75 is war",
       path: "C/wwwroot/js/poecosystem/sim/behavior/humans.js, sim/tribe/" } },
-  { name: "Arena units (20), directed by Jev", game: "PoJevArena", kind: "Hosted decision model",
+  { name: "Arena units (20), directed by the arena brain", game: "PoJevArena", kind: "Rules brain (hosted Jev opt-in)",
     a: { move: 2, avoid: 2, attack: 3, defend: 3, plan: 1, adapt: 1, team: 2 },
     diff: "None",
     badges: ["Chooses a tactic each second", "Picks a target", "Takes cover", "Heals and protects allies", "Breaks and flees when panicked"],
-    measured: "Decision quality is not measured anywhere. Tests cover request and answer handling only.",
-    tech: { rate: "Sim 60 ticks a second; one model decision per unit per second", senses: "hp, cooldowns, stamina, under fire, allies within 4 m, up to 5 candidate targets, cover distance. No map, no history.",
+    measured: "Decision quality is not measured anywhere. Tests cover the local brain's answers and Jev request handling only.",
+    tech: { rate: "Sim 60 ticks a second; one brain decision per unit per second", senses: "hp, cooldowns, stamina, under fire, allies within 4 m, up to 5 candidate targets, cover distance. No map, no history.",
       controls: "tactical action (4 base + 1 per ability), target focus (5), panic probability", body: "Custom 2D circle sized by mass; force-based legs",
-      dof: "None", settings: "Timeout 1500 ms, no retries; batch of 8; 20000 calls per player per day; panic above 0.70 means flee",
+      dof: "None", settings: "Local rules by default; Jev: timeout 1500 ms, no retries, batch of 8, 5000 calls per player per day; panic above 0.70 means flee",
       path: "C/wwwroot/js/pojevarena/sim.js, scheduler.js; A/Features/PoJevArena/" } }
 ];
 const LLM = [
-  ["Jev", "PoJevArena", "Picks a tactic, a target and a panic level for one unit", "typesafe/jev-1.13", "None: the unit keeps its last order"],
-  ["Digital Jester", "PoJoker", "Guesses the punchline and rates the joke", "joker key", "Neutral 5 / 5 / 5 scores"],
-  ["Quiz writer", "PoFunQuiz", "Writes multiple-choice trivia", "funquiz key", "Canned questions in dev and test"],
-  ["Couple-quiz writer and scorer", "PoCoupleQuiz", "Writes a question; scores how alike two answers are", "couplequiz keys", "Fixed questions in dev and test"],
-  ["Race radio and engineer", "PoCabinet", "One-line banter and a post-race debrief", "gpt-5-nano", "Scripted lines, always"],
-  ["Island chronicler", "PoEcosystem", "Saga, creature thoughts, treaties, lore", "ecosystem keys", "Canned text in dev and test"],
-  ["Press-conference announcer", "PoBrawl", "A post-fight line and a ring intro", "gpt-5-nano", "Scripted line, always"]
+  ["Jev (opt-in)", "PoJevArena", "Picks a tactic, a target and a panic level for one unit", "typesafe/jev-1.13", "The free local rules brain (the default)"],
+  ["Fresh AI quiz writer (opt-in)", "PoFunQuiz", "Writes multiple-choice trivia", "funquiz key (gpt-5.4-nano)", "The free question bank (Open Trivia DB + bundled set)"],
+  ["Couple-quiz writer and AI judge (opt-in)", "PoCoupleQuiz", "Writes a question; judges close-call answer pairs", "couplequiz keys (gpt-5.4-nano)", "The curated bank and free answer matching"]
 ];
 
 const el = (t, c, h) => { const e = document.createElement(t); if (c) e.className = c; if (h != null) e.innerHTML = h; return e; };

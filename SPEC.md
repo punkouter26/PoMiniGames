@@ -398,7 +398,7 @@ framework.
 **Always**
 - Keep the engine deterministic: all randomness through the seeded RNG, no clock reads.
 - Fix every compiler warning; restart the app after a change and confirm it comes up.
-- Keep `SPEC.md` and `tasks/todo.md` in step when a decision changes.
+- Keep `SPEC.md` in step when a decision changes.
 - Work on `master`, one commit per task.
 
 **Ask first**
@@ -477,13 +477,14 @@ Radzen in the hub, settings, leaderboards or other games (next effort after v1).
 | R1 | Radzen 12.0.5 needs ASP.NET Components ≥ 10.0.12; the repo pins 10.0.10 and treats the downgrade warning as an error | First task of the plan: bump the `Microsoft.AspNetCore.*` 10.0.x pins together, or pick the newest Radzen that accepts 10.0.10 |
 | R2 | The client is trim-analysed with warnings as errors; Radzen may raise trim warnings on publish | Same first task publishes a trimmed build before any game code is written |
 | R3 | Radzen's theme CSS leaks into the 14 existing games | Load the Radzen stylesheet only on the PoMule route until the migration effort |
-| R4 | Unit tier has no room | Resolved: ceiling raised to 140 (decision 1) |
+| R4 | Unit tier has no room | Resolved: ceiling raised to 140 (decision 1), then folded back under 100 |
 | R5 | A 30-minute match with no resume loses players | Resolved: month-boundary resume (decision 2) |
 
 ## 15. Decisions (answered 2026-10-05)
 
 1. **Unit test ceiling** rises from 100 to 140. PoMule engine tests use `[Theory]` rows so
-   about 40 methods cover the engine.
+   about 40 methods cover the engine. (Back to 100 on 2026-10-17: each test class folds its
+   one-off facts into a single `Scenario` theory, with no coverage lost.)
 2. **Resume after reload:** the engine state is saved to local storage at the end of each
    month and the start card offers "Continue". Finishing or abandoning a match clears it.
 3. **New archetypes:** Farmer, Speculator and Gambler are approved.

@@ -40,8 +40,9 @@ node --test tests/pomule-world.test.mjs                        # JS engine tests
   **E2EAPI** runs HTTP contract tests against the compose Azurite. **E2EUI** runs C# Playwright
   against a Kestrel host in the `Test` environment.
 - Each tier has a ceiling on its test-method count, enforced by `*CeilingTests.cs` via
-  `tests/Shared/TierCeilingGuard.cs`: Unit 140, Integration 50, E2EAPI 25, E2EUI 25. When a tier
-  is full, merge tests or move one to another tier rather than raising the cap.
+  `tests/Shared/TierCeilingGuard.cs`: Unit 100, Integration 50, E2EAPI 25, E2EUI 25. When a tier
+  is full, fold facts into the class's `Scenario` theory (`tests/PoMiniGames.Unit/Scenarios.cs`)
+  or move a test to another tier rather than raising the cap.
 - Every fixture applies `tests/Shared/TestBudgetGuard.cs`, which forces mock or stub AI and
   disables Key Vault. Any new paid-AI boundary needs a key there so tests never spend money.
 
@@ -91,11 +92,16 @@ node --test tests/pomule-world.test.mjs                        # JS engine tests
   - Game writes need auth plus antiforgery. Leaderboard reads are anonymous.
 - **SignalR:** multiplayer games use authorized hubs mapped in `EndpointRouteExtensions.cs`, and
   their state is held in memory.
-- **AI:** paid AI is deliberately minimal to save money.
-  - FunQuiz and CoupleQuiz use `API/AI`. `AddGameChatClient` stacks resilience, then a
-    per-identity token budget, then instrumentation, then the Foundry client. Results are cached
-    in `TableDistributedCache`, the HybridCache L2.
-  - PoJevArena uses OpenRouter via `Features/PoJevArena/Jev`.
+- **AI:** free by default; paid AI is opt-in only, to save money.
+  - PoFunQuiz deals from the `PoFunQuizBank` table (Open Trivia DB plus a bundled set, filled by
+    `QuizPrebakeService`). PoCoupleQuiz uses a curated bank and the free `AnswerMatcher`.
+  - Their paid paths (Fresh AI questions, the AI judge) need a server flag and a signed-in
+    player's choice. They go through `API/AI`, where `AddGameChatClient` stacks resilience, a
+    per-identity token budget, instrumentation and the Foundry client (`gpt-5.4-nano`). Usage
+    is reported at `GET /api/diag/ai`.
+  - PoJevArena's default brain is the free `LocalJevClient`. Paid Jev (OpenRouter) needs
+    `PoMiniGames:Jev:Brain=Jev`, a key and the player's choice. `js/localAi.js` (WebLLM) is an
+    opt-in on-device alternative.
   - Ecosystem, Brawl and Cabinet are scripted and AI-free. Do not add paid AI back without being
     asked.
 - **Constraints:**

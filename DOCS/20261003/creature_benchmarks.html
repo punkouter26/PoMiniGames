@@ -143,15 +143,15 @@
       <tr><td>PoRacer</td><td class="n">50 per second, 20 snapshots sent</td><td>Server</td><td>Client smooths between snapshots</td></tr>
       <tr><td>PoMarbleRace</td><td class="n">60 per second</td><td>Browser</td><td>100 rivals drawn in one draw call</td></tr>
       <tr><td>PoEcosystem</td><td class="n">20 per second</td><td>Browser, in a background worker</td><td>Cap drops to 250 creatures on low-end devices; resolution drops under 45 fps</td></tr>
-      <tr><td>PoJevArena</td><td class="n">60 per second</td><td>Browser; decisions from a hosted model</td><td>Nothing needed with 20 units</td></tr>
+      <tr><td>PoJevArena</td><td class="n">60 per second</td><td>Browser; decisions from the free local brain (hosted Jev opt-in)</td><td>Nothing needed with 20 units</td></tr>
     </tbody></table></div>
 
   <h3 style="margin-top:22px">Hosted-model cost</h3>
   <div class="scroll"><table>
     <thead><tr><th>Agent</th><th>Calls</th><th>Limit per player per day</th><th>Longest wait</th><th>Cost note</th></tr></thead>
     <tbody>
-      <tr><td>Jev (PoJevArena)</td><td>One per unit per second; about 3,600 in a 3-minute 10 v 10</td><td class="n">20,000 calls</td><td class="n">1.5 s</td><td>A config comment estimates about $0.00002 per decision, so roughly $0.07 a match</td></tr>
-      <tr><td>Chat-model agents (jokes, quizzes, banter, chronicle)</td><td>One per request; most answers are cached for 6 to 24 hours</td><td class="n">250,000 tokens</td><td class="n">20 s</td><td>At most 2 calls run at once across the whole site</td></tr>
+      <tr><td>Jev (PoJevArena, opt-in)</td><td>Only on a state change, at most every 2 s per unit; repeats come from a per-match cache</td><td class="n">5,000 calls</td><td class="n">1.5 s</td><td>A config comment estimates about $0.00002 per decision. The default local brain costs nothing</td></tr>
+      <tr><td>Chat-model agents (opt-in Fresh AI quizzes, couple-quiz AI judge)</td><td>One per opted-in request; the free banks and answer matching serve everything else</td><td class="n">250,000 tokens</td><td class="n">20 s</td><td>At most 2 calls run at once across the whole site</td></tr>
     </tbody></table></div>
 
   <div class="tier">Tier 3 · Setup guide</div>

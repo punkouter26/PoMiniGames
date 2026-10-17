@@ -1,6 +1,6 @@
 # Capability map
 
-What each module owns, and where PoMule (game 15) and Radzen land. `SPEC.md` holds the
+What each module owns, and where PoMule and Radzen land. `SPEC.md` holds the
 PoMule requirements; this file only says which module does what.
 
 Status key: **Retained** = unchanged · **Extended** = gains PoMule wiring · **New** = created
@@ -14,8 +14,8 @@ for PoMule · **Deferred** = planned after PoMule v1.
 | `src/PoMiniGames.Domain` | `GameKey`, high-score models, Elo, `ScoreRules`, name sanitizer | `GameKey.PoMule`, `PoMuleHighScore`, a score-range rule | Extended |
 | `src/PoMiniGames.Infrastructure` | Table/Blob storage, `HighScoreDescriptor<T>` leaderboards | One descriptor for the PoMule board | Extended |
 | `src/PoMiniGames.API` | Host, auth, 15 SignalR hubs, vertical slices in `Features/<Slice>` | New slice `Features/PoMule/` with high-score endpoints only (no hub) | Extended |
-| `src/PoMiniGames.Client` | Blazor WASM shell, 13 game pages, JS engines in `wwwroot/js/<game>/` | `Games/PoMule/` page and components in Radzen; `wwwroot/js/pomule/` canvas renderer; Radzen package, theme and services | Extended |
-| `tests/*` | Four capped tiers (100/50/25/25) plus `node --test` files | PoMule tests in every tier; Unit ceiling needs a decision (see `SPEC.md` open question 1) | Extended |
+| `src/PoMiniGames.Client` | Blazor WASM shell, 14 game pages, JS engines in `wwwroot/js/<game>/` | `Games/PoMule/` page and components in Radzen; `wwwroot/js/pomule/` canvas renderer; Radzen package, theme and services | Extended |
+| `tests/*` | Four capped tiers (100/50/25/25) plus `node --test` files | PoMule tests in every tier; the Unit tier went to 140 for PoMule and was folded back to 100 (`Scenario` theories) | Extended |
 | `infra/`, `.github/` | Bicep and deploy workflow | None | Retained |
 
 ## Capabilities
@@ -32,10 +32,29 @@ for PoMule · **Deferred** = planned after PoMule v1.
 | Shared audio and palette buses | Client `wwwroot/js/gameCues.js`, `paletteBus.js`, `spatialAudio.js` | Yes, reuse existing cues | Retained |
 | Online play (SignalR hubs, lobbies, invites) | API `Features/*`, Client per-game clients | No | Retained |
 | Server score verification | API `Features/PoSports`, `PoCabinet`, `PoMule` | Yes: the client sends seed + action log, `PoMuleRunVerifier` replays it through the Shared engine; no log = range check only | Extended |
-| AI text (Azure AI Foundry) | API `AI/`, quiz slices | No | Retained |
+| AI text (Azure AI Foundry), opt-in only | API `AI/`, quiz slices; free banks and matching by default | No | Retained |
 | Cloud saves and gallery | API `Features/PoEcosystem`, Blob storage | No | Retained |
 | Radzen component library | Client | Yes: all PoMule non-canvas UI | New |
 | Radzen in the hub, settings sheet, leaderboards and the other 13 games | Client | No | Deferred |
+
+## Shared services (added 2026-10-17)
+
+| Capability | Owner | Notes |
+|---|---|---|
+| Hub "Today" card and cross-game daily streak | Client `Services/Play/DailyChallengeService.cs` | UTC date hashed over the offline solo games; seed passed as `?daily=` |
+| Hub pins and the "Continue" strip | Client `Services/Play/HubPrefsService.cs` | localStorage; last route recorded by `MainLayout` |
+| Achievements | Client `Services/Play/AchievementService.cs` | Rules over local stats; shown on the profile |
+| Weekly leaderboards | Infrastructure `StorageService.HighScores`, API `Features/Leaderboard/UnifiedLeaderboardEndpoints.cs` | `period=week` reads this ISO week's boards |
+| PoFunQuiz question bank | API `Features/PoFunQuiz/Storage/QuizBankRepository.cs` (`PoFunQuizBank` table), `OpenTriviaDbClient.cs`, `BundledQuizQuestions.cs`, `QuizPrebakeService.cs` | Free; grows only; dedup by text hash |
+| PoFunQuiz question source | API `Features/PoFunQuiz/FunQuizQuestionService.cs` | Bank by default; opt-in Fresh AI falls back to the bank |
+| PoCoupleQuiz answer matching | API `Features/PoCoupleQuiz/AnswerMatcher.cs` | Free and deterministic; the AI judge is opt-in for close calls |
+| PoJevArena free brain | API `Features/PoJevArena/Jev/LocalJevClient.cs` | Default `PoMiniGames:Jev:Brain`; paid Jev is opt-in |
+| On-device language model | Client `wwwroot/js/localAi.js` | WebLLM over WebGPU, off by default; serves the Jev brain in the browser |
+| PoMule score verification | API `Features/PoMule/PoMuleRunVerifier.cs` | Replays seed + action log through the Shared engine |
+| Gamepad input | Client `wwwroot/js/gamepadBus.js` | Engines, DOM focus navigation and rumble; loaded on first `gamepadconnected` |
+| Ghost runs | Client `wwwroot/js/ghostTrack.js` | Compact best-run paths in localStorage; PoRacer and PoMarbleRace |
+| Share a result | Client `wwwroot/js/shareCard.js`, `Components/GameOverModal.razor` | 1080x1080 PNG card or a text summary |
+| Per-game palettes and cues | Client `wwwroot/js/paletteBus.js`, `gameCues.js` | Each game's colors and sound cues; no background music anywhere |
 
 ## Existing games
 

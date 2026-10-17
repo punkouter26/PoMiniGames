@@ -1,13 +1,17 @@
 # Agent & Rig Inventory
 
-Snapshot date: 2026-10-03. See also [architecture_overview.md](architecture_overview.md) and
+Snapshot date: 2026-10-03, AI rows revised 2026-10-17. See also [architecture_overview.md](architecture_overview.md) and
 [creatures_dashboard.html](creatures_dashboard.html).
 
 ---
 
 ## Tier 1: Quick Look (30 seconds)
 
-- **19 agent families** across 12 of the 14 games. 12 are hand-written, 7 are hosted models.
+- **19 agent families** across 13 of the 14 games. 15 are hand-written rules, 1 is a small
+  on-device model and 3 are hosted models.
+- **Paid AI is opt-in only.** Every hosted model sits behind a free default (a question bank,
+  free answer matching, or the local Jev rules) and runs only when a signed-in player picks it.
+  Ecosystem, Brawl and Cabinet use no AI service at all; their text is scripted.
 - **0 trained model files.** No `.onnx`, `.pt`, `.nn` or weights of any kind are in the repo.
   The "Brain Model File" column below lists the source file that holds the rules instead.
 - **No success rates have been measured** for any agent. The only recorded performance data
@@ -40,24 +44,24 @@ source files on disk on the snapshot date.
 | Marble pack (100) | PoMarbleRace | `wwwroot/js/pomarblerace/marbles.js` | 46.2 KB | None. Passive physics bodies with no brain. | Test requires 96 of 101 marbles to finish every map. | Live in game |
 | Island creatures (4 species) | PoEcosystem | `wwwroot/js/poecosystem/sim/behavior/utility.js` + `sim/creatures/species.js` | 4.9 KB + 3.5 KB | Survive: eat, drink, flee, hunt, mate, build | No score by design. A code comment records wolves dying out in 11 of 32 twenty-year runs. | Live in game |
 | Island tribes (3) | PoEcosystem | `wwwroot/js/poecosystem/sim/tribe/` | not sized | Research, diplomacy, war and peace | Not measured. | Live in game |
+| Colonist personalities (7) | PoMule | `Shared/Games/PoMule/PoMuleAi.cs` | 11.7 KB | Claim land, outfit M.U.L.E.s, bid and sell | A unit test plays 100 seeded matches: no personality wins more than 40. | Live in game |
 | Arena unit executor | PoJevArena | `wwwroot/js/pojevarena/sim.js` + `scheduler.js` | 51.3 KB + 4.2 KB | Carry out the order Jev gave | Not measured. | Live in game |
 
 #### Hosted-model agents
 
 None of these has a model file in the repo. The "brain" is a remote model; the file listed
-is the service that builds the request and checks the answer.
+is the service that builds the request and checks the answer. Each paid row is gated twice:
+a server setting has to allow it, and a signed-in player has to choose it in the game or in
+Settings. Calls count against the per-player daily token budget (quizzes) or the daily Jev
+call cap (arena).
 
 | Agent Name | Game | Service File | File Size | Model (from `appsettings`) | Task Type | Fallback when unavailable | Deployment Status |
 |---|---|---|---|---|---|---|---|
 | Jev | PoJevArena | `Features/PoJevArena/JevPromptBuilder.cs` + `Jev/JevClient.cs` | 10.1 KB + 8.4 KB | `typesafe/jev-1.13` | Pick a tactic, a target and a panic level for one unit | None. The unit keeps its last order. | Opt-in (Brain=Jev + player choice) |
 | Local Jev brain | PoJevArena | `Features/PoJevArena/Jev/LocalJevClient.cs` | 9 KB | Rules (target bias, focus fire, HP and odds panic) | Same three answers as Jev, free | None needed | Live in game (default) |
 | On-device AI | PoJevArena | `wwwroot/js/localAi.js` | 5 KB | WebLLM `Qwen2.5-0.5B-Instruct-q4f16_1-MLC` in the browser | Serves the Jev brain for one unit at a time | Rule answer on timeout (1.5 s) or bad JSON | Opt-in setting, off by default |
-| Digital Jester | PoJoker | `Features/PoJoker/AiJesterService.cs` | 26.4 KB | `joker` key (`gpt-5.4-nano` in dev) | Guess the punchline and rate the joke | Neutral 5 / 5 / 5 scores | Live in game |
-| Quiz writer | PoFunQuiz | `Features/PoFunQuiz/AiQuizGeneratorService.cs` | 33.2 KB | `funquiz` key (`gpt-5.4-mini` in dev) | Write multiple-choice trivia | Canned questions in dev and test; error in production | Live in game |
-| Couple-quiz writer and scorer | PoCoupleQuiz | `Features/PoCoupleQuiz/AiQuestionService.cs` | 18.7 KB | `couplequiz` / `couplequiz.similarity` | Write a question; score how alike two answers are | 9 fixed questions and exact-match scoring in dev and test | Live in game |
-| Race radio and engineer | PoCabinet | `Features/PoCabinet/PoCabinetAiService.cs` | 22.3 KB | `gpt-5-nano` | Write one-line banter and a post-race debrief | Scripted lines, in every environment | Live in game |
-| Island chronicler | PoEcosystem | `Features/PoEcosystem/EcosystemChronicleService.cs` | 32.3 KB | `ecosystem` keys (`Phi-4-mini-instruct` for thoughts) | Write the saga, creature thoughts, treaties and lore | Canned text in dev and test | Live in game |
-| Press-conference announcer | PoBrawl | `Features/PoBrawl/PoBrawlPresserService.cs` | 14.9 KB | `gpt-5-nano` | One post-fight line, one ring intro | Scripted line, in every environment | Live in game |
+| Fresh AI quiz writer | PoFunQuiz | `Features/PoFunQuiz/AiQuizGeneratorService.cs` | 33.2 KB | `funquiz` key (`gpt-5.4-nano`) | Write multiple-choice trivia | The free question bank (`PoFunQuizBank` table, filled from Open Trivia DB and a bundled set) | Opt-in (`PoFunQuiz:QuestionSource` / `AllowFreshAi` + player choice) |
+| Couple-quiz writer and AI judge | PoCoupleQuiz | `Features/PoCoupleQuiz/AiQuestionService.cs` | 18.7 KB | `couplequiz` / `couplequiz.similarity` (`gpt-5.4-nano`) | Write a question; judge close-call answer pairs | The curated question bank and free `AnswerMatcher` scoring | Opt-in (`PoCoupleQuiz:Features:*` + a signed-in host) |
 
 Production model names come from Azure Key Vault and could not be confirmed from the repo.
 
@@ -66,7 +70,7 @@ Production model names come from Azure Key Vault and could not be confirmed from
 | Agent Name | File | Behaviour | Deployment Status |
 |---|---|---|---|
 | Stub Jev | `Features/PoJevArena/Jev/StubJevClient.cs` | Always answers `melee_charge`, confidence 0.6, panic 0.1 | Testing |
-| Mock quiz / joke / question services | `MockAnalysisService.cs`, `MockQuestionService.cs`, `MockOpenAIService` | Canned answers, no network | Testing |
+| Mock quiz and question services | `MockQuestionService.cs`, `MockOpenAIService` | Canned answers, no network | Testing |
 
 ### Physics & Rig Table
 

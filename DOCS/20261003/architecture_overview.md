@@ -28,7 +28,7 @@ There are three kinds of computer player:
 |---|---|---|---|
 | **Rule followers** | Fixed rules plus dice rolls. Difficulty is a table of numbers. | Player's browser | PoBrawl boxers, PoVoxelStrike monsters, PoSports runners |
 | **Look-ahead thinkers** | Try every move a few turns ahead and pick the best. | Player's browser | TicTacToe and ConnectFive opponents |
-| **Hosted models** | A language or decision model answers a question over the internet. | Cloud service, called by the server | Jev (battle tactics), the joke judge, quiz writer, island chronicler |
+| **Hosted models** | A language or decision model answers a question over the internet. Opt-in only: each has a free default. | Cloud service, called by the server | Jev (battle tactics), the Fresh AI quiz writers, the couple-quiz AI judge |
 
 Every one of them runs the same loop many times a second: **look, decide, act, check if the
 round is over**.
@@ -36,7 +36,9 @@ round is over**.
 What to know as a designer or producer:
 
 - Changing how hard an opponent is means editing a row in a table, not retraining anything.
-- Only the hosted models cost money per decision. Each has a daily cap and a scripted fallback.
+- Only the hosted models cost money per decision, and only when a signed-in player opts in.
+  Each has a daily cap and a free fallback (question banks, free answer matching, the local
+  Jev rules). Ecosystem, Brawl and Cabinet text is scripted and calls no model.
 - The only stored performance data in the repo is five recorded PoCabinet laps used by tests.
 
 ---
@@ -392,12 +394,15 @@ secrets in Azure Key Vault. Do not use `dotnet user-secrets` in this repo.
 |---|---|
 | `PoMiniGames:AI:FoundryEndpoint` | Where the chat models live (Key Vault secret). |
 | `PoMiniGames:AI:DefaultDeployment` | Model used when a game has no specific entry. |
-| `PoMiniGames:AI:Deployments` | Map of `game` or `game.task` to a model name, for example `pocabinet.banter`. |
-| `PoMiniGames:AI:DailyTokensPerIdentity` | Per-player daily spend cap. 0 turns it off. |
+| `PoMiniGames:AI:Deployments` | Map of `game` or `game.task` to a model name, for example `couplequiz.similarity`. |
+| `PoMiniGames:AI:TokenBudget:DailyTokensPerIdentity` | Per-player daily spend cap. 0 turns it off. |
+| `PoMiniGames:AI:QuizPrebake:*` | Background PoFunQuiz bank filler: `Enabled`, `Interval`, `Categories`, and `AllowAiTopUp` (off; the only part that spends). |
+| `PoFunQuiz:QuestionSource` / `AllowFreshAi` / `BankTargetPerCategory` | `Bank` (free, default) or `FreshAi`; Fresh AI is served only to signed-in players while allowed. `PoFunQuiz:OpenTriviaDb:*` tunes the free source. |
+| `PoCoupleQuiz:Features:QuestionSource` / `AllowFreshAi` / `AnswerMatching` / `AllowAiJudge` | `Bank` and `Smart` (free `AnswerMatcher`) by default; `FreshAi` and `AiJudge` apply only to a signed-in host. |
 | `PoMiniGames:Jev:Brain` | `Local` (free rules, the default) or `Jev` (paid; also needs `ApiKey` and the player's opt-in). |
 | `PoMiniGames:Jev:Model` | Pinned to `typesafe/jev-1.13`. |
 | `PoMiniGames:Jev:CallTimeoutMs` | 1500. A late answer is dropped and the unit keeps its last order. |
-| `<Game>:Features:UseMockAI` | Use canned answers instead of a real model. Honoured only outside production. Tests force it on, and `appsettings.Development.json` turns it on for PoFunQuiz and PoCoupleQuiz so local runs spend nothing. |
+| `<Game>:Features:UseMockAI` | Use canned answers when a paid path is chosen. Honoured only outside production. Tests force it on, and `appsettings.Development.json` turns it on for PoFunQuiz and PoCoupleQuiz so local runs spend nothing. |
 
 Both quizzes and their answer-similarity scoring point at `gpt-5.4-nano`, the cheapest
 model in `ModelPricing.cs`. The process-local usage, cost and caller-budget read-model is
@@ -405,8 +410,9 @@ model in `ModelPricing.cs`. The process-local usage, cost and caller-budget read
 
 #### AI provider recipes
 
-Development defaults to the mock AI flags, so a local run never calls a paid model even
-though `KeyVault:Uri` can resolve the shared Foundry endpoint. To try real model output
+The quizzes play from their free banks by default. Development also sets the mock AI flags, so
+even a Fresh AI or AI-judge request never calls a paid model locally,
+even though `KeyVault:Uri` can resolve the shared Foundry endpoint. To try real model output
 locally, opt in deliberately: set `PoFunQuiz:Features:UseMockAI` and/or
 `PoCoupleQuiz:Features:UseMockAI` to `false`, and point the AI section at one of these.
 

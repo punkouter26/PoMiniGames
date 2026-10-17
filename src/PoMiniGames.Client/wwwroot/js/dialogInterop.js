@@ -64,5 +64,15 @@ window.PoDialogInterop = (function () {
         showModal(el);
     }
 
-    return { showModal: showModal, showModalAlone: showModalAlone, close: close };
+    // Escape fires `cancel`, which closes the dialog by default. A dialog that must stay up
+    // until the page is done with it (PoMule's standings) keeps its own @oncancel handler
+    // and calls this once. Razor has no `:preventDefault` modifier for `cancel`: written in
+    // markup it renders as a literal attribute, which older Chromium refuses outright.
+    function holdOpen(el) {
+        if (!el || el.tagName !== 'DIALOG' || el.__poHoldOpen) return;
+        el.__poHoldOpen = true;
+        el.addEventListener('cancel', function (e) { e.preventDefault(); });
+    }
+
+    return { showModal: showModal, showModalAlone: showModalAlone, close: close, holdOpen: holdOpen };
 })();

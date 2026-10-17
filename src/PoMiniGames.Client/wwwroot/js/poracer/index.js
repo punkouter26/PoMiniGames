@@ -10,7 +10,7 @@ import * as Audio from './audio.js';
 import { sampleAt } from './interpolation.js';
 import { prepareSnapshot } from './snapshot.js';
 import { startInput, stopInput, setInputEnabled, getSize, pollPad } from './input.js';
-import { encodeTrack, resample, sampleAt, unwrap, loadGhost, saveGhost } from '../ghostTrack.js';
+import { encodeTrack, resample, sampleAt as sampleGhostAt, unwrap, loadGhost, saveGhost } from '../ghostTrack.js';
 import '../weather.js';
 
 // Rivals are drawn this far behind the newest snapshot, so there is always a pair of
@@ -83,7 +83,7 @@ function ghostKeep(lapTime) {
 function ghostAt(me, newest, ts) {
     if (!ghost.show || !ghost.best || !me || me.finished) return null;
     const ahead = newest.running ? Math.max(-0.1, Math.min(0.25, (ts - PLAYER_DELAY_MS - newest.st) / 1000)) : 0;
-    const p = sampleAt(ghost.best.track, Math.max(0, newest.lapNow + ahead), ghost.out);
+    const p = sampleGhostAt(ghost.best.track, Math.max(0, newest.lapNow + ahead), ghost.out);
     if (!p) return null;
     const car = ghost.car && ghost.car.color === me.color && ghost.car.livery === me.livery
         ? ghost.car : (ghost.car = { id: -1, color: me.color, colorDark: me.colorDark, livery: me.livery, damage: 0, braking: false });

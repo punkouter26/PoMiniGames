@@ -103,7 +103,8 @@ public class PoJevArenaUiTests
         var modal = page.Locator("dialog.gps-modal[open]");
         await modal.WaitForAsync(new() { Timeout = 20_000 });
         (await modal.InnerTextAsync()).Should().MatchRegex("(Blue wins|Red wins|Draw)").And.Contain("MVP");
-        (await modal.Locator("footer button").CountAsync()).Should().Be(1, "every game ends on one button");
+        // Share and Full leaderboard sit beside it as secondary actions; the way out stays single.
+        (await modal.Locator("footer .app-btn--primary").CountAsync()).Should().Be(1, "every game ends on one primary button");
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "result.png") });
 
         // "Review the match" steps past the modal to the debrief and the Black Box.

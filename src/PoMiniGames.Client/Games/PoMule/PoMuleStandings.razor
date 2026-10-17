@@ -13,7 +13,7 @@
    Escape is the same as "Next month" rather than closing a table the match still needs. *@
 <dialog @ref="_dialog" class="pm-standings" aria-labelledby="pm-standings-title"
         aria-modal="@(Modal ? "true" : "false")" open="@(!Modal)"
-        @oncancel="OnCancelAsync" @oncancel:preventDefault>
+        @oncancel="OnCancelAsync">
     <RadzenMediaQuery Query="(max-width: 640px)" Change="@(narrow => _narrow = narrow)" />
     <RadzenCard Variant="Variant.Filled" class="pm-standings-card">
         <div class="pm-standings-head">
@@ -100,7 +100,11 @@
     {
         if (firstRender && Modal)
         {
-            try { await _dialog.ShowModalAsync(JS); }
+            try
+            {
+                await JS.InvokeVoidAsync("PoDialogInterop.holdOpen", _dialog);
+                await _dialog.ShowModalAsync(JS);
+            }
             catch (JSException) { /* the dialog still renders in flow; only the trap is lost */ }
         }
     }

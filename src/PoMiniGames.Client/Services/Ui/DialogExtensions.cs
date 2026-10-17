@@ -33,6 +33,14 @@ public static class DialogExtensions
         => js.InvokeVoidAsync("PoDialogInterop.showModal", dialog);
 
     /// <summary>
+    /// <see cref="ShowModalAsync"/> for a sheet that can be opened from inside another
+    /// modal layer (a game's pause dialog or dashboard). Those layers are put away while
+    /// it is up, so only one backdrop shows, and come back when it closes.
+    /// </summary>
+    public static ValueTask ShowModalAloneAsync(this ElementReference dialog, IJSRuntime js)
+        => js.InvokeVoidAsync("PoDialogInterop.showModalAlone", dialog);
+
+    /// <summary>
     /// Calls <c>dialog.close()</c>. The dialog fires its native <c>close</c>
     /// event and is removed from the top layer. Call this before any Blazor
     /// navigation that fires from inside the modal — otherwise the modal stays

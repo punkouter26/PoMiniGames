@@ -89,9 +89,10 @@
 
     @* End-of-game modal: the one centered, blocking dialog every game ends on.
        It surfaces the final result (GameSummary), the stats grid (Stats), this
-       game's top 3 (fetched from GameKey), and a single button that returns to the
-       home menu. There is intentionally no backdrop-dismiss and no Play Again —
-       that button is the only exit, so the flow is identical in every game.
+       game's top 3 (fetched from GameKey), Share, Full leaderboard, Play again (on
+       a game's own address) and Back to all games. There is intentionally no
+       backdrop-dismiss, so the flow is identical in every game. It also plays the
+       shared end-of-game moment (cue, confetti, pulse, vignette); see GameOverModal.
 
        GameOverDelayMs lets a game wait a few seconds after the
        result is decided before the modal appears, so the winning move can
@@ -106,6 +107,7 @@
                        GameKey="@GameKey"
                        Player="@Player"
                        Outcome="@Outcome"
+                       NewBest="@NewBest"
                        BackTo="@BackTo" />
     }
 </div>
@@ -145,6 +147,8 @@
     // the result. Left Unknown by games that do not report it, which sounds a
     // neutral round-over instead of guessing.
     [Parameter] public Models.GameResult Outcome { get; set; } = Models.GameResult.InProgress;
+    // The run just saved was a personal best: the modal badges and celebrates it.
+    [Parameter] public bool NewBest { get; set; }
     [Parameter] public RenderFragment? GameSummary { get; set; }
 
     /// <summary>

@@ -74,14 +74,18 @@ public sealed class UiFeedbackService : IAsyncDisposable
     /// <param name="scope">Cue scope — a game key, or "ui".</param>
     /// <param name="name">Cue name within that scope.</param>
     /// <param name="haptic">Optional vibration to fire alongside it.</param>
+    /// <param name="soundOnly">Play the cue's sound but not its screen feel or particles,
+    /// for a caller that draws its own (the end-of-game moment).</param>
     /// <returns>True if a cue matched; false if the name is unknown to the table.</returns>
-    public async ValueTask<bool> CueAsync(string scope, string name, int[]? haptic = null)
+    public async ValueTask<bool> CueAsync(string scope, string name, int[]? haptic = null, bool soundOnly = false)
     {
         if (_disposed) return false;
         try
         {
             var module = await _module.Value;
-            var fired = await module.InvokeAsync<bool>("cue", scope, name);
+            var fired = soundOnly
+                ? await module.InvokeAsync<bool>("cue", scope, name, new { soundOnly })
+                : await module.InvokeAsync<bool>("cue", scope, name);
             if (haptic is { Length: > 0 }) await module.InvokeVoidAsync("vibrate", haptic);
             return fired;
         }
@@ -144,11 +148,11 @@ public sealed class UiFeedbackService : IAsyncDisposable
     /// Sports — so a shared component that wants "whatever
     /// this game calls winning" has to ask for a list, not a name.
     /// </summary>
-    public async ValueTask<bool> CueFirstAsync(string scope, string[] names, int[]? haptic = null)
+    public async ValueTask<bool> CueFirstAsync(string scope, string[] names, int[]? haptic = null, bool soundOnly = false)
     {
         foreach (var name in names)
         {
-            if (await CueAsync(scope, name, haptic)) return true;
+            if (await CueAsync(scope, name, haptic, soundOnly)) return true;
         }
         return false;
     }
@@ -292,6 +296,27 @@ public sealed class UiFeedbackService : IAsyncDisposable
 
     /// <summary>Crystalline ping for high-gloss modals, gems, and achievements.</summary>
     public async ValueTask CrystalPingAsync() => await CueAsync("ui", "crystalPing", HapticClick);
+
+    /// <summary>When the end-of-game moment last played (Environment.TickCount64), 0 for never.</summary>
+    private long _gameOverMomentAt;
+
+    /// <summary>
+    /// Called by the end-of-game modal as its moment plays, so a cue that would land on top
+    /// of it (an achievement unlocked by the same result) can stand down.
+    /// </summary>
+    public void MarkGameOverMoment() => _gameOverMomentAt = Environment.TickCount64;
+
+    /// <summary>
+    /// The achievement-unlocked ping, unless the end-of-game moment is playing. A result
+    /// is recorded the instant a game ends, often a frame before the modal opens, so the
+    /// ping waits a beat and then checks; the toast still says what was unlocked.
+    /// </summary>
+    public async ValueTask AchievementPingAsync()
+    {
+        await Task.Delay(350);
+        if (_gameOverMomentAt != 0 && Environment.TickCount64 - _gameOverMomentAt < 2500) return;
+        await CrystalPingAsync();
+    }
 
     /// <summary>Crisp dual-micro-click for switches and pill controls.</summary>
     public async ValueTask MagneticSnapAsync() => await CueAsync("ui", "magneticSnap", HapticClick);

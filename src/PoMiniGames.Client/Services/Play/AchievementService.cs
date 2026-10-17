@@ -175,7 +175,7 @@ public sealed class AchievementService : IDisposable
             ? $"{fresh[0].Icon} Achievement unlocked: {fresh[0].Title}"
             : $"🏆 {fresh.Count} achievements unlocked: {string.Join(", ", fresh.Select(a => a.Title))}";
         _toasts.Show(message, ToastType.Info);
-        _ = _feedback.CrystalPingAsync();
+        _ = _feedback.AchievementPingAsync();
     }
 
     private AchievementFacts Gather()

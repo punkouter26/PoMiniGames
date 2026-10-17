@@ -1,25 +1,50 @@
 /* Settings sheet. Every colour reads through a design token so the sheet is
    themed in both schemes — including, necessarily, the control that switches
-   between them. */
+   between them.
+
+   A drawer on the right edge of a wide window, a bottom sheet under 640px. Still a
+   native modal <dialog> either way: showModal() gives the focus trap, Esc and the
+   inert page behind; only where it sits changes. */
 
 .prefs-sheet {
-    /* The app's global reset zeroes every margin, including the `margin: auto` the
-       user-agent sheet centres a modal dialog with. Put it back. */
-    margin: auto;
-    width: min(30rem, calc(100vw - 2 * var(--space-4)));
-    max-height: min(42rem, calc(100dvh - 2 * var(--space-4)));
+    /* Pinned to the right edge, full height. The user-agent sheet centres a modal
+       dialog with margin: auto and caps it short of the viewport; undo both. */
+    margin: 0 0 0 auto;
+    inset-block: 0;
+    width: min(26rem, 100vw);
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
     padding: 0;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
+    border: none;
+    border-left: 1px solid var(--color-border);
+    border-radius: var(--radius-lg) 0 0 var(--radius-lg);
     /* --color-surface, not --surface-2: the numbered surfaces are translucent glass,
        and a sheet the page shows through is hard to read. */
     background: var(--color-surface);
     color: var(--color-text-primary);
-    overflow: auto;
+    box-shadow: -12px 0 40px rgb(0 0 0 / 0.28);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.prefs-sheet[open] {
+    animation: prefs-in-right var(--dur-base, 220ms) var(--ease-out, ease-out) both;
 }
 
 .prefs-sheet::backdrop {
-    background: rgb(0 0 0 / 0.55);
+    background: rgb(0 0 0 / 0.5);
+}
+
+@keyframes prefs-in-right {
+    from { transform: translateX(100%); }
+    to   { transform: none; }
+}
+
+@keyframes prefs-in-up {
+    from { transform: translateY(100%); }
+    to   { transform: none; }
 }
 
 .prefs-sheet-head {
@@ -29,7 +54,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--space-3) var(--space-4);
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
     background: var(--color-surface);
     border-bottom: 1px solid var(--color-border);
 }
@@ -42,8 +67,8 @@
 
 .prefs-sheet-close {
     appearance: none;
-    width: 2.25rem;
-    height: 2.25rem;
+    width: 2.75rem;
+    height: 2.75rem;
     border: none;
     border-radius: var(--radius-md);
     background: transparent;
@@ -61,25 +86,32 @@
 .prefs-grid {
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
-    padding: var(--space-4) var(--space-3);
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-3) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
 }
 
-/* <fieldset> + <legend> give the categories named landmarks. Reset the
+/* <fieldset> + <legend> give the sections named landmarks. Reset the
    user-agent fieldset chrome so the legend reads as a small section label
-   rather than an outline frame, but keep the native grouping. */
+   rather than an outline frame, but keep the native grouping. Each section is a
+   card, so four short groups read as four groups in a narrow drawer. */
 .prefs-group {
-    border: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
     min-width: 0;
+    overflow: hidden;   /* a row's hover fill keeps to the card's corners */
+    background: var(--surface-1);
 }
 
+/* A legend inside a bordered fieldset sits on the border line; float it so it
+   lays out as the section's first row instead. */
 .prefs-group-legend {
-    padding: 0 var(--space-2) var(--space-2);
+    float: left;
+    width: 100%;
+    padding: var(--space-2) var(--space-3) 0;
     font-size: var(--text-xs);
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -87,54 +119,66 @@
     font-weight: 700;
 }
 
-.prefs-row {
+/* The account card brings its own side padding; give it the row's top and bottom. */
+.prefs-group ::deep .acct-data {
+    padding-block: var(--space-2) var(--space-3);
+}
+
+.prefs-grid ::deep .prefs-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-4);
-    padding: var(--space-3) var(--space-3);
-    border-radius: var(--radius-md);
+    gap: var(--space-3);
+    min-height: 3rem;
+    padding: var(--space-2) var(--space-3);
     transition: background var(--dur-fast) var(--ease-standard);
 }
 
-.prefs-row + .prefs-row {
+.prefs-grid ::deep .prefs-row + .prefs-row,
+.prefs-grid ::deep .aip-row + .aip-row,
+.prefs-grid ::deep .prefs-row + .aip-row,
+.prefs-grid ::deep .aip-row + .prefs-row {
     border-top: 1px solid var(--color-border);
 }
 
-.prefs-row:hover {
+.prefs-grid ::deep .prefs-row:hover {
     background: var(--surface-3);
 }
 
 /* A row whose control cannot act (volume while muted, invites while signed
    out): dimmed but still readable, because the hint says why. */
-.prefs-row--disabled .prefs-name {
+.prefs-grid ::deep .prefs-row--disabled .prefs-name {
     opacity: 0.5;
 }
 
-.prefs-label {
+.prefs-grid ::deep .prefs-label {
     display: flex;
     flex-direction: column;
     gap: 2px;
     min-width: 0;
 }
 
-.prefs-name {
+.prefs-grid ::deep .prefs-name {
     font-size: var(--text-sm);
     font-weight: 600;
     color: var(--color-text-primary);
 }
 
-.prefs-hint {
+.prefs-grid ::deep .prefs-hint {
     font-size: var(--text-xs);
     color: var(--color-text-secondary);
+}
+
+/* The segmented pickers (theme, graphics) are tap targets too: 40px floor. */
+.prefs-grid ::deep .app-seg__btn {
+    min-height: 2.5rem;
 }
 
 /* ── Switch ── */
 .prefs-toggle {
     appearance: none;
+    position: relative;
     flex: 0 0 auto;
-    /* 52x32: the track is the tap target. It was 44x26, which is two pixels over
-       the 24px minimum in height and the smallest control in the sheet. */
     width: 52px;
     height: 32px;
     padding: 3px;
@@ -144,6 +188,14 @@
     cursor: pointer;
     transition: background var(--dur-fast) var(--ease-standard),
                 border-color var(--dur-fast) var(--ease-standard);
+}
+
+/* The visible track is 32px tall; this invisible margin takes the tap target to
+   44px without making the switch look heavier. */
+.prefs-toggle::before {
+    content: "";
+    position: absolute;
+    inset: -7px -4px;
 }
 
 .prefs-toggle:disabled {
@@ -176,6 +228,7 @@
 .prefs-range {
     flex: 0 0 auto;
     width: 140px;
+    height: 2.5rem;
     accent-color: var(--accent);
     cursor: pointer;
 }
@@ -192,48 +245,44 @@
     outline-offset: 2px;
 }
 
-/* Portrait phones: only the two wide controls go under their label (the theme
-   switch and the volume slider). A switch stays on its label's row: stacking every
-   row would put each of the five switches alone on a line under its label and make
-   the sheet far taller than the screen. */
-@media (max-width: 480px) {
-    /* Nearly the whole screen: with the rows tightened below, all five groups are on
-       it at once on a 390x844 phone (803px of content). */
+/* Phones: a bottom sheet, nearly the screen's height at most, rounded on top. */
+@media (max-width: 639.98px) {
     .prefs-sheet {
-        width: calc(100vw - 2 * var(--space-2));
-        max-height: calc(100dvh - 2 * var(--space-2));
+        margin: auto 0 0;
+        inset-block: auto 0;
+        width: 100vw;
+        height: auto;
+        max-height: 92dvh;
+        border-left: none;
+        border-top: 1px solid var(--color-border);
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        box-shadow: 0 -12px 40px rgb(0 0 0 / 0.28);
     }
 
-    .prefs-row { gap: var(--space-3); padding: 0.35rem var(--space-3); }
+    .prefs-sheet[open] {
+        animation-name: prefs-in-up;
+    }
+}
 
-    .prefs-row:has(.app-seg) {
+/* Portrait phones: only the two wide controls go under their label (the theme
+   and graphics pickers). A switch stays on its label's row: stacking every row
+   would put each switch alone on a line and make the sheet far taller. */
+@media (max-width: 480px) {
+    .prefs-grid ::deep .prefs-row:has(.app-seg) {
         align-items: stretch;
         flex-direction: column;
         gap: var(--space-2);
     }
 
-    /* The three theme buttons share the row instead of huddling at its left end. */
-    .prefs-row .app-seg__btn { flex: 1 1 0; }
+    /* The picker's buttons share the row instead of huddling at its left end. */
+    .prefs-grid ::deep .prefs-row .app-seg { display: flex; }
+    .prefs-grid ::deep .prefs-row .app-seg__btn { flex: 1 1 0; padding-inline: 0.4rem; }
 
     .prefs-range { width: 50%; }
 
-    .prefs-grid { gap: var(--space-2); padding: var(--space-2); }
-    .prefs-group-legend { padding-bottom: var(--space-1); }
+    .prefs-grid { gap: var(--space-2); padding-inline: var(--space-2); }
 }
 
-/* A window with room for it: two columns of groups, so the last group (the account's
-   data) is on screen when the sheet opens instead of 130px below its fold. */
-@media (min-width: 900px) {
-    .prefs-sheet { width: min(54rem, calc(100vw - 2 * var(--space-4))); }
-
-    .prefs-grid {
-        display: block;
-        columns: 2;
-        column-gap: var(--space-5);
-    }
-
-    .prefs-group {
-        break-inside: avoid;
-        margin-bottom: var(--space-4);
-    }
+@media (prefers-reduced-motion: reduce) {
+    .prefs-sheet[open] { animation: none; }
 }

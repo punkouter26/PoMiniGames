@@ -581,6 +581,8 @@ const CELEBRATE = new Set(['win', 'goal', 'finish']);
  * @param {number} [opts.gain=1] level multiplier
  * @param {number} [opts.scale=1] impact/particle strength multiplier
  * @param {boolean} [opts.silent] skip audio, keep the visual (for muted replays)
+ * @param {boolean} [opts.soundOnly] keep the audio, skip the feel and particles (a caller
+ *   that draws its own, like the end-of-game modal)
  */
 export function fire(scope, name, opts) {
     const o = opts || {};
@@ -614,6 +616,8 @@ export function fire(scope, name, opts) {
         Dsp.playAll(voices, cue.bus || (scope === 'ui' ? 'ui' : 'sfx'));
         if (cue.duck) AudioBus.duck(1 - cue.duck, 500);
     }
+
+    if (o.soundOnly) return;
 
     const strength = (o.scale == null ? 1 : o.scale) * (cue.scale == null ? 1 : cue.scale);
     if (cue.feel) Impact.impact(cue.feel, strength);

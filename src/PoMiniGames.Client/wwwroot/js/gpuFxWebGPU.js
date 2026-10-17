@@ -1,8 +1,9 @@
-// gpuFxWebGPU.js — the title swarm on the game intro card (WebGPU compute).
+// gpuFxWebGPU.js — the text swarm (WebGPU compute): the game intro card's title, and the
+// score or rank number on the end-of-game modal when it is a new best or a climb.
 //
 // A few thousand particles start scattered across the whole viewport, fall into the letters
-// of the game's title on the intro card, dissolve into the real heading, and burst back out
-// of it when the card closes. Position and velocity live on the GPU and are integrated by a WGSL compute
+// of an element's text, dissolve into the real element, and burst back out of it when it
+// leaves the page. Position and velocity live on the GPU and are integrated by a WGSL compute
 // pass; the CPU writes the buffer once (start positions and each particle's home pixel) and
 // after that only a 64-byte uniform per frame.
 //
@@ -18,7 +19,7 @@
 // text, or any error at any point → nothing is drawn and the card looks exactly as it does
 // without this file. Nothing here throws to its caller.
 //
-// Exposed as window.PoGpuWebGPU = { assemble(root), scatter(), active() }.
+// Exposed as window.PoGpuWebGPU = { assemble(target, opts), scatter(), active() }.
 (function () {
     'use strict';
 
@@ -202,7 +203,7 @@ fn fs(in: VOut) -> @location(0) vec4f {
      * the browser laid it out (its own client rects), at 3x so a 22 px heading still yields
      * thousands of distinct homes.
      */
-    function homesOf(title) {
+    function homesOf(title, text) {
         const box = title.getBoundingClientRect();
         if (box.width < 8 || box.height < 8) return null;
         const SS = 3;
@@ -213,10 +214,19 @@ fn fs(in: VOut) -> @location(0) vec4f {
         g.scale(SS, SS);
         g.textBaseline = 'middle';
         g.fillStyle = '#fff';
+        let drew = false;
+        if (text) {
+            // Given text (a score still counting up underneath): drawn whole, centred in the
+            // element's box, in the element's own font.
+            const cs = getComputedStyle(title);
+            g.font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+            g.textAlign = 'center';
+            g.fillText(String(text), box.width / 2, box.height / 2);
+            drew = true;
+        }
         const walker = document.createTreeWalker(title, NodeFilter.SHOW_TEXT);
         const range = document.createRange();
-        let drew = false;
-        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        for (let n = text ? null : walker.nextNode(); n; n = walker.nextNode()) {
             const text = n.nodeValue;
             if (!text || !text.trim() || !n.parentElement) continue;
             const cs = getComputedStyle(n.parentElement);
@@ -337,29 +347,50 @@ fn fs(in: VOut) -> @location(0) vec4f {
     }
 
     /**
-     * Assemble the swarm on the heading inside `root` (the intro overlay). Safe to call for
-     * every intro card: returns false, having drawn nothing, wherever it cannot run.
-     * @param {Element} root
+     * A modal <dialog> renders in the top layer, above every z-index. A swarm drawn over
+     * one has to join the top layer itself: a manual popover shown after the dialog opened
+     * stacks above it.
+     */
+    function raiseOver(canvas, target) {
+        let modal = null;
+        try { modal = target.closest('dialog:modal'); } catch { /* no :modal */ }
+        if (!modal || typeof canvas.showPopover !== 'function') return;
+        canvas.style.margin = '0';
+        canvas.style.border = '0';
+        canvas.style.padding = '0';
+        canvas.style.background = 'transparent';
+        canvas.setAttribute('popover', 'manual');
+        try { canvas.showPopover(); } catch { /* stays under the dialog: still harmless */ }
+    }
+
+    /**
+     * Assemble the swarm on an element's text. `target` is the element itself, or a root
+     * holding an intro card heading (`.gps-intro-title`), which is how the intro card calls
+     * it. Safe to call anywhere: returns false, having drawn nothing, wherever it cannot run.
+     * @param {Element} target
+     * @param {{ text?: string }} [opts] text to draw instead of the element's own (a number
+     *   still counting up underneath), in the element's font, centred in its box
      * @returns {Promise<boolean>}
      */
-    async function assemble(root) {
+    async function assemble(target, opts) {
         try {
             end();
             const token = _token;
-            if (_dead || quiet() || !root || !root.querySelector) return false;
-            const title = root.querySelector('.gps-intro-title');
-            if (!title) return false;
+            if (_dead || quiet() || !target || !target.querySelector) return false;
+            const title = target.querySelector('.gps-intro-title') || target;
+            const text = opts && opts.text ? String(opts.text) : null;
+            if (!text && !(title.textContent || '').trim()) return false;
             const dev = await device();
             if (!dev || token !== _token) return false;
 
-            // The card animates in (a pop, or a sheet sliding up on phones); the heading's
+            // The card animates in (a pop, or a sheet sliding up on phones); the element's
             // rect is only its final one after that.
-            const card = title.closest('.gps-intro-card');
+            const card = title.closest('.gps-intro-card') || title.closest('dialog');
             if (card && card.getAnimations) {
                 await Promise.all(card.getAnimations().map(function (a) { return a.finished.catch(function () { }); }));
             }
             if (token !== _token || !title.isConnected || quiet()) return false;
-            const found = homesOf(title);
+            const found = homesOf(title, text);
             if (!found) return false;
 
             const count = found.homes.length / 2;
@@ -399,6 +430,7 @@ fn fs(in: VOut) -> @location(0) vec4f {
             const uniform = dev.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 
             document.body.appendChild(canvas);
+            raiseOver(canvas, title);
             title.style.opacity = '0';
             const now = performance.now();
             _run = {

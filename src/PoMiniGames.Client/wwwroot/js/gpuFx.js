@@ -32,9 +32,22 @@
 // a=0 gives pure additive, and rgb=c·a with a=a gives normal alpha. A single
 // per-particle 0..1 flag interpolates between them — no second draw call, no
 // sorting.
+//
+// COLLIDERS (high tier): confetti and sparks can land on boxes — the end-of-game modal —
+// instead of falling through them. Still no per-frame CPU state: the vertex shader marches
+// the closed-form path, finds the first time it crosses a box's top edge (bisection), then
+// evaluates a damped bounce from there in closed form too. The boxes are uniforms,
+// re-measured each frame from their elements, so a card that is still animating in is
+// followed. A colliding particle that would end up inside a box is not drawn at all, which
+// keeps confetti off the modal's text.
+//
+// TOP LAYER: a modal <dialog> renders above every z-index. While one is open the canvas
+// joins the top layer itself as a manual popover, so the celebration is drawn over the
+// modal's backdrop rather than dimmed under it.
 
 const MAX_PARTICLES = 2400;
-const FLOATS_PER_PARTICLE = 14;
+const FLOATS_PER_PARTICLE = 15;
+const MAX_RECTS = 8;
 const BYTES_PER_PARTICLE = FLOATS_PER_PARTICLE * 4;
 
 const VERT_SRC = `#version 300 es
@@ -43,10 +56,25 @@ in vec2 aP0;      // spawn position, CSS px, origin top-left
 in vec2 aV0;      // initial velocity, px/s
 in vec3 aColor;
 in vec4 aParams;  // x: size px, y: ttl s, z: spawn time s, w: seed 0..1
-in vec3 aFlags;   // x: gravity px/s², y: drag k, z: additive 0..1
+in vec4 aFlags;   // x: gravity px/s², y: drag k, z: additive 0..1, w: collides 0/1
 
 uniform vec2  uResolution;  // CSS px
 uniform float uTime;        // s
+uniform vec4  uRects[${MAX_RECTS}];   // colliders: left, top, right, bottom, CSS px
+uniform int   uRectCount;
+
+vec2 pathPos(vec2 p0, vec2 v0, float g, float k, float t) {
+    float d = (k > 0.001) ? (1.0 - exp(-k * t)) / k : t;
+    return p0 + v0 * d + vec2(0.0, 0.5 * g * t * t);
+}
+
+vec2 pathVel(vec2 v0, float g, float k, float t) {
+    return v0 * exp(-k * t) + vec2(0.0, g * t);
+}
+
+bool inBox(vec2 p, vec4 r) {
+    return p.x > r.x && p.x < r.z && p.y > r.y && p.y < r.w;
+}
 
 out vec2  vCorner;
 out vec3  vColor;
@@ -67,11 +95,81 @@ void main() {
     }
 
     float k = aFlags.y;
+    float g = aFlags.x;
     // (1 - e^(-kt))/k has a removable singularity at k = 0. Below this epsilon
     // the expression loses all its precision to catastrophic cancellation long
     // before it actually divides by zero, so switch to the limit early.
-    float dragTerm = (k > 0.001) ? (1.0 - exp(-k * age)) / k : age;
-    vec2 pos = aP0 + aV0 * dragTerm + vec2(0.0, 0.5 * aFlags.x * age * age);
+    vec2 pos = pathPos(aP0, aV0, g, k, age);
+    float spinAge = age;
+
+    if (aFlags.w > 0.5 && uRectCount > 0) {
+        // First crossing of any box's top edge, going down, while over the box. A box
+        // the particle was born inside (a burst from the modal's own rank line) is not
+        // a floor for it.
+        float hitT = -1.0;
+        int hitI = -1;
+        for (int r = 0; r < ${MAX_RECTS}; r++) {
+            if (r >= uRectCount) break;
+            vec4 R = uRects[r];
+            if (inBox(aP0, R)) continue;
+            float prevT = 0.0;
+            float prevY = aP0.y;
+            for (int s = 1; s <= 16; s++) {
+                float t = age * float(s) / 16.0;
+                vec2 q = pathPos(aP0, aV0, g, k, t);
+                if (prevY < R.y && q.y >= R.y && q.x > R.x && q.x < R.z) {
+                    float lo = prevT, hi = t;
+                    for (int b = 0; b < 6; b++) {
+                        float m = 0.5 * (lo + hi);
+                        if (pathPos(aP0, aV0, g, k, m).y < R.y) lo = m; else hi = m;
+                    }
+                    if (hitT < 0.0 || hi < hitT) { hitT = hi; hitI = r; }
+                    break;
+                }
+                prevT = t;
+                prevY = q.y;
+            }
+        }
+
+        if (hitI >= 0) {
+            vec4 R = uRects[hitI];
+            vec2 ph = vec2(pathPos(aP0, aV0, g, k, hitT).x, R.y);
+            vec2 vh = pathVel(aV0, g, k, hitT);
+            // A soft bounce: a third of the fall comes back up, most of the slide is
+            // scrubbed off by the "friction" of the extra drag.
+            vec2 vb = vec2(vh.x * 0.45, -abs(vh.y) * 0.32);
+            float kb = k + 2.5;
+            float tau = age - hitT;
+            vec2 q = pathPos(ph, vb, g, kb, tau);
+            // Off the end of the box: from the moment x passes its edge, fall freely.
+            float edge = vb.x > 0.0 ? R.z : R.x;
+            float need = (edge - ph.x) * kb / (abs(vb.x) > 0.001 ? vb.x : 0.001);
+            if (need > 0.0 && need < 1.0) {
+                float tEdge = -log(1.0 - need) / kb;
+                if (tau > tEdge) {
+                    vec2 pe = vec2(edge, min(pathPos(ph, vb, g, kb, tEdge).y, R.y));
+                    vec2 ve = pathVel(vb, g, kb, tEdge);
+                    ve.y = max(ve.y, 0.0);
+                    q = pathPos(pe, ve, g, k, tau - tEdge);
+                } else {
+                    q.y = min(q.y, R.y);
+                }
+            } else {
+                q.y = min(q.y, R.y);
+            }
+            pos = q;
+            spinAge = hitT + 0.15 * tau;   // landed confetti stops tumbling
+        }
+
+        // Never drawn over a box's contents: one that came in from the side is dropped.
+        for (int r = 0; r < ${MAX_RECTS}; r++) {
+            if (r >= uRectCount) break;
+            if (inBox(pos, uRects[r]) && !inBox(aP0, uRects[r])) {
+                gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+                return;
+            }
+        }
+    }
 
     float life = age / ttl;
 
@@ -88,7 +186,7 @@ void main() {
 
     // Spin. Seed-varied rate and direction so a burst never looks like a rigid
     // body; the sign flip is what stops confetti from all rotating the same way.
-    float spin = (aParams.w - 0.5) * 12.0 * age;
+    float spin = (aParams.w - 0.5) * 12.0 * spinAge;
     float cs = cos(spin), sn = sin(spin);
     vec2 rotated = mat2(cs, -sn, sn, cs) * corner;
 
@@ -160,6 +258,14 @@ let instanceBuffer = null;
 let canvas = null;
 let uRes = null;
 let uTime = null;
+let uRects = null;
+let uRectCount = null;
+
+/** @type {Element[]} what particles land on; re-measured every frame */
+let colliders = [];
+const rectData = new Float32Array(MAX_RECTS * 4);
+/** Presets that land on colliders. Dust and smoke drift up and coins are a fountain. */
+const COLLIDES = new Set(['confetti', 'sparks']);
 
 let writeIndex = 0;
 let liveUntil = 0;          // performance.now() ms after which nothing is alive
@@ -257,6 +363,9 @@ function init() {
     canvas = document.createElement('canvas');
     canvas.className = 'po-gpufx';
     canvas.setAttribute('aria-hidden', 'true');
+    // Neutralise the user-agent popover box (border, padding, Canvas background) for the
+    // times this canvas joins the top layer over a modal; see raise().
+    canvas.style.cssText = 'margin:0;border:0;padding:0;background:transparent;overflow:hidden;max-width:none;max-height:none;';
     document.body.appendChild(canvas);
 
     gl = canvas.getContext('webgl2', {
@@ -300,7 +409,7 @@ function init() {
         ['aV0', 2, 8],
         ['aColor', 3, 16],
         ['aParams', 4, 28],
-        ['aFlags', 3, 44],
+        ['aFlags', 4, 44],
     ];
     for (const [name, size, offset] of attrs) {
         const loc = gl.getAttribLocation(prog, name);
@@ -313,6 +422,8 @@ function init() {
     gl.useProgram(prog);
     uRes = gl.getUniformLocation(prog, 'uResolution');
     uTime = gl.getUniformLocation(prog, 'uTime');
+    uRects = gl.getUniformLocation(prog, 'uRects');
+    uRectCount = gl.getUniformLocation(prog, 'uRectCount');
 
     gl.disable(gl.DEPTH_TEST);
     gl.enable(gl.BLEND);
@@ -362,6 +473,8 @@ function frame(now) {
     gl.bindVertexArray(vao);
     gl.uniform2f(uRes, cssW, cssH);
     gl.uniform1f(uTime, (now - startTime) / 1000);
+    gl.uniform1i(uRectCount, measureColliders());
+    gl.uniform4fv(uRects, rectData);
     // Every slot is drawn; expired ones self-cull in the vertex shader. Tracking
     // a live range on the CPU would mean sorting the ring, which costs more than
     // the degenerate vertices do.
@@ -369,7 +482,67 @@ function frame(now) {
     raf = requestAnimationFrame(frame);
 }
 
+/**
+ * A modal <dialog> sits in the top layer, above any z-index, so a fixed canvas is drawn
+ * under its backdrop. While one is open the canvas becomes a manual popover and is shown
+ * again on every burst, which puts it above the newest top-layer element. With no modal
+ * open it goes back to being an ordinary fixed overlay.
+ */
+function raise() {
+    if (!canvas || typeof canvas.showPopover !== 'function') return;
+    let modal = null;
+    try { modal = document.querySelector('dialog:modal'); } catch { /* no :modal */ }
+    try {
+        if (modal) {
+            if (!canvas.hasAttribute('popover')) canvas.setAttribute('popover', 'manual');
+            if (canvas.matches(':popover-open')) canvas.hidePopover();
+            canvas.showPopover();
+        } else if (canvas.hasAttribute('popover')) {
+            if (canvas.matches(':popover-open')) canvas.hidePopover();
+            canvas.removeAttribute('popover');
+        }
+    } catch { /* stays where it is */ }
+}
+
+function collidersOn() {
+    if (!colliders.length || motionReduced()) return false;
+    return document.documentElement.getAttribute('data-gfx') === 'high';
+}
+
+/** Fill rectData from the live colliders; returns how many are usable. */
+function measureColliders() {
+    let n = 0;
+    if (!colliders.length) return 0;
+    for (const el of colliders) {
+        if (n >= MAX_RECTS) break;
+        if (!el || !el.isConnected || typeof el.getBoundingClientRect !== 'function') continue;
+        const r = el.getBoundingClientRect();
+        if (r.width < 4 || r.height < 4) continue;
+        rectData[n * 4] = r.left;
+        rectData[n * 4 + 1] = r.top;
+        rectData[n * 4 + 2] = r.right;
+        rectData[n * 4 + 3] = r.bottom;
+        n++;
+    }
+    return n;
+}
+
+/**
+ * Boxes for confetti and sparks to land on (high tier only). Pass elements, a selector,
+ * or nothing to clear. Elements, not rects, so each frame reads where they are now.
+ * @param {Element|Element[]|string|null} [targets]
+ */
+export function setColliders(targets) {
+    if (!targets) { colliders = []; return; }
+    let list;
+    if (typeof targets === 'string') list = Array.from(document.querySelectorAll(targets));
+    else if (Array.isArray(targets)) list = targets;
+    else list = [targets];
+    colliders = list.filter((el) => el && typeof el.getBoundingClientRect === 'function').slice(0, MAX_RECTS);
+}
+
 function ensureFrame() {
+    raise();
     if (!raf && gl) {
         canvas.style.opacity = '1';
         raf = requestAnimationFrame(frame);
@@ -409,6 +582,7 @@ export function burst(o) {
 
     const t0 = (performance.now() - startTime) / 1000;
     const baseAngle = o.angle == null ? -Math.PI / 2 : o.angle;
+    const collides = COLLIDES.has(o.preset || 'sparks') && collidersOn() ? 1 : 0;
     const spread = o.spread == null ? p.spread : o.spread;
 
     let n = 0;
@@ -441,6 +615,7 @@ export function burst(o) {
         staging[base + 11] = p.gravity;
         staging[base + 12] = p.drag;
         staging[base + 13] = p.additive;
+        staging[base + 14] = collides;
 
         // Upload immediately when the ring wraps mid-burst, so the two halves
         // land in the right places; otherwise batch the contiguous run below.
@@ -453,7 +628,8 @@ export function burst(o) {
     }
     if (n > 0) uploadRange(writeIndex - n, n);
 
-    liveUntil = performance.now() + (p.ttl * 1.5) * 1000;
+    // max(): a short burst must not cut off a long one still in the air.
+    liveUntil = Math.max(liveUntil, performance.now() + (p.ttl * 1.5) * 1000);
     ensureFrame();
 }
 
@@ -531,6 +707,7 @@ export function vortex(opts) {
         staging[base + 11] = 0; // zero gravity
         staging[base + 12] = 1.8; // drag
         staging[base + 13] = 1.0; // additive glow
+        staging[base + 14] = 0;   // a vortex implodes; nothing to land on
 
         if (writeIndex === 0) {
             uploadRange(slot - n, n + 1);
@@ -579,5 +756,5 @@ export function clear() {
 if (typeof window !== 'undefined') {
     window.addEventListener('pagehide', clear);
     // Non-module access for the plain-script engines and Blazor JS interop.
-    window.PoFx = { burst, burstAt, vortex, celebrate, clear, invalidateTint };
+    window.PoFx = { burst, burstAt, vortex, celebrate, clear, invalidateTint, setColliders };
 }

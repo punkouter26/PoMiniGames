@@ -212,11 +212,12 @@ public partial class StorageService
     private static string? PoVoxelStrikeDayPartition(string? day) =>
         day is null ? null : $"{PoVoxelStrikePartition}_{day}";
 
-    public Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10, string? day = null) =>
-        GetHighScoresAsync(PoVoxelStrikeScores, limit, partition: PoVoxelStrikeDayPartition(day));
+    public Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10, string? day = null, bool weekly = false) =>
+        GetHighScoresAsync(PoVoxelStrikeScores, limit, partition: PoVoxelStrikeDayPartition(day), weekly: weekly && day is null);
 
+    // A Daily Siege row is not also a weekly row: the weekly board mirrors the all-time one.
     public Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry, string? day = null) =>
-        SaveHighScoreAsync(PoVoxelStrikeScores, entry, partition: PoVoxelStrikeDayPartition(day));
+        SaveHighScoreAsync(PoVoxelStrikeScores, entry, partition: PoVoxelStrikeDayPartition(day), weekly: day is null);
 
     private static readonly HighScoreDescriptor<PoMuleHighScore> PoMuleScores = new(
         Table: PoMuleTable,
@@ -258,17 +259,17 @@ public partial class StorageService
             (incoming.TryGetValue("NetWorth", out var v) ? v as int? ?? 0 : 0) > (existing.GetInt32("NetWorth") ?? -1),
     };
 
-    public Task<List<PoMuleHighScore>> GetPoMuleHighScoresAsync(int limit = 10) =>
-        GetHighScoresAsync(PoMuleScores, limit);
+    public Task<List<PoMuleHighScore>> GetPoMuleHighScoresAsync(int limit = 10, bool weekly = false) =>
+        GetHighScoresAsync(PoMuleScores, limit, weekly: weekly);
 
     public Task<PoMuleHighScore> SavePoMuleHighScoreAsync(PoMuleHighScore entry) =>
-        SaveHighScoreAsync(PoMuleScores, entry);
+        SaveHighScoreAsync(PoMuleScores, entry, weekly: true);
 
-    public Task<List<MarbleRaceHighScore>> GetMarbleRaceHighScoresAsync(int limit = 10) =>
-        GetHighScoresAsync(MarbleRaceScores, limit);
+    public Task<List<MarbleRaceHighScore>> GetMarbleRaceHighScoresAsync(int limit = 10, bool weekly = false) =>
+        GetHighScoresAsync(MarbleRaceScores, limit, weekly: weekly);
 
     public Task<MarbleRaceHighScore> SaveMarbleRaceHighScoreAsync(MarbleRaceHighScore entry) =>
-        SaveHighScoreAsync(MarbleRaceScores, entry);
+        SaveHighScoreAsync(MarbleRaceScores, entry, weekly: true);
 
     public Task<List<PoBrawlHighScore>> GetPoBrawlHighScoresAsync(int limit = 10) =>
         GetHighScoresAsync(PoBrawlScores, limit);
@@ -326,20 +327,22 @@ public partial class StorageService
             ? "poracer_circuit"
             : $"poracer_{trackId.Trim().ToLowerInvariant()}";
 
-    public Task<List<PoRacerHighScore>> GetPoRacerHighScoresAsync(int limit = 10, string? trackId = null)
+    public Task<List<PoRacerHighScore>> GetPoRacerHighScoresAsync(int limit = 10, string? trackId = null, bool weekly = false)
     {
-        if (string.IsNullOrWhiteSpace(trackId) || trackId.Equals("circuit", StringComparison.OrdinalIgnoreCase))
+        // The legacy bare "poracer" partition predates weekly rows, so a weekly read is only
+        // ever the one track partition's current week.
+        if (!weekly && (string.IsNullOrWhiteSpace(trackId) || trackId.Equals("circuit", StringComparison.OrdinalIgnoreCase)))
         {
             return GetHighScoresAsync(PoRacerScores, limit, partition: "poracer_circuit", customFilter: "PartitionKey eq 'poracer_circuit' or PartitionKey eq 'poracer'");
         }
         var partition = PoRacerTrackPartition(trackId);
-        return GetHighScoresAsync(PoRacerScores, limit, partition: partition);
+        return GetHighScoresAsync(PoRacerScores, limit, partition: partition, weekly: weekly);
     }
 
     public Task<PoRacerHighScore> SavePoRacerHighScoreAsync(PoRacerHighScore entry)
     {
         var partition = PoRacerTrackPartition(entry.TrackId);
-        return SaveHighScoreAsync(PoRacerScores, entry, partition: partition, requirePersistence: true);
+        return SaveHighScoreAsync(PoRacerScores, entry, partition: partition, requirePersistence: true, weekly: true);
     }
 
     // ── PoSports High Scores ──────────────────────────────────────────────
@@ -404,11 +407,12 @@ public partial class StorageService
     private static string? PoSportsDailyPartition(string? day) =>
         string.IsNullOrWhiteSpace(day) ? null : $"{PoSportsPartition}_daily_{day.Trim()}";
 
-    public Task<List<PoSportsHighScore>> GetPoSportsHighScoresAsync(int limit = 10, string? day = null) =>
-        GetHighScoresAsync(PoSportsScores, limit, partition: PoSportsDailyPartition(day));
+    public Task<List<PoSportsHighScore>> GetPoSportsHighScoresAsync(int limit = 10, string? day = null, bool weekly = false) =>
+        GetHighScoresAsync(PoSportsScores, limit, partition: PoSportsDailyPartition(day), weekly: weekly && string.IsNullOrWhiteSpace(day));
 
+    // A daily-meet row is not also a weekly row: the weekly board mirrors the all-time one.
     public Task<PoSportsHighScore> SavePoSportsHighScoreAsync(PoSportsHighScore entry, string? day = null) =>
-        SaveHighScoreAsync(PoSportsScores, entry, partition: PoSportsDailyPartition(day));
+        SaveHighScoreAsync(PoSportsScores, entry, partition: PoSportsDailyPartition(day), weekly: string.IsNullOrWhiteSpace(day));
 
     // ── PoCabinet High Scores (T5) ────────────────────────────────────────────
     // TrackId partitions the leaderboard: Capitol best-lap never competes with
@@ -485,15 +489,34 @@ public partial class StorageService
     }
 
 
+    // ── Weekly boards ─────────────────────────────────────────────────────
+    // An all-time board shows each player's best-EVER run, so after a while it stops moving
+    // for anyone not already on it. Every save to a board with a weekly view also lands in a
+    // sibling partition named for the ISO week ("{partition}-w2026-42"), with the same
+    // descriptor, RowKey and ratchet: "this week" is the same board, reset every Monday.
+    // Past weeks are simply never read again.
+
+    /// <summary>The ISO-8601 week suffix a weekly partition carries, e.g. <c>-w2026-42</c>.</summary>
+    public static string IsoWeekSuffix(DateTimeOffset at)
+    {
+        var utc = at.UtcDateTime;
+        return $"-w{System.Globalization.ISOWeek.GetYear(utc):D4}-{System.Globalization.ISOWeek.GetWeekOfYear(utc):D2}";
+    }
+
+    private static string WeeklyPartition(string partition) => partition + IsoWeekSuffix(DateTimeOffset.UtcNow);
+
     // The one shared high-score read: scan the game's partition, rebuild entries, rank, take.
-    private async Task<List<T>> GetHighScoresAsync<T>(HighScoreDescriptor<T> descriptor, int limit, string? partition = null, string? customFilter = null)
+    // `weekly` reads the current ISO week's sibling partition instead (see Weekly boards).
+    private async Task<List<T>> GetHighScoresAsync<T>(HighScoreDescriptor<T> descriptor, int limit, string? partition = null, string? customFilter = null, bool weekly = false)
     {
         // Storage is down: an empty board is the honest answer. There is no in-memory
         // shadow copy to read from any more (see the class header).
         if (!IsStorageAvailable()) return [];
 
         var scores = new List<T>();
-        var filter = customFilter ?? $"PartitionKey eq '{partition ?? descriptor.Partition}'";
+        var filter = weekly
+            ? $"PartitionKey eq '{WeeklyPartition(partition ?? descriptor.Partition)}'"
+            : customFilter ?? $"PartitionKey eq '{partition ?? descriptor.Partition}'";
         try
         {
             await foreach (var e in Table(descriptor.Table).QueryAsync<TableEntity>(
@@ -517,7 +540,8 @@ public partial class StorageService
     // HTTP request or a retry-after-timeout collapses onto the same row instead of
     // inflating the leaderboard with a second identical entry. Ranking is done in
     // memory (see GetHighScoresAsync), so RowKey ordering is irrelevant to correctness.
-    private async Task<T> SaveHighScoreAsync<T>(HighScoreDescriptor<T> descriptor, T entry, string? partition = null, bool requirePersistence = false)
+    // `weekly` also writes the row into the current ISO week's partition (see Weekly boards).
+    private async Task<T> SaveHighScoreAsync<T>(HighScoreDescriptor<T> descriptor, T entry, string? partition = null, bool requirePersistence = false, bool weekly = false)
     {
         // Always sanitize first so the caller still gets a normalised entry back even when
         // storage is down — the endpoint's 201 Created response shape stays unchanged.
@@ -542,33 +566,9 @@ public partial class StorageService
         var rowKey = DeterministicRowKey(fields, descriptor.RowKeyFields);
         var effectivePartition = partition ?? descriptor.Partition;
 
-        // Concurrency-safe upsert: read existing, merge, write with ETag. Bounded retry on
-        // 412/409 (see TableConcurrency).
         try
         {
-            await TableConcurrency.UpdateWithRetryAsync<TableEntity>(
-                Table(descriptor.Table),
-                partitionKey: effectivePartition,
-                rowKey: rowKey,
-                factory: () => new TableEntity(effectivePartition, rowKey),
-                mutate: e =>
-                {
-                    if (descriptor.ShouldOverwrite is not null && !descriptor.ShouldOverwrite(e, fields))
-                    {
-                        return false;
-                    }
-
-                    var changed = false;
-                    foreach (var (key, value) in fields)
-                    {
-                        if (!e.TryGetValue(key, out var existing) || !Equals(existing, value))
-                        {
-                            e[key] = value;
-                            changed = true;
-                        }
-                    }
-                    return changed;
-                });
+            await UpsertHighScoreRowAsync(descriptor, effectivePartition, rowKey, fields);
         }
         catch (Exception ex)
         {
@@ -577,9 +577,52 @@ public partial class StorageService
             // Returning the sanitized entry keeps the response shape stable so the client
             // doesn't have to special-case "Azurite down" — the write did not land, and the
             // client's PendingScoreStore is what holds the score until it does.
+            return sanitized;
+        }
+
+        if (weekly)
+        {
+            // Best-effort: the all-time row above is the score of record, so a weekly write
+            // that fails must neither fail the submit nor make the client retry it.
+            try
+            {
+                await UpsertHighScoreRowAsync(descriptor, WeeklyPartition(effectivePartition), rowKey, fields);
+            }
+            catch (Exception ex)
+            {
+                MarkUnavailable(ex);
+            }
         }
         return sanitized;
     }
+
+    // Concurrency-safe upsert: read existing, merge, write with ETag. Bounded retry on
+    // 412/409 (see TableConcurrency). The descriptor's ratchet can veto a worse row.
+    private Task UpsertHighScoreRowAsync<T>(
+        HighScoreDescriptor<T> descriptor, string partition, string rowKey, IDictionary<string, object?> fields) =>
+        TableConcurrency.UpdateWithRetryAsync<TableEntity>(
+            Table(descriptor.Table),
+            partitionKey: partition,
+            rowKey: rowKey,
+            factory: () => new TableEntity(partition, rowKey),
+            mutate: e =>
+            {
+                if (descriptor.ShouldOverwrite is not null && !descriptor.ShouldOverwrite(e, fields))
+                {
+                    return false;
+                }
+
+                var changed = false;
+                foreach (var (key, value) in fields)
+                {
+                    if (!e.TryGetValue(key, out var existing) || !Equals(existing, value))
+                    {
+                        e[key] = value;
+                        changed = true;
+                    }
+                }
+                return changed;
+            });
 
     // Stable content hash over the row's identity fields → idempotent, retry-safe RowKey.
     // Sorted ordinal so a descriptor's RowKeyFields order can never affect the hash.

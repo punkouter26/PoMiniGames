@@ -257,12 +257,13 @@ public class ApiService
     }
 
     /// <summary>Normalized leaderboards for every game in one round-trip (home preview, /leaderboards hub).</summary>
-    public async Task<GameLeaderboardDto[]?> GetAllLeaderboardsAsync(int limit = 5)
+    /// <param name="weekly">True for this ISO week's boards (only the high-score boards have one).</param>
+    public async Task<GameLeaderboardDto[]?> GetAllLeaderboardsAsync(int limit = 5, bool weekly = false)
     {
         try
         {
             return await _http.GetFromJsonAsync(
-                $"/api/leaderboards?limit={limit}", ApiJsonContext.Default.GameLeaderboardDtoArray);
+                $"/api/leaderboards?limit={limit}{(weekly ? "&period=week" : "")}", ApiJsonContext.Default.GameLeaderboardDtoArray);
         }
         catch
         {
@@ -277,12 +278,12 @@ public class ApiService
     /// Returns null when the game has no board (404) or the API is offline — the
     /// modal simply omits the section.
     /// </summary>
-    public async Task<GameLeaderboardDto?> GetGameLeaderboardAsync(string game, int limit = 3)
+    public async Task<GameLeaderboardDto?> GetGameLeaderboardAsync(string game, int limit = 3, bool weekly = false)
     {
         try
         {
             return await _http.GetFromJsonAsync(
-                $"/api/leaderboards/{game}?limit={limit}", ApiJsonContext.Default.GameLeaderboardDto);
+                $"/api/leaderboards/{game}?limit={limit}{(weekly ? "&period=week" : "")}", ApiJsonContext.Default.GameLeaderboardDto);
         }
         catch
         {

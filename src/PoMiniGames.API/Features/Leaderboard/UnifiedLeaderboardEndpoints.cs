@@ -39,36 +39,57 @@ public static class UnifiedLeaderboardEndpoints
         var boards = app.MapGroup("/api/leaderboards").WithTags("Statistics")
             .RequireRateLimiting("leaderboard-read");
 
+        // `period=week` reads this ISO week's boards instead of the all-time ones. Only the
+        // high-score boards keep weekly rows (see StorageService "Weekly boards"); the
+        // win-rate, ladder, rating and quiz boards are cumulative and have no week to show,
+        // so a weekly read leaves them out rather than passing all-time rows off as weekly.
         boards.MapGet("",
-            async (IStorageService storage, LeaderboardRepository funQuiz, int limit = 5) =>
+            async (IStorageService storage, LeaderboardRepository funQuiz, int limit = 5, string? period = null) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
-                var all = await BuildAllAsync(storage, funQuiz, limit);
+                var all = await BuildAllAsync(storage, funQuiz, limit, IsWeekly(period));
                 return Results.Ok(all);
             })
             .WithName("GetUnifiedLeaderboards")
-            .WithSummary("Normalized leaderboards for every game in one call")
+            .WithSummary("Normalized leaderboards for every game in one call (period=week for this week's)")
             .Produces<IEnumerable<GameLeaderboardDto>>(StatusCodes.Status200OK);
 
         boards.MapGet("/{game}",
-            async (string game, IStorageService storage, LeaderboardRepository funQuiz, int limit = 10) =>
+            async (string game, IStorageService storage, LeaderboardRepository funQuiz, int limit = 10, string? period = null) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
-                var board = await BuildOneAsync(storage, funQuiz, game, limit);
+                var board = await BuildOneAsync(storage, funQuiz, game, limit, IsWeekly(period));
                 return board is null ? Results.NotFound(new { message = $"No leaderboard for game '{game}'" })
                                      : Results.Ok(board);
             })
             .WithName("GetUnifiedLeaderboard")
-            .WithSummary("Normalized leaderboard for a single game")
+            .WithSummary("Normalized leaderboard for a single game (period=week for this week's)")
             .Produces<GameLeaderboardDto>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
         return app;
     }
 
+    private static bool IsWeekly(string? period) =>
+        string.Equals(period, "week", StringComparison.OrdinalIgnoreCase);
+
     private static async Task<List<GameLeaderboardDto>> BuildAllAsync(
-        IStorageService storage, LeaderboardRepository funQuiz, int limit)
+        IStorageService storage, LeaderboardRepository funQuiz, int limit, bool weekly = false)
     {
+        if (weekly)
+        {
+            var weeklyBoards = await Task.WhenAll(
+                PoRacerCatalog.Tracks.Select(t => SafeBuildPoRacerAsync(storage, limit, t.Id, weekly: true))
+                    .Concat(
+                    [
+                        SafeBuildMarbleAsync(storage, limit, weekly: true),
+                        SafeBuildPoSportsAsync(storage, limit, weekly: true),
+                        SafeBuildPoVoxelStrikeAsync(storage, limit, weekly: true),
+                        SafeBuildPoMuleAsync(storage, limit, weekly: true),
+                    ]));
+            return weeklyBoards.OrderByDescending(b => b.Entries.Count(e => e.Name != PlaceholderName)).ToList();
+        }
+
         // Each board is an independent storage read, so fan them out concurrently instead
         // of awaiting one at a time. Wall-clock drops from the SUM of the per-board scans to
         // the slowest single one.
@@ -115,19 +136,19 @@ public static class UnifiedLeaderboardEndpoints
         try { return await BuildWinRateAsync(storage, key, title, limit); }
         catch { return EmptyBoard(title); }
     }
-    private static async Task<GameLeaderboardDto> SafeBuildMarbleAsync(IStorageService storage, int limit)
+    private static async Task<GameLeaderboardDto> SafeBuildMarbleAsync(IStorageService storage, int limit, bool weekly = false)
     {
-        try { return await BuildMarbleAsync(storage, limit); }
+        try { return await BuildMarbleAsync(storage, limit, weekly); }
         catch { return EmptyBoard("Marble Race"); }
     }
-    private static async Task<GameLeaderboardDto> SafeBuildPoRacerAsync(IStorageService storage, int limit, string trackId)
+    private static async Task<GameLeaderboardDto> SafeBuildPoRacerAsync(IStorageService storage, int limit, string trackId, bool weekly = false)
     {
-        try { return await BuildPoRacerAsync(storage, limit, trackId); }
+        try { return await BuildPoRacerAsync(storage, limit, trackId, weekly); }
         catch { return EmptyBoard(PoRacerTitle(trackId)); }
     }
-    private static async Task<GameLeaderboardDto> SafeBuildPoSportsAsync(IStorageService storage, int limit)
+    private static async Task<GameLeaderboardDto> SafeBuildPoSportsAsync(IStorageService storage, int limit, bool weekly = false)
     {
-        try { return await BuildPoSportsAsync(storage, limit); }
+        try { return await BuildPoSportsAsync(storage, limit, weekly); }
         catch { return EmptyBoard("Sports"); }
     }
     private static async Task<GameLeaderboardDto> SafeBuildPoBrawlAsync(IStorageService storage, int limit)
@@ -145,14 +166,14 @@ public static class UnifiedLeaderboardEndpoints
         try { return await BuildFunQuizAsync(repo, limit); }
         catch { return EmptyBoard("Fun Quiz"); }
     }
-    private static async Task<GameLeaderboardDto> SafeBuildPoVoxelStrikeAsync(IStorageService storage, int limit)
+    private static async Task<GameLeaderboardDto> SafeBuildPoVoxelStrikeAsync(IStorageService storage, int limit, bool weekly = false)
     {
-        try { return await BuildPoVoxelStrikeAsync(storage, limit); }
+        try { return await BuildPoVoxelStrikeAsync(storage, limit, weekly); }
         catch { return EmptyBoard("Voxel Strike"); }
     }
-    private static async Task<GameLeaderboardDto> SafeBuildPoMuleAsync(IStorageService storage, int limit)
+    private static async Task<GameLeaderboardDto> SafeBuildPoMuleAsync(IStorageService storage, int limit, bool weekly = false)
     {
-        try { return await BuildPoMuleAsync(storage, limit); }
+        try { return await BuildPoMuleAsync(storage, limit, weekly); }
         catch { return EmptyBoard("Mule"); }
     }
     private static async Task<GameLeaderboardDto> SafeBuildOnlineMmrAsync(IStorageService storage, int limit)
@@ -162,9 +183,10 @@ public static class UnifiedLeaderboardEndpoints
     }
 
     private static async Task<GameLeaderboardDto?> BuildOneAsync(
-        IStorageService storage, LeaderboardRepository funQuiz, string game, int limit)
+        IStorageService storage, LeaderboardRepository funQuiz, string game, int limit, bool weekly = false)
     {
         var key = game.ToLowerInvariant();
+        if (weekly) return await BuildOneWeeklyAsync(storage, key, limit);
         if (string.Equals(key, "online-mmr", StringComparison.OrdinalIgnoreCase))
             return await BuildOnlineMmrAsync(storage, limit);
 
@@ -207,6 +229,29 @@ public static class UnifiedLeaderboardEndpoints
             "couplequiz" => await BuildWinRateAsync(storage, "pocouplequiz", "Couple Quiz", limit),
             "povoxelstrike" => await BuildPoVoxelStrikeAsync(storage, limit),
             "pomule" => await BuildPoMuleAsync(storage, limit),
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// This week's board for one game, or null (404) for a board that keeps no weekly rows.
+    /// Same key resolution as <see cref="BuildOneAsync"/>, restricted to the high-score boards.
+    /// </summary>
+    private static async Task<GameLeaderboardDto?> BuildOneWeeklyAsync(IStorageService storage, string key, int limit)
+    {
+        if (key.StartsWith(PoRacerBoardPrefix, StringComparison.Ordinal))
+        {
+            var track = PoRacerCatalog.Tracks.FirstOrDefault(t => t.Id == key[PoRacerBoardPrefix.Length..]);
+            return track is null ? null : await BuildPoRacerAsync(storage, limit, track.Id, weekly: true);
+        }
+
+        return Domain.Primitives.GameKey.TryParse(key)?.Value switch
+        {
+            "pomarblerace" => await BuildMarbleAsync(storage, limit, weekly: true),
+            "poracer" => await BuildPoRacerAsync(storage, limit, PoRacerCatalog.DefaultTrackId, weekly: true),
+            "posports" => await BuildPoSportsAsync(storage, limit, weekly: true),
+            "povoxelstrike" => await BuildPoVoxelStrikeAsync(storage, limit, weekly: true),
+            "pomule" => await BuildPoMuleAsync(storage, limit, weekly: true),
             _ => null,
         };
     }
@@ -295,9 +340,9 @@ public static class UnifiedLeaderboardEndpoints
         return new GameLeaderboardDto(key, title, "Win rate", HigherIsBetter: true, entries);
     }
 
-    private static async Task<GameLeaderboardDto> BuildMarbleAsync(IStorageService storage, int limit)
+    private static async Task<GameLeaderboardDto> BuildMarbleAsync(IStorageService storage, int limit, bool weekly = false)
     {
-        var scores = await storage.GetMarbleRaceHighScoresAsync(limit);
+        var scores = await storage.GetMarbleRaceHighScoresAsync(limit, weekly);
         var entries = scores
             .Select((s, i) => new LeaderboardEntryDto(
                 i + 1, s.PlayerInitials, s.BestScore, s.BestScore.ToString("N0", CultureInfo.InvariantCulture)))
@@ -319,9 +364,9 @@ public static class UnifiedLeaderboardEndpoints
     private static string PoRacerTitle(string trackId) => $"Racer · {PoRacerCatalog.GetTrack(trackId).Name}";
 
     /// <summary>Best lap per player (lower is better) on one track, from the PoRacer score table.</summary>
-    private static async Task<GameLeaderboardDto> BuildPoRacerAsync(IStorageService storage, int limit, string trackId)
+    private static async Task<GameLeaderboardDto> BuildPoRacerAsync(IStorageService storage, int limit, string trackId, bool weekly = false)
     {
-        var scores = await storage.GetPoRacerHighScoresAsync(50, trackId);
+        var scores = await storage.GetPoRacerHighScoresAsync(50, trackId, weekly);
         var entries = scores
             .Where(s => s.TotalTimeSeconds > 0)
             .GroupBy(s => s.PlayerName)
@@ -337,11 +382,11 @@ public static class UnifiedLeaderboardEndpoints
         return new GameLeaderboardDto(PoRacerBoardKey(trackId), PoRacerTitle(trackId), "Best lap", HigherIsBetter: false, entries);
     }
 
-    private static async Task<GameLeaderboardDto> BuildPoSportsAsync(IStorageService storage, int limit)
+    private static async Task<GameLeaderboardDto> BuildPoSportsAsync(IStorageService storage, int limit, bool weekly = false)
     {
         // The descriptor keeps one ratcheted row per player, so no re-grouping is
         // needed here — the read is already one-best-per-player, ranked ascending.
-        var scores = await storage.GetPoSportsHighScoresAsync(limit);
+        var scores = await storage.GetPoSportsHighScoresAsync(limit, weekly: weekly);
         var entries = scores
             .Where(s => s.TotalTimeSeconds > 0)
             .Select((s, i) => new LeaderboardEntryDto(
@@ -473,9 +518,9 @@ public static class UnifiedLeaderboardEndpoints
     /// <summary>
     /// PoMule ranks by best end-of-match Net Worth, one ratcheted row per player.
     /// </summary>
-    private static async Task<GameLeaderboardDto> BuildPoMuleAsync(IStorageService storage, int limit)
+    private static async Task<GameLeaderboardDto> BuildPoMuleAsync(IStorageService storage, int limit, bool weekly = false)
     {
-        var scores = await storage.GetPoMuleHighScoresAsync(limit);
+        var scores = await storage.GetPoMuleHighScoresAsync(limit, weekly);
         var entries = scores
             .Select((s, i) => new LeaderboardEntryDto(
                 i + 1, s.PlayerName, s.NetWorth, s.NetWorth.ToString("N0", CultureInfo.InvariantCulture)))
@@ -489,9 +534,9 @@ public static class UnifiedLeaderboardEndpoints
     /// PoVoxelStrike ranks by best run score. The descriptor keeps one ratcheted row per
     /// player, so the read is already one-best-per-player, ranked descending.
     /// </summary>
-    private static async Task<GameLeaderboardDto> BuildPoVoxelStrikeAsync(IStorageService storage, int limit)
+    private static async Task<GameLeaderboardDto> BuildPoVoxelStrikeAsync(IStorageService storage, int limit, bool weekly = false)
     {
-        var scores = await storage.GetPoVoxelStrikeHighScoresAsync(limit);
+        var scores = await storage.GetPoVoxelStrikeHighScoresAsync(limit, weekly: weekly);
         var entries = scores
             .Select((s, i) => new LeaderboardEntryDto(
                 i + 1, s.PlayerName, s.Score, s.Score.ToString("N0", CultureInfo.InvariantCulture)))

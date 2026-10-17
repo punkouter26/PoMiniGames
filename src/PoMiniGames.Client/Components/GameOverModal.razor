@@ -1,12 +1,19 @@
 @namespace PoMiniGamesClient.Components
 @using PoMiniGamesClient.Services
+@implements IAsyncDisposable
 
 @* ─────────────────────────────────────────────────────────────────────────
    The one end-of-game modal for every game in PoMiniGames.
 
    Centered, blocking, no backdrop-dismiss: the final result (GameSummary), the
-   stats grid (Stats), this game's top 3 (fetched from GameKey), a Play again
-   button and one that returns to the main menu.
+   stats grid (Stats), this game's top 3 (fetched from GameKey), Share and Full
+   leaderboard, a Play again button and one that returns to the main menu.
+
+   It is also the one end-of-game MOMENT. When it opens it plays the result for
+   every game at once (GameOverMoment): the outcome cue, confetti on a win or a new
+   best, the palette pulse, a short hitstop, a grey vignette on a loss. A climb or a
+   new best then assembles the number out of a particle swarm. Games do not fire
+   their own; the gates for reduced motion and the quality tier are in the JS.
 
    Most games get this for free by passing GameOver to <GameShell>, which renders
    this component. It is a standalone component rather than markup inside
@@ -30,7 +37,7 @@
    OnOk + navigate rather than the dialog's native "close + submit" semantics. *@
 @* data-glass: glassFx.js paints a blurred capture of the game's last frame under the card
    (game-shell.css keeps it faint; a DOM game with no canvas simply gets the plain card). *@
-<dialog class="gps-modal" aria-label="Game over" data-fx-tilt="5" data-glass @ref="_dialog" @oncancel="HandleCancel">
+<dialog class="gps-modal @(Moment.Vignette ? "gps-modal--loss" : null)" aria-label="Game over" data-fx-tilt="5" data-glass @ref="_dialog" @oncancel="HandleCancel">
         <header class="gps-modal-header">
             <div class="gps-modal-title">@Title</div>
         </header>
@@ -43,10 +50,19 @@
         @if (Stats != null && Stats.Any())
         {
             <div class="gps-modal-stats">
-                @foreach (var stat in Stats)
+                @for (var i = 0; i < Stats.Count; i++)
                 {
+                    var stat = Stats[i];
                     <div class="gps-stat">
-                        <span class="gps-stat-value">@stat.Value</span>
+                        @* The first cell is the one a new best assembles out of the swarm. *@
+                        @if (i == 0)
+                        {
+                            <span class="gps-stat-value" @ref="_firstStatRef">@stat.Value</span>
+                        }
+                        else
+                        {
+                            <span class="gps-stat-value">@stat.Value</span>
+                        }
                         <span class="gps-stat-label">@stat.Label</span>
                     </div>
                 }
@@ -55,10 +71,31 @@
 
         @* Where the player actually stands. Silently absent when they have no row
            on this board yet — an end-of-game modal should never invent a rank. *@
-        @if (_myRank is int rank)
+        @if (_loading)
+        {
+            @* The board is a fetch that lands after the dialog opens. Until it does, a
+               placeholder the same height as the rank line and the top 3 holds their place,
+               so the card does not grow under the player's thumb and the buttons stay put. *@
+            <div class="gps-modal-skeleton" aria-hidden="true">
+                @if (!string.IsNullOrWhiteSpace(Player))
+                {
+                    <div class="gps-modal-rank"><span class="gps-modal-rank-pos gps-skel gps-skel--rank">&nbsp;</span></div>
+                }
+                <div class="gps-modal-board">
+                    <div class="gps-modal-board-head"><span class="gps-modal-board-title gps-skel gps-skel--head">&nbsp;</span></div>
+                    <ol class="gps-modal-board-rows">
+                        @for (var r = 0; r < 3; r++)
+                        {
+                            <li class="gps-modal-board-row gps-skel-row"><span>&nbsp;</span><span class="gps-skel gps-skel--line">&nbsp;</span><span></span></li>
+                        }
+                    </ol>
+                </div>
+            </div>
+        }
+        else if (_myRank is int rank)
         {
             <div class="gps-modal-rank @(_delta > 0 ? "gps-modal-rank--up" : null)">
-                <span class="gps-modal-rank-pos">#@rank</span>
+                <span class="gps-modal-rank-pos" @ref="_rankRef">#@rank</span>
                 <span class="gps-modal-rank-of">of @BoardSizeLabel</span>
                 @if (_delta > 0)
                 {
@@ -69,7 +106,7 @@
 
         @* Silently omitted when the game has no board (GameKey null / 404) or the
            API is offline — the modal still works, it just shows no top 3. *@
-        @if (_board is not null && _board.Entries.Count > 0)
+        @if (!_loading && _board is not null && _board.Entries.Count > 0)
         {
             <div class="gps-modal-board">
                 <div class="gps-modal-board-head">
@@ -90,17 +127,34 @@
         }
 
         <footer class="gps-play-again-actions">
-            @if (CanPlayAgain)
-            {
-                <button class="app-btn app-btn--secondary" @onclick="PlayAgain">Play again</button>
-            }
-            <button class="app-btn app-btn--primary"
-                    @onclick="Back"
-                    autofocus>
-                <span>Back to all games</span>
-                <kbd class="gps-kbd gps-kbd--primary">Esc</kbd>
-            </button>
+            <div class="gps-modal-extras">
+                <button type="button" class="app-btn app-btn--ghost" @onclick="ShareAsync" disabled="@_shareBusy">
+                    <span aria-hidden="true">↗</span> Share
+                </button>
+                @if (!string.IsNullOrEmpty(GameKey))
+                {
+                    <button type="button" class="app-btn app-btn--ghost" @onclick="OpenLeaderboardAsync">
+                        <span aria-hidden="true">🏆</span> Full leaderboard
+                    </button>
+                }
+            </div>
+            <div class="gps-modal-main">
+                @if (CanPlayAgain)
+                {
+                    <button class="app-btn app-btn--secondary" @onclick="PlayAgain">Play again</button>
+                }
+                <button class="app-btn app-btn--primary"
+                        @onclick="Back"
+                        autofocus>
+                    <span>Back to all games</span>
+                    <kbd class="gps-kbd gps-kbd--primary">Esc</kbd>
+                </button>
+            </div>
         </footer>
+
+        @* A toast inside the dialog: the app's toast stack sits under the top layer a modal
+           dialog lives in, so one raised there would be dimmed behind the backdrop. *@
+        <p class="gps-modal-toast @(_toast is null ? null : "gps-modal-toast--on")" role="status">@_toast</p>
 </dialog>
 
 @code {
@@ -141,10 +195,35 @@
     /// </summary>
     [Parameter] public Models.GameResult Outcome { get; set; } = Models.GameResult.InProgress;
 
+    /// <summary>
+    /// The game just saved a new personal best. Earns confetti whatever the result and
+    /// assembles the first stat out of the particle swarm; saying so in words is the
+    /// game's GameSummary. May turn true after the modal opened (a server save confirming
+    /// the best); the celebration follows then.
+    /// </summary>
+    [Parameter] public bool NewBest { get; set; }
+
     [Inject] private NavigationManager Navigation { get; set; } = null!;
     [Inject] private Services.Http.ApiService Api { get; set; } = null!;
     [Inject] private Services.Ui.UiFeedbackService Feedback { get; set; } = null!;
+    [Inject] private Services.Ui.ScreenFxService ScreenFx { get; set; } = null!;
     [Inject] private IJSRuntime JS { get; set; } = null!;
+
+    /// <summary>Where the leaderboards page keeps the board to open on (LeaderboardsPage.LastBoardKey).</summary>
+    private const string LeaderboardBoardKey = "pomini_lb_board";
+
+    private Services.Ui.GameOverMoment Moment => Services.Ui.GameOverMoment.For(Outcome, NewBest);
+
+    /// <summary>True from open until the board fetch settles, while the skeleton holds its place.</summary>
+    private bool _loading;
+
+    private ElementReference _rankRef;
+    private ElementReference _firstStatRef;
+    private bool _confettiFired;
+    private bool _bestCelebrated;
+    private bool _shareBusy;
+    private string? _toast;
+    private IJSObjectReference? _shareModule;
 
     private GameLeaderboardDto? _board;
 
@@ -194,18 +273,7 @@
     private static string RankKey(string gameKey) => $"pomini_lastrank_{gameKey}";
 
     /// <summary>
-    /// Outcome cue names, in the order to try them. Games name winning
-    /// differently — "win" in TicTacToe/ConnectFive, "ko" in Brawl, "finish" in
-    /// Marble Race, "goal" in Sports — so the modal asks for
-    /// the family and takes whichever this game defines. The final entry in each
-    /// list is the shared "ui" fallback, which every scope resolves.
-    /// </summary>
-    private static readonly string[] WinCues = ["win", "ko", "finish", "goal", "correct", "confirm"];
-    private static readonly string[] LossCues = ["death", "bust", "crash", "wrong", "timeout", "error"];
-    private static readonly string[] DrawCues = ["draw", "whistle", "reveal", "confirm"];
-
-    /// <summary>
-    /// Sound the end of the match once, on first render.
+    /// Open the dialog and play the end-of-game moment, once, on first render.
     /// </summary>
     /// <remarks>
     /// This runs in <c>OnAfterRenderAsync</c> rather than <c>OnInitializedAsync</c>
@@ -231,38 +299,78 @@
             // zero in its first painted frame instead of flashing their final values.
             try { await JS.InvokeVoidAsync("PoImpact.countUp", _dialog); } catch { /* feel layer missing: the numbers just show */ }
             await _dialog.ShowModalAsync(JS);
+            // Confetti lands on the card instead of falling through it (high tier).
+            await ScreenFx.CollideWithAsync(_dialog);
+        }
+
+        if (firstRender && !_outcomeCued)
+        {
+            _outcomeCued = true;
+            await PlayMomentAsync();
         }
 
         // The rank arrives with the board, a render or two after the dialog: land it once.
-        if (_myRank is not null && !_rankLanded)
+        // A climb is assembled out of the swarm instead of popped.
+        if (_myRank is int rank && !_rankLanded)
         {
             _rankLanded = true;
-            try { await JS.InvokeVoidAsync("PoImpact.popSelector", ".gps-modal-rank-pos"); } catch { /* same */ }
+            if (_delta > 0) await CelebrateBestAsync(_rankRef, $"#{rank}");
+            else
+            {
+                try { await JS.InvokeVoidAsync("PoImpact.popSelector", ".gps-modal-rank-pos"); } catch { /* same */ }
+            }
         }
 
-        if (!firstRender || _outcomeCued) return;
-        _outcomeCued = true;
+        // A new best, whenever the game confirms it.
+        if (_dialogOpened && NewBest && !_bestCelebrated)
+        {
+            var hasStat = Stats is { Count: > 0 };
+            await CelebrateBestAsync(hasStat ? _firstStatRef : default, hasStat ? Stats![0].Value : null);
+        }
+    }
+
+    /// <summary>
+    /// The result, played once for every game: the outcome cue in the game's own voice
+    /// (sound only: the visuals are drawn here, so nothing doubles), its haptic, a short
+    /// hitstop, the palette pulse and, on a win or a new best, confetti.
+    /// </summary>
+    private async Task PlayMomentAsync()
+    {
+        var moment = Moment;
+        Feedback.MarkGameOverMoment();
 
         // GameKey is null in unranked modes (local 2-player, demo). "ui" is the
-        // shared scope and defines every fallback name above, so the modal still
+        // shared scope and defines every fallback name, so the modal still
         // sounds — it just does not carry the game's timbre.
-        var scope = string.IsNullOrEmpty(GameKey) ? "ui" : GameKey;
+        var scope = moment.SharedScope || string.IsNullOrEmpty(GameKey) ? "ui" : GameKey;
+        await Feedback.CueFirstAsync(scope, moment.Cues, soundOnly: true);
+        await Feedback.VibrateAsync(moment.Haptic);
 
-        var cues = Outcome switch
+        if (moment.HitstopMs > 0) await ScreenFx.HitstopAsync(moment.HitstopMs);
+        if (moment.PaletteMood is { } mood) await ScreenFx.PulseAsync(mood);
+        if (moment.Confetti && !_confettiFired)
         {
-            Models.GameResult.Win => WinCues,
-            Models.GameResult.Loss => LossCues,
-            Models.GameResult.Draw => DrawCues,
-            _ => null,
-        };
-
-        if (cues is null)
-        {
-            await Feedback.CueAsync("ui", "confirm");
-            return;
+            _confettiFired = true;
+            await ScreenFx.CelebrateAsync();
         }
+    }
 
-        await Feedback.CueFirstAsync(scope, cues);
+    /// <summary>
+    /// A climb or a new best: the personal-best cue, confetti if the result did not already
+    /// bring some, and the number assembled out of the WebGPU swarm (a plain modal wherever
+    /// the swarm cannot run). Once per modal.
+    /// </summary>
+    private async Task CelebrateBestAsync(ElementReference target, string? text)
+    {
+        if (_bestCelebrated) return;
+        _bestCelebrated = true;
+        await Feedback.PersonalBestAsync();
+        if (!_confettiFired)
+        {
+            _confettiFired = true;
+            await ScreenFx.CelebrateAsync();
+        }
+        if (target.Id != default) await ScreenFx.AssembleAsync(target, text);
     }
 
     private bool _outcomeCued;
@@ -281,8 +389,25 @@
     {
         if (string.IsNullOrEmpty(GameKey)) return;
 
+        _loading = true;
+        try
+        {
+            await LoadBoardAsync(GameKey);
+        }
+        catch
+        {
+            // Offline or the API down: the modal still works, it just shows no top 3.
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadBoardAsync(string gameKey)
+    {
         // One read serves both the top 3 and the rank lookup.
-        var board = await Api.GetGameLeaderboardAsync(GameKey, limit: RankSearchDepth);
+        var board = await Api.GetGameLeaderboardAsync(gameKey, limit: RankSearchDepth);
         if (board is null) return;
 
         // Drop the server's "XXX" padding rows — an end-of-game modal should show
@@ -293,12 +418,9 @@
 
         ResolveMyRank(ranked);
 
-        // The board the modal renders is only ever the top 3.
+        // The board the modal renders is only ever the top 3. A climb is celebrated in
+        // OnAfterRenderAsync, so it lands with the rank appearing on screen.
         _board = board with { Entries = ranked.Take(3).ToList() };
-
-        // Celebrate a climb with the existing personal-best cue. Fired here
-        // rather than on save so it lands with the rank appearing on screen.
-        if (_delta > 0) await Feedback.PersonalBestAsync();
     }
 
     /// <summary>
@@ -409,4 +531,83 @@
     /// </summary>
     private async Task HandleCancel(System.EventArgs e)
         => await Back();
+
+    /// <summary>
+    /// The whole board for this game: the leaderboards page opens on the board named in
+    /// <see cref="LeaderboardBoardKey"/>, the same key it writes when the player picks one.
+    /// </summary>
+    private async Task OpenLeaderboardAsync()
+    {
+        try { Services.Play.LocalStorageService.SetItem(LeaderboardBoardKey, GameKey!); }
+        catch { /* storage unavailable: the page opens on its default board */ }
+        if (_dialogOpened)
+        {
+            try { await _dialog.CloseAsync(JS); } catch { /* already closed */ }
+        }
+        if (OnOk.HasDelegate) await OnOk.InvokeAsync();
+        Navigation.NavigateTo("/leaderboards");
+    }
+
+    /// <summary>
+    /// Share the result: a PNG card through the share sheet where files can be shared,
+    /// else an emoji summary through the share sheet or the clipboard (shareCard.js).
+    /// </summary>
+    private async Task ShareAsync()
+    {
+        if (_shareBusy) return;
+        _shareBusy = true;
+        string? toast;
+        try
+        {
+            _shareModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/shareCard.js");
+            var outcome = Outcome switch
+            {
+                Models.GameResult.Win => "win",
+                Models.GameResult.Loss => "loss",
+                Models.GameResult.Draw => "draw",
+                _ => "done",
+            };
+            var result = await _shareModule.InvokeAsync<string>("share", _dialog, new
+            {
+                outcome,
+                rank = _myRank,
+                of = _myRank is null ? null : BoardSizeLabel,
+                climb = _delta,
+            });
+            toast = result switch
+            {
+                "copied" => "Result copied. Paste it anywhere.",
+                "shared" => null,
+                _ => "Could not share this time.",
+            };
+        }
+        catch
+        {
+            toast = "Could not share this time.";
+        }
+        finally
+        {
+            _shareBusy = false;
+        }
+
+        if (toast is null) return;
+        _toast = toast;
+        StateHasChanged();
+        await Task.Delay(2800);
+        if (_toast == toast)
+        {
+            _toast = null;
+            StateHasChanged();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // Nothing left on screen to land on.
+        await ScreenFx.CollideWithAsync();
+        if (_shareModule is not null)
+        {
+            try { await _shareModule.DisposeAsync(); } catch { /* circuit gone */ }
+        }
+    }
 }

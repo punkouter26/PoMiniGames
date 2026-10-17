@@ -353,15 +353,30 @@
 }
 
 /* ── Standings: the "status summary" screen ── */
+/* A native <dialog> (see PoMuleStandings): the dialog itself is the full-cover scrim and
+   the card sits centred in it, so the UA's dialog box (border, padding, a max size
+   inset from the edges) is reset. Shown modal it is in the top layer and covers the
+   viewport; shown open (a demo) it covers the game area as before. */
 .pm-root ::deep .pm-standings {
     position: absolute;
     inset: 0;
     z-index: 8;
+    width: auto;
+    height: auto;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    color: inherit;
     display: grid;
     place-items: center;
     padding: 0.75rem;
     background: rgba(220, 220, 224, 0.9);
 }
+
+.pm-root ::deep .pm-standings:not([open]) { display: none; }
+
+.pm-root ::deep .pm-standings::backdrop { background: transparent; }
 
 .pm-root ::deep .pm-standings-card {
     display: flex;
@@ -383,6 +398,7 @@
 }
 
 .pm-root ::deep .pm-standings-title {
+    margin: 0;
     font-size: 1.15rem;
     font-weight: 900;
     color: var(--pm-orange);

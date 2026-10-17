@@ -54,6 +54,10 @@ export function attachInput(opts) {
         // showModal) so this stays the one handler. "p" still types into fields.
         if (k !== 'escape' && isTyping(e)) return;
         if (k === 'escape' || k === 'p') {
+            // Another dialog on top (the app settings sheet opened from the pause menu):
+            // Esc is that dialog's close, not a resume.
+            const t = e.target;
+            if (t && t.closest && t.closest('dialog') && !t.closest('#pocabinetPause')) return;
             if (down && !e.repeat) { e.preventDefault(); o.onPause?.(); }
             return;
         }

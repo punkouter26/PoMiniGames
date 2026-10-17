@@ -89,9 +89,10 @@
 
     @* End-of-game modal: the one centered, blocking dialog every game ends on.
        It surfaces the final result (GameSummary), the stats grid (Stats), this
-       game's top 3 (fetched from GameKey), and a single button that returns to the
-       home menu. There is intentionally no backdrop-dismiss and no Play Again —
-       that button is the only exit, so the flow is identical in every game.
+       game's top 3 (fetched from GameKey), Share, Full leaderboard, Play again (on
+       a game's own address) and Back to all games. There is intentionally no
+       backdrop-dismiss, so the flow is identical in every game. It also plays the
+       shared end-of-game moment (cue, confetti, pulse, vignette); see GameOverModal.
 
        GameOverDelayMs lets a game wait a few seconds after the
        result is decided before the modal appears, so the winning move can
@@ -106,6 +107,7 @@
                        GameKey="@GameKey"
                        Player="@Player"
                        Outcome="@Outcome"
+                       NewBest="@NewBest"
                        BackTo="@BackTo" />
     }
 </div>
@@ -145,6 +147,8 @@
     // the result. Left Unknown by games that do not report it, which sounds a
     // neutral round-over instead of guessing.
     [Parameter] public Models.GameResult Outcome { get; set; } = Models.GameResult.InProgress;
+    // The run just saved was a personal best: the modal badges and celebrates it.
+    [Parameter] public bool NewBest { get; set; }
     [Parameter] public RenderFragment? GameSummary { get; set; }
 
     /// <summary>
@@ -168,6 +172,29 @@
     [Parameter] public RenderFragment ChildContent { get; set; } = null!;
 
     [Inject] private IJSRuntime JS { get; set; } = null!;
+    [Inject] private NavigationManager Nav { get; set; } = null!;
+    [Inject] private Services.Play.AchievementService Achievements { get; set; } = null!;
+
+    // ── Session count ──
+    // Every game page sits in this shell, so this is the one place a game session can be
+    // counted for all of them: the profile's "N sessions" for the games with no W/L record
+    // (Ecosystem, Sand Playground, Cabinet, Mule, Jev Arena) and the achievements that count
+    // games played. Once per address, so a mode switch (/pomule/1player → /pomule/demo) is a
+    // new session but a re-render is not. The unattended kiosk reel is not anyone playing.
+    private string? _sessionPath;
+
+    private void CountSession()
+    {
+        var path = Nav.ToBaseRelativePath(Nav.Uri);
+        var bare = path.Split('?', '#')[0];
+        if (bare == _sessionPath) return;
+        _sessionPath = bare;
+        if (path.Contains("kiosk=", StringComparison.OrdinalIgnoreCase)) return;
+        if (Services.Play.GameStatsService.PlayKeyForPath(bare) is { } key)
+        {
+            Achievements.NoteSession(key);
+        }
+    }
 
     private bool _webGlChecked;
     private bool _webGlAvailable = true;
@@ -205,6 +232,8 @@
 
     protected override void OnParametersSet()
     {
+        CountSession();
+
         if (GameOver && !_showGameOver && _gameOverCts is null)
         {
             if (GameOverDelayMs <= 0)

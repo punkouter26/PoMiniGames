@@ -8,11 +8,15 @@
 
 @* ─────────────────────────────────────────────────────────────────────────
    The one settings sheet: theme, sound, haptics, motion, colour-blind palettes,
-   game invites and the account's data (export / erase), for every game at once.
+   per-game choices, game invites and the account's data (export / erase), for every
+   game at once.
 
-   It is a <dialog>, not a page. There is no gear in the top bar; the sheet is
-   opened through SettingsService.RequestOpen() from the footer and the hub's
-   action row.
+   It is a <dialog>, not a page: a drawer on the right edge on a wide window, a bottom
+   sheet on a phone. There is no gear in the top bar; the sheet opens through
+   SettingsService.RequestOpen(), from the account menu and from a game's own settings
+   panel (PoCabinet's pause menu, PoEcosystem's dashboard). Opened from inside one of
+   those, the layer under it is put away until the sheet closes, so only one modal is
+   ever up (DialogExtensions.ShowModalAloneAsync).
 
    What a game does with these: sound is the shared audio bus, so mute and
    volume reach every engine. Motion and colour ride <html data-motion> and
@@ -31,7 +35,7 @@
 
     <div class="prefs-grid">
         <fieldset class="prefs-group">
-            <legend class="prefs-group-legend">Display</legend>
+            <legend class="prefs-group-legend">Look</legend>
             <div class="prefs-row">
                 <div class="prefs-label">
                     <span class="prefs-name">Theme</span>
@@ -72,11 +76,11 @@
         </fieldset>
 
         <fieldset class="prefs-group">
-            <legend class="prefs-group-legend">Sound</legend>
+            <legend class="prefs-group-legend">Sound &amp; feel</legend>
             <div class="prefs-row">
                 <div class="prefs-label">
                     <span class="prefs-name">Sound</span>
-                    <span class="prefs-hint">Music, effects and menu sounds in every game.</span>
+                    <span class="prefs-hint">Effects and menu sounds in every game.</span>
                 </div>
                 <button type="button"
                         class="prefs-toggle @(Settings.Muted ? null : "prefs-toggle--on")"
@@ -161,23 +165,24 @@
             </div>
         </fieldset>
 
-        <fieldset class="prefs-group">
-            <legend class="prefs-group-legend">Quizzes</legend>
+        @* Games: one row per game-wide choice (which questions a quiz draws, how answers
+           are matched, the arena's brain, on-device AI, invites). Add a row here with a
+           simple default, so a player who never opens the sheet still gets a sensible game.
+           Rows from a child component keep the prefs-row classes; the sheet styles them. *@
+        <fieldset class="prefs-group prefs-group--games">
+            <legend class="prefs-group-legend">Games</legend>
             <QuizPrefsRows />
-        </fieldset>
-
-        <fieldset class="prefs-group">
-            <legend class="prefs-group-legend">Game invites</legend>
+            <PoMiniGamesClient.Games.PoJevArena.ArenaAiPrefs />
             <div class="prefs-row @(InvitesAvailable ? null : "prefs-row--disabled")">
                 <div class="prefs-label">
-                    <span class="prefs-name">Invites on this device</span>
+                    <span class="prefs-name">Game invites</span>
                     <span class="prefs-hint">@InviteHint</span>
                 </div>
                 <button type="button"
                         class="prefs-toggle @(_invites == InviteState.On ? "prefs-toggle--on" : null)"
                         role="switch"
                         aria-checked="@Aria(_invites == InviteState.On)"
-                        aria-label="Invites on this device"
+                        aria-label="Game invites on this device"
                         disabled="@(!InvitesAvailable || _invitesBusy)"
                         @onclick="ToggleInvites">
                     <span class="prefs-toggle-knob"></span>
@@ -247,7 +252,7 @@
         _invites = await Invites.StateAsync();
         _inviteFailed = false;
         StateHasChanged();
-        await _dialog.ShowModalAsync(JS);
+        await _dialog.ShowModalAloneAsync(JS);
         // After the sheet is up, so a slow API never delays it. See InviteService.PrepareAsync.
         if (InvitesAvailable) await Invites.PrepareAsync();
     }

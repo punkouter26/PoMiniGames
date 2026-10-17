@@ -4,34 +4,47 @@
 @inject PlayerNameService PlayerNameService
 @inject UiFeedbackService Feedback
 @inject ScreenFxService ScreenFx
+@inject AchievementService Achievements
 @implements IAsyncDisposable
 
 <PageTitle>Leaderboards · PoMiniGames</PageTitle>
 
 <div class="lb-page">
+    @* The head is a fixed frame rendered from the first paint: title and the period
+       switch on one line, then a meta line that is always reserved, so nothing moves
+       when the boards arrive. The player's best placing is a compact chip on that meta
+       line (it used to be a hero card that pushed the page down once loaded). *@
     <header class="lb-head">
         <h1 class="lb-title">Leaderboards</h1>
-        @if (!_loading && _boards.Count > 0)
-        {
-            // A count of boards, said as boards, not games. They measure different
-            // things: Racer is three boards (one per track), Brawl is two, Online MMR is
-            // none of the games, and four games have no board.
-            <span class="lb-count" title="A game can have more than one board: one per track or per mode.">@_boards.Count boards</span>
-        }
+        <div class="app-seg app-seg--quiet lb-period" role="radiogroup" aria-label="Period">
+            <button type="button" role="radio" class="app-seg__btn"
+                    aria-checked="@(_weekly ? "false" : "true")"
+                    @onclick="() => SetPeriodAsync(false)">All time</button>
+            <button type="button" role="radio" class="app-seg__btn"
+                    aria-checked="@(_weekly ? "true" : "false")"
+                    @onclick="() => SetPeriodAsync(true)">This week</button>
+        </div>
+        <div class="lb-meta">
+            @if (!_loading && _boards.Count > 0)
+            {
+                // A count of boards, said as boards, not games. They measure different
+                // things: Racer is three boards (one per track), Brawl is two, Online MMR
+                // is none of the games, and four games have no board. This week shows
+                // only the score boards; ratings and win rates have no week.
+                <span class="lb-count">@_boards.Count @(_weekly ? "score boards this week" : "boards")</span>
+            }
+            @if (!_loading && !_error && _topGameKey is not null)
+            {
+                <button type="button" class="lb-me-chip" @onclick="() => SelectAsync(_topGameKey)">
+                    <span class="lb-me-chip-k">@(_weekly ? "Your best this week" : "Your best")</span>
+                    <span class="lb-me-chip-v">@_topGameTitle #@_topRank</span>
+                    <span class="lb-sr-only">, @_topValue. Show that board.</span>
+                </button>
+            }
+        </div>
     </header>
 
-    @* Hero call-to-action that gives first-time visitors an
-       immediate next step instead of a wall of "no scores yet" placeholders.
-       Hidden when the user already has a #1 ranked score on any board. *@
-    @if (!_loading && !_error && _topGameKey is not null)
-    {
-        <a class="lb-hero" href="@PlayUrl(_topGameKey)">
-            <span class="lb-hero-eyebrow">Your top game</span>
-            <span class="lb-hero-title">@_topGameTitle</span>
-            <span class="lb-hero-rank">#@_topRank · @_topValue</span>
-        </a>
-    }
-    else if (!_loading && !_error && _boards.Count == 0)
+    @if (!_loading && !_error && _boards.Count == 0)
     {
         @* Shared <EmptyState> primitive, so a tweak to empty-state copy / icon
            lands in one place. *@
@@ -106,9 +119,11 @@
                     <h2 class="gps-phase-h" aria-label="@($"{GroupAriaLabel(group.Title)} leaderboards")">@group.Title</h2>
                     @foreach (var b in group.Boards)
                     {
+                        @* One board is shown at a time, so the picker is navigation: the
+                           current item is aria-current, not a toggle that is "pressed". *@
                         <button type="button"
                                 class="lb-pick-item @(b.GameKey == _selectedGame ? "lb-pick-item--on" : null)"
-                                aria-pressed="@(b.GameKey == _selectedGame ? "true" : "false")"
+                                aria-current="@(b.GameKey == _selectedGame ? "true" : null)"
                                 @onclick="() => SelectAsync(b.GameKey)">
                             <span class="lb-pick-name">@b.Title</span>
                             @if (MyRank(b) is int rank)
@@ -128,7 +143,7 @@
 
                     @if (rows.Count == 0)
                     {
-                        <p class="lb-board-empty">No scores yet. Play @board.Title to claim #1.</p>
+                        <p class="lb-board-empty">No scores @(_weekly ? "this week" : "yet"). Play @board.Title to claim #1.</p>
                     }
                     else
                     {
@@ -180,7 +195,20 @@
     private bool _error;
     private List<GameLeaderboardDto> _boards = [];
 
-    // Hero card highlights the user's best score.
+    // "This week": the score boards' current ISO week (the server keeps a weekly copy of
+    // every high-score save). Ratings and win rates are cumulative and are not listed.
+    private bool _weekly;
+
+    private async Task SetPeriodAsync(bool weekly)
+    {
+        if (weekly == _weekly || _loading) return;
+        _weekly = weekly;
+        // Rows below the fold were looked up for the other period's boards.
+        _myRow.Clear();
+        await Load();
+    }
+
+    // The chip on the head's meta line: the player's best placing.
     private string? _topGameKey;
     private string _topGameTitle = "";
     private int _topRank;
@@ -237,7 +265,7 @@
             return;
         }
 
-        var deep = await ApiService.GetGameLeaderboardAsync(gameKey, limit: RankSearchDepth);
+        var deep = await ApiService.GetGameLeaderboardAsync(gameKey, limit: RankSearchDepth, weekly: _weekly);
         _myRow[gameKey] = deep?.Entries.FirstOrDefault(e => IsMe(e.Name));
         StateHasChanged();
     }
@@ -424,7 +452,7 @@
         _error = false;
         StateHasChanged();
 
-        var boards = await ApiService.GetAllLeaderboardsAsync(limit: RowLimit);
+        var boards = await ApiService.GetAllLeaderboardsAsync(limit: RowLimit, weekly: _weekly);
         if (boards is null)
         {
             _error = true;
@@ -432,11 +460,18 @@
         else
         {
             _boards = boards.ToList();
-            BuildGrouped();
-            BuildHero();
+            // A board picked under the other period may not exist in this one (the week
+            // has score boards only); let BuildGrouped seed a fresh pick.
+            if (_selectedGame is not null && _boards.All(b => b.GameKey != _selectedGame)) _selectedGame = null;
+            _myNameLower = PlayerNameService.GetPlayerName()?.Trim().ToLowerInvariant() ?? string.Empty;
             // Before the first render of the rows: IsMe() drives a class on every
             // row, so _myNameLower has to be populated by the time they render.
-            DetectRankChanges();
+            // Rank memory and its climb cues are about the all-time boards; a weekly rank
+            // resets every Monday and would read as a fall, then a climb, every week.
+            if (!_weekly) DetectRankChanges();
+            BuildGrouped();
+            BuildHero();
+            if (!_weekly && _topGameKey is not null) Achievements.NoteBoardRank(_topRank);
         }
 
         _loading = false;
@@ -545,13 +580,5 @@
             || ln.StartsWith(localLower + "-", StringComparison.Ordinal)
             || localLower.StartsWith(ln + "@", StringComparison.Ordinal)
             || localLower.StartsWith(ln + "-", StringComparison.Ordinal);
-    }
-
-    private string PlayUrl(string gameKey)
-    {
-        var match = GameCatalog.SinglePlayer.FirstOrDefault(g => string.Equals(g.Key, gameKey, StringComparison.OrdinalIgnoreCase))
-            ?? GameCatalog.LocalTwoPlayer.FirstOrDefault(g => string.Equals(g.Key, gameKey, StringComparison.OrdinalIgnoreCase))
-            ?? GameCatalog.Multiplayer.FirstOrDefault(g => string.Equals(g.Key, gameKey, StringComparison.OrdinalIgnoreCase));
-        return match is not null ? match.Url : $"/{gameKey}";
     }
 }

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 
 using PoMiniGamesClient.Services.Auth;
@@ -79,6 +80,15 @@ public sealed class ScreenFxService
     public ValueTask CelebrateAsync(double scale = 1)
         => InvokeAsync("PoFx.celebrate", scale);
 
+    /// <summary>
+    /// Give confetti and sparks something to land on: they bounce off the top edge of each
+    /// element's box and settle there instead of falling through it. Pass none to clear.
+    /// The boxes are re-measured every frame, so an element that animates into place is
+    /// followed. High tier only; the gate is inside gpuFx.
+    /// </summary>
+    public ValueTask CollideWithAsync(params ElementReference[] elements)
+        => InvokeAsync("PoFx.setColliders", elements);
+
     /// <summary>Clear every live particle — use when tearing a game down.</summary>
     public ValueTask ClearAsync() => InvokeAsync("PoFx.clear");
 
@@ -93,6 +103,20 @@ public sealed class ScreenFxService
     /// permanent earthquake.</param>
     public ValueTask ImpactAsync(string kind, double scale = 1)
         => InvokeAsync("PoImpact.impact", kind, scale);
+
+    /// <summary>
+    /// Freeze game time for a moment. Engines that read <c>PoImpact.getTimeScale()</c>
+    /// slow to a near stop; skipped under reduced motion inside impactBus.
+    /// </summary>
+    public ValueTask HitstopAsync(int ms) => InvokeAsync("PoImpact.hitstop", ms);
+
+    /// <summary>
+    /// Assemble an element's text (or <paramref name="text"/>, drawn in the element's own
+    /// font) out of a WebGPU particle swarm, then fade the real element back in under it.
+    /// A no-op wherever the swarm cannot run: no WebGPU, the low tier, reduced motion.
+    /// </summary>
+    public ValueTask AssembleAsync(ElementReference element, string? text = null)
+        => InvokeAsync("PoGpuWebGPU.assemble", element, new { text });
 
     /// <summary>
     /// A one-shot scale pop on an element — the cheap "this thing just changed"

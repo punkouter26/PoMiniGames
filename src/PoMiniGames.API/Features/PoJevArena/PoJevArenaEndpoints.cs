@@ -15,7 +15,8 @@ namespace PoMiniGames.Features.PoJevArena;
 /// (EndpointRouteExtensions), so every route is signed-in only (guests included) and every write
 /// is inside the antiforgery scope. The browser owns physics and the Black Box; the server owns
 /// only what must not be forged cheaply: the Jev key, the prompt text, the daily allowance, the
-/// match rosters and the result gate.
+/// match rosters and the result gate. Matches run on the free local brain unless the player asked
+/// for Jev and the server offers it (<see cref="JevBrainRouter"/>).
 /// </summary>
 public static class PoJevArenaEndpoints
 {
@@ -36,7 +37,7 @@ public static class PoJevArenaEndpoints
 
         group.MapGet("/status", StatusAsync)
             .WithName("PoJevArenaStatus")
-            .WithSummary("Whether Jev is configured, and the caller's remaining daily Jev calls")
+            .WithSummary("Whether the arena runs, whether paid Jev is on offer, and the caller's remaining daily Jev calls")
             .Produces<ArenaStatus>()
             .RequireRateLimiting("pojevarena");
 
@@ -50,12 +51,11 @@ public static class PoJevArenaEndpoints
 
         group.MapPost("/matches/{matchId}/decisions", DecideAsync)
             .WithName("PoJevArenaDecide")
-            .WithSummary("Ask Jev for 1-8 units' decisions; per-unit failures hold the unit's last intent")
+            .WithSummary("Ask the match's brain (local rules or Jev) for 1-8 units' decisions; per-unit failures hold the unit's last intent")
             .Produces<ArenaDecideResponse>()
             .Produces<ArenaDecideResponse>(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .RequireRateLimiting("pojevarena-decide");
 
         group.MapPost("/matches/{matchId}/result", ReportResultAsync)
@@ -230,26 +230,26 @@ public static class PoJevArenaEndpoints
             detail: "The creature library is unreachable right now.");
 
     private static async Task<IResult> StatusAsync(
-        HttpContext http, IJevClient jev, JevCallAllowance allowance, CancellationToken ct)
+        HttpContext http, JevBrainRouter brains, JevCallAllowance allowance, CancellationToken ct)
     {
         var owner = Owner(http);
         if (owner is null) return Results.Unauthorized();
 
         var verdict = await allowance.CheckAsync(AllowanceKey(owner.Value), calls: 0, ct);
-        return Results.Ok(new ArenaStatus(jev.IsConfigured, verdict.Limit, verdict.Used, verdict.Remaining, verdict.ResetUtc));
+        // The arena always runs (the local brain needs nothing); only the paid brain is optional.
+        return Results.Ok(new ArenaStatus(true, verdict.Limit, verdict.Used, verdict.Remaining, verdict.ResetUtc, brains.JevAvailable));
     }
 
     private static async Task<IResult> RegisterMatchAsync(
         ArenaMatchRequest request,
         HttpContext http,
-        IJevClient jev,
+        JevBrainRouter brains,
         ArenaMatchRegistry registry,
         CreatureLibraryStore library,
         CancellationToken ct)
     {
         var owner = Owner(http);
         if (owner is null) return Results.Unauthorized();
-        if (!jev.IsConfigured) return JevUnavailable();
 
         if (request.BlueIds is not { Length: PoJevArenaCatalog.TeamSize }
             || request.RedIds is not { Length: PoJevArenaCatalog.TeamSize }
@@ -272,15 +272,15 @@ public static class PoJevArenaEndpoints
                 detail: "A roster slot names a creature that does not exist.");
         }
 
-        var match = registry.Register(owner.Value.UserId, new ArenaRoster(blue, red), request.Mode);
-        return Results.Ok(new ArenaMatchTicket(match.MatchId, match.Seed, blue, red));
+        var match = registry.Register(owner.Value.UserId, new ArenaRoster(blue, red), request.Mode, brains.UseJevFor(request.Brain));
+        return Results.Ok(new ArenaMatchTicket(match.MatchId, match.Seed, blue, red, match.UsesJev ? ArenaBrains.Jev : ArenaBrains.Local));
     }
 
     private static async Task<IResult> DecideAsync(
         string matchId,
         ArenaDecideRequest request,
         HttpContext http,
-        IJevClient jev,
+        JevBrainRouter brains,
         ArenaMatchRegistry registry,
         JevCallAllowance allowance,
         ILoggerFactory loggers,
@@ -288,7 +288,6 @@ public static class PoJevArenaEndpoints
     {
         var owner = Owner(http);
         if (owner is null) return Results.Unauthorized();
-        if (!jev.IsConfigured) return JevUnavailable();
 
         var match = registry.Find(matchId, owner.Value.UserId);
         if (match is null)
@@ -307,9 +306,33 @@ public static class PoJevArenaEndpoints
         }
 
         // Validate and build every prompt first: a unit whose numbers are invalid never reaches
-        // Jev and is never charged.
+        // a brain and is never charged.
         var prompts = units.Select(u => (Unit: u, Built: JevPromptBuilder.Build(match.Roster, u))).ToArray();
-        var callable = prompts.Count(p => p.Built.Prompt is not null);
+        var brain = brains.For(match.UsesJev);
+
+        if (!match.UsesJev)
+        {
+            // The free local brain: no allowance, no cost, no cache (it is cheaper than a lookup).
+            var local = await Task.WhenAll(prompts.Select(async p => p.Built.Prompt is null
+                ? Failed(p.Unit.Unit, "invalid:" + p.Built.Error, 0)
+                : ToDecision(p.Unit.Unit, await brain.EvaluateAsync(p.Built.Prompt, match.MatchId, "", ct))));
+            match.RecordDecisions(local.Count(d => d.Ok), 0);
+            return Results.Ok(new ArenaDecideResponse(local, Remaining: -1));
+        }
+
+        // Paid Jev: a situation this match already paid for is answered from its cache for free.
+        var cached = new ArenaUnitDecision?[prompts.Length];
+        var cacheKeys = new string?[prompts.Length];
+        for (var i = 0; i < prompts.Length; i++)
+        {
+            if (prompts[i].Built.Prompt?.Facts is not { } facts) continue;
+            cacheKeys[i] = JevDecisionCache.KeyOf(facts);
+            if (match.Cache.TryGet(cacheKeys[i]!, out var answers))
+            {
+                cached[i] = ToDecision(prompts[i].Unit.Unit, new JevOutcome(true, null, answers, null, 0));
+            }
+        }
+        var callable = prompts.Where((p, i) => p.Built.Prompt is not null && cached[i] is null).Count();
 
         var key = AllowanceKey(owner.Value);
         var verdict = await allowance.CheckAsync(key, callable, ct);
@@ -328,11 +351,13 @@ public static class PoJevArenaEndpoints
 
         var user = Hash(key);
         var clock = Stopwatch.StartNew();
-        var results = await Task.WhenAll(prompts.Select(async p =>
+        var results = await Task.WhenAll(prompts.Select(async (p, i) =>
         {
+            if (cached[i] is { } hit) return (Decision: hit, CostUsd: 0d);
             if (p.Built.Prompt is null) return (Decision: Failed(p.Unit.Unit, "invalid:" + p.Built.Error, 0), CostUsd: 0d);
-            var outcome = await jev.EvaluateAsync(p.Built.Prompt, match.MatchId, user, ct);
+            var outcome = await brain.EvaluateAsync(p.Built.Prompt, match.MatchId, user, ct);
             JevLatency.Record(outcome.LatencyMs);
+            if (outcome is { Ok: true, Answers: { } fresh } && cacheKeys[i] is { } cacheKey) match.Cache.Store(cacheKey, fresh);
             return (Decision: ToDecision(p.Unit.Unit, outcome), CostUsd: outcome.Usage?.CostUsd ?? 0);
         }));
 
@@ -379,9 +404,6 @@ public static class PoJevArenaEndpoints
     private static ArenaUnitDecision Failed(string unit, string failure, int latencyMs) =>
         new(unit, false, failure, null, 0, null, null, 0, null, 0, latencyMs);
 
-    private static IResult JevUnavailable() =>
-        Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "jev-unavailable",
-            detail: "PoJevArena needs Jev, and no Jev key is configured on this server.");
 
     /// <summary>The caller's stable identity, or null when there is nothing to bind a match or an allowance to.</summary>
     private static RequestIdentity.Identity? Owner(HttpContext http)
@@ -405,6 +427,7 @@ public static class PoJevArenaEndpoints
         var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(PoJevArenaEndpoints));
 
         if (options.UseStub && environment.IsEnvironment("Test")) logger.JevStubEnabled(environment.EnvironmentName);
-        else if (!options.IsConfigured) logger.JevNotConfigured();
+        else if (options.Brain == JevBrain.Jev && !options.IsConfigured) logger.JevNotConfigured();
+        else logger.JevBrainOffered(options.Brain.ToString());
     }
 }

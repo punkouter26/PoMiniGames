@@ -1,8 +1,9 @@
 .player-card-skel {
     /* The card's own height, so the page under it does not jump when the card
        arrives: 280px here against a 438px card moved everything below it by 158px
-       on a phone (layout shift 0.146; 0.1 is the limit for "good"). */
-    min-height: 21.5rem;
+       on a phone (layout shift 0.146; 0.1 is the limit for "good"). The card lost its
+       stats strip to the profile's headline band, so both heights dropped with it. */
+    min-height: 16rem;
     background: var(--surface-1, #1e293b);
     border-radius: var(--radius-lg, 16px);
     border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
@@ -230,49 +231,6 @@
     font-weight: 600;
 }
 
-.card-stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-    gap: 1rem;
-    padding: 0.85rem 1rem;
-    background: var(--surface-2, rgba(0, 0, 0, 0.2));
-    border-radius: var(--radius-md, 10px);
-    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
-}
-
-.stat-col {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-}
-
-.stat-label {
-    font-family: var(--font-mono, monospace);
-    font-size: var(--text-xs);
-    font-weight: 700;
-    color: var(--text-muted, #64748b);
-    letter-spacing: 0.08em;
-}
-
-.stat-value {
-    font-family: var(--font-sans, system-ui);
-    font-size: 1.15rem;
-    font-weight: 800;
-    color: var(--text-bright, #ffffff);
-}
-
-.val-emerald {
-    color: var(--color-emerald, #10b981);
-}
-
-.val-tier {
-    color: var(--tier-color, #c0c0c0);
-}
-
-.val-streak {
-    color: #f59e0b;
-}
-
 .card-footer {
     display: flex;
     justify-content: space-between;
@@ -354,7 +312,7 @@
 }
 
 @media (max-width: 640px) {
-    .player-card-skel { min-height: 26rem; }
+    .player-card-skel { min-height: 17rem; }
 
     .player-card {
         padding: 1.1rem;

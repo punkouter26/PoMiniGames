@@ -40,11 +40,13 @@ public static class TestBudgetGuard
         ["PoFunQuiz:AllowFreshAi"] = "false",
         ["PoCoupleQuiz:Features:AllowFreshAi"] = "false",
         ["PoCoupleQuiz:Features:AllowAiJudge"] = "false",
-        // PoJevArena has no mock fallback in any real environment; this switch is honoured only
-        // when the host environment is "Test", and swaps in the deterministic StubJevClient.
-        // The empty key keeps a developer's real OpenRouter key out of every test host.
+        // PoJevArena: this switch is honoured only when the host environment is "Test", and swaps
+        // the deterministic StubJevClient in for every brain (local rules and paid Jev alike).
+        // The empty key and the Local brain keep a developer's real OpenRouter key, and the paid
+        // path, out of every test host.
         ["PoMiniGames:Jev:UseStub"] = "true",
         ["PoMiniGames:Jev:ApiKey"] = "",
+        ["PoMiniGames:Jev:Brain"] = "Local",
         ["KeyVault:Uri"] = "",
     };
 

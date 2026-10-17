@@ -266,21 +266,106 @@ dialog.gps-modal:has(.gps-summary--wide) {
   color: var(--color-text-primary);
 }
 
-/* ── Actions ── */
+/* ── Board placeholder ──
+   Holds the rank line's and the top 3's height while the board is fetched, so the card
+   does not grow and push the buttons down under the player's thumb. Same classes as
+   the real rows, so the heights match without restating them. */
+.gps-skel {
+  display: inline-block;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--tint-soft);
+  color: transparent;
+}
+
+.gps-skel--rank { width: 4.5rem; }
+.gps-skel--head { width: 5rem; }
+.gps-skel--line { width: 70%; }
+
+.gps-skel-row {
+  background: var(--tint-soft);
+  border-color: transparent;
+}
+
+.gps-modal-skeleton {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .gps-skel,
+  .gps-skel-row {
+    animation: gps-skel-breathe 1.2s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes gps-skel-breathe {
+  from { opacity: 0.55; }
+  to   { opacity: 1; }
+}
+
+/* ── Actions ──
+   Two rows: the quiet ones (Share, Full leaderboard) over the two that end the game.
+   Each row wraps rather than overflow on a 360px phone. */
 .gps-play-again-actions {
   width: 100%;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
   margin-top: 0.4rem;
 }
 
+.gps-modal-extras,
+.gps-modal-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+}
+
 /* The buttons are the shared .app-btn; here they share the row's width. */
-.gps-play-again-actions .app-btn {
+.gps-modal-main .app-btn {
   flex: 1 1 auto;
+  min-height: 2.75rem;
   padding: 0.65rem 1rem;
   white-space: nowrap;
+}
+
+.gps-modal-extras .app-btn {
+  flex: 1 1 auto;
+  min-height: 2.5rem;
+  white-space: nowrap;
+}
+
+/* Share's result: a toast inside the dialog (the app's toast stack is under the top layer). */
+.gps-modal-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 0.75rem;
+  margin: 0;
+  max-width: calc(100% - 2rem);
+  padding: 0.5rem 0.9rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 6px);
+  transition: opacity var(--dur-fast) var(--ease-standard),
+              transform var(--dur-fast) var(--ease-standard);
+}
+
+.gps-modal-toast--on {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 .gps-kbd {
@@ -339,6 +424,19 @@ dialog.gps-modal::backdrop {
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     animation: gps-modal-fade 0.22s ease-out both;
+}
+
+/* A loss: the page behind goes grey toward the edges. Static, so it stays under
+   reduced motion; the low tier keeps the plain dim (grayscale is a second filter pass). */
+dialog.gps-modal.gps-modal--loss::backdrop {
+    background: radial-gradient(ellipse at center, rgba(4, 8, 20, 0.62) 35%, rgba(38, 40, 46, 0.9) 100%);
+    backdrop-filter: blur(8px) grayscale(0.7);
+    -webkit-backdrop-filter: blur(8px) grayscale(0.7);
+}
+
+:root[data-gfx='low'] dialog.gps-modal.gps-modal--loss::backdrop {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
 }
 
 /* Reset native dialog defaults so our .gps-modal styles are the only

@@ -49,7 +49,9 @@ is the service that builds the request and checks the answer.
 
 | Agent Name | Game | Service File | File Size | Model (from `appsettings`) | Task Type | Fallback when unavailable | Deployment Status |
 |---|---|---|---|---|---|---|---|
-| Jev | PoJevArena | `Features/PoJevArena/JevPromptBuilder.cs` + `Jev/JevClient.cs` | 10.1 KB + 8.4 KB | `typesafe/jev-1.13` | Pick a tactic, a target and a panic level for one unit | None. The unit keeps its last order. | Live in game |
+| Jev | PoJevArena | `Features/PoJevArena/JevPromptBuilder.cs` + `Jev/JevClient.cs` | 10.1 KB + 8.4 KB | `typesafe/jev-1.13` | Pick a tactic, a target and a panic level for one unit | None. The unit keeps its last order. | Opt-in (Brain=Jev + player choice) |
+| Local Jev brain | PoJevArena | `Features/PoJevArena/Jev/LocalJevClient.cs` | 9 KB | Rules (target bias, focus fire, HP and odds panic) | Same three answers as Jev, free | None needed | Live in game (default) |
+| On-device AI | PoJevArena | `wwwroot/js/localAi.js` | 5 KB | WebLLM `Qwen2.5-0.5B-Instruct-q4f16_1-MLC` in the browser | Serves the Jev brain for one unit at a time | Rule answer on timeout (1.5 s) or bad JSON | Opt-in setting, off by default |
 | Digital Jester | PoJoker | `Features/PoJoker/AiJesterService.cs` | 26.4 KB | `joker` key (`gpt-5.4-nano` in dev) | Guess the punchline and rate the joke | Neutral 5 / 5 / 5 scores | Live in game |
 | Quiz writer | PoFunQuiz | `Features/PoFunQuiz/AiQuizGeneratorService.cs` | 33.2 KB | `funquiz` key (`gpt-5.4-mini` in dev) | Write multiple-choice trivia | Canned questions in dev and test; error in production | Live in game |
 | Couple-quiz writer and scorer | PoCoupleQuiz | `Features/PoCoupleQuiz/AiQuestionService.cs` | 18.7 KB | `couplequiz` / `couplequiz.similarity` | Write a question; score how alike two answers are | 9 fixed questions and exact-match scoring in dev and test | Live in game |

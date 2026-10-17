@@ -82,33 +82,9 @@ else if (Card is not null)
             </div>
         </div>
 
-        <div class="card-stats-grid">
-            <div class="stat-col">
-                @* "Online": the page under this card has a Win Rate of its own, for
-                   1-player matches, and the two read 0% and a dash side by side. *@
-                <span class="stat-label">ONLINE WIN RATE</span>
-                <span class="stat-value val-emerald">@(Ranked ? Card.WinRate.ToString("P0") : "—")</span>
-            </div>
-            <div class="stat-col">
-                <span class="stat-label">ONLINE RECORD</span>
-                <span class="stat-value">@Card.Wins W · @Card.Losses L · @Card.Draws D</span>
-            </div>
-            <div class="stat-col">
-                <span class="stat-label">PEAK MMR</span>
-                <span class="stat-value val-tier">@Card.PeakMmr.ToString("N0")</span>
-            </div>
-            <div class="stat-col">
-                <span class="stat-label">CURRENT STREAK</span>
-                <span class="stat-value val-streak">
-                    @(Card.CurrentStreak switch {
-                        > 0 => $"+{Card.CurrentStreak} W",
-                        < 0 => $"{Card.CurrentStreak} L",
-                        _ => "—"
-                    })
-                </span>
-            </div>
-        </div>
-
+        @* No stats strip here: online win rate, record, peak MMR and streak live in the
+           profile's headline band (its Online side), where the 1-player numbers they used
+           to sit beside, and repeat, are one switch away instead. *@
         <div class="card-footer">
             <div class="recent-form">
                 <span class="form-label">RECENT FORM</span>

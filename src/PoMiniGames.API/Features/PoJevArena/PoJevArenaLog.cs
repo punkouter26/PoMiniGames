@@ -14,8 +14,12 @@ internal static partial class PoJevArenaLog
     public static partial void JevNetworkFailure(this ILogger logger, Exception ex);
 
     [LoggerMessage(EventId = 4803, Level = LogLevel.Warning,
-        Message = "PoJevArena: no Jev key configured (PoMiniGames:Jev:ApiKey); the arena reports itself unavailable.")]
+        Message = "PoJevArena: Brain=Jev but no Jev key is configured (PoMiniGames:Jev:ApiKey); every match runs on the free local brain.")]
     public static partial void JevNotConfigured(this ILogger logger);
+
+    [LoggerMessage(EventId = 4808, Level = LogLevel.Information,
+        Message = "PoJevArena: the server offers the {Brain} brain (local rules are always the fallback).")]
+    public static partial void JevBrainOffered(this ILogger logger, string brain);
 
     [LoggerMessage(EventId = 4804, Level = LogLevel.Warning,
         Message = "PoJevArena: serving the deterministic Jev stub ({Environment}).")]

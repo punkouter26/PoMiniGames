@@ -157,10 +157,12 @@ window.poPwa = (() => {
         // Chrome), the clipboard otherwise. Resolves 'shared', 'copied' or 'failed'
         // so the caller can say which happened; a dismissed share sheet is 'shared'
         // too, because the player saw it and chose not to send.
-        async shareLink(title, url) {
+        // `text` (optional) rides along: in the share sheet's message, and ahead of the
+        // link on the clipboard (the end-of-game modal's emoji result summary).
+        async shareLink(title, url, text) {
             if (navigator.share) {
                 try {
-                    await navigator.share({ title, url });
+                    await navigator.share(text ? { title, text, url } : { title, url });
                     return 'shared';
                 } catch (e) {
                     if (e && e.name === 'AbortError') return 'shared';
@@ -168,7 +170,7 @@ window.poPwa = (() => {
                 }
             }
             try {
-                await window.poCopyToClipboard(url);
+                await window.poCopyToClipboard(text ? text + '\n' + url : url);
                 return 'copied';
             } catch {
                 return 'failed';

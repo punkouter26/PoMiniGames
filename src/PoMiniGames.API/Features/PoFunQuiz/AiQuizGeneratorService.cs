@@ -103,7 +103,7 @@ public sealed class AiQuizGeneratorService : IOpenAIService
         }
 
         var useMock = _configuration.GetValue<bool>("PoFunQuiz:Features:UseMockAI");
-        if (useMock && IsNonProduction())
+        if (Features.Shared.AiMockFallback.ShouldUseMock(_environment, useMock))
         {
             _logger.MockEnabled(_environment.EnvironmentName);
             var mockQuestions = MockOpenAIService.GenerateQuestions(category, count);

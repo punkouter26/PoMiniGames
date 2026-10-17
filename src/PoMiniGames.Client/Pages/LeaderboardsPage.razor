@@ -172,7 +172,7 @@
               data-fx-holo="@(e.Rank <= 3 ? "6" : null)"
               data-lb-me="@(IsMe(e.Name) ? board.GameKey : null)">
             <span role="cell" class="lb-rank" aria-label="@($"Rank {e.Rank}")">@e.Rank</span>
-            <span role="cell" class="lb-name">@DisplayName(e.Name)</span>
+            <span role="cell" class="lb-name">@LeaderboardNames.Pretty(e.Name)</span>
             <span role="cell" class="lb-value">@e.DisplayValue</span>
         </div>;
 
@@ -246,12 +246,6 @@
     // "XXX" rows. This page shows real players only (see VisibleRows).
     private const string PlaceholderName = "XXX";
 
-    // A row whose name is a bare hex session id (a guest that never picked a
-    // name) is readable in storage but ugly on screen. Render those rows as
-    // "Guest XXXX" so the board matches the signed-in identity chip.
-    private static readonly System.Text.RegularExpressions.Regex ShortHexName =
-        new("^[0-9a-fA-F]{6,16}$", System.Text.RegularExpressions.RegexOptions.Compiled);
-
     // Column header must match what the row actually represents. The Brawl Demo
     // board ranks fighters, not players. Every other board shows a person, so
     // "Player" stays the default.
@@ -260,19 +254,6 @@
         "pobrawldemo"  => "Fighter",
         _              => "Player",
     };
-
-    private static string DisplayName(string? raw)
-    {
-        var safe = raw ?? string.Empty;
-        if (ShortHexName.IsMatch(safe))
-        {
-            return $"Guest {safe[..Math.Min(4, safe.Length)].ToUpperInvariant()}";
-        }
-        // Rotating guest identities ("Guest-1cd4098e-288240") trim to "Guest 1CD409" so the
-        // boards stop reading like a debugger trace. See LeaderboardNames for the split
-        // between display and identity: ranking and IsMe keep the raw name.
-        return LeaderboardNames.Pretty(safe);
-    }
 
     private static List<LeaderboardEntryDto> VisibleRows(GameLeaderboardDto board)
         // Filter out the server's XXX padding rows so the

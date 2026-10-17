@@ -350,11 +350,6 @@ export async function pluck(freq, opts) {
     return Dsp.playPluck(freq, o.dur || 0.8, o.gain || 0.25, o.damp || 0.7, 'ui');
 }
 
-export async function gong(freq, opts) {
-    const o = opts || {};
-    return Dsp.playGong(freq || 110, o.dur || 3.5, o.gain || 0.35, 'sfx');
-}
-
 if (typeof window !== 'undefined') {
     window.PoUiAudio = {
         cue,
@@ -367,6 +362,5 @@ if (typeof window !== 'undefined') {
         fluidRipple,
         glassResonate,
         pluck,
-        gong,
     };
 }

@@ -75,7 +75,7 @@ public sealed class AiQuestionService : IQuestionService
         QuestionCategory? category = null, CancellationToken cancellationToken = default)
     {
         var options = _optionsMonitor.CurrentValue;
-        if (options.Features.UseMockAI && IsNonProduction())
+        if (Features.Shared.AiMockFallback.ShouldUseMock(_environment, options.Features.UseMockAI))
         {
             _logger.UsingMockQuestion(_environment.EnvironmentName);
             return await _mock.GenerateQuestionAsync(category, cancellationToken);
@@ -179,7 +179,7 @@ public sealed class AiQuestionService : IQuestionService
         }
 
         var options = _optionsMonitor.CurrentValue;
-        if (options.Features.UseMockAI && IsNonProduction())
+        if (Features.Shared.AiMockFallback.ShouldUseMock(_environment, options.Features.UseMockAI))
         {
             return await _mock.CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);
         }

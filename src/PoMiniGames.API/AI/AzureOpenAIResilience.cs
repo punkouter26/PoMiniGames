@@ -113,7 +113,7 @@ public static class AzureOpenAIResilience
     /// account as a failing one. The <c>+1</c> is the unpartitioned fallback pipeline, which serves
     /// every game key without a partition of its own.
     /// </remarks>
-    public static int GlobalQueueLimit => (PartitionedGames.Length + 1) * PerGameConcurrency;
+    public static int GlobalQueueLimit => (PartitionedGames.Count + 1) * PerGameConcurrency;
 
     /// <summary>
     /// Games that get their own pipeline instance, and therefore their own concurrency permits and
@@ -121,19 +121,12 @@ public static class AzureOpenAIResilience
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A single shared pipeline was correct while there was only one consumer. It stops being
-    /// correct the moment the other four services join it, for two reasons:
+    /// The reason left for partitioning is circuit isolation: one breaker across all games would let
+    /// one game failing 30% of a 30-second window open the circuit for the other too, which may be
+    /// on a different deployment entirely and fine. Failures should isolate to the game that
+    /// produced them. Each partition also gets its own small permit count, so one game cannot hold
+    /// every permit while the other's interactive request waits.
     /// </para>
-    /// <list type="bullet">
-    ///   <item><b>Concurrency.</b> <see cref="MaxConcurrentCalls"/> is 2 for the whole host. A busy game
-    ///   issues a call per agent per heartbeat and would hold both permits essentially continuously,
-    ///   so an interactive request would spend its life in the queue and then be rejected by
-    ///   <see cref="ConcurrencyQueueLimit"/>. Sharing a global permit count between a real-time loop
-    ///   and an interactive request is a starvation bug, not a safety property.</item>
-    ///   <item><b>Circuit state.</b> One breaker across all games means one game failing 30% of a
-    ///   30-second window opens the circuit for PoFunQuiz too — a game that may be on a different
-    ///   deployment entirely, and is fine. Failures should isolate to the game that produced them.</item>
-    /// </list>
     /// <para>
     /// The permit counts stay small per game on purpose: the measured ceiling in
     /// <see cref="MaxConcurrentCalls"/> is an account-wide quota, not a per-game one, so the sum
@@ -141,11 +134,7 @@ public static class AzureOpenAIResilience
     /// total throughput.
     /// </para>
     /// </remarks>
-    public static readonly string[] PartitionedGames =
-    [
-        AIFoundryOptions.Games.CoupleQuiz,
-        AIFoundryOptions.Games.FunQuiz,
-    ];
+    public static IReadOnlyList<string> PartitionedGames => AIFoundryOptions.Games.All;
 
     /// <summary>Pipeline name for one game's partition.</summary>
     public static string PipelineNameFor(string gameKey) => $"{PipelineName}:{gameKey}";

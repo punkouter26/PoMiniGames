@@ -128,8 +128,8 @@ internal static class GameServicesExtensions
         // each gets the resilience pipeline, the spend ceiling and the telemetry by construction.
         // Registering the keys here (rather than in each slice) keeps the set in one place and
         // makes the health-tracker keys predictable. Idempotent.
-        services.AddGameChatClient(AIFoundryOptions.Games.CoupleQuiz);
-        services.AddGameChatClient(AIFoundryOptions.Games.FunQuiz);
+        foreach (var game in AIFoundryOptions.Games.All)
+            services.AddGameChatClient(game);
         // /health gains an AI check, and /api/health/ai exposes the usage read-model that
         // AiUsageAccumulator has been filling with no reader.
         services.AddHealthChecks()

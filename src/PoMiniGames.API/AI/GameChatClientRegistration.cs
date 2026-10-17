@@ -163,7 +163,7 @@ public sealed class GameChatClientFactory
     /// <summary>
     /// The game's own resilience partition, or the shared pipeline for a game that has none. Each
     /// partitioned game gets its own concurrency permits and its own circuit state — see
-    /// <see cref="AzureOpenAIResilience.PartitionedGames"/> for why sharing them is a starvation bug.
+    /// <see cref="AzureOpenAIResilience.PartitionedGames"/> for why they are not shared.
     /// </summary>
     private Polly.ResiliencePipeline ResolvePipeline(string gameKey)
         => _pipelines.TryGetPipeline(AzureOpenAIResilience.PipelineNameFor(gameKey), out var partitioned)

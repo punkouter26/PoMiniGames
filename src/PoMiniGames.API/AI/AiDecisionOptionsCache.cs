@@ -73,29 +73,6 @@ public sealed class AiDecisionOptionsCache
         return _cache.GetOrAdd(key, _ => factory(deployment, capabilityOverrides));
     }
 
-    /// <summary>
-    /// Returns a cached plain-text <see cref="ChatOptions"/> for the one call shape that has no
-    /// schema (<see cref="AiDecisionChatOptions.ForBoundedText"/>).
-    /// </summary>
-    public ChatOptions GetOrBuildText(
-        string gameKey,
-        string deployment,
-        IReadOnlyDictionary<string, string> capabilityOverrides,
-        int maxOutputTokens,
-        Func<string?, IReadOnlyDictionary<string, string>?, ChatOptions> factory)
-    {
-        var key = new CacheKey(
-            Game: gameKey ?? string.Empty,
-            Deployment: deployment ?? string.Empty,
-            OverrideFingerprint: FingerprintOverrides(capabilityOverrides),
-            SchemaFingerprint: string.Empty,
-            SchemaName: string.Empty,
-            MaxOutputTokens: maxOutputTokens,
-            SchemaDescription: string.Empty);
-
-        return _cache.GetOrAdd(key, _ => factory(deployment, capabilityOverrides));
-    }
-
     /// <summary>Snapshot of the cache, for diagnostics.</summary>
     public int Count => _cache.Count;
 

@@ -51,11 +51,10 @@ export function createDiplomacyManager(rng = null) {
                 tribeBId: tribeB.id,
                 tribeBName: tribeB.name,
                 text: `${tribeA.name} and ${tribeB.name} forged a lasting peace treaty`,
-                reason: 'casualty armistice and resource depletion',
               };
               events.push(event);
-              // The log entry carries the pair: the timeline and the chronicle card read it.
-              if (log) log.push({ tick, kind: 'diplomacy', action: 'peace', tribeA: tribeA.id, tribeB: tribeB.id, reason: event.reason, text: event.text });
+              // The log entry carries the action and the pair; the timeline shows its text.
+              if (log) log.push({ tick, kind: 'diplomacy', action: 'peace', tribeA: tribeA.id, tribeB: tribeB.id, text: event.text });
             }
           }
           // 2. If NEUTRAL or RIVAL: check if war triggers
@@ -82,7 +81,7 @@ export function createDiplomacyManager(rng = null) {
                 text: `${tribeA.name} declared war on ${tribeB.name} over disputed borders`,
               };
               events.push(event);
-              if (log) log.push({ tick, kind: 'diplomacy', action: 'war', tribeA: tribeA.id, tribeB: tribeB.id, reason: 'disputed borders and scarcity', text: event.text });
+              if (log) log.push({ tick, kind: 'diplomacy', action: 'war', tribeA: tribeA.id, tribeB: tribeB.id, text: event.text });
             }
           }
         }

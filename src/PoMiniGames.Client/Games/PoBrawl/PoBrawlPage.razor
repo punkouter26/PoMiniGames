@@ -266,7 +266,9 @@
 
     // ── Post-fight press conference (scripted, PoBrawlPressLines) ─────────
     private PoBrawlPressLine? _presser;
-    private int _presserGeneration;
+    // Bumped when a fight starts or training is entered, so a pending ladder roll (the
+    // LadderResultHoldMs wait) can tell it has been superseded.
+    private int _ladderRollGeneration;
 
     // ── Online (PoBrawlNetSession; the arena is a puppet of the server's fight) ──
     private PoBrawlNetSession? _net;
@@ -856,7 +858,7 @@
         _recap = null;
         _lastRecap = null;
         _presser = null;
-        ++_presserGeneration;
+        ++_ladderRollGeneration;
         _winner = 0;
         _phase = "fighting";
         _announcement = snap.IsSpectator
@@ -929,7 +931,7 @@
     {
         _training = false;
         _phase = "fighting";
-        ++_presserGeneration; // a line still in flight belongs to a fight that is gone
+        ++_ladderRollGeneration; // a pending ladder roll belongs to a fight that is gone
         // The room-to-fight flip is invisible in the arena itself — say it.
         _announcement = $"Back to the ladder — fighting {CharName(_p2Char)} for the rung.";
         await InitEngine();
@@ -944,7 +946,6 @@
     // Only called on the paths that SHOW the result modal.
     private async Task StartPresserAsync()
     {
-        ++_presserGeneration;
         _presser = null;
         if (_lastRecap is not { } r) return;
 
@@ -1202,7 +1203,7 @@
         {
             // Hold on the result first (see LadderResultHoldMs). Leaving for training or
             // navigating away inside the hold supersedes this roll.
-            var generation = _presserGeneration;
+            var generation = _ladderRollGeneration;
             var nextP2 = Roster[_ladder].Id;
             _p2Char = nextP2;
             // The KO cinematic runs on the RENDER clock — frozen in a backgrounded tab — while
@@ -1217,7 +1218,7 @@
                 await Task.Delay(250);
             }
             await Task.Delay(LadderResultHoldMs);
-            if (generation != _presserGeneration || _training) return;
+            if (generation != _ladderRollGeneration || _training) return;
 
             // Stay in the fight: reset the HUD and roll the engine into the next president.
             // GameOver stays false, so no modal is shown.

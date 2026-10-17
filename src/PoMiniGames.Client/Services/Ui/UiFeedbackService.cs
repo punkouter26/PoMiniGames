@@ -321,19 +321,6 @@ public sealed class UiFeedbackService : IAsyncDisposable
         catch { /* best-effort */ }
     }
 
-    /// <summary>Inharmonic bronze ceremonial gong with long resonant decay.</summary>
-    public async ValueTask GongAsync(double freq = 110)
-    {
-        if (_disposed) return;
-        try
-        {
-            var module = await _module.Value;
-            await module.InvokeVoidAsync("gong", freq);
-            await VibrateAsync(HapticComplete);
-        }
-        catch { /* best-effort */ }
-    }
-
     /// <summary>
     /// Fire a raw haptic pattern (alternating vibrate/pause milliseconds, e.g.
     /// <c>[12, 40, 18]</c>). Gated on <c>navigator.vibrate</c> support and the

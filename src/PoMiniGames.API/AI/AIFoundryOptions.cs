@@ -189,6 +189,9 @@ public sealed class AIFoundryOptions
     {
         public const string CoupleQuiz = "couplequiz";
         public const string FunQuiz = "funquiz";
+
+        /// <summary>Every game that calls a model: each gets a chat client and a resilience partition.</summary>
+        public static readonly string[] All = [CoupleQuiz, FunQuiz];
     }
 
     /// <summary>

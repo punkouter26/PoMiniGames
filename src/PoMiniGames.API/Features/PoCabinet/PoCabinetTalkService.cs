@@ -10,22 +10,33 @@ namespace PoMiniGames.Features.PoCabinet;
 /// </summary>
 public static class PoCabinetTalkService
 {
+    // Client wire kind -> the dialogue kind it draws from, in the order the client asks for them.
+    private static readonly (string Wire, DialogueKind Kind)[] KindMap =
+    [
+        ("preRace", DialogueKind.PreRace),
+        ("passed", DialogueKind.PositionChange),
+        ("lead", DialogueKind.LapFinish),
+        ("finish", DialogueKind.RaceFinish),
+    ];
+
     /// <summary>The kinds a pool carries, in the order the client asks for them.</summary>
-    public static readonly string[] Kinds = ["preRace", "passed", "lead", "finish"];
+    public static IEnumerable<string> Kinds => KindMap.Select(k => k.Wire);
+
+    // Built once: the pools are constants, so every request can share the same reply.
+    private static readonly PoCabinetBanterPool Pool = BuildPool();
 
     /// <summary>The hand-written pools, mapped onto the client's kinds.</summary>
-    public static PoCabinetBanterPool Banter()
+    public static PoCabinetBanterPool Banter() => Pool;
+
+    private static PoCabinetBanterPool BuildPool()
     {
         var pool = new PoCabinetBanterPool();
         foreach (var (id, byKind) in PoCabinetDialogue.Pools)
         {
-            pool.Lines[id] = new Dictionary<string, List<string>>(StringComparer.Ordinal)
-            {
-                ["preRace"] = byKind.GetValueOrDefault(DialogueKind.PreRace)?.ToList() ?? [],
-                ["passed"] = byKind.GetValueOrDefault(DialogueKind.PositionChange)?.ToList() ?? [],
-                ["lead"] = byKind.GetValueOrDefault(DialogueKind.LapFinish)?.ToList() ?? [],
-                ["finish"] = byKind.GetValueOrDefault(DialogueKind.RaceFinish)?.ToList() ?? [],
-            };
+            pool.Lines[id] = KindMap.ToDictionary(
+                k => k.Wire,
+                k => byKind.GetValueOrDefault(k.Kind)?.ToList() ?? [],
+                StringComparer.Ordinal);
         }
         return pool;
     }
@@ -41,7 +52,7 @@ public static class PoCabinetTalkService
     {
         static double Sec(double v, double max) => double.IsFinite(v) ? Math.Clamp(Math.Round(v, 2), 0, max) : 0;
         static int Pct(int v) => Math.Clamp(v, 0, 100);
-        var track = PoCabinetCatalog.GetTrack(PoCabinetCatalog.IsKnownTrack(r.TrackId) ? r.TrackId : PoCabinetCatalog.DefaultTrackId);
+        var track = PoCabinetCatalog.GetTrack(r.TrackId);
         var sectors = r.SectorDeltas is { Length: 3 } s && s.All(double.IsFinite)
             ? s.Select(d => Math.Clamp(Math.Round(d, 2), -30, 30)).ToArray()
             : [];

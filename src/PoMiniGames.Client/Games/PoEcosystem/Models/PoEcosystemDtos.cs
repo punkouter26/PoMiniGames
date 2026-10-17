@@ -185,9 +185,8 @@ public sealed record EcoNaturalEvents(int Lightning, int Rockslide, int Eruption
 /// parents; deaths carry the creature — that is what lets the watch-list react.
 /// </summary>
 public sealed record EcoEvent(int Id, int Tick, string Kind, string Text, int? Species, string? Cause, int? Creature = null, int? Mother = null, int? Father = null, int? Level = null,
-    // Diplomacy entries carry the action and the pair (sim/tribe/diplomacy.js); weather
-    // entries carry the kind.
-    string? Action = null, int? TribeA = null, int? TribeB = null, string? Reason = null, int? Tile = null, int? Weather = null);
+    // Diplomacy entries carry the action (sim/tribe/diplomacy.js); weather entries carry the kind.
+    string? Action = null, int? Tile = null, int? Weather = null);
 
 /// <summary>Everything the inspector popover shows about the creature under the crosshair.</summary>
 public sealed record EcoDetail(

@@ -38,7 +38,7 @@ export function frameViews(buffer, cap, propCap) {
   return { header, handles, creatures, props };
 }
 
-export function encodeFrame(world, buffer, { selected = NONE, flags = 0 } = {}) {
+export function encodeFrame(world, buffer, { selected = NONE } = {}) {
   const e = world.entities;
   const propCap = (buffer.byteLength - 8 * 4 - e.cap * 4 - e.cap * FRAME.CREATURE_STRIDE * 4) / (FRAME.PROP_STRIDE * 4);
   const v = frameViews(buffer, e.cap, propCap);
@@ -59,7 +59,7 @@ export function encodeFrame(world, buffer, { selected = NONE, flags = 0 } = {}) 
   const props = world.physics.readProps(v.props, propCap);
   const h = v.header;
   h[FRAME.H_TICK] = world.clock.tick; h[FRAME.H_COUNT] = k; h[FRAME.H_PROPS] = props;
-  h[FRAME.H_FLAGS] = flags | (world.clock.speed === 0 ? FRAME.FLAG_PAUSED : 0);
+  h[FRAME.H_FLAGS] = world.clock.speed === 0 ? FRAME.FLAG_PAUSED : 0;
   h[FRAME.H_SELECTED] = selected; h[FRAME.H_SPEED] = world.clock.speed;
   h[FRAME.H_YEAR] = world.clock.year(); h[FRAME.H_DAY_MILLI] = Math.round(world.clock.dayFraction() * 1000);
   return v;

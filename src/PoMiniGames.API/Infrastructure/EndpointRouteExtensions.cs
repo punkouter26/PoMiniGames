@@ -51,10 +51,7 @@ internal static class EndpointRouteExtensions
         // Uniform cross-app liveness probe (see PoPlatform). Same shape in every Po app, which
         // is what lets the portfolio dashboard poll them all and render one uptime grid.
         app.MapPoLiveness();
-        // AI usage read-model. Grouped with the health probes rather than behind the game-API auth
-        // gate because it is a diagnostics surface, and it reports no other identity's spend — only
-        // aggregate per-game counters plus the caller's own allowance.
-        app.MapAiUsageEndpoints();
+        // /api/diag, plus the AI usage read-model at /api/diag/ai.
         app.MapDiagEndpoints();
         // Browser-side error sink (js/errorReporter.js). Deliberately NOT under /api: it is fed
         // by sendBeacon, which cannot carry the antiforgery header that scope requires.

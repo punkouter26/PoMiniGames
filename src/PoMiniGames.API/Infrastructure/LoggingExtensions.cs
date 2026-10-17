@@ -1,5 +1,4 @@
 using Serilog;
-using Serilog.Sinks.ApplicationInsights.TelemetryConverters;
 using Serilog.Events;
 using Serilog.Exceptions;
 
@@ -44,17 +43,12 @@ internal static class LoggingExtensions
                 // Console for container stdout capture.
                 configuration.WriteTo.Console();
             }
-
-            // App Insights log export now matches every other Po app: the Serilog sink owns it.
-            // The OTel pipeline keeps traces/metrics/dependencies; logs deliberately do NOT ride it,
-            // which is why writeToProviders is back to its default of false — with both paths live,
-            // every record would be ingested twice.
-            var appInsightsConnectionString =
-                PoPlatform.ResolveAppInsightsConnectionString(context.Configuration);
-            configuration.WriteTo.Conditional(
-                _ => !string.IsNullOrWhiteSpace(appInsightsConnectionString),
-                sink => sink.ApplicationInsights(appInsightsConnectionString!, TelemetryConverter.Traces));
-        });
+        },
+        // App Insights gets logs from ONE path: Serilog forwards every event to the registered
+        // Microsoft.Extensions.Logging providers, and the only one left is OpenTelemetry's, added by
+        // UseAzureMonitor (TelemetryExtensions clears the framework defaults so the console does not
+        // print each line twice). No connection string means no OTel provider, so nothing is sent.
+        writeToProviders: true);
 
         return builder;
     }

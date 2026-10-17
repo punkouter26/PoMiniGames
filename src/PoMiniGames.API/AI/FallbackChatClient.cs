@@ -19,10 +19,6 @@ namespace PoMiniGames.AI;
 /// class (both able to take a JSON schema, for instance); if it rejects them the original failure
 /// is what the caller sees.
 /// </para>
-/// <para>
-/// Streaming is not covered, for the reason <see cref="ResilientChatClient"/> gives: a second
-/// attempt mid-stream would replay tokens the caller already consumed.
-/// </para>
 /// </remarks>
 public sealed class FallbackChatClient : DelegatingChatClient
 {

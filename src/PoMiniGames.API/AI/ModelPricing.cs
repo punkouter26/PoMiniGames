@@ -3,7 +3,7 @@ namespace PoMiniGames.AI;
 
 /// <summary>
 /// USD price-per-million-tokens for one model deployment. Sourced from the
-/// provider's published list price at startup; surfaced in <c>/api/health/ai</c>
+/// provider's published list price at startup; surfaced in <c>/api/diag/ai</c>
 /// as the cost basis the host uses for diagnostics.
 ///
 /// <para>
@@ -43,7 +43,8 @@ public sealed record DeploymentPricing(
             ["gpt-5.4-mini"] = new("gpt-5.4-mini", "azure", "Azure AI Foundry mini tier", 0.40, 1.60),
             ["Phi-4-mini-instruct"] = new("Phi-4-mini-instruct", "azure", "Azure AI Foundry phi-4 mini", 0.07, 0.28),
 
-            // ── OpenAI-compatible — OpenRouter ────────────────────────────
+            // OpenRouter (PoJevArena's Jev) is not priced here: it never goes through
+            // AiUsageAccumulator and is capped by call count in JevCallAllowance instead.
         };
 
     /// <summary>Fallback for any deployment not in <see cref="Catalog"/>.</summary>

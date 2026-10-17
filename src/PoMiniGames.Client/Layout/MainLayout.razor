@@ -32,20 +32,6 @@
             <span>Offline — you can keep playing. Scores will sync when you reconnect.</span>
         </div>
     }
-    @* Mock-data banner. A full-width banner would read as an error/warning to a
-       first-time visitor, but the mock data flag is a server-side concern (Storage
-       is in dev or a CI stub), not a user concern. So it is a tiny dev-only corner
-       pill with a tooltip; the fuller detail stays as a tooltip-driven secondary
-       affordance for devs who want to see why /leaderboards is empty. *@
-    @if (AuthState.UsingMockData)
-    {
-        <div class="gl-mock-banner">
-            <span class="gl-mock-banner__pill" title="Mock data backend — leaderboards may be empty. This is a developer / preview-build signal, not an error." aria-label="Mock data backend active for this build">
-                <span aria-hidden="true">🧪</span> USING MOCK DATA
-            </span>
-            <span class="gl-mock-banner__detail">USING MOCK DATA — leaderboards may be empty</span>
-        </div>
-    }
     <header class="gl-top-bar">
         @* <nav> landmark. The brand link IS this app's persistent navigation on
            every route, so a screen-reader user needs a landmark to jump to.
@@ -250,13 +236,6 @@
         // unsubscribed and would leak this component on every re-creation.
         _onAuthStateChanged = () => InvokeAsync(StateHasChanged);
         AuthState.StateChanged += _onAuthStateChanged;
-
-        // Fire the mock-data buzz once on mount so the developer notices
-        // the safety guard when they hit the home page in a mock-data env.
-        if (AuthState.UsingMockData)
-        {
-            _ = Feedback.MockDataAsync();
-        }
 
         _onOnlineStateChanged = () => InvokeAsync(StateHasChanged);
         OnlineStatus.StateChanged += _onOnlineStateChanged;

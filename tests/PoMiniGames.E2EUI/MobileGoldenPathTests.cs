@@ -66,10 +66,6 @@ public class MobileGoldenPathTests
             because: "the home page must surface the game catalog on a phone");
         (await page.Locator("a.home-mode-chip").CountAsync()).Should().BeGreaterThan(0,
             because: "every card must offer at least one navigable mode");
-
-        // In a normal (non-mock) environment the mock banner must NOT be present.
-        (await page.Locator(".gl-mock-banner").CountAsync()).Should().Be(0,
-            because: "UseMockData is false in this fixture");
     }
 
     [Fact]

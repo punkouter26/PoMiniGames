@@ -68,7 +68,7 @@
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="Azure.AI.OpenAI" />
     <!-- The chat clients wrap an ME.AI IChatClient resolved from
-         AIFoundryChatClientCache; the .AsIChatClient() adapter extension lives here. -->
+         GameChatClientFactory; the .AsIChatClient() adapter extension lives here. -->
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <!-- API -->
@@ -86,7 +86,6 @@
     <!-- Logging / Telemetry -->
     <PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" />
     <PackageReference Include="Serilog.AspNetCore" />
-    <PackageReference Include="Serilog.Sinks.ApplicationInsights" />
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Serilog.Enrichers.Environment" />

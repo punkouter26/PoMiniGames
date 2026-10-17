@@ -21,8 +21,8 @@ namespace PoMiniGames.AI;
 /// call, from anywhere, goes through this client.
 /// </para>
 /// <para>
-/// GoF: Decorator. Placed OUTSIDE <see cref="InstrumentedChatClient"/> and inside
-/// <see cref="ResilientChatClient"/>, which is the only position that behaves correctly:
+/// GoF: Decorator. Placed OUTSIDE <see cref="InstrumentedChatClient"/> and inside the resilience
+/// pipeline (<see cref="GameChatClientFactory"/>), which is the only position that behaves correctly:
 /// </para>
 /// <list type="bullet">
 ///   <item>Outside the instrumented client, so a refusal costs no network call and is not recorded
@@ -84,48 +84,15 @@ public sealed class BudgetedChatClient : DelegatingChatClient
     }
 
     /// <summary>
-    /// Same gate for streamed calls. A caller that stops reading early may never see the
-    /// provider's usage update; the charge then falls back to an estimate
-    /// from the text that did, which under-counts the prompt but never charges nothing.
+    /// Streaming is not supported: every AI call in this host is buffered, so the budget, the
+    /// retry pipeline and the fallback all see one complete response. A caller that tries to
+    /// stream gets <see cref="NotSupportedException"/> and must use the buffered call.
     /// </summary>
-    public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+    public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options = null,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        var identity = AiUsageScope.CurrentIdentity;
-        if (string.IsNullOrEmpty(identity))
-        {
-            _logger.AiCallUnattributed(_game);
-        }
-        else if (await _budget.CheckAsync(identity, cancellationToken) is { Allowed: false } verdict)
-        {
-            _logger.TokenBudgetExhausted(identity, verdict.Spent, verdict.Limit, verdict.ResetUtc);
-            throw new AiTokenBudgetExceededException(verdict.Spent, verdict.Limit, verdict.ResetUtc);
-        }
-
-        long reported = 0;
-        long chars = 0;
-        try
-        {
-            await foreach (var update in base.GetStreamingResponseAsync(messages, options, cancellationToken))
-            {
-                chars += update.Text?.Length ?? 0;
-                foreach (var usage in update.Contents.OfType<UsageContent>())
-                    reported += usage.Details.TotalTokenCount ?? 0;
-                yield return update;
-            }
-        }
-        finally
-        {
-            if (!string.IsNullOrEmpty(identity))
-            {
-                // ponytail: ~4 chars per token when the provider reported nothing. Count the
-                // prompt too if the under-charge ever matters.
-                _budget.Record(identity, reported > 0 ? reported : (chars + 3) / 4);
-            }
-        }
-    }
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("AI calls are buffered; use GetResponseAsync.");
 }
 
 /// <summary>

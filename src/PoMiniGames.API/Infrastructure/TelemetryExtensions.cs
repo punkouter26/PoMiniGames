@@ -21,6 +21,11 @@ internal static class TelemetryExtensions
     /// <summary>Adds Azure Monitor / OpenTelemetry when an App Insights connection string is present.</summary>
     public static WebApplicationBuilder AddPoMiniGamesTelemetry(this WebApplicationBuilder builder)
     {
+        // Serilog owns console and file output (LoggingExtensions) and forwards to the MEL providers
+        // only so OpenTelemetry's can ship logs to App Insights. Drop the framework defaults
+        // (Console, Debug, EventSource, EventLog) BEFORE UseAzureMonitor registers that provider.
+        builder.Logging.ClearProviders();
+
         var appInsightsConnString = builder.Configuration["PoMiniGames:ApplicationInsights:ConnectionString"]
             ?? PoPlatform.ResolveAppInsightsConnectionString(builder.Configuration)
             ?? builder.Configuration["APPINSIGHTS_CONNECTIONSTRING"];

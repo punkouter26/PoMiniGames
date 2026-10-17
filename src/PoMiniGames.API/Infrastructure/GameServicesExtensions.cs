@@ -36,7 +36,7 @@ internal static class GameServicesExtensions
 
         // ─── Centralized Azure AI Foundry hub (PoShared RG) ─────────────────
         // One shared AzureOpenAIClient + per-deployment ChatClient cache. Every
-        // game that needs an AI model resolves through AIFoundryChatClientCache
+        // game that needs an AI model resolves through GameChatClientFactory
         // with its game key (couplequiz, funquiz).
         services.AddOptions<AIFoundryOptions>()
             // Bind the configuration section the Key Vault secrets land in. This was missing:
@@ -79,10 +79,9 @@ internal static class GameServicesExtensions
                 }
             });
         services.AddSingleton<AIFoundryClientFactory>();
-        services.AddSingleton<AIFoundryChatClientCache>();
         // Register the resilience pipeline (retry + circuit breaker + outer timeout)
         // used by every AI Foundry consumer. Idempotent — safe to call multiple times.
-        // Consumed by ResilientChatClient, which every keyed game chat client is wrapped in;
+        // Consumed by GameChatClientFactory, which wraps every keyed game chat client in it;
         // a pipeline that is registered but resolved nowhere would let a single call run far
         // past its documented 20 s ceiling.
         services.AddAzureOpenAIResilience();
@@ -120,23 +119,18 @@ internal static class GameServicesExtensions
             client.Timeout = TimeSpan.FromSeconds(10);
         });
         services.AddHostedService<FoundryDeploymentValidator>();
-        // Keeps the default deployment warm with one minimal call every 30 minutes, so the
-        // first player-facing AI interaction of a cold period pays steady-state latency rather
-        // than the cold-start penalty. Idles silently when the foundry is unconfigured.
-        services.AddHostedService<AiWarmupService>();
         // Every AI-consuming slice now resolves its chat client through GameChatClientFactory, so
         // each gets the resilience pipeline, the spend ceiling and the telemetry by construction.
         // Registering the keys here (rather than in each slice) keeps the set in one place and
         // makes the health-tracker keys predictable. Idempotent.
         foreach (var game in AIFoundryOptions.Games.All)
             services.AddGameChatClient(game);
-        // /health gains an AI check, and /api/health/ai exposes the usage read-model that
-        // AiUsageAccumulator has been filling with no reader.
+        // /health gains an AI check, and /api/diag/ai exposes the usage read-model that
+        // AiUsageAccumulator fills.
         services.AddHealthChecks()
             .AddCheck<AiFoundryHealthCheck>(
                 "AiFoundry",
                 tags: ["ai", "ready"]);
-        // PoRaceRagdoll feature removed.
 
         // Elo calculation, on the defaults in EloOptions.
         services.AddSingleton(sp =>

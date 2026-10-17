@@ -34,7 +34,6 @@ public class AuthStateService
     public AuthClientConfiguration? Config => _config;
     public AuthenticatedUserProfile? User => _user;
     public bool IsConfigured => _config?.Enabled == true;
-    public bool UsingMockData => _config?.UsingMockData == true;
     public bool IsAuthenticated => _user != null;
     public bool IsLoading => !_initialized;
     public bool MicrosoftEnabled => _config?.MicrosoftEnabled == true;

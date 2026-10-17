@@ -3,7 +3,7 @@
    the global :root in css/app.css.
 
    ── What is deliberately NOT here ──────────────────────────────────────────
-   The shared top-bar chrome (.gl-page, .gl-mock-banner*, .gl-top-bar*, .gl-brand*,
+   The shared top-bar chrome (.gl-page, .gl-top-bar*, .gl-brand*,
    .gl-auth*, .gl-overflow-*, .gl-dev-switch*) lives in css/app-shell.css and ONLY
    there. It used to be duplicated into this file under an instruction to keep the
    two copies byte-identical; they had already drifted apart, and because Blazor

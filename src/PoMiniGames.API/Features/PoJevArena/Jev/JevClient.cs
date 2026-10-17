@@ -40,7 +40,7 @@ public interface IJevClient
 /// <summary>
 /// The one process-wide in-flight cap in front of Jev. A singleton, so every typed-client instance
 /// shares it — a limiter per client instance would multiply the permits exactly the way the
-/// per-pipeline AI limiters once did (see <c>AiConcurrencyGate</c>).
+/// per-pipeline AI limiters once did (see <c>AzureOpenAIResilience.AddAzureOpenAIResilience</c>).
 /// </summary>
 public sealed class JevConcurrencyGate(IOptions<JevOptions> options) : IDisposable
 {

@@ -70,12 +70,11 @@ public sealed class AIFoundryCentralizationTests
         new AIFoundryClientFactory(endpointless, NullLogger<AIFoundryClientFactory>.Instance)
             .Client.Should().BeNull("an unconfigured foundry must NOT silently fabricate a client");
 
-        // Nothing configured at all: the chat-client cache resolves null for every game key.
+        // Nothing configured at all: no chat client resolves for any game's deployment.
         var empty = new TestOptionsMonitor<AIFoundryOptions>(new AIFoundryOptions());
-        var cache = new AIFoundryChatClientCache(
-            new AIFoundryClientFactory(empty, NullLogger<AIFoundryClientFactory>.Instance), empty);
-        cache.Resolve(AIFoundryOptions.Games.FunQuiz).Should().BeNull();
-        cache.Resolve(AIFoundryOptions.Games.CoupleQuiz).Should().BeNull();
+        var unconfigured = new AIFoundryClientFactory(empty, NullLogger<AIFoundryClientFactory>.Instance);
+        foreach (var game in new[] { AIFoundryOptions.Games.FunQuiz, AIFoundryOptions.Games.CoupleQuiz })
+            unconfigured.GetChatClient(empty.CurrentValue.ResolveDeployment(game)).Should().BeNull();
 
         // The factory must be a singleton — building two AzureOpenAIClient instances
         // (one per request) would double the underlying HTTPS connections and

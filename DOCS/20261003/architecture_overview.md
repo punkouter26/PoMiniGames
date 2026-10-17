@@ -391,7 +391,34 @@ secrets in Azure Key Vault. Do not use `dotnet user-secrets` in this repo.
 | `PoMiniGames:AI:DailyTokensPerIdentity` | Per-player daily spend cap. 0 turns it off. |
 | `PoMiniGames:Jev:Model` | Pinned to `typesafe/jev-1.13`. |
 | `PoMiniGames:Jev:CallTimeoutMs` | 1500. A late answer is dropped and the unit keeps its last order. |
-| `<Game>:Features:UseMockAI` | Use canned answers instead of a real model. Honoured only outside production. Tests force it on. |
+| `<Game>:Features:UseMockAI` | Use canned answers instead of a real model. Honoured only outside production. Tests force it on, and `appsettings.Development.json` turns it on for PoFunQuiz and PoCoupleQuiz so local runs spend nothing. |
+
+Both quizzes and their answer-similarity scoring point at `gpt-5.4-nano`, the cheapest
+model in `ModelPricing.cs`. The process-local usage, cost and caller-budget read-model is
+`GET /api/diag/ai` (the AI half of `/api/diag`).
+
+#### AI provider recipes
+
+Development defaults to the mock AI flags, so a local run never calls a paid model even
+though `KeyVault:Uri` can resolve the shared Foundry endpoint. To try real model output
+locally, opt in deliberately: set `PoFunQuiz:Features:UseMockAI` and/or
+`PoCoupleQuiz:Features:UseMockAI` to `false`, and point the AI section at one of these.
+
+- **Ollama (free, local, the recommended opt-in).** Run `ollama pull qwen3:4b`, then set
+  `PoMiniGames:AI:FoundryEndpoint=http://localhost:11434/v1`, `Provider=openai`,
+  `DefaultDeployment=qwen3:4b`, and clear the `Deployments` map so every game resolves the
+  default. No key and no network. Add `ModelCapabilityOverrides={"qwen3:4b":"basic"}` if a
+  structured-output call starts returning 400: the name heuristic assumes `qwen*` speaks
+  `json_schema`, which older Ollama builds do not.
+- **Gemini (paid, separate quota).** Google's OpenAI-compatibility endpoint is cheaper per
+  token on the Flash-Lite tier: `FoundryEndpoint=https://generativelanguage.googleapis.com/v1beta/openai/`,
+  `Provider=openai`, `ApiKey=<AI Studio key>`, `DefaultDeployment=gemini-2.5-flash-lite`.
+  `AiModelCapabilities` already classifies `gemini-*` as conventional (json_schema and
+  temperature, no reasoning_effort).
+- **Embeddings for PoCoupleQuiz similarity.** An embedding deployment is the cheapest fix for
+  answer scoring and does not need Azure: `ollama pull nomic-embed-text` plus
+  `EmbeddingDeployment=nomic-embed-text` on the openai provider makes similarity scoring
+  free, deterministic and permanently cacheable. `AiEmbeddingService` is provider-neutral.
 
 ### 3.5 Known gaps worth fixing before relying on these docs
 

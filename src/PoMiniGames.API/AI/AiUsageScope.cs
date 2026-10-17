@@ -1,3 +1,6 @@
+using Microsoft.AspNetCore.SignalR;
+using PoMiniGames.Features.Auth;
+
 namespace PoMiniGames.AI;
 
 /// <summary>
@@ -117,5 +120,67 @@ public sealed class AiUsageScope : IDisposable
         if (_disposed) return;
         _disposed = true;
         Current.Value = _previous;
+    }
+
+    /// <summary>
+    /// Budget identity for an HTTP caller: the signed-in user, falling back to the remote address
+    /// so an anonymous or guest caller still cannot spend without limit.
+    /// </summary>
+    public static string ResolveIdentity(HttpContext context)
+    {
+        var identity = RequestIdentity.Resolve(context.User);
+        return !string.IsNullOrEmpty(identity.UserId)
+            ? $"id:{identity.UserId}"
+            : $"ip:{context.Connection.RemoteIpAddress?.ToString() ?? "unknown"}";
+    }
+
+    /// <summary>
+    /// Budget identity for a hub caller. Keys on the remote address like the HTTP path when there
+    /// is no user id: a per-connection key hands every reconnect a fresh allowance, which is no
+    /// ceiling at all.
+    /// </summary>
+    public static string ResolveIdentity(HubCallerContext context)
+    {
+        var identity = RequestIdentity.Resolve(context.User);
+        if (!string.IsNullOrEmpty(identity.UserId))
+            return $"id:{identity.UserId}";
+
+        var ip = context.GetHttpContext()?.Connection.RemoteIpAddress?.ToString();
+        return ip is null ? $"conn:{context.ConnectionId}" : $"ip:{ip}";
+    }
+}
+
+/// <summary>
+/// Opens an <see cref="AiUsageScope"/> naming the caller for every request, so
+/// <see cref="BudgetedChatClient"/> knows whose allowance to charge. Opened unconditionally,
+/// because "which routes reach a model" is not a stable property.
+/// </summary>
+public static class AiUsageScopeMiddleware
+{
+    /// <remarks>
+    /// Must be registered AFTER <c>UseAuthentication</c>: before it the principal is anonymous, so
+    /// every signed-in caller would be charged to their IP and share a ledger behind one NAT.
+    /// </remarks>
+    public static IApplicationBuilder UseAiUsageScope(this IApplicationBuilder app)
+        => app.Use(async (context, next) =>
+        {
+            using var scope = AiUsageScope.Begin(AiUsageScope.ResolveIdentity(context));
+            await next();
+        });
+}
+
+/// <summary>
+/// Opens an <see cref="AiUsageScope"/> around every SignalR hub invocation. PoCoupleQuiz generates
+/// and scores from inside its hub, and <c>IHttpContextAccessor</c> is not reliable there (no
+/// ambient HTTP request on WebSockets), so the identity comes from the hub's own <c>Context</c>.
+/// </summary>
+public sealed class AiUsageScopeHubFilter : IHubFilter
+{
+    public async ValueTask<object?> InvokeMethodAsync(
+        HubInvocationContext invocationContext,
+        Func<HubInvocationContext, ValueTask<object?>> next)
+    {
+        using var scope = AiUsageScope.Begin(AiUsageScope.ResolveIdentity(invocationContext.Context));
+        return await next(invocationContext);
     }
 }

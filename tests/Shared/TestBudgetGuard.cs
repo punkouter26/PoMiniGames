@@ -39,13 +39,6 @@ public static class TestBudgetGuard
         ["PoMiniGames:Jev:UseStub"] = "true",
         ["PoMiniGames:Jev:ApiKey"] = "",
         ["KeyVault:Uri"] = "",
-
-        // ── Browser-side guard ────────────────────────────────────────────
-        // FeatureFlags.UseMockData drives the Blazor "USING MOCK DATA" banner.
-        // E2E-UI's MockBannerUiTests flips this on via its fixture; everywhere
-        // else it stays off so the assertion "banner absent in non-mock
-        // environments" is meaningful.
-        // (No entry here; the override is conditional per fixture.)
     };
 
     /// <summary>

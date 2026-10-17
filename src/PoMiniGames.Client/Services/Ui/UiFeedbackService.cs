@@ -290,12 +290,6 @@ public sealed class UiFeedbackService : IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// Mock-data environment cue — a single low buzz (140 ms, F3, 14 % gain)
-    /// whenever the USING MOCK DATA banner appears. Best-effort, never blocks.
-    /// </summary>
-    public ValueTask MockDataAsync() => PlayToneAsync(174.61, 140, 0.14, "square");
-
     /// <summary>Crystalline ping for high-gloss modals, gems, and achievements.</summary>
     public async ValueTask CrystalPingAsync() => await CueAsync("ui", "crystalPing", HapticClick);
 

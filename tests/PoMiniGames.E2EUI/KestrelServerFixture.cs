@@ -72,12 +72,6 @@ public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifeti
     private string _azuriteConnectionString = string.Empty;
     private IHost? _kestrelHost;
 
-    /// <summary>
-    /// When true, the host boots with <c>FeatureFlags:UseMockData=true</c> so the
-    /// "USING MOCK DATA" nav banner renders. Overridden by the mock-data fixture.
-    /// </summary>
-    protected virtual bool UseMockDataBanner => false;
-
     public async Task InitializeAsync() =>
         _azuriteConnectionString = await E2EUiAzurite.GetConnectionStringAsync();
 
@@ -122,9 +116,6 @@ public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifeti
             {
                 overrides[k] = v;
             }
-            // FeatureFlags.UseMockData drives the "USING MOCK DATA" banner — driven
-            // by the fixture variant (banner-on vs banner-off) for the two suites.
-            overrides["FeatureFlags:UseMockData"] = UseMockDataBanner ? "true" : "false";
 
             cfg.AddInMemoryCollection(overrides);
         });
@@ -143,7 +134,7 @@ public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifeti
 
         // A second host bound to a real, OS-assigned (port 0) Kestrel port for the browser.
         // An explicit dynamic port avoids colliding on the host's default :5000 when multiple
-        // fixtures (e.g. the mock-data variant) boot in parallel collections.
+        // fixtures boot in parallel collections.
         builder.ConfigureWebHost(webHostBuilder => webHostBuilder
             .UseKestrel()
             .UseUrls("http://127.0.0.1:0"));
@@ -170,23 +161,5 @@ public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifeti
 public sealed class KestrelServerCollection : ICollectionFixture<KestrelServerFixture>
 {
     public const string Name = "PoMiniGames.E2EUI";
-    // The namespace stays stable for cross-assembly refs.
-}
-
-/// <summary>
-/// Variant fixture that boots with <c>FeatureFlags:UseMockData=true</c> so UI tests can
-/// assert the prominent "USING MOCK DATA" nav banner is injected into the render tree.
-/// Separate collection (and separate Azurite container) to keep banner-on / banner-off
-/// states fully isolated.
-/// </summary>
-public sealed class MockDataKestrelServerFixture : KestrelServerFixture
-{
-    protected override bool UseMockDataBanner => true;
-}
-
-[CollectionDefinition(Name)]
-public sealed class MockDataKestrelServerCollection : ICollectionFixture<MockDataKestrelServerFixture>
-{
-    public const string Name = "PoMiniGames.E2EUI.MockData";
     // The namespace stays stable for cross-assembly refs.
 }

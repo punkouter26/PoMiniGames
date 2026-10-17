@@ -1,4 +1,5 @@
 using System.ClientModel.Primitives;
+using System.Threading.RateLimiting;
 using Azure.AI.OpenAI;
 using Microsoft.Extensions.DependencyInjection;
 using Polly;
@@ -95,7 +96,7 @@ public static class AzureOpenAIResilience
     /// </summary>
     /// <remarks>
     /// This is a <b>fairness</b> cap, not a capacity one. <see cref="MaxConcurrentCalls"/> is the
-    /// account's real ceiling and is enforced once, globally, by <see cref="AiConcurrencyGate"/>;
+    /// account's real ceiling and is enforced once, globally, by the shared gate limiter;
     /// this bounds how much of the global queue a single game may occupy so a real-time loop
     /// cannot crowd out an interactive request. Raising it does not buy throughput — the gate
     /// still admits <see cref="MaxConcurrentCalls"/> at a time — it only lets one game hold more
@@ -149,27 +150,41 @@ public static class AzureOpenAIResilience
     /// </summary>
     public static IServiceCollection AddAzureOpenAIResilience(this IServiceCollection services)
     {
-        // One gate for the whole container, resolved from the pipeline's own service provider so
-        // this method stays idempotent: calling it twice re-registers the same named pipelines
-        // against the same singleton gate rather than minting a second ceiling.
+        // The account-wide gate: ONE limiter for the whole container, shared by every pipeline.
+        // AddConcurrencyLimiter builds a limiter PER pipeline, so the partitioned registration
+        // below once permitted 5 x 2 = 10 concurrent calls against an account measured to serve
+        // one or two. Collapsing to one shared pipeline instead would bring back the starvation
+        // bug the partitions fixed, so the two levels stack: per-game fairness outside, this
+        // global ceiling inside. Keyed singleton so the container disposes it and a test host with
+        // several containers does not share one gate; TryAdd keeps this method idempotent.
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions
-            .TryAddSingleton<AiConcurrencyGate>(services);
+            .TryAddKeyedSingleton<RateLimiter>(services, PipelineName, static (_, _) =>
+                new ConcurrencyLimiter(new ConcurrencyLimiterOptions
+                {
+                    PermitLimit = MaxConcurrentCalls,
+                    // Must hold every caller the per-game limiters can admit at once, or a game
+                    // that won its own permit is rejected here and trips its circuit breaker.
+                    QueueLimit = GlobalQueueLimit,
+                    // Oldest-first: a call that has already waited goes next, so a busy game's
+                    // fresh calls cannot jump a starving game's old one.
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                }));
 
         // The unpartitioned pipeline stays registered as the fallback for a game key that has no
         // partition of its own.
         services.AddResiliencePipeline(PipelineName, static (builder, context) =>
-            ConfigurePipeline(builder, context.ServiceProvider.GetRequiredService<AiConcurrencyGate>()));
+            ConfigurePipeline(builder, context.ServiceProvider.GetRequiredKeyedService<RateLimiter>(PipelineName)));
 
         foreach (var game in PartitionedGames)
         {
             services.AddResiliencePipeline(PipelineNameFor(game), static (builder, context) =>
-                ConfigurePipeline(builder, context.ServiceProvider.GetRequiredService<AiConcurrencyGate>()));
+                ConfigurePipeline(builder, context.ServiceProvider.GetRequiredKeyedService<RateLimiter>(PipelineName)));
         }
 
         return services;
     }
 
-    private static void ConfigurePipeline(ResiliencePipelineBuilder builder, AiConcurrencyGate gate)
+    private static void ConfigurePipeline(ResiliencePipelineBuilder builder, RateLimiter gate)
     {
         builder.AddTimeout(new TimeoutStrategyOptions
         {
@@ -179,17 +194,14 @@ public static class AzureOpenAIResilience
         // Outer, per pipeline: fairness. Bounds how many of ONE game's calls contend for the
         // account at once, so a real-time loop cannot occupy the whole global queue.
         builder.AddConcurrencyLimiter(PerGameConcurrency, ConcurrencyQueueLimit);
-        // Inner, shared by every pipeline: the account's real ceiling. This used to be the same
-        // AddConcurrencyLimiter call as the line above, which built a SEPARATE limiter per
-        // pipeline — five pipelines × 2 permits = 10 concurrent calls against an account measured
-        // to serve one or two. See AiConcurrencyGate for the measurements.
+        // Inner, shared by every pipeline: the account's real ceiling (see AddAzureOpenAIResilience).
         //
         // Both sit inside the outer timeout, so a call cannot wait in either queue indefinitely,
         // and outside the retry, so a retried attempt keeps its permits rather than going to the
         // back of both queues.
         builder.AddRateLimiter(new RateLimiterStrategyOptions
         {
-            RateLimiter = args => gate.AcquireAsync(args.Context.CancellationToken),
+            RateLimiter = args => gate.AcquireAsync(permitCount: 1, args.Context.CancellationToken),
         });
         builder.AddRetry(new RetryStrategyOptions
         {

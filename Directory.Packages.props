@@ -5,9 +5,8 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Tooling: Blazored.LocalStorage is used through its string API only, so it is
-         trim-safe; NSubstitute is test-only and never ships in the WASM bundle. -->
+         trim-safe. -->
     <PackageVersion Include="Blazored.LocalStorage" Version="4.5.0" />
-    <PackageVersion Include="NSubstitute" Version="6.2.0" />
     <!-- Radzen: PoMule is the first screen built on it; the rest of the shell migrates
          later. Its net10.0 build needs Microsoft.AspNetCore.Components >= 10.0.12, which
          is why the ASP.NET 10.0.x pins below moved together. -->
@@ -47,7 +46,6 @@
     <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.2" />
     <!-- Logging / Telemetry -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
-    <PackageVersion Include="Serilog.Sinks.ApplicationInsights" Version="5.0.1" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="Serilog.Enrichers.Environment" Version="3.0.1" />

@@ -14,16 +14,17 @@ namespace PoMiniGames.AI;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Each AI-consuming slice previously reached into <see cref="AIFoundryChatClientCache"/> itself
-/// and used the bare client. That left every cross-cutting guarantee opt-in, and every slice opted
-/// out: the resilience pipeline had no consumers at all, and no call site recorded token usage.
-/// Composing here means a slice gets the whole posture by asking for its client:
+/// Each AI-consuming slice previously reached for a bare SDK client itself. That left every
+/// cross-cutting guarantee opt-in, and every slice opted out: the resilience pipeline had no
+/// consumers at all, and no call site recorded token usage. Composing here means a slice gets the
+/// whole posture by asking for its client:
 /// </para>
 /// <code>
-/// ResilientChatClient          // total-call budget, retry, circuit breaker
-///   └─ BudgetedChatClient      // per-identity daily token ceiling
-///        └─ InstrumentedChatClient  // token/latency logging, health tracking
-///             └─ foundry ChatClient // the cached per-deployment client
+/// FallbackChatClient                   // one retry on FallbackDeployment, when set
+///   └─ ResilientChatClient             // total-call budget, retry, circuit breaker
+///        └─ BudgetedChatClient         // per-identity daily token ceiling
+///             └─ InstrumentedChatClient     // token/latency logging, health tracking
+///                  └─ foundry ChatClient    // one shared SDK client per deployment
 /// </code>
 /// <para>
 /// The decorators nest in that order on purpose: telemetry inside the pipeline measures one
@@ -43,7 +44,7 @@ namespace PoMiniGames.AI;
 /// </remarks>
 public sealed class GameChatClientFactory
 {
-    private readonly AIFoundryChatClientCache _cache;
+    private readonly AIFoundryClientFactory _foundry;
     private readonly IOptionsMonitor<AIFoundryOptions> _options;
     private readonly ILoggerFactory _loggerFactory;
     private readonly AiUsageAccumulator _usage;
@@ -54,8 +55,13 @@ public sealed class GameChatClientFactory
     private readonly ConcurrentDictionary<string, IChatClient> _composed =
         new(StringComparer.OrdinalIgnoreCase);
 
+    // Flyweight: one bare SDK client per deployment, shared by every game routed to it.
+    // Deployments are immutable per app lifetime, so neither cache ever evicts.
+    private readonly ConcurrentDictionary<string, IChatClient> _bare =
+        new(StringComparer.OrdinalIgnoreCase);
+
     public GameChatClientFactory(
-        AIFoundryChatClientCache cache,
+        AIFoundryClientFactory foundry,
         IOptionsMonitor<AIFoundryOptions> options,
         ILoggerFactory loggerFactory,
         AiUsageAccumulator usage,
@@ -63,7 +69,7 @@ public sealed class GameChatClientFactory
         ResiliencePipelineProvider<string> pipelines,
         AiTokenBudget budget)
     {
-        _cache = cache;
+        _foundry = foundry;
         _options = options;
         _loggerFactory = loggerFactory;
         _usage = usage;
@@ -107,7 +113,7 @@ public sealed class GameChatClientFactory
         if (_composed.TryGetValue(key, out var existing))
             return existing;
 
-        var bare = _cache.ResolveDeploymentAsIChatClient(deployment);
+        var bare = BareClientFor(deployment);
         if (bare is null)
             return null;
 
@@ -151,6 +157,19 @@ public sealed class GameChatClientFactory
     }
 
     /// <summary>
+    /// The undecorated client for <paramref name="deployment"/> from whichever provider is
+    /// configured (Azure, or an OpenAI-compatible backend such as Ollama), or null when none is.
+    /// </summary>
+    private IChatClient? BareClientFor(string deployment)
+    {
+        if (_bare.TryGetValue(deployment, out var cached))
+            return cached;
+
+        var client = _foundry.GetChatClient(deployment);
+        return client is null ? null : _bare.GetOrAdd(deployment, client.AsIChatClient());
+    }
+
+    /// <summary>
     /// The game a key belongs to. <c>couplequiz.similarity</c> → <c>couplequiz</c>; anything without a task
     /// suffix is already a game key.
     /// </summary>
@@ -169,6 +188,29 @@ public sealed class GameChatClientFactory
         => _pipelines.TryGetPipeline(AzureOpenAIResilience.PipelineNameFor(gameKey), out var partitioned)
             ? partitioned
             : _pipelines.GetPipeline(AzureOpenAIResilience.PipelineName);
+
+    /// <summary>
+    /// Executes every buffered model call through the game's <see cref="AzureOpenAIResilience"/>
+    /// pipeline: total-call budget, concurrency gates, jittered retry, circuit breaker.
+    /// </summary>
+    /// <remarks>
+    /// A decorator rather than a call in each service, so a new AI-consuming slice inherits the
+    /// posture by resolving its chat client and cannot forget to opt in. Before it existed a single
+    /// relay call ran 51.6 s against the documented 20 s ceiling, with no circuit state at all.
+    /// </remarks>
+    private sealed class ResilientChatClient(IChatClient innerClient, Polly.ResiliencePipeline pipeline)
+        : DelegatingChatClient(innerClient)
+    {
+        public override Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default)
+            => pipeline.ExecuteAsync(
+                static (state, ct) => new ValueTask<ChatResponse>(
+                    state.Inner.GetResponseAsync(state.Messages, state.Options, ct)),
+                (Inner: InnerClient, Messages: messages, Options: options),
+                cancellationToken).AsTask();
+    }
 }
 
 /// <summary>DI registration for <see cref="GameChatClientFactory"/>-backed game chat clients.</summary>

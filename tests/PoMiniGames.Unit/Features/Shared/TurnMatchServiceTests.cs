@@ -1,7 +1,6 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging.Abstractions;
-using NSubstitute;
 using PoMiniGames.Features.ConnectFive;
 using PoMiniGames.Features.Shared.TurnMatch;
 using PoMiniGames.Features.TicTacToe;
@@ -18,7 +17,32 @@ namespace PoMiniGames.Unit.Features.Shared;
 public class TurnMatchServiceTests
 {
     private static TurnMatchService<THub> Create<THub>(GridGameRules rules) where THub : Hub =>
-        new(rules, Substitute.For<IHubContext<THub>>(), NullLogger<TurnMatchService<THub>>.Instance);
+        new(rules, new NullHubContext<THub>(), NullLogger<TurnMatchService<THub>>.Instance);
+
+    /// <summary>A hub context whose every broadcast is a completed no-op.</summary>
+    private sealed class NullHubContext<THub> : IHubContext<THub>
+        where THub : Hub
+    {
+        public IHubClients Clients { get; } = NullClients.Instance;
+        public IGroupManager Groups { get; } = NullClients.Instance;
+    }
+
+    private sealed class NullClients : IHubClients, IClientProxy, IGroupManager
+    {
+        public static readonly NullClients Instance = new();
+        public IClientProxy All => this;
+        public IClientProxy AllExcept(IReadOnlyList<string> excludedConnectionIds) => this;
+        public IClientProxy Client(string connectionId) => this;
+        public IClientProxy Clients(IReadOnlyList<string> connectionIds) => this;
+        public IClientProxy Group(string groupName) => this;
+        public IClientProxy GroupExcept(string groupName, IReadOnlyList<string> excludedConnectionIds) => this;
+        public IClientProxy Groups(IReadOnlyList<string> groupNames) => this;
+        public IClientProxy User(string userId) => this;
+        public IClientProxy Users(IReadOnlyList<string> userIds) => this;
+        public Task SendCoreAsync(string method, object?[] args, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AddToGroupAsync(string connectionId, string groupName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RemoveFromGroupAsync(string connectionId, string groupName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
 
     [Theory]
     [InlineData("connectfive")]

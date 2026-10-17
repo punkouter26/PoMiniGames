@@ -6,7 +6,7 @@ namespace PoMiniGames.Unit.AI;
 
 /// <summary>
 /// Pins the USD per-token math the diagnostics surface reports. The numbers
-/// here flow into /api/health/ai; if a per-deployment
+/// here flow into /api/diag/ai; if a per-deployment
 /// price drifts in DeploymentPricing.Catalog, the diag row lies to the on-call
 /// engineer about how much a runaway game is costing. The catalog is the
 /// single source of truth — these cases pin both the catalog values for the
@@ -42,7 +42,7 @@ public sealed class DeploymentPricingTests
         DeploymentPricing.For("gpt-5.4-nano").CostUsd(-100, -100).Should().Be(0d);
 
         // If a deployment name leaks into the AiUsageAccumulator without a price,
-        // /api/health/ai silently reports $0 for that row. Catch it at unit time
+        // /api/diag/ai silently reports $0 for that row. Catch it at unit time
         // by pinning the names every game actually uses.
         var expected = new[]
         {
@@ -54,7 +54,7 @@ public sealed class DeploymentPricingTests
         foreach (var d in expected)
         {
             DeploymentPricing.Catalog.Should().ContainKey(d,
-                $"DeploymentPricing.Catalog must price {d} — without it, /api/health/ai reports $0 silently");
+                $"DeploymentPricing.Catalog must price {d} — without it, /api/diag/ai reports $0 silently");
         }
     }
 }

@@ -17,8 +17,8 @@ namespace PoMiniGames.AI;
 /// anyone could look at afterwards.
 /// </para>
 /// <para>
-/// GoF: Decorator, sitting inside <see cref="ResilientChatClient"/> so what it times is one
-/// attempt's real service latency rather than the retry envelope.
+/// GoF: Decorator, sitting inside the resilience pipeline (see <see cref="GameChatClientFactory"/>)
+/// so what it times is one attempt's real service latency rather than the retry envelope.
 /// </para>
 /// </remarks>
 public sealed class InstrumentedChatClient : DelegatingChatClient

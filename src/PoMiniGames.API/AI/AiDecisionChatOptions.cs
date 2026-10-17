@@ -51,45 +51,15 @@ public static class AiDecisionChatOptions
 #pragma warning restore OPENAI001
 
     /// <summary>
-    /// Options for a call whose reply must satisfy <paramref name="schema"/>.
-    /// </summary>
-    /// <param name="schema">JSON Schema the reply must match. Enum-constrained fields are what
-    /// make the parsed action unforgeable rather than scraped out of prose.</param>
-    /// <param name="schemaName">Schema name sent to the service (letters, digits, _ and - only).</param>
-    /// <param name="maxOutputTokens">Hard output ceiling. Must be generous enough for the whole
-    /// reply — see the remarks on why a tight cap alone is worse than none.</param>
-    /// <param name="schemaDescription">Optional human description passed through to the service.</param>
-    public static ChatOptions ForStructuredDecision(
-        JsonElement schema,
-        string schemaName,
-        int maxOutputTokens,
-        string? schemaDescription = null) => new()
-        {
-            MaxOutputTokens = maxOutputTokens,
-            // Fully qualified: OpenAI.Chat has a same-named type, and `using OpenAI.Chat` is
-            // needed here for ChatCompletionOptions below.
-            ResponseFormat = Microsoft.Extensions.AI.ChatResponseFormat.ForJsonSchema(
-                schema, schemaName, schemaDescription),
-#pragma warning disable OPENAI001 // see MinimalReasoning
-            RawRepresentationFactory = _ => new ChatCompletionOptions
-            {
-                ReasoningEffortLevel = MinimalReasoning,
-            },
-#pragma warning restore OPENAI001
-        };
-
-    /// <summary>
-    /// The same bounded, machine-read shape as <see cref="ForStructuredDecision"/>, but built for
-    /// the deployment that will actually serve it — so a task can be moved onto a cheaper model
+    /// Options for a call whose reply must satisfy <paramref name="schema"/>, built for the
+    /// deployment that will actually serve it so a task can be moved onto a cheaper model
     /// without the call starting to 400.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <see cref="ForStructuredDecision"/> hard-codes both wire fields, which is correct for
-    /// a caller pinned to a gpt-5 nano deployment and wrong for anything that might be pointed
-    /// at <c>Phi-4-mini-instruct</c>: that deployment rejects <c>reasoning_effort</c> and does not
-    /// implement <c>json_schema</c>. Each field is therefore attached only when
-    /// <see cref="AiModelCapabilities"/> says the deployment takes it.
+    /// A gpt-5 nano deployment takes both wire fields; <c>Phi-4-mini-instruct</c> rejects
+    /// <c>reasoning_effort</c> and does not implement <c>json_schema</c>. Each field is therefore
+    /// attached only when <see cref="AiModelCapabilities"/> says the deployment takes it.
     /// </para>
     /// <para>
     /// When the schema cannot be sent the response format degrades to JSON-object mode. That is
@@ -99,6 +69,12 @@ public static class AiDecisionChatOptions
     /// the parsing.
     /// </para>
     /// </remarks>
+    /// <param name="schema">JSON Schema the reply must match. Enum-constrained fields are what
+    /// make the parsed action unforgeable rather than scraped out of prose.</param>
+    /// <param name="schemaName">Schema name sent to the service (letters, digits, _ and - only).</param>
+    /// <param name="maxOutputTokens">Hard output ceiling. Must be generous enough for the whole
+    /// reply — see the class remarks on why a tight cap alone is worse than none.</param>
+    /// <param name="schemaDescription">Optional human description passed through to the service.</param>
     /// <param name="deployment">Deployment the call will be routed to. Determines which wire
     /// fields are safe to send.</param>
     /// <param name="capabilityOverrides">Optional name → profile map from configuration; see

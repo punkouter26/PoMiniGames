@@ -31,7 +31,7 @@ param webAppPrincipalId string
 //
 // Without it every model call fails authorization before it is ever billed:
 // PoFunQuiz's JoinLobby (which generates the quiz) and PoCoupleQuiz
-// all report failures with zero calls and zero tokens on /api/health/ai.
+// all report failures with zero calls and zero tokens on /api/diag/ai.
 var cognitiveServicesUserRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   'a97b65f3-24c7-47ba-9cc6-fcb3e1e0d1cf')

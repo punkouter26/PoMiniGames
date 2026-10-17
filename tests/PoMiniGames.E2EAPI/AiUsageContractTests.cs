@@ -9,7 +9,7 @@ using PoMiniGames.TestUtilities;
 namespace PoMiniGames.E2EAPI;
 
 /// <summary>
-/// HTTP contract for the AI diagnostics surface: <c>GET /api/health/ai</c> and the
+/// HTTP contract for the AI diagnostics surface: <c>GET /api/diag/ai</c> and the
 /// <c>AiFoundry</c> entry in <c>GET /api/health</c>.
 /// </summary>
 /// <remarks>
@@ -68,7 +68,7 @@ public sealed class AiUsageContractTests
         using var factory = new UsageFactory(configured: true);
         using var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/api/health/ai");
+        var response = await client.GetAsync("/api/diag/ai");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());

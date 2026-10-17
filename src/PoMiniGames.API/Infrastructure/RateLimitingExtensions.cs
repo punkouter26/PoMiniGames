@@ -104,7 +104,7 @@ internal static class RateLimitingExtensions
             // Spend stays bounded by the three layers that can actually see cost: the pool
             // cache above (one call per category per 6 h, and QuestionCategory is a small
             // closed enum, so key rotation is bounded too), the durable per-identity token
-            // budget, and AiConcurrencyGate. Eight quiz starts in fifteen seconds is already
+            // budget, and the shared AI gate in AzureOpenAIResilience. Eight quiz starts in fifteen seconds is already
             // faster than a human can read a question, and is still useless as an amplifier.
             // A SHORT window, unlike every policy above it, because what hurt here was not the
             // rate but the penalty: a one-minute window that trips on the fourth quiz start

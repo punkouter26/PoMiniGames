@@ -144,7 +144,6 @@ public static class AuthEndpoints
             // Dev + Test envs expose the Guest dev-bypass
             // path so the SPA can auto-sign-in as Guest without OAuth.
             var devLoginEnabled = environment.IsDevelopment() || environment.IsEnvironment("Test");
-            var usingMockData = configuration.GetValue<bool>("FeatureFlags:UseMockData");
             var autoGuestLogin = devLoginEnabled && configuration.GetValue<bool>("Auth:AutoGuestLogin");
             var msalAuthority = NormalizeAuthorityForMsal(auth.Authority);
 
@@ -157,7 +156,6 @@ public static class AuthEndpoints
                 microsoftEnabled,
                 microsoftConfigured,
                 devLoginEnabled,
-                usingMockData,
                 autoGuestLogin);
 
             AuthenticatedUserProfile? profile = null;
@@ -280,7 +278,6 @@ public sealed record AuthClientConfiguration(
     bool MicrosoftEnabled,
     bool MicrosoftConfigured,
     bool DevLoginEnabled,
-    bool UsingMockData,
     bool AutoGuestLogin);
 
 public sealed record AuthenticatedUserProfile(string UserId, string DisplayName, string? Email);

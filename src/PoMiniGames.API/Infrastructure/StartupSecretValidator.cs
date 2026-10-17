@@ -119,7 +119,7 @@ public sealed class StartupSecretValidator : IHostedService
         // ── Centralized Azure AI Foundry secrets (production-mandatory) ──
         // Replaces the legacy per-game AzureOpenAI sections. The KV contract:
         //   PoMiniGames--AI--FoundryEndpoint  (e.g. https://cog-pominigames-xxx.openai.azure.com)
-        //   PoMiniGames--AI--DefaultDeployment (e.g. gpt-4o-mini)
+        //   PoMiniGames--AI--DefaultDeployment (e.g. gpt-5.4-nano)
         // The DefaultAzureCredential on the Web App's system-assigned MI provides
         // the AAD bearer; no API key is required (or stored) by design.
         if (_environment.IsProduction())

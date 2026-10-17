@@ -7,9 +7,8 @@ namespace PoMiniGames.Features.Shared;
 /// <para>
 /// The AI services (PoCoupleQuiz, PoFunQuiz) carried byte-identical private
 /// <c>IsNonProduction()</c> helpers and the same "mock only when the flag is on AND the
-/// environment is safe" decision. Duplicated predicates drift — the standing example is
-/// <c>IFaceAnalysisService</c>, which ended up unmocked because one copy of a related
-/// dictionary was updated and the others were not. One helper, one definition.
+/// environment is safe" decision. Duplicated predicates drift, so there is one helper and
+/// one definition.
 /// </para>
 /// <para>
 /// The rule itself is unchanged: fabricated AI output may be served in Development and Test

@@ -112,6 +112,8 @@ builder.Services.AddScoped<PoCabinetCareerState>();
 builder.Services.AddScoped<PendingScoreStore>();
 builder.Services.AddScoped<ScoreSyncService>();
 builder.Services.AddScoped<GameResultService>();
+// On-device achievements: listens for recorded results, unlocks with a toast.
+builder.Services.AddScoped<AchievementService>();
 builder.Services.AddScoped<MatchHistoryService>();
 // Game invites: push opt-in for this device and invite-a-past-opponent.
 builder.Services.AddScoped<InviteService>();

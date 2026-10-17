@@ -75,8 +75,17 @@ public class GameStatsService
 
         bucket.EloRating = ComputeEloRating(bucket, difficulty);
         await SaveStats(gameKey, stats);
+        ResultRecorded?.Invoke(gameKey);
         return stats;
     }
+
+    /// <summary>
+    /// Raised after any game's W/L/D result is written locally, by either rating path.
+    /// Every result reaches one of the two, whether it came through GameResultService or a
+    /// page that records on its own, so this is the one place "a result was recorded" is
+    /// observable (achievements listen here).
+    /// </summary>
+    public event Action<string>? ResultRecorded;
 
     public async Task SaveStats(string gameKey, PlayerStats stats)
     {
@@ -148,6 +157,7 @@ public class GameStatsService
 
         LocalStorageService.SetItem(
             $"{AdaptiveKeyPrefix}{gameKey}_{playerName}", rating, ApiJsonContext.Default.AdaptiveRating);
+        ResultRecorded?.Invoke(gameKey);
         return rating;
     }
 
@@ -182,14 +192,33 @@ public class GameStatsService
     }
 
     /// <summary>
-    /// Counts one *session* of a no-outcome game, not one round — the profile tile
-    /// reads "Played N times", so callers invoke this once per page session.
+    /// Counts one *session* of a game, not one round — the profile tile reads "N sessions",
+    /// so this runs once per game page visit (GameShell does it for every game; see
+    /// <see cref="PlayKeyForPath"/>).
     /// </summary>
     public int RecordPlay(string gameKey)
     {
         var next = GetPlayCount(gameKey) + 1;
         LocalStorageService.SetItem(PlayCountKey(gameKey), next.ToString());
         return next;
+    }
+
+    /// <summary>
+    /// The catalogue game a page address belongs to ("pomule/1player?autoGuest=1" →
+    /// "pomule"), or null for an address that is not a game. Matched on the first path
+    /// segment of each game's mode URLs, so it needs no list of its own — Fun Quiz lives at
+    /// /funquiz but keeps its stats under "pofunquiz", and that is the key this returns.
+    /// </summary>
+    public static string? PlayKeyForPath(string relativePath)
+    {
+        static string FirstSegment(string path) =>
+            path.TrimStart('/').Split('?', '#')[0].Split('/')[0];
+
+        var segment = FirstSegment(relativePath);
+        if (segment.Length == 0) return null;
+        return GameCatalog.All
+            .FirstOrDefault(g => g.Modes.Any(m => string.Equals(FirstSegment(m.Url), segment, StringComparison.OrdinalIgnoreCase)))
+            ?.Key.Value;
     }
 
     // UX 10: Offline-First - Track last played game

@@ -76,7 +76,7 @@ pwsh scripts/test-all.ps1                                     # full test suite
 src/
 ├── PoMiniGames.API/            Host + vertical feature slices (Features/<Slice>)
 ├── PoMiniGames.Client/         Blazor WASM client (assembly: PoMiniGamesClient)
-├── PoMiniGames.Infrastructure/ Table Storage, HighScoreDescriptor<T> leaderboards
+├── PoMiniGames.Infrastructure/ Table Storage, HighScoreDescriptor<T> leaderboards (all-time + weekly, ?period=week)
 ├── PoMiniGames.Domain/         Domain primitives (EloCalculator, GameKey, ...)
 └── PoMiniGames.Shared/         DTOs shared between client and server
 tests/

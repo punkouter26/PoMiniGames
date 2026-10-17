@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using PoMiniGames.Domain.Abstractions;
@@ -51,5 +52,17 @@ public sealed class PoMuleHighScoreTests : IClassFixture<TestWebApplicationFacto
         // A tampered number is clamped to the ceiling rather than stored as sent.
         var clamped = await storage.SavePoMuleHighScoreAsync(Match("Mule Cheat", int.MaxValue));
         clamped.NetWorth.Should().Be(PoMuleHighScore.MaxNetWorth);
+
+        // Every save also lands on this ISO week's board, with the same ratchet, and the
+        // anonymous unified read serves it under period=week.
+        var weekly = await storage.GetPoMuleHighScoresAsync(100, weekly: true);
+        weekly.Single(s => s.PlayerName == "Mule Rich").NetWorth.Should().Be(21_000);
+        weekly.Select(s => s.NetWorth).Should().BeInDescendingOrder();
+
+        using var client = _factory.CreateClient();
+        var weekBoard = await client.GetFromJsonAsync<GameLeaderboardDto>("/api/leaderboards/pomule?limit=100&period=week");
+        weekBoard!.Entries.Should().Contain(e => e.Name == "Mule Rich" && e.Value == 21_000);
+        (await client.GetAsync("/api/leaderboards/tictactoe?period=week")).StatusCode
+            .Should().Be(System.Net.HttpStatusCode.NotFound, "a cumulative rating board has no week to show");
     }
 }

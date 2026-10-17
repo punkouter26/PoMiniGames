@@ -1,12 +1,23 @@
 @namespace PoMiniGamesClient.Games.PoMule
 @using PoMiniGames.Shared.Games.PoMule
+@using PoMiniGamesClient.Services.Ui
+@inject IJSRuntime JS
 
 @* Phase 6 of every month, and the final results: who is worth what, how each colonist's
-   Net Worth has moved, and whether the colony as a whole is holding together. *@
-<div class="pm-standings" role="dialog" aria-label="Monthly standings">
+   Net Worth has moved, and whether the colony as a whole is holding together.
+
+   A native <dialog>. While a human is playing it opens with showModal(), so focus is
+   trapped inside it, the page behind is inert, and Space or Enter on "Next month" carries
+   on. A demo nobody is driving gets a plain open dialog instead: it has nothing to focus,
+   and a modal would lock the speed buttons and the top bar for the length of the table.
+   Escape is the same as "Next month" rather than closing a table the match still needs. *@
+<dialog @ref="_dialog" class="pm-standings" aria-labelledby="pm-standings-title"
+        aria-modal="@(Modal ? "true" : "false")" open="@(!Modal)"
+        @oncancel="OnCancelAsync" @oncancel:preventDefault>
+    <RadzenMediaQuery Query="(max-width: 640px)" Change="@(narrow => _narrow = narrow)" />
     <RadzenCard Variant="Variant.Filled" class="pm-standings-card">
         <div class="pm-standings-head">
-            <div class="pm-standings-title">@(Final ? "Final results" : $"Month {State.Month} standings")</div>
+            <h2 class="pm-standings-title" id="pm-standings-title">@(Final ? "Final results" : $"Month {State.Month} standings")</h2>
             <RadzenBadge BadgeStyle="@(Survives ? BadgeStyle.Success : BadgeStyle.Danger)"
                          Text="@ColonyLine" />
         </div>
@@ -27,7 +38,9 @@
                             }
                         </Template>
                     </RadzenDataGridColumn>
-                    <RadzenDataGridColumn TItem="PoMuleRow" Title="Species" Width="150px">
+                    @* The first column to go on a narrow screen: the colour dot and the name
+                       already say who is who, and the number columns are the point. *@
+                    <RadzenDataGridColumn TItem="PoMuleRow" Title="Species" Width="150px" Visible="@(!_narrow)">
                         <Template Context="r">@r.SpeciesName</Template>
                     </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="PoMuleRow" Title="Plots" Width="60px" TextAlign="TextAlign.Right">
@@ -41,7 +54,9 @@
 
             @if (State.History.Count > 1)
             {
-                <RadzenChart Style="height: 220px">
+                @* Sized to the screen rather than a fixed 220px: a landscape phone is about
+                   390px tall, and a fixed chart pushed the table's own rows off it. *@
+                <RadzenChart Style="height: clamp(130px, 28vh, 220px)">
                     @foreach (var p in State.Players)
                     {
                         var seat = p.Seat;
@@ -60,12 +75,13 @@
         @if (!Final && CanContinue)
         {
             <div class="pm-standings-actions">
-                <RadzenButton Text="Next month" ButtonStyle="ButtonStyle.Warning" Click="@(_ => OnContinue.InvokeAsync())" />
+                <RadzenButton Text="Next month" ButtonStyle="ButtonStyle.Warning" autofocus
+                              Click="@(_ => OnContinue.InvokeAsync())" />
                 <span class="pm-standings-hint">or press Space</span>
             </div>
         }
     </RadzenCard>
-</div>
+</dialog>
 
 @code {
     [Parameter, EditorRequired] public MatchState State { get; set; } = null!;
@@ -73,6 +89,26 @@
     [Parameter] public bool Final { get; set; }
     [Parameter] public bool CanContinue { get; set; }
     [Parameter] public EventCallback OnContinue { get; set; }
+
+    private ElementReference _dialog;
+    private bool _narrow;
+
+    // A human's match: the table blocks the board until they carry on.
+    private bool Modal => CanContinue;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && Modal)
+        {
+            try { await _dialog.ShowModalAsync(JS); }
+            catch (JSException) { /* the dialog still renders in flow; only the trap is lost */ }
+        }
+    }
+
+    private async Task OnCancelAsync()
+    {
+        if (!Final && CanContinue) await OnContinue.InvokeAsync();
+    }
 
     // Mid-match the wealth target is still ahead; only the crisis count can already be lost.
     private bool Survives => Final

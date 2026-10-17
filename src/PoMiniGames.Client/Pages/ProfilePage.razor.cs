@@ -6,6 +6,7 @@ using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
 using PoMiniGamesClient.Services.Ui;
+using PlayerCardDto = PoMiniGames.Domain.Models.PlayerCardDto;
 
 namespace PoMiniGamesClient.Pages;
 
@@ -119,6 +120,17 @@ public partial class ProfilePage
     private GameEntry? _bestEntry, _nemesisEntry;
     private List<GameEntry> _entries = new();
 
+    // ── Headline band: 1P | Online ───────────────────────────────
+    // The competitive card, fetched with the page so the band's Online half has it.
+    private PlayerCardDto? _card;
+    // Null until the player picks a side; until then the band opens on whichever side
+    // has a record (1P when both do).
+    private bool? _bandOnline;
+
+    private bool Has1PRecord => _totalGames > 0 || _unsyncedSessions > 0;
+    private bool HasOnlineRecord => _card is { } c && c.Wins + c.Losses + c.Draws > 0;
+    private bool ShowOnline => _card is not null && (_bandOnline ?? (!Has1PRecord && HasOnlineRecord));
+
     // ── High scores (best available per 1P game) ──────────────────
     private sealed record HighScoreEntry(string Game, string Icon, string Value, string Sub, bool HasValue);
     private List<HighScoreEntry> _highScores = new();
@@ -182,9 +194,12 @@ public partial class ProfilePage
     protected override async Task OnInitializedAsync()
     {
         await LoadStatsAsync();
-        // HighScore + MatchHistory are independent (disjoint fields), so run them
-        // concurrently — the same way OnNameChanged already fires them.
-        await Task.WhenAll(LoadHighScoresAsync(), LoadMatchesAsync());
+        // HighScore, MatchHistory and the card are independent (disjoint fields), so run
+        // them concurrently — the same way OnNameChanged already fires them.
+        await Task.WhenAll(LoadHighScoresAsync(), LoadMatchesAsync(), LoadCardAsync());
+        // Settles the achievements that need this page's data (online wins); the grid
+        // renders from the store this updates.
+        Achievements.Evaluate();
         // Dismiss the skeleton once the slowest data source has resolved.
         // HighScore + MatchHistory fire in parallel; flipping _loading here means
         // the user sees a skeleton for the network round-trip (typically <300ms
@@ -202,11 +217,6 @@ public partial class ProfilePage
         await Task.CompletedTask;
     }
 
-    // A guest session's display name is the minted "Guest-NNNNNN" handle (see
-    // DevLoginIntake.BuildProfile); AuthenticatedUserProfile carries no kind of its own.
-    private bool IsGuestUser()
-        => AuthState.User?.DisplayName?.StartsWith("Guest", StringComparison.Ordinal) ?? true;
-
     public void Dispose() => PlayerNameService.StateChanged -= OnNameChanged;
 
     private void OnNameChanged()
@@ -223,7 +233,15 @@ public partial class ProfilePage
         _highScoreLoadFailed = false;
         _ = LoadHighScoresAsync();
         _ = LoadMatchesAsync();
+        _ = LoadCardAsync();
         InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadCardAsync()
+    {
+        _card = await ApiService.GetPlayerCardAsync(_playerName);
+        if (_card is { Wins: > 0 } card) Achievements.NoteOnlineWins(card.Wins);
+        StateHasChanged();
     }
 
     // ── High scores ──────────────────────────────────────────────
@@ -385,6 +403,7 @@ public partial class ProfilePage
         var matches = await MatchHistory.GetMyMatchesAsync();
         _localOpponents = Aggregate(matches.Where(m => m.Mode == "local-2p"));
         _onlineOpponents = Aggregate(matches.Where(m => m.Mode != "local-2p"));
+        Achievements.NoteOnlineWins(_onlineOpponents.Sum(o => o.Wins));
         _matchesLoading = false;
         StateHasChanged();
     }
@@ -536,17 +555,22 @@ public partial class ProfilePage
             : null;
 
     // A PlayCountOnly game is watched rather than won, so a "Watch again" link from
-    // the profile card takes the user straight to its /demo route without bouncing
-    // through the home page first.
-    private static string DemoUrl(string gameKey) => $"/{gameKey}/demo";
+    // the profile card takes the user straight to its Demo mode without bouncing
+    // through the home page first. The catalogue owns the URL (a guessed "/{key}/demo"
+    // was wrong for any game whose route is not its stat key); null when the game has
+    // no demo, and the card links to PlayUrl instead.
+    private static string? DemoUrl(string gameKey) =>
+        CatalogFor(gameKey)?.Find(GameMode.Demo)?.Url;
 
     /// <summary>
     /// Where an unplayed game's chip leads: the catalogue's primary mode for it. The stat
     /// keys here predate the catalogue's (pofunquiz / funquiz), hence the suffix match;
     /// anything unmatched falls back to the hub.
     /// </summary>
-    private static string PlayUrl(string gameKey) =>
-        GameCatalog.All.FirstOrDefault(g => gameKey.EndsWith(g.Key.Value, StringComparison.OrdinalIgnoreCase))?.Primary.Url ?? "/";
+    private static string PlayUrl(string gameKey) => CatalogFor(gameKey)?.Primary.Url ?? "/";
+
+    private static CatalogGame? CatalogFor(string gameKey) =>
+        GameCatalog.All.FirstOrDefault(g => gameKey.EndsWith(g.Key.Value, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// A game rated by a single adaptive ELO against a rating-matched CPU. The whole

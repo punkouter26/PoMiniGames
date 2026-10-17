@@ -13,8 +13,11 @@ public interface IStorageService
     Task SavePlayerStatsAsync(string game, string playerName, PlayerStats stats);
     Task<List<(string Name, PlayerStats Stats)>> GetLeaderboardAsync(string game, int limit, string? difficulty = null);
 
+    // `weekly` on a high-score read selects the current ISO week's board: every save to these
+    // boards also lands in a per-week partition with the same one-best-row-per-player ratchet.
+
     // PoMarbleRace High Scores
-    Task<List<MarbleRaceHighScore>> GetMarbleRaceHighScoresAsync(int limit = 10);
+    Task<List<MarbleRaceHighScore>> GetMarbleRaceHighScoresAsync(int limit = 10, bool weekly = false);
     Task<MarbleRaceHighScore> SaveMarbleRaceHighScoreAsync(MarbleRaceHighScore entry);
 
     // PoMarbleRace world records (fastest finish per map; one row per map)
@@ -26,7 +29,7 @@ public interface IStorageService
     Task<PoBrawlHighScore> SavePoBrawlHighScoreAsync(PoBrawlHighScore entry);
 
     // PoRacer High Scores (lowest race time wins)
-    Task<List<PoRacerHighScore>> GetPoRacerHighScoresAsync(int limit = 10, string? trackId = null);
+    Task<List<PoRacerHighScore>> GetPoRacerHighScoresAsync(int limit = 10, string? trackId = null, bool weekly = false);
     Task<PoRacerHighScore> SavePoRacerHighScoreAsync(PoRacerHighScore entry);
 
     // PoBrawl presidents-ladder leaderboard (one row per player, best-ever progress)
@@ -96,16 +99,16 @@ public interface IStorageService
 
     // PoSports High Scores (lowest combined meet time wins, one row per player)
     // `day` (yyyyMMdd, UTC) addresses that day's daily-meet board instead of the all-time one.
-    Task<List<PoSportsHighScore>> GetPoSportsHighScoresAsync(int limit = 10, string? day = null);
+    Task<List<PoSportsHighScore>> GetPoSportsHighScoresAsync(int limit = 10, string? day = null, bool weekly = false);
     Task<PoSportsHighScore> SavePoSportsHighScoreAsync(PoSportsHighScore entry, string? day = null);
 
     // PoVoxelStrike High Scores (highest run score wins, one ratcheted row per player)
     // `day` (yyyy-MM-dd, server-formatted) selects that day's Daily Siege board instead.
-    Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10, string? day = null);
+    Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10, string? day = null, bool weekly = false);
     Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry, string? day = null);
 
     // PoMule High Scores (highest end-of-match Net Worth wins, one ratcheted row per player)
-    Task<List<PoMuleHighScore>> GetPoMuleHighScoresAsync(int limit = 10);
+    Task<List<PoMuleHighScore>> GetPoMuleHighScoresAsync(int limit = 10, bool weekly = false);
     Task<PoMuleHighScore> SavePoMuleHighScoreAsync(PoMuleHighScore entry);
 
     // PoCabinet High Scores (lowest best-lap wins, partitioned by TrackId)

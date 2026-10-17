@@ -168,6 +168,29 @@
     [Parameter] public RenderFragment ChildContent { get; set; } = null!;
 
     [Inject] private IJSRuntime JS { get; set; } = null!;
+    [Inject] private NavigationManager Nav { get; set; } = null!;
+    [Inject] private Services.Play.AchievementService Achievements { get; set; } = null!;
+
+    // ── Session count ──
+    // Every game page sits in this shell, so this is the one place a game session can be
+    // counted for all of them: the profile's "N sessions" for the games with no W/L record
+    // (Ecosystem, Sand Playground, Cabinet, Mule, Jev Arena) and the achievements that count
+    // games played. Once per address, so a mode switch (/pomule/1player → /pomule/demo) is a
+    // new session but a re-render is not. The unattended kiosk reel is not anyone playing.
+    private string? _sessionPath;
+
+    private void CountSession()
+    {
+        var path = Nav.ToBaseRelativePath(Nav.Uri);
+        var bare = path.Split('?', '#')[0];
+        if (bare == _sessionPath) return;
+        _sessionPath = bare;
+        if (path.Contains("kiosk=", StringComparison.OrdinalIgnoreCase)) return;
+        if (Services.Play.GameStatsService.PlayKeyForPath(bare) is { } key)
+        {
+            Achievements.NoteSession(key);
+        }
+    }
 
     private bool _webGlChecked;
     private bool _webGlAvailable = true;
@@ -205,6 +228,8 @@
 
     protected override void OnParametersSet()
     {
+        CountSession();
+
         if (GameOver && !_showGameOver && _gameOverCts is null)
         {
             if (GameOverDelayMs <= 0)

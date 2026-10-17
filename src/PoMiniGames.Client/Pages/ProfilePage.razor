@@ -11,6 +11,7 @@
 @inject ToastService Toasts
 @inject IJSRuntime JS
 @inject InviteService Invites
+@inject AchievementService Achievements
 @implements IDisposable
 
 <PageTitle>My Stats · PoMiniGames</PageTitle>
@@ -51,63 +52,131 @@ else
         <h1 class="prf-name">My Stats</h1>
     </header>
 
-    <PlayerCard PlayerName="@_playerName" />
-
-    @* "Saved matches" counts FINISHED, PERSISTED matches (the W/L record). Sessions
-       that carry no outcome (a simulation session, a guest's unsynced plays) ride beside it
-       so "0" is not the whole story. A stat the player has not earned yet is a
-       dash with its how-to in the tooltip; sentences under each chip would make
-       the hero 361px on a phone.
-
-       With nothing recorded at all the row is left out: it would be four boxes
-       reading 0 and three dashes, under a card that already says "No ranked games
-       yet". *@
-    @if (_totalGames > 0 || _unsyncedSessions > 0)
+    @* The card is fetched with the rest of the page (it feeds the Online half of the band
+       below). Only a card in hand is passed down: a null Card makes PlayerCard fetch its
+       own, which is the fallback when that read failed. *@
+    @if (_card is not null)
     {
-    <div class="prf-chips">
-        <div class="prf-chip" title="@(_unsyncedSessions > 0
-                ? (IsGuestUser()
-                    ? "Guest plays are kept on this device. Sign in to save them to your leaderboard."
-                    : "This visit's plays are counted locally and join Saved Matches on the next sync.")
-                : null)">
-            <span class="prf-chip-val">@(_unsyncedSessions > 0 ? $"{_totalGames} +{_unsyncedSessions}" : _totalGames.ToString())</span>
-            <span class="prf-chip-lbl">Saved Matches</span>
-        </div>
-        <div class="prf-chip" title="@(_totalGames > 0 ? $"{_totalWins} wins, {_totalDraws} draws, {_totalLosses} losses" : "Play a 1-player match to start a record")">
-            <span class="prf-chip-val">@(_totalGames > 0 ? $"{_totalWins * 100 / _totalGames}%" : "—")</span>
-            <span class="prf-chip-lbl">Win Rate</span>
-        </div>
-        @if (_totalGames > 0)
-        {
-            <div class="prf-chip">
-                <span class="prf-chip-val">@_totalWins–@_totalDraws–@_totalLosses</span>
-                <span class="prf-chip-lbl">W–D–L</span>
+        <PlayerCard PlayerName="@_playerName" Card="@_card" />
+    }
+    else
+    {
+        <PlayerCard PlayerName="@_playerName" />
+    }
+
+    @* One band of headline numbers with a 1P | Online switch. The card above and this
+       page used to each carry a strip, and win rate, record and streak appeared twice
+       with different meanings side by side.
+
+       "Saved matches" counts FINISHED, PERSISTED matches (the W/L record); sessions that
+       carry no outcome (a simulation session) ride beside it so "0" is not the whole
+       story. A stat not earned yet is a dash with a one-line how-to under it, as text:
+       a tooltip on a box that cannot take focus reaches nobody on touch or keyboard.
+
+       With nothing on either side the band is left out: it would be boxes of 0 and
+       dashes under a card that already says "No ranked games yet". *@
+    @if (Has1PRecord || HasOnlineRecord)
+    {
+        var online = ShowOnline;
+        <section class="prf-band" aria-label="Headline stats">
+            <div class="app-seg app-seg--quiet prf-band-seg" role="tablist" aria-label="Which record">
+                <button type="button" role="tab" class="app-seg__btn" id="prf-band-1p"
+                        aria-selected="@(online ? "false" : "true")" aria-controls="prf-band-panel"
+                        @onclick="() => _bandOnline = false">1P</button>
+                <button type="button" role="tab" class="app-seg__btn" id="prf-band-online"
+                        aria-selected="@(online ? "true" : "false")" aria-controls="prf-band-panel"
+                        disabled="@(_card is null)"
+                        @onclick="() => _bandOnline = true">Online</button>
             </div>
-        }
-        <div class="prf-chip" title="@(_bestStreak > 0 ? null : "Win 2 or more in a row on a 1-player CPU game to set your first streak")">
-            <span class="prf-chip-val">@(_bestStreak > 0 ? _bestStreak.ToString() : "—")</span>
-            <span class="prf-chip-lbl">Best Streak</span>
-        </div>
-        @* AdaptiveRating.StartingElo is 1200 (GameModels.cs): at or below it, nothing has been won. *@
-        <div class="prf-chip" title="@(_topElo > 1200 ? null : "Win a 1-player match to climb past the 1200 starting rating")">
-            <span class="prf-chip-val">@(_topElo > 1200 ? _topElo.ToString() : "—")</span>
-            <span class="prf-chip-lbl">Top ELO</span>
-        </div>
-        @if (_bestEntry != null)
-        {
-            <div class="prf-chip prf-chip--best" title="@($"{_bestEntry.WinRate:P0} win rate over {_bestEntry.TotalGames} played")">
-                <span class="prf-chip-val">🏆 @_bestEntry.Label</span>
-                <span class="prf-chip-lbl">Best Game</span>
+            <div class="prf-chips" id="prf-band-panel" role="tabpanel"
+                 aria-labelledby="@(online ? "prf-band-online" : "prf-band-1p")">
+                @if (online)
+                {
+                    var c = _card!;
+                    var ranked = c.Wins + c.Losses + c.Draws > 0;
+                    <div class="prf-chip">
+                        <span class="prf-chip-val">@(ranked ? c.WinRate.ToString("P0") : "—")</span>
+                        <span class="prf-chip-lbl">Win Rate</span>
+                        @if (!ranked)
+                        {
+                            <span class="prf-chip-hint">Play an online match</span>
+                        }
+                    </div>
+                    <div class="prf-chip">
+                        <span class="prf-chip-val">@c.Wins–@c.Draws–@c.Losses</span>
+                        <span class="prf-chip-lbl">W–D–L</span>
+                    </div>
+                    <div class="prf-chip">
+                        <span class="prf-chip-val">@c.PeakMmr.ToString("N0")</span>
+                        <span class="prf-chip-lbl">Peak MMR</span>
+                        <span class="prf-chip-hint">Now @c.Mmr.ToString("N0")</span>
+                    </div>
+                    <div class="prf-chip">
+                        <span class="prf-chip-val">@(c.CurrentStreak switch { > 0 => $"+{c.CurrentStreak} W", < 0 => $"{c.CurrentStreak} L", _ => "—" })</span>
+                        <span class="prf-chip-lbl">Streak</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="prf-chip">
+                        <span class="prf-chip-val">@(_unsyncedSessions > 0 ? $"{_totalGames} +{_unsyncedSessions}" : _totalGames.ToString())</span>
+                        <span class="prf-chip-lbl">Saved Matches</span>
+                        @if (_unsyncedSessions > 0)
+                        {
+                            <span class="prf-chip-hint">+@_unsyncedSessions @(_unsyncedSessions == 1 ? "session" : "sessions") on this device</span>
+                        }
+                    </div>
+                    <div class="prf-chip">
+                        <span class="prf-chip-val">@(_totalGames > 0 ? $"{_totalWins * 100 / _totalGames}%" : "—")</span>
+                        <span class="prf-chip-lbl">Win Rate</span>
+                        @if (_totalGames == 0)
+                        {
+                            <span class="prf-chip-hint">Play a 1-player match</span>
+                        }
+                    </div>
+                    @if (_totalGames > 0)
+                    {
+                        <div class="prf-chip">
+                            <span class="prf-chip-val">@_totalWins–@_totalDraws–@_totalLosses</span>
+                            <span class="prf-chip-lbl">W–D–L</span>
+                        </div>
+                    }
+                    <div class="prf-chip">
+                        <span class="prf-chip-val">@(_bestStreak > 0 ? _bestStreak.ToString() : "—")</span>
+                        <span class="prf-chip-lbl">Best Streak</span>
+                        @if (_bestStreak == 0)
+                        {
+                            <span class="prf-chip-hint">Win 2 in a row vs the CPU</span>
+                        }
+                    </div>
+                    @* AdaptiveRating.StartingElo is 1200 (GameModels.cs): at or below it, nothing has been won. *@
+                    <div class="prf-chip">
+                        <span class="prf-chip-val">@(_topElo > 1200 ? _topElo.ToString() : "—")</span>
+                        <span class="prf-chip-lbl">Top ELO</span>
+                        @if (_topElo <= 1200)
+                        {
+                            <span class="prf-chip-hint">Win to pass 1200</span>
+                        }
+                    </div>
+                    @if (_bestEntry != null)
+                    {
+                        <div class="prf-chip prf-chip--best">
+                            <span class="prf-chip-val">🏆 @_bestEntry.Label</span>
+                            <span class="prf-chip-lbl">Best Game</span>
+                            <span class="prf-chip-hint">@($"{_bestEntry.WinRate:P0} of {_bestEntry.TotalGames}")</span>
+                        </div>
+                    }
+                    @if (_nemesisEntry != null)
+                    {
+                        <div class="prf-chip prf-chip--nemesis">
+                            <span class="prf-chip-val">💀 @_nemesisEntry.Label</span>
+                            <span class="prf-chip-lbl">Nemesis</span>
+                            <span class="prf-chip-hint">@($"{_nemesisEntry.WinRate:P0} of {_nemesisEntry.TotalGames}")</span>
+                        </div>
+                    }
+                }
             </div>
-        }
-        @if (_nemesisEntry != null)
-        {
-            <div class="prf-chip prf-chip--nemesis" title="@($"{_nemesisEntry.WinRate:P0} win rate over {_nemesisEntry.TotalGames} played")">
-                <span class="prf-chip-val">💀 @_nemesisEntry.Label</span>
-                <span class="prf-chip-lbl">Nemesis</span>
-            </div>
-        }
-    </div>
+        </section>
     }
 
     <!-- ── Games: one card per game played, the rest on one line ── -->
@@ -173,7 +242,14 @@ else
                             <p class="prf-game-plays">
                                 <span class="prf-game-plays-val">@g.PlayCount</span>
                                 <span class="prf-game-plays-lbl">@(g.PlayCount == 1 ? "session" : "sessions")</span>
-                                <a class="prf-game-link" href="@DemoUrl(g.Key)">Watch again →</a>
+                                @if (DemoUrl(g.Key) is { } demo)
+                                {
+                                    <a class="prf-game-link" href="@demo">Watch again →</a>
+                                }
+                                else
+                                {
+                                    <a class="prf-game-link" href="@PlayUrl(g.Key)">Play again →</a>
+                                }
                             </p>
                         }
                     </div>
@@ -198,13 +274,31 @@ else
         }
     </section>
 
+    <!-- ── Achievements: earned on this device, locked ones greyed with how to earn them ── -->
+    <section class="prf-section" aria-labelledby="prf-ach-title">
+        <h2 class="prf-section-title" id="prf-ach-title">Achievements · @Achievements.UnlockedCount of @AchievementService.All.Count</h2>
+        <ul class="prf-ach-grid">
+            @foreach (var a in AchievementService.All)
+            {
+                var earned = Achievements.IsUnlocked(a.Id);
+                <li class="prf-ach @(earned ? "prf-ach--on" : "prf-ach--off")">
+                    <span class="prf-ach-icon" aria-hidden="true">@a.Icon</span>
+                    <span class="prf-ach-text">
+                        <span class="prf-ach-title">@a.Title<span class="prf-sr-only">@(earned ? ", earned" : ", locked")</span></span>
+                        <span class="prf-ach-hint">@a.Hint</span>
+                    </span>
+                </li>
+            }
+        </ul>
+    </section>
+
     <!-- ── Head-to-Head ── -->
     @if (_matchesLoading || _localOpponents.Count > 0 || _onlineOpponents.Count > 0)
     {
         <section class="prf-section">
             <div class="prf-section-head">
                 <h2 class="prf-section-title">Head-to-Head · People You Played</h2>
-                <span class="prf-h2h-legend" aria-label="Badge legend">
+                <span class="prf-h2h-legend" role="group" aria-label="Badge legend">
                     <span class="prf-h2h-badge prf-h2h-badge--guest" aria-hidden="true">G</span>
                     <span class="prf-h2h-legend-lbl">Guest</span>
                     <span class="prf-h2h-badge prf-h2h-badge--microsoft" aria-hidden="true">MS</span>
@@ -274,36 +368,43 @@ else
         @*
             <Virtualize> wraps the opponent table body. A player's full head-to-head
             history is unbounded (each new opponent is a new row), so without virtualization
-            a profile page with 200+ opponents scrolls janky and allocates a DOM node per
-            opponent. The virtualizer recycles rows in a 48 px slot, keeping the DOM flat.
+            a profile page with 200+ opponents allocates a DOM node per opponent. There is no
+            inner scroll box: the virtualizer follows the page's own scroll, so a phone has
+            one scroll, not a 360px well inside it.
+
+            Under 640px each row is laid out as a card (badge and name, a W–L–D pill, a small
+            Invite button) by CSS alone. The explicit table roles keep it a table to
+            assistive tech once the rows stop being display: table-row.
         *@
         <div class="prf-h2h-vwrap">
-            <table class="prf-h2h-table">
-                <thead>
-                    <tr>
-                        <th>Opponent</th><th>W</th><th>L</th><th>D</th><th>Record</th>
+            <table class="prf-h2h-table" role="table">
+                <thead role="rowgroup">
+                    <tr role="row">
+                        <th role="columnheader">Opponent</th>
+                        <th role="columnheader" class="prf-h2h-num"><abbr title="Wins">W</abbr></th>
+                        <th role="columnheader" class="prf-h2h-num"><abbr title="Losses">L</abbr></th>
+                        <th role="columnheader" class="prf-h2h-num"><abbr title="Draws">D</abbr></th>
                         @if (invitable)
                         {
-                            <th class="prf-h2h-invite" aria-label="Invite"></th>
+                            <th role="columnheader" class="prf-h2h-invite"><span class="prf-sr-only">Invite</span></th>
                         }
                     </tr>
                 </thead>
-                <tbody>
-                    <Virtualize Items="opponents" Context="o" ItemSize="48">
-                        <tr>
-                            <td class="prf-h2h-name">
-                                <span class="prf-h2h-badge prf-h2h-badge--@o.Type" title="@(o.Type == "microsoft" ? "Microsoft account" : "Guest")">@(o.Type == "microsoft" ? "MS" : "G")</span>
-                                @o.Name
+                <tbody role="rowgroup">
+                    <Virtualize Items="opponents" Context="o" ItemSize="48" SpacerElement="tr">
+                        <tr role="row" class="prf-h2h-row">
+                            <td role="cell" class="prf-h2h-name">
+                                <span class="prf-h2h-badge prf-h2h-badge--@o.Type" aria-hidden="true">@(o.Type == "microsoft" ? "MS" : "G")</span>
+                                <span class="prf-h2h-who">@o.Name<span class="prf-sr-only">@(o.Type == "microsoft" ? " (Microsoft account)" : " (guest)")</span></span>
                             </td>
-                            <td class="prf-h2h-w">@o.Wins</td>
-                            <td class="prf-h2h-l">@o.Losses</td>
-                            <td class="prf-h2h-d">@o.Draws</td>
-                            <td>@o.Wins–@o.Losses–@o.Draws</td>
+                            <td role="cell" class="prf-h2h-num prf-h2h-w">@o.Wins</td>
+                            <td role="cell" class="prf-h2h-num prf-h2h-l">@o.Losses</td>
+                            <td role="cell" class="prf-h2h-num prf-h2h-d">@o.Draws</td>
                             @if (invitable)
                             {
                                 @* Online opponents only: a local 2-player name is whatever was
                                    typed on this device, not someone who can be reached. *@
-                                <td class="prf-h2h-invite">
+                                <td role="cell" class="prf-h2h-invite">
                                     <button type="button" class="app-btn app-btn--secondary app-btn--sm"
                                             disabled="@(_inviting == o.Name)"
                                             aria-label="@($"Invite {o.Name} to play again")"

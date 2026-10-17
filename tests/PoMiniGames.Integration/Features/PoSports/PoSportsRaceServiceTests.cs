@@ -23,7 +23,7 @@ public sealed class PoSportsRaceServiceTests
     {
         public readonly ConcurrentBag<PoSportsHighScore> Saved = [];
 
-        public Task<List<PoSportsHighScore>> GetPoSportsHighScoresAsync(int limit = 10, string? day = null) =>
+        public Task<List<PoSportsHighScore>> GetPoSportsHighScoresAsync(int limit = 10, string? day = null, bool weekly = false) =>
             Task.FromResult(Saved.OrderBy(s => s.TotalTimeSeconds).Take(limit).ToList());
 
         public Task<PoSportsHighScore> SavePoSportsHighScoreAsync(PoSportsHighScore entry, string? day = null)
@@ -40,7 +40,7 @@ public sealed class PoSportsRaceServiceTests
         public Task SavePlayerStatsAsync(string game, string playerName, PlayerStats stats) => Task.CompletedTask;
         public Task<List<(string Name, PlayerStats Stats)>> GetLeaderboardAsync(string game, int limit, string? difficulty = null) =>
             Task.FromResult(new List<(string, PlayerStats)>());
-        public Task<List<MarbleRaceHighScore>> GetMarbleRaceHighScoresAsync(int limit = 10) =>
+        public Task<List<MarbleRaceHighScore>> GetMarbleRaceHighScoresAsync(int limit = 10, bool weekly = false) =>
             Task.FromResult(new List<MarbleRaceHighScore>());
         public Task<MarbleRaceHighScore> SaveMarbleRaceHighScoreAsync(MarbleRaceHighScore entry) => Task.FromResult(entry);
         public Task<List<MarbleRaceMapRecord>> GetMarbleRaceMapRecordsAsync() => Task.FromResult(new List<MarbleRaceMapRecord>());
@@ -48,7 +48,7 @@ public sealed class PoSportsRaceServiceTests
         public Task<List<PoBrawlHighScore>> GetPoBrawlHighScoresAsync(int limit = 10) =>
             Task.FromResult(new List<PoBrawlHighScore>());
         public Task<PoBrawlHighScore> SavePoBrawlHighScoreAsync(PoBrawlHighScore entry) => Task.FromResult(entry);
-        public Task<List<PoRacerHighScore>> GetPoRacerHighScoresAsync(int limit = 10, string? trackId = null) =>
+        public Task<List<PoRacerHighScore>> GetPoRacerHighScoresAsync(int limit = 10, string? trackId = null, bool weekly = false) =>
             Task.FromResult(new List<PoRacerHighScore>());
         public Task<PoRacerHighScore> SavePoRacerHighScoreAsync(PoRacerHighScore entry) => Task.FromResult(entry);
         // T5: PoCabinet surface — inert for PoSports tests.
@@ -76,10 +76,10 @@ public sealed class PoSportsRaceServiceTests
             string winnerDisplayName, string loserDisplayName, bool isDraw) =>
             Task.CompletedTask;
 
-        public Task<List<PoMuleHighScore>> GetPoMuleHighScoresAsync(int limit = 10) =>
+        public Task<List<PoMuleHighScore>> GetPoMuleHighScoresAsync(int limit = 10, bool weekly = false) =>
             Task.FromResult(new List<PoMuleHighScore>());
         public Task<PoMuleHighScore> SavePoMuleHighScoreAsync(PoMuleHighScore entry) => Task.FromResult(entry);
-        public Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10, string? day = null) =>
+        public Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10, string? day = null, bool weekly = false) =>
             Task.FromResult(new List<PoVoxelStrikeHighScore>());
         public Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry, string? day = null) =>
             Task.FromResult(entry);

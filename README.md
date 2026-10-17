@@ -22,7 +22,8 @@ scores, and talks to AI models on the player's behalf.
   they are; there is no Player table.
 - **Computer opponents are hand-written rules, not trained models.** Difficulty is a table of
   numbers in source. The exceptions are hosted models: Azure AI Foundry chat models write
-  quizzes, banter and chronicles, and TypeSafe's Jev makes PoJevArena's battle calls.
+  quizzes, banter and chronicles, and TypeSafe's Jev can make PoJevArena's battle calls (opt-in;
+  free local rules by default, set by `PoMiniGames:Jev:Brain`).
   Each has a daily cap per player and a scripted fallback.
 - **Works offline.** A score that cannot reach the server is parked in the browser and sent
   automatically later.
@@ -53,7 +54,7 @@ scores, and talks to AI models on the player's behalf.
 | PoCabinet | 3D circuit racer: solo career across four tracks, AI officials, and a server-simulated online lobby |
 | PoSports | Sprite-based sports mini-game |
 | PoVoxelStrike | Third-person survival shooter with fully destructible voxel structures |
-| PoJevArena | Design creatures, draft 10 v 10, and watch TypeSafe's Jev make every tactical call; post-match Black Box scrubber |
+| PoJevArena | Design creatures, draft 10 v 10, and watch the arena brain (free local rules, or TypeSafe's Jev when picked in Settings) make every tactical call; post-match Black Box scrubber |
 | PoMule | Eight-player M.U.L.E.: claim land, work M.U.L.E.s and trade on a walking-floor market for twelve months vs seven AI personalities; all-AI demo |
 | PoEcosystem | Watch-only island simulation: species, tribes and an AI-written chronicle; cloud save slots and a shared gallery |
 | SandPlayground | GPU sand-and-water sandbox |

@@ -18,8 +18,22 @@ public sealed record ArenaRoster(ArenaCreature[] Blue, ArenaCreature[] Red)
 /// <summary>One Jev question as sent on the wire (<c>type</c> is <c>choice</c> or <c>noul</c>).</summary>
 public sealed record JevQuestion(string Type, string Instructions, IReadOnlyDictionary<string, string> Criteria);
 
-/// <summary>The complete model input for one unit: the state text plus the question set.</summary>
-public sealed record JevPrompt(string State, IReadOnlyDictionary<string, JevQuestion> Questions);
+/// <summary>
+/// The complete model input for one unit: the state text plus the question set. <see cref="Facts"/>
+/// carries the same validated numbers in structured form for the rule-based
+/// <see cref="Jev.LocalJevClient"/> and the decision cache. It is internal so it never goes on
+/// the wire and never shows up in the prompt snapshots.
+/// </summary>
+public sealed record JevPrompt(string State, IReadOnlyDictionary<string, JevQuestion> Questions)
+{
+    internal JevPromptFacts? Facts { get; init; }
+}
+
+/// <summary>One validated candidate with the roster creature behind it.</summary>
+internal sealed record JevCandidateFact(ArenaCandidate Candidate, ArenaCreature Creature, bool Blue);
+
+/// <summary>The validated, server-resolved inputs a prompt was written from.</summary>
+internal sealed record JevPromptFacts(ArenaCreature Subject, bool Blue, ArenaUnitState State, IReadOnlyList<JevCandidateFact> Candidates);
 
 /// <summary>Either a prompt or the stable code of the first rule the client's numbers broke.</summary>
 public sealed record JevPromptResult(JevPrompt? Prompt, string? Error);
@@ -99,7 +113,11 @@ public static class JevPromptBuilder
 
         var prompt = new JevPrompt(
             State: DescribeState(subject, state, cooldowns, resolved, blue),
-            Questions: Questions(subject, resolved));
+            Questions: Questions(subject, resolved))
+        {
+            Facts = new JevPromptFacts(subject, blue, state with { AbilityCooldowns = cooldowns, Candidates = candidates },
+                [.. resolved.Select(r => new JevCandidateFact(r.Candidate, r.Creature, r.Candidate.Focus == "protect_ally" ? blue : !blue))]),
+        };
         return new JevPromptResult(prompt, null);
     }
 

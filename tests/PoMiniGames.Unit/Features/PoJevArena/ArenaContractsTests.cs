@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 using PoMiniGames.AI;
 using PoMiniGames.Features.PoJevArena;
+using PoMiniGames.Features.PoJevArena.Jev;
 using PoMiniGames.Shared.Games.PoJevArena;
 using Xunit;
 
@@ -30,6 +31,8 @@ public sealed class ArenaContractsTests
     [InlineData("registry-result-must-be-plausible")]
     [InlineData("registry-sliding-expiry")]
     [InlineData("registry-roster-frozen")]
+    [InlineData("registry-jev-match-asks-less")]
+    [InlineData("jev-cache-reuses-similar-situations")]
     public async Task CallAllowance_AndMatchRegistry_Contracts(string scenario)
     {
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 25, 23, 58, 0, TimeSpan.Zero));
@@ -105,6 +108,35 @@ public sealed class ArenaContractsTests
                     a.MatchId.Should().NotBe(b.MatchId);
                     a.Roster.Should().BeSameAs(roster);
                     a.Mode.Should().Be(ArenaMode.Demo);
+                    return;
+                }
+            case "registry-jev-match-asks-less":
+                {
+                    // A Jev match asks only on a state change, so its result gate wants fewer decisions.
+                    var local = registry.Register(Me, roster, ArenaMode.OnePlayer);
+                    var jev = registry.Register(Me, roster, ArenaMode.OnePlayer, usesJev: true);
+                    clock.Advance(TimeSpan.FromSeconds(60));
+                    local.RecordDecisions(60, costUsd: 0);
+                    jev.RecordDecisions(60, costUsd: 0);
+                    local.UsesJev.Should().BeFalse("the free local brain is the default");
+                    local.TryClaimResult(60, clock.GetUtcNow()).Should().Be(ArenaResultGate.TooFewDecisions);
+                    jev.TryClaimResult(60, clock.GetUtcNow()).Should().Be(ArenaResultGate.Accepted);
+                    return;
+                }
+            case "jev-cache-reuses-similar-situations":
+                {
+                    string KeyFor(int hp, double distance) => JevDecisionCache.KeyOf(JevPromptBuilder.Build(roster, new ArenaUnitState(
+                        "Blue-01", hp, [0], false, true, 1, [new("nearest_threat", "Red-01", distance, 80)], 10, 10)).Prompt!.Facts!);
+
+                    KeyFor(hp: 85, distance: 2.3).Should().Be(KeyFor(hp: 83, distance: 2.9), "small drifts in HP and range are the same situation");
+                    KeyFor(hp: 85, distance: 2.3).Should().NotBe(KeyFor(hp: 40, distance: 2.3), "a different HP band is a new question");
+                    KeyFor(hp: 85, distance: 2.3).Should().NotBe(KeyFor(hp: 85, distance: 9), "so is a target far away");
+
+                    var cache = new JevDecisionCache();
+                    var answers = new JevAnswers("melee_charge", 0.8, [], "nearest_threat", 0.8, null, 0.1);
+                    cache.Store(KeyFor(85, 2.3), answers);
+                    cache.TryGet(KeyFor(83, 2.9), out var hit).Should().BeTrue();
+                    hit.Should().BeSameAs(answers);
                     return;
                 }
         }

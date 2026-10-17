@@ -107,7 +107,12 @@ flowchart TB
 ```
 
 **Component-level view: a hosted model (Jev in PoJevArena).** The browser simulates the
-fight; the model only answers "what should this unit do next?" once per unit per second.
+fight; the brain only answers "what should this unit do next?". The default brain is the free
+rule-based `LocalJevClient` on the server (once per unit per second). Paid Jev answers only when
+`PoMiniGames:Jev:Brain` is `Jev`, a key is set and the player picks Jev in Settings; then a unit is
+asked only on a state change (target lost, HP band crossed, new threat within 6 m), at most every
+2 s, and repeated situations are answered from a per-match cache. An opt-in on-device model
+(`js/localAi.js`, WebLLM over WebGPU) can serve the Jev brain in the browser instead.
 
 ```mermaid
 flowchart TB
@@ -327,7 +332,7 @@ world. The middle column is the closest real setting in this project.
 | **Aggression** | Reward weight | Boxer's attack appetite. | `aggro` 0.72 to 1.50 | `js/pobrawl/ai.js` |
 | | | PoRacer bot's risk on corners. | `Aggression` 0.30 to 0.95; tier `botCaution` 0.58 / 0.42 / 0.20 | `PoRacerAiDriver.cs`, `PoRacerRaceRegistry.cs` |
 | **Spending cap** | Compute budget | Hosted-model tokens per player per day. | `DailyTokensPerIdentity = 250000` | `appsettings.json` |
-| | | Jev decisions per player per day. | `DailyCallsPerIdentity = 20000` | `appsettings.json` |
+| | | Jev decisions per player per day. | `DailyCallsPerIdentity = 5000` | `appsettings.json` |
 | **Give-up time** | Timeout | Longest a hosted-model call may take. | 20 s total (chat models), 1.5 s (Jev) | `AzureOpenAIResilience.cs`, `JevOptions.cs` |
 
 ---
@@ -389,6 +394,7 @@ secrets in Azure Key Vault. Do not use `dotnet user-secrets` in this repo.
 | `PoMiniGames:AI:DefaultDeployment` | Model used when a game has no specific entry. |
 | `PoMiniGames:AI:Deployments` | Map of `game` or `game.task` to a model name, for example `pocabinet.banter`. |
 | `PoMiniGames:AI:DailyTokensPerIdentity` | Per-player daily spend cap. 0 turns it off. |
+| `PoMiniGames:Jev:Brain` | `Local` (free rules, the default) or `Jev` (paid; also needs `ApiKey` and the player's opt-in). |
 | `PoMiniGames:Jev:Model` | Pinned to `typesafe/jev-1.13`. |
 | `PoMiniGames:Jev:CallTimeoutMs` | 1500. A late answer is dropped and the unit keeps its last order. |
 | `<Game>:Features:UseMockAI` | Use canned answers instead of a real model. Honoured only outside production. Tests force it on, and `appsettings.Development.json` turns it on for PoFunQuiz and PoCoupleQuiz so local runs spend nothing. |

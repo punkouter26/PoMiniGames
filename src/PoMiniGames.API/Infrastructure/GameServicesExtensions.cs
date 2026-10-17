@@ -225,11 +225,12 @@ internal static class GameServicesExtensions
         // empty when storage is unreachable.
         services.AddSingleton<EcosystemWorldStore>();
 
-        // PoJevArena — Jev (TypeSafe, via OpenRouter) is the arena's only decision source.
-        // The client is a typed HttpClient with its own per-call timeout and no retry pipeline
-        // (a late decision is worthless at 1 Hz); the concurrency gate is a singleton so every
-        // typed-client instance shares one in-flight cap. The stub is selected only under the
-        // Test environment — anywhere else a missing key means "Jev unavailable", never a mock.
+        // PoJevArena — the free rule-based LocalJevClient is the default brain, so the arena always
+        // plays. Paid Jev (TypeSafe, via OpenRouter) answers a match only when Brain=Jev, a key is
+        // configured and the player asked (JevBrainRouter). The paid client is a typed HttpClient
+        // with its own per-call timeout and no retry pipeline; the concurrency gate is a singleton
+        // so every typed-client instance shares one in-flight cap. The stub is selected only under
+        // the Test environment.
         services.AddOptions<JevOptions>()
             .BindConfiguration(JevOptions.SectionName);
         services.AddSingleton<JevConcurrencyGate>();
@@ -239,6 +240,8 @@ internal static class GameServicesExtensions
                 .GetRequiredService<IOptions<JevOptions>>()
                 .Value.Endpoint));
         services.AddSingleton<StubJevClient>();
+        services.AddSingleton<LocalJevClient>();
+        services.AddScoped<JevBrainRouter>();
         services.AddTransient<IJevClient>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<JevOptions>>().Value;

@@ -106,16 +106,36 @@ public sealed record ArenaValidation(bool IsValid, string? Error, ArenaCreature?
 
 // ── Allowance ──────────────────────────────────────────────────────────────────
 
-/// <summary>What <c>GET /api/pojevarena/status</c> returns.</summary>
-public sealed record ArenaStatus(bool Configured, long DailyLimit, long Used, long Remaining, DateTimeOffset ResetUtc);
+/// <summary>
+/// What <c>GET /api/pojevarena/status</c> returns. <see cref="Configured"/> says the arena can run
+/// (always true now that the free local brain is the default); <see cref="JevAvailable"/> says
+/// whether a player who asks for the paid Jev brain gets it. The allowance numbers meter Jev only.
+/// </summary>
+public sealed record ArenaStatus(bool Configured, long DailyLimit, long Used, long Remaining, DateTimeOffset ResetUtc, bool JevAvailable = false);
+
+/// <summary>The decision sources a match can run on (wire values of <c>brain</c>).</summary>
+public static class ArenaBrains
+{
+    /// <summary>Free rule-based tactics on the server; the default.</summary>
+    public const string Local = "local";
+
+    /// <summary>Paid Jev calls, metered by the daily allowance.</summary>
+    public const string Jev = "jev";
+}
 
 // ── Match lifecycle ────────────────────────────────────────────────────────────
 
-/// <summary>Registers a match. Ids are library ids or <c>preset:*</c>; exactly 10 per team.</summary>
-public sealed record ArenaMatchRequest(ArenaMode Mode, string[] BlueIds, string[] RedIds);
+/// <summary>
+/// Registers a match. Ids are library ids or <c>preset:*</c>; exactly 10 per team.
+/// <see cref="Brain"/> is the player's ask (<see cref="ArenaBrains"/>); the server may answer local.
+/// </summary>
+public sealed record ArenaMatchRequest(ArenaMode Mode, string[] BlueIds, string[] RedIds, string? Brain = null);
 
-/// <summary>The frozen rosters the engine plays with: later library edits cannot change a running match.</summary>
-public sealed record ArenaMatchTicket(string MatchId, int Seed, ArenaCreature[] Blue, ArenaCreature[] Red);
+/// <summary>
+/// The frozen rosters the engine plays with: later library edits cannot change a running match.
+/// <see cref="Brain"/> is the brain the server actually gave the match.
+/// </summary>
+public sealed record ArenaMatchTicket(string MatchId, int Seed, ArenaCreature[] Blue, ArenaCreature[] Red, string Brain = ArenaBrains.Local);
 
 /// <summary>
 /// Reports a finished match once. <see cref="Winner"/> is <c>blue</c>, <c>red</c> or <c>draw</c>.

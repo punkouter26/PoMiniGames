@@ -3,8 +3,8 @@ using Microsoft.Playwright;
 namespace PoMiniGames.E2EUI.Features.PoJevArena;
 
 /// <summary>
-/// Journey 1 end to end against the real Kestrel host under the "Test" environment, where the
-/// Jev boundary is the deterministic stub (TestBudgetGuard; the stub always takes the first
+/// Journey 1 end to end against the real Kestrel host under the "Test" environment, where every
+/// brain (local and Jev) is the deterministic stub (TestBudgetGuard; the stub always takes the first
 /// offered option, i.e. melee_charge on the nearest threat, so matches genuinely finish):
 /// guest sign-in → Factory preview per ability → draft 10 + 10 → deploy → the match plays to a
 /// result → the Black Box scrubs and the inspector follows the scrubbed frame.
@@ -52,7 +52,7 @@ public class PoJevArenaUiTests
 
         await page.GetByRole(AriaRole.Button, new() { Name = "Start drafting" }).ClickAsync(new() { Timeout = 30_000 });
         await page.Locator(".jev-add--blue").Nth(4).WaitForAsync(new() { Timeout = 30_000 });
-        (await page.Locator(".jev-status").InnerTextAsync()).Should().Contain("Jev ready", "the Test host serves the Jev stub");
+        (await page.Locator(".jev-status").InnerTextAsync()).Should().Contain("ready", "the Test host serves the stub for every brain");
 
         // Factory (a drawer over the library): one preview capture per ability chip, so every
         // ability's wind-up/stance is reviewable.

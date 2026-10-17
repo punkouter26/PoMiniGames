@@ -30,8 +30,18 @@ public sealed class PoSportsSimTests
         for (var step = 0; step < 4; step++) sim.HandleSequenceKey(lane, step);
     }
 
-    [Fact]
-    public void StrideModel_ImpulseExact_DecayExact_SpeedCapped()
+    /// <summary>
+    /// Each row runs one scenario: a private method below, named after what it checks.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(StrideModel_ImpulseExact_DecayExact_SpeedCapped))]
+    [InlineData(nameof(SequenceRules_WrongKeyResets_FalseStartHolds))]
+    [InlineData(nameof(Hurdles_AirborneClears_GroundedStumbles))]
+    [InlineData(nameof(MeetFlow_Interstitial_Podium_And_Snapshot))]
+    [InlineData(nameof(AiOnlyMeet_FinishesWithin180SimSeconds))]
+    public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    private void StrideModel_ImpulseExact_DecayExact_SpeedCapped()
     {
         // One completed sequence from rest injects exactly one impulse.
         var sim = StartedSim();
@@ -48,8 +58,7 @@ public sealed class PoSportsSimTests
         sim.Lane(0).Speed.Should().Be(PoSportsConstants.MaxSpeed);
     }
 
-    [Fact]
-    public void SequenceRules_WrongKeyResets_FalseStartHolds()
+    private void SequenceRules_WrongKeyResets_FalseStartHolds()
     {
         // Wrong key mid-cycle: progress resets, banked speed untouched.
         var sim = StartedSim();
@@ -68,8 +77,7 @@ public sealed class PoSportsSimTests
         cold.Lane(0).HoldRemaining.Should().BeApproximately(PoSportsConstants.FalseStartHold, 1e-9);
     }
 
-    [Fact]
-    public void Hurdles_AirborneClears_GroundedStumbles()
+    private void Hurdles_AirborneClears_GroundedStumbles()
     {
         // Airborne over the 20 m hurdle: no penalty, position keeps advancing.
         var sim = StartedSim();
@@ -95,8 +103,7 @@ public sealed class PoSportsSimTests
         sim2.Lane(0).LegTime.Should().BeApproximately(before2 + 0.2 + PoSportsConstants.StumblePenalty, 0.01);
     }
 
-    [Fact]
-    public void MeetFlow_Interstitial_Podium_And_Snapshot()
+    private void MeetFlow_Interstitial_Podium_And_Snapshot()
     {
         // Sprint leg done → 8 s interstitial → hurdles leg with lanes reset.
         var sim = StartedSim();
@@ -125,8 +132,7 @@ public sealed class PoSportsSimTests
         sim2.Lane(0).Placing.Should().Be(2);
     }
 
-    [Fact]
-    public void AiOnlyMeet_FinishesWithin180SimSeconds()
+    private void AiOnlyMeet_FinishesWithin180SimSeconds()
     {
         var sim = new PoSportsSim(
         [

@@ -16,8 +16,15 @@ public class PoRacerSimAiTests
     private readonly ITestOutputHelper _out;
     public PoRacerSimAiTests(ITestOutputHelper output) => _out = output;
 
-    [Fact]
-    public void SoloAndDemoFields_HaveOneHundredCars_WhileOnlineFieldStaysAtEight()
+    /// <summary>
+    /// Each row runs one scenario: a private method below, named after what it checks.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(SoloAndDemoFields_HaveOneHundredCars_WhileOnlineFieldStaysAtEight))]
+    [InlineData(nameof(HundredCarSimulation_UsesNearbyCollisionCandidates))]
+    public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    private void SoloAndDemoFields_HaveOneHundredCars_WhileOnlineFieldStaysAtEight()
     {
         var player = new PoRacerLobbyPlayer("connection", "Player", true, true, "owner");
         var online = new PoRacerSim([player]);
@@ -33,8 +40,7 @@ public class PoRacerSimAiTests
         demo.Static.Roster.Select(c => c.Name).Should().OnlyHaveUniqueItems();
     }
 
-    [Fact]
-    public void HundredCarSimulation_UsesNearbyCollisionCandidates()
+    private void HundredCarSimulation_UsesNearbyCollisionCandidates()
     {
         var sim = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>(), carCount: PoRacerCatalog.SoloCarCount);
         typeof(PoRacerSim).GetField("_startElapsedMs", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!

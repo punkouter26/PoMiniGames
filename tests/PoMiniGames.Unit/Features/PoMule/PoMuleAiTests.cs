@@ -70,8 +70,15 @@ public sealed class PoMuleAiTests
         PoMuleAi.ChooseOutfit(match, Ai, Own(match, 5, Terrain.Plains)).Should().Be(Good.Energy);
     }
 
-    [Fact]
-    public void Goals_WalkThroughBuyInstallPub_WhileTheGamblerQuitsEarlyAndTheAgitatorHunts()
+    /// <summary>
+    /// Each row runs one scenario: a private method below, named after what it checks.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(Goals_WalkThroughBuyInstallPub_WhileTheGamblerQuitsEarlyAndTheAgitatorHunts))]
+    [InlineData(nameof(AtAuction_TheSpeculatorOutbidsTheFarmer_AndNobodyBidsPastTheirMeans))]
+    public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    private void Goals_WalkThroughBuyInstallPub_WhileTheGamblerQuitsEarlyAndTheAgitatorHunts()
     {
         var farmer = Match(Archetype.Farmer);
         var plot = Own(farmer, 0, Terrain.River);
@@ -153,8 +160,7 @@ public sealed class PoMuleAiTests
         PoMuleAi.MarketInput(match, Ai).Should().Be(leaving);
     }
 
-    [Fact]
-    public void AtAuction_TheSpeculatorOutbidsTheFarmer_AndNobodyBidsPastTheirMeans()
+    private void AtAuction_TheSpeculatorOutbidsTheFarmer_AndNobodyBidsPastTheirMeans()
     {
         var match = Match(Archetype.Speculator);
         match.Players[2].Archetype = Archetype.Farmer;

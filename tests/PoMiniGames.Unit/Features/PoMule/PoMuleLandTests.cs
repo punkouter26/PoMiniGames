@@ -10,8 +10,17 @@ public sealed class PoMuleLandTests
 
     private static int[] NoPicks() => Enumerable.Repeat(-1, PoMuleTuning.Seats).ToArray();
 
-    [Fact]
-    public void Grant_GivesAContestedPlotToOneClaimant_AndTheLosersTheNearestFreePlots()
+    /// <summary>
+    /// Each row runs one scenario: a private method below, named after what it checks.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(Grant_GivesAContestedPlotToOneClaimant_AndTheLosersTheNearestFreePlots))]
+    [InlineData(nameof(Grant_NeverGivesOnePlotToTwoColonists_OverAThousandSeededMatches))]
+    [InlineData(nameof(NearestFree_SearchesAcrossTheSeam_AndGivesUpWhenThePlanetIsFull))]
+    [InlineData(nameof(Auction_RunsOnEvenMonths_IsWalkedNoHigherThanYourCash_AndChargesTheWinner))]
+    public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    private void Grant_GivesAContestedPlotToOneClaimant_AndTheLosersTheNearestFreePlots()
     {
         var match = Match();
         var contested = PoMuleMap.Index(11, 6);
@@ -36,8 +45,7 @@ public sealed class PoMuleLandTests
             match.Owner[awarded[seat]].Should().Be((sbyte)seat);
     }
 
-    [Fact]
-    public void Grant_NeverGivesOnePlotToTwoColonists_OverAThousandSeededMatches()
+    private void Grant_NeverGivesOnePlotToTwoColonists_OverAThousandSeededMatches()
     {
         for (ulong seed = 1; seed <= 1000; seed++)
         {
@@ -58,8 +66,7 @@ public sealed class PoMuleLandTests
         }
     }
 
-    [Fact]
-    public void NearestFree_SearchesAcrossTheSeam_AndGivesUpWhenThePlanetIsFull()
+    private void NearestFree_SearchesAcrossTheSeam_AndGivesUpWhenThePlanetIsFull()
     {
         var match = Match();
         var corner = PoMuleMap.Index(23, 0);
@@ -78,8 +85,7 @@ public sealed class PoMuleLandTests
         PoMuleLand.Grant(match, [corner, -1, -1, -1, -1, -1, -1, -1]).Should().OnlyContain(a => a == -1);
     }
 
-    [Fact]
-    public void Auction_RunsOnEvenMonths_IsWalkedNoHigherThanYourCash_AndChargesTheWinner()
+    private void Auction_RunsOnEvenMonths_IsWalkedNoHigherThanYourCash_AndChargesTheWinner()
     {
         Enumerable.Range(1, 12).Where(PoMuleLand.IsAuctionMonth).Should().Equal(2, 4, 6, 8, 10, 12);
 

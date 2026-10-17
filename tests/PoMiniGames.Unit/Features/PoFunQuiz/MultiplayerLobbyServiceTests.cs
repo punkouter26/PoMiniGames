@@ -116,8 +116,16 @@ public sealed class MultiplayerLobbyServiceTests
         }
     }
 
-    [Fact]
-    public async Task ThirdPlayer_OpensAFreshLobby_RatherThanOverfillingAFullOne()
+    /// <summary>
+    /// Each row runs one scenario: a private method below, named after what it checks.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(ThirdPlayer_OpensAFreshLobby_RatherThanOverfillingAFullOne))]
+    [InlineData(nameof(RemoveLastPlayer_DeletesSession))]
+    [InlineData(nameof(Survivor_Rejoin_And_ClientBonuses_AreAllBounded))]
+    public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    private async Task ThirdPlayer_OpensAFreshLobby_RatherThanOverfillingAFullOne()
     {
         var lobby = NewLobby();
         var (first, _) = await JoinAsync(lobby, "conn1", "Alice");
@@ -149,8 +157,7 @@ public sealed class MultiplayerLobbyServiceTests
         remaining!.HostConnectionId.Should().Be(expectedNewHost);
     }
 
-    [Fact]
-    public async Task RemoveLastPlayer_DeletesSession()
+    private async Task RemoveLastPlayer_DeletesSession()
     {
         var lobby = NewLobby();
         await JoinAsync(lobby, "conn1", "Alice");
@@ -159,8 +166,7 @@ public sealed class MultiplayerLobbyServiceTests
         lobby.GetByConnection("conn1").Should().BeNull();
     }
 
-    [Fact]
-    public async Task Survivor_Rejoin_And_ClientBonuses_AreAllBounded()
+    private async Task Survivor_Rejoin_And_ClientBonuses_AreAllBounded()
     {
         var lobby = NewLobby();
         var (first, _) = await JoinAsync(lobby, "conn1", "Alice");

@@ -13,8 +13,16 @@ public class PoSportsLobbyServiceTests
 {
     private readonly PoSportsLobbyService _lobby = new();
 
-    [Fact]
-    public void JoinFlow_HostClaim_Capacity_And_NameSanitize()
+    /// <summary>
+    /// Each row runs one scenario: a private method below, named after what it checks.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(JoinFlow_HostClaim_Capacity_And_NameSanitize))]
+    [InlineData(nameof(CharacterLock_FirstComeRules))]
+    [InlineData(nameof(StartGate_HostMigration_And_LifecycleResets))]
+    public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    private void JoinFlow_HostClaim_Capacity_And_NameSanitize()
     {
         // First arrival becomes host.
         var (state, msg) = _lobby.Open("c1", "Alice", isGuest: true);
@@ -34,8 +42,7 @@ public class PoSportsLobbyServiceTests
         s5.Players.Should().HaveCount(4);
     }
 
-    [Fact]
-    public void CharacterLock_FirstComeRules()
+    private void CharacterLock_FirstComeRules()
     {
         _lobby.Open("c1", "Alice", true);
         _lobby.Open("c2", "Bob", true);
@@ -57,8 +64,7 @@ public class PoSportsLobbyServiceTests
         _lobby.PickCharacter("c1", "gizmo").ok.Should().BeFalse();
     }
 
-    [Fact]
-    public void StartGate_HostMigration_And_LifecycleResets()
+    private void StartGate_HostMigration_And_LifecycleResets()
     {
         _lobby.Open("c1", "Alice", true);
         _lobby.Open("c2", "Bob", true);

@@ -50,16 +50,22 @@ public sealed class HighScoreDescriptorTests
         ((IEnumerable)board.Descriptor.GetType().GetProperty("RowKeyFields")!.GetValue(board.Descriptor)!)
             .Cast<string>().ToList();
 
-    [Fact]
-    public void EveryBoard_IsDiscovered()
+    /// <summary>
+    /// Each row runs one scenario: a private method below, named after what it checks.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(EveryBoard_IsDiscovered))]
+    [InlineData(nameof(EveryBoard_MapsDefaultEntryAndDeclaresValidRowKeyFields))]
+    public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    private void EveryBoard_IsDiscovered()
     {
         // Guards the reflection above: if the descriptors are renamed or restructured, the other
         // tests would silently pass over an empty set.
         Boards.Select(b => b.Name).Should().Contain(["MarbleRaceScores", "PoBrawlScores", "PoRacerScores"]);
     }
 
-    [Fact]
-    public void EveryBoard_MapsDefaultEntryAndDeclaresValidRowKeyFields()
+    private void EveryBoard_MapsDefaultEntryAndDeclaresValidRowKeyFields()
     {
         foreach (var board in Boards)
         {

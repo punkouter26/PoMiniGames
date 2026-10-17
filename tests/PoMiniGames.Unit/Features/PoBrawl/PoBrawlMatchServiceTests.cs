@@ -63,8 +63,19 @@ public class PoBrawlMatchServiceTests
         return snap;
     }
 
-    [Fact]
-    public void Tick_LandsOnlyInRange_OncePerPress_AndBlockNegatesPunch()
+    /// <summary>
+    /// Each row runs one scenario: a private method below, named after what it checks.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(Tick_LandsOnlyInRange_OncePerPress_AndBlockNegatesPunch))]
+    [InlineData(nameof(SubmitInput_OverridesActorWithPinnedSide))]
+    [InlineData(nameof(Tick_AppliesDamageDeterministically_PerMatchId))]
+    [InlineData(nameof(Tick_FinishesByKo_ThenReturnsNull_AndRejectsFurtherInputs))]
+    [InlineData(nameof(Lifecycle_PreRoll_SwingReport_Forfeit_AndRematchVotes))]
+    [InlineData(nameof(BuildResultFor_ShapesOutcomePerConnection))]
+    public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    private void Tick_LandsOnlyInRange_OncePerPress_AndBlockNegatesPunch()
     {
         // Three behaviours in one test (would be three Facts without the ceiling pressure).
         // 1. Out of range: the fight opens 3.2 m apart, so a punch from spawn whiffs.
@@ -95,8 +106,7 @@ public class PoBrawlMatchServiceTests
         blocked.LastEvent.Should().Be("p1-blocked");
     }
 
-    [Fact]
-    public void SubmitInput_OverridesActorWithPinnedSide()
+    private void SubmitInput_OverridesActorWithPinnedSide()
     {
         var match = StartedMatch();
         // Malicious: conn-1 (P1) claims to be P2 and walks. The server pins it to P1, so
@@ -107,8 +117,7 @@ public class PoBrawlMatchServiceTests
         snap.Player2X.Should().Be(1.6, "the claimed side (P2) must be untouched");
     }
 
-    [Fact]
-    public void Tick_AppliesDamageDeterministically_PerMatchId()
+    private void Tick_AppliesDamageDeterministically_PerMatchId()
     {
         var first = StartedMatch("dup-match");
         var second = StartedMatch("dup-match");
@@ -127,8 +136,7 @@ public class PoBrawlMatchServiceTests
         hp[0].Should().Be(hp[1], "same match id + same inputs must roll the same damage");
     }
 
-    [Fact]
-    public void Tick_FinishesByKo_ThenReturnsNull_AndRejectsFurtherInputs()
+    private void Tick_FinishesByKo_ThenReturnsNull_AndRejectsFurtherInputs()
     {
         var match = StartedMatch();
         var final = FightToKo(match, "conn-2", PoBrawlMatchAction.Kick);
@@ -148,8 +156,7 @@ public class PoBrawlMatchServiceTests
     /// reports what each corner's swing did (the 3D view lands exactly that), a corner that stays
     /// away forfeits, and the rematch needs both corners' votes.
     /// </summary>
-    [Fact]
-    public void Lifecycle_PreRoll_SwingReport_Forfeit_AndRematchVotes()
+    private void Lifecycle_PreRoll_SwingReport_Forfeit_AndRematchVotes()
     {
         // Pre-roll: nothing moves and a press made during the count is dropped.
         var alice = NewPlayer("conn-1", "alice", "Alice", PoBrawlRoster.Bob);
@@ -194,8 +201,7 @@ public class PoBrawlMatchServiceTests
         match.VoteRematch("conn-2").Should().BeTrue();
     }
 
-    [Fact]
-    public void BuildResultFor_ShapesOutcomePerConnection()
+    private void BuildResultFor_ShapesOutcomePerConnection()
     {
         var match = StartedMatch();
         FightToKo(match, "conn-2", PoBrawlMatchAction.Punch);

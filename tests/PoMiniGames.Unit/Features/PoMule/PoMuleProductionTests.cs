@@ -79,8 +79,15 @@ public sealed class PoMuleProductionTests
         PoMuleProduction.Run(varied, ColonyEvent.None).Produced[0][(int)Good.Food].Should().BeInRange(3, 6);
     }
 
-    [Fact]
-    public void ShortOfEnergy_TheLeastValuableMulesGoIdle_AndThreeShortColonistsMakeACrisisMonth()
+    /// <summary>
+    /// Each row runs one scenario: a private method below, named after what it checks.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(ShortOfEnergy_TheLeastValuableMulesGoIdle_AndThreeShortColonistsMakeACrisisMonth))]
+    [InlineData(nameof(Events_HitOneFoodPlot_StealCrystite_BurnTheStore_AndComeUpAboutThreeMonthsInFour))]
+    public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    private void ShortOfEnergy_TheLeastValuableMulesGoIdle_AndThreeShortColonistsMakeACrisisMonth()
     {
         var match = Match();
         var food = Work(match, 0, Terrain.River, Good.Food);                    // 4 × 30 = 120
@@ -117,8 +124,7 @@ public sealed class PoMuleProductionTests
     public void Spoilage_TakesHalfTheSpareFood_AQuarterOfTheSpareEnergy_AndCapsOreAt50(Good good, int held, int need, int left) =>
         PoMuleProduction.AfterSpoilage(good, held, need).Should().Be(left);
 
-    [Fact]
-    public void Events_HitOneFoodPlot_StealCrystite_BurnTheStore_AndComeUpAboutThreeMonthsInFour()
+    private void Events_HitOneFoodPlot_StealCrystite_BurnTheStore_AndComeUpAboutThreeMonthsInFour()
     {
         var pest = Match();
         Work(pest, 0, Terrain.River, Good.Food);

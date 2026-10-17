@@ -47,8 +47,16 @@ public sealed class AIFoundryCentralizationTests
         opts.ResolveDeployment(lookupKey).Should().Be(expectedDeployment);
     }
 
-    [Fact]
-    public void AIFoundryOptions_IsConfigured_RequiresBothEndpointAndDefaultDeployment()
+    /// <summary>
+    /// Each row runs one scenario: a private method below, named after what it checks.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(AIFoundryOptions_IsConfigured_RequiresBothEndpointAndDefaultDeployment))]
+    [InlineData(nameof(AIFoundryClientFactory_NeverFabricatesAClient_AndStaysOneTypePerHost))]
+    [InlineData(nameof(MockServices_NeverResolvedThroughAIFoundry))]
+    public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    private void AIFoundryOptions_IsConfigured_RequiresBothEndpointAndDefaultDeployment()
     {
         new AIFoundryOptions { Endpoint = "https://x", DefaultDeployment = "" }
             .IsConfigured.Should().BeFalse();
@@ -58,8 +66,7 @@ public sealed class AIFoundryCentralizationTests
             .IsConfigured.Should().BeTrue();
     }
 
-    [Fact]
-    public void AIFoundryClientFactory_NeverFabricatesAClient_AndStaysOneTypePerHost()
+    private void AIFoundryClientFactory_NeverFabricatesAClient_AndStaysOneTypePerHost()
     {
         // Endpoint missing (deployment set): the factory must return null rather than invent a client.
         var endpointless = new TestOptionsMonitor<AIFoundryOptions>(new AIFoundryOptions
@@ -96,8 +103,7 @@ public sealed class AIFoundryCentralizationTests
     /// serve fabricated data to real players. This is the static check that
     /// catches the wiring without needing to spin up the host.
     /// </summary>
-    [Fact]
-    public void MockServices_NeverResolvedThroughAIFoundry()
+    private void MockServices_NeverResolvedThroughAIFoundry()
     {
         // The legacy PoFunQuiz:AzureOpenAI:ApiKey section is gone — verify
         // there's no configuration value to accidentally inherit.

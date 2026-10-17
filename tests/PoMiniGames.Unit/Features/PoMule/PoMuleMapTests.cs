@@ -26,8 +26,15 @@ public sealed class PoMuleMapTests
     public void Wrap_BringsAnyColumnBackOntoThePlanet(int column, int expected) =>
         PoMuleMap.Wrap(column).Should().Be(expected);
 
-    [Fact]
-    public void Generate_BuildsAPlanetWithTheSpecifiedMix_ForEverySeed()
+    /// <summary>
+    /// Each row runs one scenario: a private method below, named after what it checks.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(Generate_BuildsAPlanetWithTheSpecifiedMix_ForEverySeed))]
+    [InlineData(nameof(SameSeed_GivesTheSamePlanet_AndTheRngResumesFromItsSavedState))]
+    public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    private void Generate_BuildsAPlanetWithTheSpecifiedMix_ForEverySeed()
     {
         for (ulong seed = 1; seed <= 50; seed++)
         {
@@ -50,8 +57,7 @@ public sealed class PoMuleMapTests
         }
     }
 
-    [Fact]
-    public void SameSeed_GivesTheSamePlanet_AndTheRngResumesFromItsSavedState()
+    private void SameSeed_GivesTheSamePlanet_AndTheRngResumesFromItsSavedState()
     {
         PoMuleMap.Generate(new PoMuleRng(42)).Plots
             .Should().Equal(PoMuleMap.Generate(new PoMuleRng(42)).Plots);

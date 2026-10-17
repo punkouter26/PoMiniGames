@@ -8,9 +8,8 @@ namespace PoMiniGames.Unit.Features.PoCoupleQuiz;
 /// state holder for the single PoCoupleQuiz lobby (state does NOT survive restarts).
 /// </summary>
 /// <remarks>
-/// <para>Held at 11 methods (8 <c>[Fact]</c>s + 3 <c>[Theory]</c>s) to stay inside the
-/// test-count cap. Host-only enforcement is asserted against <c>SetMaxRounds</c>, the one
-/// host-gated setting.</para>
+/// <para>The scenarios share one <c>[Theory]</c> to stay inside the test-count cap.
+/// Host-only enforcement is asserted against <c>SetMaxRounds</c>, the one host-gated setting.</para>
 /// <para>The scoreboard test asserts the King is INCLUDED. See
 /// <see cref="Game.CurrentKingPlayerIndex"/> for why excluding the King is wrong.</para>
 /// </remarks>
@@ -29,8 +28,19 @@ public sealed class GameSessionManagerTests
 
     // ─── Lobby membership ───────────────────────────────────────────────
 
-    [Fact]
-    public void Join_OpensOneLobby_ReusesIt_AndDisambiguatesNames()
+    /// <summary>
+    /// Each row runs one scenario: a private method below, named after what it checks.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(Join_OpensOneLobby_ReusesIt_AndDisambiguatesNames))]
+    [InlineData(nameof(RemovePlayer_PrunesTheLiveRoster_AndClosesTheLobbyWhenTheLastPlayerLeaves))]
+    [InlineData(nameof(GameLifecycle_StartAndAdvanceRound_IncrementsRoundAndRotatesKing))]
+    [InlineData(nameof(RoundCompletion_RoutesTheKingToTheSecret_WaitsForGuesses_AndAppliesScores))]
+    [InlineData(nameof(ReadyState_NeedsEnoughPlayers_AndResetToLobbyKeepsThem))]
+    [InlineData(nameof(Game_ScoreboardIncludesEveryPlayer))]
+    public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    private void Join_OpensOneLobby_ReusesIt_AndDisambiguatesNames()
     {
         var mgr = new GameSessionManager();
 
@@ -64,8 +74,7 @@ public sealed class GameSessionManagerTests
         mgr.Current!.HostConnectionId.Should().Be(expectedHostConn);
     }
 
-    [Fact]
-    public void RemovePlayer_PrunesTheLiveRoster_AndClosesTheLobbyWhenTheLastPlayerLeaves()
+    private void RemovePlayer_PrunesTheLiveRoster_AndClosesTheLobbyWhenTheLastPlayerLeaves()
     {
         var mgr = LobbyOf("Alice", "Bob", "Carla");
         var game = mgr.StartGame("Q?", "Hobbies");
@@ -84,8 +93,7 @@ public sealed class GameSessionManagerTests
 
     // ─── Game lifecycle ─────────────────────────────────────────────────
 
-    [Fact]
-    public void GameLifecycle_StartAndAdvanceRound_IncrementsRoundAndRotatesKing()
+    private void GameLifecycle_StartAndAdvanceRound_IncrementsRoundAndRotatesKing()
     {
         var empty = new GameSessionManager();
         var act = () => empty.StartGame("Q?", "Hobbies");
@@ -107,8 +115,7 @@ public sealed class GameSessionManagerTests
         next.KingPlayer!.Name.Should().Be("Bob", "the King seat moves round the table every round");
     }
 
-    [Fact]
-    public void RoundCompletion_RoutesTheKingToTheSecret_WaitsForGuesses_AndAppliesScores()
+    private void RoundCompletion_RoutesTheKingToTheSecret_WaitsForGuesses_AndAppliesScores()
     {
         var mgr = LobbyOf("Alice", "Bob", "Carla"); // Alice is King for round 0
         var game = mgr.StartGame("Q?", "Hobbies");
@@ -143,8 +150,7 @@ public sealed class GameSessionManagerTests
 
     // ─── Lobby orchestration ────────────────────────────────────────────
 
-    [Fact]
-    public void ReadyState_NeedsEnoughPlayers_AndResetToLobbyKeepsThem()
+    private void ReadyState_NeedsEnoughPlayers_AndResetToLobbyKeepsThem()
     {
         var mgr = LobbyOf("Alice");
 
@@ -192,8 +198,7 @@ public sealed class GameSessionManagerTests
 
     // ─── Game scoring ───────────────────────────────────────────────────
 
-    [Fact]
-    public void Game_ScoreboardIncludesEveryPlayer()
+    private void Game_ScoreboardIncludesEveryPlayer()
     {
         // Previously the scoreboard EXCLUDED the King. Combined with a King seat pinned to
         // index 0 for the whole match, that meant one player in a two-player couple game

@@ -17,10 +17,20 @@ public class PoBrawlLobbyServiceTests
 {
     private static PoBrawlFighter AnyFighter => PoBrawlRoster.Bob;
 
+    /// <summary>
+    /// Each row runs one scenario: a private method below, named after what it checks.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(Open_AssignsFirstArrivalAsHost_AndBouncesThirdAtCap))]
+    [InlineData(nameof(RejoinSameConnection_RefreshesPlayerRow_PreservesHost))]
+    [InlineData(nameof(TryStart_RequiresHostAndAllReady_AndIsIdempotent))]
+    [InlineData(nameof(Start_MintsFreshMatchCode_SoTheNextPairFightsAlongside))]
+    [InlineData(nameof(EndMatch_ResetsReadyFlags_AndClearsStaleMatch))]
+    public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
     // Host assignment and the cap-2 bounce share one arrangement, so they are one
     // fact.
-    [Fact]
-    public void Open_AssignsFirstArrivalAsHost_AndBouncesThirdAtCap()
+    private void Open_AssignsFirstArrivalAsHost_AndBouncesThirdAtCap()
     {
         var lobby = new PoBrawlLobbyService();
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
@@ -33,8 +43,7 @@ public class PoBrawlLobbyServiceTests
         msg.Should().Contain("full");
     }
 
-    [Fact]
-    public void RejoinSameConnection_RefreshesPlayerRow_PreservesHost()
+    private void RejoinSameConnection_RefreshesPlayerRow_PreservesHost()
     {
         var lobby = new PoBrawlLobbyService();
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
@@ -45,8 +54,7 @@ public class PoBrawlLobbyServiceTests
         state.Players[0].DisplayName.Should().Be("Alice2");
     }
 
-    [Fact]
-    public void TryStart_RequiresHostAndAllReady_AndIsIdempotent()
+    private void TryStart_RequiresHostAndAllReady_AndIsIdempotent()
     {
         var lobby = new PoBrawlLobbyService();
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
@@ -63,8 +71,7 @@ public class PoBrawlLobbyServiceTests
     /// The one shared room: each start mints a fresh match
     /// code and the room frees up, so the next two arrivals fight alongside the first pair.
     /// </summary>
-    [Fact]
-    public void Start_MintsFreshMatchCode_SoTheNextPairFightsAlongside()
+    private void Start_MintsFreshMatchCode_SoTheNextPairFightsAlongside()
     {
         var lobby = new PoBrawlLobbyService();
         var matches = new PoBrawlMatchRegistry();
@@ -93,8 +100,7 @@ public class PoBrawlLobbyServiceTests
         matches.Get(second)!.Roster.Select(p => p.ConnectionId).Should().Equal("conn-3", "conn-4");
     }
 
-    [Fact]
-    public void EndMatch_ResetsReadyFlags_AndClearsStaleMatch()
+    private void EndMatch_ResetsReadyFlags_AndClearsStaleMatch()
     {
         var lobby = new PoBrawlLobbyService();
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);

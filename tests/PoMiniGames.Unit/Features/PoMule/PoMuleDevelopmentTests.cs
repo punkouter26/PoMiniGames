@@ -47,8 +47,16 @@ public sealed class PoMuleDevelopmentTests
         match.Players[0].Goods[(int)Good.Food].Should().Be(foodLeft);
     }
 
-    [Fact]
-    public void BuyOutfitInstall_MovesCashStockAndTheMule_AndInstallingOnAWorkedPlotSwaps()
+    /// <summary>
+    /// Each row runs one scenario: a private method below, named after what it checks.
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(BuyOutfitInstall_MovesCashStockAndTheMule_AndInstallingOnAWorkedPlotSwaps))]
+    [InlineData(nameof(AMuleBolts_OnADashBump_OnSomeoneElsesLand_AndWhenTheClockRunsOut))]
+    [InlineData(nameof(Crystite_IsHiddenUntilAssayed_ExceptFromTheCrystiteWeaver))]
+    public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    private void BuyOutfitInstall_MovesCashStockAndTheMule_AndInstallingOnAWorkedPlotSwaps()
     {
         var match = Started();
         var you = match.Players[0];
@@ -111,8 +119,7 @@ public sealed class PoMuleDevelopmentTests
         match.Installed[plot].Should().Be(MatchState.Nobody);
     }
 
-    [Fact]
-    public void AMuleBolts_OnADashBump_OnSomeoneElsesLand_AndWhenTheClockRunsOut()
+    private void AMuleBolts_OnADashBump_OnSomeoneElsesLand_AndWhenTheClockRunsOut()
     {
         MatchState Towing(Species species = Species.Humanoid)
         {
@@ -176,8 +183,7 @@ public sealed class PoMuleDevelopmentTests
         match.Players[0].Cash.Should().Be(cash + payout);
     }
 
-    [Fact]
-    public void Crystite_IsHiddenUntilAssayed_ExceptFromTheCrystiteWeaver()
+    private void Crystite_IsHiddenUntilAssayed_ExceptFromTheCrystiteWeaver()
     {
         var match = Started();
         var plot = PoMuleMap.Index(6, 6);

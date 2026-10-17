@@ -16,6 +16,10 @@
 // The pointer position is also published as --fx-mx/--fx-my in -1..1 so CSS can
 // move a glare highlight to match; that part is declarative in fx.css.
 //
+// GLARE ONLY: the hub's glass cards (glassFx.js marks their grid `data-hub-glass-live`,
+// high tier only) get the pointer position for their specular spot but no rotation —
+// a grid of fifteen tilting cards would swim.
+//
 // COST: one pointerover listener at rest. While a pointer is over a tilt
 // surface, one pointermove listener coalesced into a single rAF write. Nothing
 // runs when nothing is hovered.
@@ -43,7 +47,10 @@ function tierAllows() {
 }
 
 let isMagnetic = false;
+let glareOnly = false;
 let _lastShimmerTime = 0;
+
+const GLARE_ONLY = '[data-hub-glass-live] .home-card, [data-hub-glass-live] [data-hub-glass]';
 
 function apply() {
     rafId = 0;
@@ -53,13 +60,14 @@ function apply() {
     // pushing it down tips about X. Expressing it as one axis-angle rotation
     // keeps this to a single `rotate` value.
     const mag = Math.min(1, Math.hypot(pendingX, pendingY));
+    active.style.setProperty('--fx-mx', pendingX.toFixed(3));
+    active.style.setProperty('--fx-my', pendingY.toFixed(3));
+    if (glareOnly) return;
     active.style.rotate = `${-pendingY} ${pendingX} 0 ${(mag * maxDeg).toFixed(2)}deg`;
     if (isMagnetic) {
         const pull = 5.0; // px magnetic spring translation
         active.style.translate = `${(pendingX * pull).toFixed(1)}px ${(pendingY * pull).toFixed(1)}px`;
     }
-    active.style.setProperty('--fx-mx', pendingX.toFixed(3));
-    active.style.setProperty('--fx-my', pendingY.toFixed(3));
 
     // Holographic foil properties
     const angleDeg = (Math.atan2(pendingY, pendingX) * 180 / Math.PI + 180).toFixed(1);
@@ -114,11 +122,13 @@ function detach() {
     release(active);
     active = null;
     isMagnetic = false;
+    glareOnly = false;
 }
 
 function onOver(e) {
     const el = e.target && e.target.closest
         ? e.target.closest('[data-fx-tilt], [data-fx-holo], [data-magnetic], .fx-holo-card, .player-card, .poeco-btn, .poeco-pill, .poeco-tab')
+            || e.target.closest(GLARE_ONLY)
         : null;
     if (el === active) return;
     detach();
@@ -129,6 +139,7 @@ function onOver(e) {
     if (motionReduced() || !tierAllows()) return;
 
     active = el;
+    glareOnly = !el.hasAttribute('data-fx-tilt') && el.matches(GLARE_ONLY);
     isMagnetic = el.hasAttribute('data-magnetic') ||
                  el.classList.contains('poeco-btn') ||
                  el.classList.contains('poeco-pill') ||

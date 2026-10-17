@@ -26,7 +26,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     muted: false,
     reducedMotion: false,
     colorSafe: false,
-    music: true,           // adaptive race score (music.js)
+    music: true,           // unused: background music is off app-wide (kept so saved settings still parse)
     hudScale: 1,           // HUD font scale, 0.85 / 1 / 1.15
     weather: 'clear',      // clear | rain | auto (auto = open-meteo, DC). Clear by default (2026-09-29): auto changed grip without warning
     // Controls + driver aids (input.js / physics.assistControls). Aids only

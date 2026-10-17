@@ -42,8 +42,9 @@
 // More of the same rule (render + audio only): every exhaust pop audio.js
 // reports becomes a flame on that car; barrier hits and contacts dent the cars
 // involved and throw debris; the grandstand crowd murmurs, cheers a pass-by, an
-// overtake, a PB and the finish (confetti on a podium); music.js follows the battle
-// (another car within a few lengths) and the final lap; wet-road reflections
+// overtake, a PB and the finish (confetti on a podium); wall hits, contacts, overtakes
+// and the finish also fire the platform's 'pocabinet' cues (gameCues.js: impact, hitstop,
+// haptics — the sound stays audio.js's); wet-road reflections
 // (reflections.js) track every light; and the glass gauge (#pocabinetGauge, the
 // page's markup) gets speed, gear and RPM written straight to the DOM each frame —
 // never through Blazor, so it costs no re-render.
@@ -59,7 +60,6 @@ import { lapTraces, bestTrace, loadPbTrace, savePbTrace, renderTelemetry, debrie
 import { createFx } from './fx.js';
 import { computeKerbs, onKerb } from './kerbs.js';
 import { getRecords } from './settings.js';
-import * as music from './music.js';
 import { WetReflections } from './reflections.js';
 
 const TICK = ph.TICK_SECONDS;
@@ -72,8 +72,6 @@ const FULL_CARS = 10;             // rivals drawn in full (the nearest); the res
 const RIVAL_VOICES = 6;          // engines heard at once (each is an oscillator through an HRTF panner)
 const SLOW_MO_SCALE = 0.28;
 const GANTRY_PODS = 5;
-const BATTLE_NEAR = 25;          // sim units between centres: side by side
-const BATTLE_FAR = 95;           // …fading out by here (about six car lengths)
 const STAND_PASS = 24;           // world units from the grandstand that count as a pass-by
 const AXLE = 14;                 // sim units from a car's centre to each axle (height sampling)
 // What a wrecked car loses, at worst: a steady pull on the wheel, a share of its lock and of
@@ -354,7 +352,6 @@ class Race {
     applySettings(settings) {
         this.settings = { ...this.settings, ...(settings || {}) };
         this.input.setOptions(this.settings);
-        music.setEnabled(false); // background music is off in every game; settings.music is ignored
         this.scene.setRacingLine?.(!!this.settings.racingLine && !this.replay);
     }
 
@@ -387,7 +384,7 @@ class Race {
             return;
         }
         if (!this.paused) {
-            this.acc += dt * this.timeScale;
+            this.acc += dt * this.timeScale * this.hitstopScale();
             let steps = 0;
             while (this.acc >= TICK && steps < 5) {
                 this.tick();
@@ -595,6 +592,7 @@ class Race {
         if (car.body.wallImpact > 6 && performance.now() - this.lastWallAt > 500) {
             this.wallHits++;
             this.lastWallAt = performance.now();
+            this.cue('wall', Math.min(1, car.body.wallImpact / 60));
         }
         if (car.body.wallImpact > 6) {
             const s = Math.min(1, car.body.wallImpact / 60);
@@ -908,6 +906,11 @@ class Race {
         for (const c of events?.contacts || []) {
             if (this.local && c.ids.includes(this.local.id)) {
                 audio.impact(c.strength, 'car');
+                // Once per shunt, not per frame of a grinding side-by-side: the hitstop would chain.
+                if (performance.now() - (this.lastContactCueAt || 0) > 450) {
+                    this.lastContactCueAt = performance.now();
+                    this.cue('contact', c.strength);
+                }
                 if (this.mode !== 'demo') this.input.rumble(c.strength);
                 fx.shake = Math.max(fx.shake, 0.3 + 0.5 * c.strength);
             } else {
@@ -923,7 +926,7 @@ class Race {
             if (id !== undefined && id !== null) this.fx?.backfire(id, pop.strength);
         }
 
-        this.crowdAndMusic(focus, racing, preStart, speed01);
+        this.crowdAndMoments(focus, racing, preStart, speed01);
         this.updateGauge(racing || preStart);
         this.reflections?.update(performance.now() / 1000, this.cars.map(c => c.mesh));
         this.updateAudioScene(dt, racing || preStart);
@@ -955,8 +958,8 @@ class Race {
         w.power = Math.min(1, w.power + s * (front ? 0.8 : 0.3));
     }
 
-    /** Grandstand, overtakes, the finish, and the score's battle/final-lap state. */
-    crowdAndMusic(focus, racing, preStart, speed01) {
+    /** Grandstand, overtakes and the finish. */
+    crowdAndMoments(focus, racing, preStart, speed01) {
         const scenery = this.scene.scenery;
         const stand = scenery?.crowd;
         const now = performance.now();
@@ -982,6 +985,7 @@ class Race {
             if (me.position < m.lastPos && now - m.raceStart > 2500 && now - m.overtakeAt > 3000) {
                 m.overtakeAt = now;
                 audio.cheer(0.5);
+                this.cue('overtake');
                 scenery?.exciteCrowd(0.8);
                 scenery?.flashBurst(0.25);
             }
@@ -993,19 +997,24 @@ class Race {
             // The podium, or the top ten of the 100-car solo field (PoCabinetCatalog.SoloFrontRunners).
             const front = me.position <= (this.cars.length > 8 ? 10 : 3);
             audio.cheer(front ? 1 : 0.5);
+            this.cue('finish', front ? 1 : 0.5);
             if (front && !this.scene.fx.reduced) this.fx?.confetti(me.render.x / 10, me.render.y / 10, 160, me.render.h);
         }
+    }
 
-        let battle = 0;
-        if (me && racing) {
-            for (const c of this.cars) {
-                if (c === me) continue;
-                const d = Math.hypot(c.render.x - me.render.x, c.render.y - me.render.y);
-                battle = Math.max(battle, Math.min(1, Math.max(0, 1 - (d - BATTLE_NEAR) / (BATTLE_FAR - BATTLE_NEAR))));
-            }
-        }
-        const finalLap = !!me && !me.finished && me.lapsDone === this.totalLaps - 1;
-        music.setState({ phase: racing && !(me && me.finished) ? 'race' : preStart ? 'grid' : 'off', battle, finalLap });
+    /**
+     * The platform feel for a race moment (gameCues.js 'pocabinet': impact, hitstop and
+     * haptics; the sound is audio.js's own). Player races only: the demo is an attract
+     * loop, and online the hitstop would bend a clock the server owns.
+     */
+    cue(name, scale = 1) {
+        if (this.mode !== 'solo' || this.replay) return;
+        try { window.PoCue?.fire('pocabinet', name, { scale, fx: false }); } catch { /* feel is never fatal */ }
+    }
+
+    /** impactBus's hitstop as a multiplier on the solo sim clock (1 when nothing is frozen). */
+    hitstopScale() {
+        return this.mode === 'solo' ? (window.PoImpact?.getTimeScale?.() ?? 1) : 1;
     }
 
     /** The glass gauge: speed, gear and RPM written straight into the page's markup. */
@@ -1238,7 +1247,6 @@ class Race {
         this.photo.state = 'done';
         this.timeScale = 1;
         audio.silenceRace();
-        music.setState({ phase: 'off' });
         this.scene.fx.slow = 0;
         this.scene.fx.rumble = 0;
         this.pushReplayState(true);
@@ -1381,7 +1389,6 @@ class Race {
         this.fx?.dispose();
         this.reflections?.dispose();
         audio.silenceRace();
-        music.setState({ phase: 'off' });
         const fx = this.scene.fx;
         if (fx) { fx.speed = 0; fx.rumble = 0; fx.slow = 0; fx.shake = 0; fx.focus = null; }
         this.scene.setStartLights?.(0, false);

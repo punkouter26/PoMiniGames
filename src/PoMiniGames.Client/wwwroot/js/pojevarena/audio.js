@@ -2,8 +2,8 @@
 //
 // No audio files: every sound is an oscillator or filtered noise, shaped by an envelope. It rides
 // the platform's one AudioContext and its `sfx` bus (audioBus.js), so the app's mute and volume
-// apply without a line here, and when the bus is missing it is silent. The music is not here:
-// the page's soundtrack is PoMusicDirector's, which index.js drives with the fight's tension.
+// apply without a line here, and when the bus is missing it is silent. There is no music:
+// background music is off app-wide.
 //
 // Readability over realism, as with the art: each ability has its own timbre, sounds
 // pan with the arena x, loudness follows damage, and at most MAX_VOICES play at once, so a
@@ -34,8 +34,36 @@ const VOICE_SHAPES = {
     chirp: [0.15, 2.0, 2.6, 0.16],
 };
 
+// ── Feel: the platform cue for a hit that matters (gameCues.js 'pojevarena') ──────────────
+// Apart from the synth below on purpose: it reads the same events and adds only the weight —
+// impactBus's punch (the renderer shakes with getPunch), a short hitstop and haptics on a
+// knockout. It fires with sound off too, which is why it is not inside createAudio's voices.
+const FEEL_GAP_MS = 140;     // a 20-unit melee lands many hits a second; feel the big ones only
+const BIG_HIT = 0.22;        // of the target's max HP in one blow
+let feelAt = 0;
+
+function feel(events, units) {
+    const cue = typeof window !== 'undefined' ? window.PoCue : null;
+    if (!cue) return;
+    for (const e of events) {
+        let name = null, scale = 1;
+        if (e.type === 'death') name = 'ko';
+        else if (e.type === 'hit' && (e.kind === 'melee' || e.kind === 'boulder')) {
+            const u = units[e.u];
+            const share = u && u.maxHp > 0 ? (e.amount || 0) / u.maxHp : 0;
+            if (e.kind === 'boulder') { name = 'boulder'; scale = Math.min(1.2, 0.6 + share * 2); }
+            else if (share >= BIG_HIT) { name = 'hitBig'; scale = Math.min(1.2, share * 3); }
+        }
+        if (!name) continue;
+        const now = performance.now();
+        if (name !== 'ko' && now - feelAt < FEEL_GAP_MS) continue;
+        feelAt = now;
+        try { cue.fire('pojevarena', name, { scale, fx: false }); } catch { /* feel is never fatal */ }
+    }
+}
+
 const SILENT = {
-    onEvents() { }, fanfare() { }, sting() { }, setRate() { }, stream: () => null, dispose() { },
+    onEvents(events, views) { feel(events, views); }, fanfare() { }, sting() { }, setRate() { }, stream: () => null, dispose() { },
 };
 
 export function createAudio(creatures) {
@@ -159,6 +187,7 @@ export function createAudio(creatures) {
     return {
         /** One sim tick's events; `views` locate them (metres). */
         onEvents(events, views) {
+            feel(events, views);
             for (const e of events) {
                 const u = e.u !== undefined ? views[e.u] : null;
                 const pan = panFor(u ? u.x : e.x);

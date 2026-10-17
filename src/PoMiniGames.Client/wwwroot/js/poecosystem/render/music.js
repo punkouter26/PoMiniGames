@@ -1,5 +1,9 @@
 // music.js — the adaptive score (GFX option 10).
 //
+// DORMANT: background music is off app-wide, so index.js never calls start(). Without it
+// nothing here makes a sound (flourish and the leitmotif both need the started graph);
+// only the SCALES/ROOT_HZ tables and the resting `state` are read.
+//
 // PoEcosystem is a watch-it game: sessions are twenty minutes of nothing happening
 // punctuated by a wolf pack finding a herd. Silence makes that read as idle; a looping
 // track makes it read as a screensaver. What it wants is a score that KNOWS, and this game
@@ -51,7 +55,6 @@ export function createMusic(audio) {
   let nextNoteAt = 0;
   let step = 0;
   let chordIndex = 0;
-  let stoppedAppMusic = false;
   let enabled = true;
 
   // World-driven parameters, all 0..1, all smoothed towards their targets so the score
@@ -181,12 +184,6 @@ export function createMusic(audio) {
   function tick() {
     if (!ctx) return;
     apply();
-    // The app's generic soundtrack would play straight over this. It is stopped on start,
-    // but musicDirector arms a one-shot gesture kick that can start it afterwards, so the
-    // check is repeated here rather than done once.
-    if (stoppedAppMusic && window.PoAmbientMusic?.isPlaying?.()) {
-      try { window.PoAmbientMusic.stop(); } catch { /* the soundtrack is never load-bearing */ }
-    }
     const beat = 60 / bpm;
     while (nextNoteAt < ctx.currentTime + SCHEDULE_AHEAD) {
       const scale = SCALES[mode];
@@ -239,10 +236,6 @@ export function createMusic(audio) {
       if (timer || reduceMotion) return;
       if (!audio.context) return;             // ambience has not woken yet; caller retries
       if (!build()) return;
-      if (window.PoAmbientMusic?.isPlaying?.()) {
-        // Stopped, not ducked — and remembered, so leaving the game hands it back.
-        try { window.PoAmbientMusic.stop(); stoppedAppMusic = true; } catch { /* ignore */ }
-      }
       voice();
       timer = setInterval(tick, LOOKAHEAD_MS);
     },
@@ -274,11 +267,6 @@ export function createMusic(audio) {
     dispose() {
       if (timer) { clearInterval(timer); timer = null; }
       try { bus?.disconnect(); } catch { /* context may already be closed */ }
-      // Hand the app's soundtrack back exactly as it was found.
-      if (stoppedAppMusic) {
-        stoppedAppMusic = false;
-        try { window.PoAmbientMusic?.start?.('default', 0.12); } catch { /* ignore */ }
-      }
       ctx = null; bus = null; padOsc.length = 0; droneOsc.length = 0;
     },
   };

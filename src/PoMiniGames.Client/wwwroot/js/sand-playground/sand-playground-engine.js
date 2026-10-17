@@ -518,7 +518,6 @@ export function dispose() {
     cleanups = [];
     setTilt(false);
     try { rec?.recorder.stop(); } catch { /* not recording */ }
-    try { window.PoMusicDirector?.tension(0); } catch { /* optional */ }
     undoStack = [];
     pointers.clear(); pinch = null;
     delete window.__sandPlayground;
@@ -3292,11 +3291,6 @@ function frame(t) {
     const stats = sampleStats();
     SFX.frame(dt, stats);
     SFX.slowmo(hitStop > 0 ? 1 : slowmo);
-    // The shared soundtrack leans in as the ground gets busy: lit fuses, rumbling
-    // quakes, and how much of the map is on the move.
-    try {
-        window.PoMusicDirector?.tension(Math.min(1, stats.fuse * 0.22 + stats.rumble * 0.5 + stats.pour * 0.35 + stats.flow * 0.2));
-    } catch { /* optional */ }
     pushChromeVars();
 
     present(t);

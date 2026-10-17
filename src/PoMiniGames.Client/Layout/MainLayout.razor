@@ -279,8 +279,8 @@
 
         // Route-transition wipe, tinted to the destination's accent. Driven from here
         // because Blazor WASM navigation raises no DOM event a JS module could hear —
-        // paletteBus only catches popstate, and the musicDirector polls at 1.2 s,
-        // which is far too coarse to start a 260 ms transition on.
+        // paletteBus only catches popstate. routeFx also hands the destination to
+        // paletteBus, so the accent and the acoustic space follow the route.
         // The same event feeds the hub's "Continue" strip: one place sees every navigation,
         // so no game page has to remember to record itself.
         _onLocationChanged = (_, args) =>

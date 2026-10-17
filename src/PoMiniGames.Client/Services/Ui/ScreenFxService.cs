@@ -138,8 +138,7 @@ public sealed class ScreenFxService
 
     /// <summary>
     /// Pulse the whole page's accent tokens to a verdict mood for ~1.6 s, then
-    /// fall back to the route's own palette. Also opens the music director's
-    /// verdict window, so this is how a result reaches the soundtrack.
+    /// fall back to the route's own palette.
     /// </summary>
     /// <param name="mood">Must be <see cref="Win"/> or <see cref="Lose"/> —
     /// <c>paletteBus.pulse</c> has no neutral mood and returns early on anything

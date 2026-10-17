@@ -26,6 +26,11 @@
         povoxelstrike: ['#fb923c', '#38bdf8'],
         couplequiz:    ['#f472b6', '#c084fc'],
         funquiz:       ['#fbbf24', '#818cf8'],
+        pocabinet:     ['#f5c542', '#3b6fd8'],   // marquee gold / Capitol blue
+        pomule:        ['#e0701a', '#9050d0'],   // Atari orange / Crystite purple
+        pojevarena:    ['#5b8cff', '#f0524f'],   // blue corner / red corner
+        poecosystem:   ['#4ade80', '#0ea5e9'],   // canopy green / lagoon
+        sandplayground: ['#e9b872', '#22b8cf'],  // dune sand / water
     };
 
     const MOODS = {
@@ -70,10 +75,11 @@
         if (window.PoFx?.invalidateTint) window.PoFx.invalidateTint();
     }
 
+    // The first path segment is the game key. (This used to require a leading "/p",
+    // which quietly sent /tictactoe, /connectfive, the quizzes and /sandplayground to
+    // the menu palette.)
     function gameFromPath() {
-        const m = /^\/po?([a-z]+)/i.exec(location.pathname);
-        if (!m) return null;
-        const key = location.pathname.split('/')[1].toLowerCase();
+        const key = (location.pathname.split('/')[1] || '').toLowerCase();
         return PALETTES[key] ? key : null;
     }
 
@@ -98,13 +104,15 @@
         writeVars(m[0], m[1]);
         clearTimeout(_pulseTimer);
         _pulseTimer = setTimeout(function () { apply(); }, flashGuard ? 2500 : 1600);
-        if (window.PoMusicDirector?.verdict) window.PoMusicDirector.verdict(mood === 'win');
     }
 
     function setGame(gameKey) {
         _game = PALETTES[gameKey] ? gameKey : null;
         _context = _game ? 'game' : 'menu';
         apply();
+        // The game's acoustic space rides the same route signal (acoustics.js). Optional:
+        // it is a module script and may not have evaluated on the very first call.
+        if (window.PoAcoustics?.useGame) window.PoAcoustics.useGame(_game || 'menu');
     }
 
     // Auto-context: the catalog is '/'; every game route is '/<game>/...'.

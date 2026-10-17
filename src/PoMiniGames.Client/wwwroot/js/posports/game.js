@@ -250,7 +250,6 @@ export class SportsGame {
     this.crowd.dispose();
     window.PoWeather?.stop();
     hush();
-    try { window.PoMusicDirector?.tension(0); } catch { /* optional */ }
     // Release the context, not just the GPU objects — see the note in
     // pobrawl/game.js dispose(). Without this the context outlives the game and
     // eats a slot in the browser's small live-context pool for the rest of the
@@ -509,15 +508,10 @@ export class SportsGame {
   }
 
   /**
-   * Push the meet's tension into the soundtrack and the crowd.
+   * Push the meet's tension into the crowd.
    *
-   * The music director's own states are only 'menu' / 'lobby' / 'match', which would
-   * sound the same on the blocks as on the line. Two signals combine here: how far the
-   * leader has run, and how tight the race is behind them — a runaway win should
-   * relax as it resolves, a photo finish should not.
-   *
-   * The director deadbands small changes internally, so calling this every tick is
-   * cheap and deliberately unthrottled.
+   * Two signals combine here: how far the leader has run, and how tight the race is
+   * behind them — a runaway win should relax as it resolves, a photo finish should not.
    */
   driveTension(states, legLength) {
     let lead = 0;
@@ -537,7 +531,6 @@ export class SportsGame {
     // matter more there even early on.
     const floor = this.leg === 'hurdles' ? 0.25 : 0;
     const tension = Math.max(floor, (progress * 0.65) + (closeness * progress * 0.35));
-    try { window.PoMusicDirector?.tension?.(tension); } catch { /* optional */ }
     this.crowd.set(tension);
   }
 

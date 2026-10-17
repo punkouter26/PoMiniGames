@@ -95,6 +95,40 @@ const SPACES = {
     },
     /** No reverb at all. */
     dry: { seconds: 0.1, decay: 12, damping: 0.9, predelay: 0, taps: [], send: 0 },
+    /**
+     * PoMule. An 8-bit sound chip through a television speaker in a living room:
+     * barely any tail, two close taps off the cabinet, and dark — a square wave
+     * with a bright reverb on it stops sounding like 1983.
+     */
+    crt: {
+        seconds: 0.26, decay: 8.0, damping: 0.82, predelay: 2,
+        taps: [[3, 0.20], [7, 0.12]],
+        send: 0.07,
+    },
+    /** PoCabinet. A grandstand straight: the outdoor shape plus one long slap off the stands. */
+    grandstand: {
+        seconds: 0.9, decay: 4.8, damping: 0.8, predelay: 30,
+        taps: [[36, 0.18], [118, 0.22], [171, 0.10]],
+        send: 0.13,
+    },
+    /** PoJevArena. An open-air pit with a packed-dirt floor: big, sparse, soaked up low. */
+    pit: {
+        seconds: 2.0, decay: 2.9, damping: 0.62, predelay: 26,
+        taps: [[29, 0.34], [54, 0.27], [91, 0.20], [139, 0.12]],
+        send: 0.24,
+    },
+    /** PoEcosystem. An island under open sky: far, soft, damp — foliage eats the highs. */
+    island: {
+        seconds: 1.1, decay: 4.6, damping: 0.9, predelay: 46,
+        taps: [[53, 0.12], [97, 0.07]],
+        send: 0.12,
+    },
+    /** SandPlayground. A glass-walled sandbox on a desk: short, bright and boxy. */
+    sandbox: {
+        seconds: 0.5, decay: 5.6, damping: 0.36, predelay: 4,
+        taps: [[5, 0.34], [10, 0.27], [16, 0.20], [23, 0.13]],
+        send: 0.14,
+    },
 };
 
 /** @type {Map<string, AudioBuffer>} */
@@ -200,6 +234,53 @@ export async function setSpace(name, send) {
 export function currentSpace() { return _current; }
 
 /**
+ * Route key → space. paletteBus.setGame() hands every route here, so the space follows
+ * the page the way the accent does. A route not listed gets the neutral room.
+ * PoVoxelStrike is dry because its own audio.js runs indoor/outdoor convolvers already.
+ */
+const GAME_SPACES = {
+    menu: 'room',
+    pobrawl: 'arena',
+    pomarblerace: 'tunnel',
+    poracer: 'outdoor',
+    posports: 'outdoor',
+    tictactoe: 'tabletop',
+    connectfive: 'tabletop',
+    funquiz: 'hall',
+    couplequiz: 'hall',
+    povoxelstrike: 'dry',
+    pocabinet: 'grandstand',
+    pomule: 'crt',
+    pojevarena: 'pit',
+    poecosystem: 'island',
+    sandplayground: 'sandbox',
+};
+
+let _wanted = null;
+let _armed = false;
+
+function applyWanted() {
+    _armed = false;
+    for (const evt of ['pointerdown', 'keydown']) window.removeEventListener(evt, applyWanted, true);
+    if (_wanted && _wanted !== _current) setSpace(_wanted);
+}
+
+/**
+ * Switch to a game's space. Never creates the AudioContext itself: before the first
+ * gesture it only remembers the choice and applies it on that gesture, so a route
+ * change never builds an IR (or wakes audio) for a player who has not made a sound.
+ * @param {string} gameKey
+ */
+export function useGame(gameKey) {
+    _wanted = GAME_SPACES[gameKey] || 'room';
+    if (_wanted === _current) return;
+    if (AudioBus.hasContext()) { setSpace(_wanted); return; }
+    if (_armed || typeof window === 'undefined') return;
+    _armed = true;
+    for (const evt of ['pointerdown', 'keydown']) window.addEventListener(evt, applyWanted, { capture: true, passive: true });
+}
+
+/**
  * Pre-build a space's IR without switching to it. Worth doing on a lobby screen
  * for the space the game itself will use: generating a 3.4 s stereo IR is a
  * few million Math.random() calls on the main thread, which is a visible hitch
@@ -277,5 +358,8 @@ export function dopplerRatio2D(dx, dy, vx, vy) {
 }
 
 if (typeof window !== 'undefined') {
-    window.PoAcoustics = { setSpace, currentSpace, prewarm, dopplerRatio, dopplerRatio2D };
+    window.PoAcoustics = { setSpace, currentSpace, useGame, prewarm, dopplerRatio, dopplerRatio2D };
+    // paletteBus (a classic script) may have run its first setGame before this module
+    // evaluated; pick the route up here so a direct load into a game gets its space.
+    useGame((location.pathname.split('/')[1] || '').toLowerCase() || 'menu');
 }

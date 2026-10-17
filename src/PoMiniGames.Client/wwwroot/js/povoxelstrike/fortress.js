@@ -380,13 +380,6 @@ export class FortressGuns {
     return n;
   }
 
-  /** Guns that have had a clear line to the player in the last few seconds (music tension). */
-  get sightedCount() {
-    let n = 0;
-    for (const t of this.turrets) if (t.alive && t.sawT > 0) n++;
-    return n;
-  }
-
   /**
    * Does this gun still have masonry under it? Scans a short column below the muzzle;
    * the gun falls silent only when the whole column has been carved away.
@@ -428,7 +421,6 @@ export class FortressGuns {
         this.opts.fx?.destroyed?.(t.group.position);
         continue;
       }
-      if (t.sawT > 0) t.sawT -= dt;
       const d = t.group.position.distanceTo(playerPosition);
       if (d > TURRET_RANGE) continue;
 
@@ -446,7 +438,6 @@ export class FortressGuns {
         continue;
       }
       t.cooldown = TURRET_COOLDOWN_S * (0.75 + Math.random() * 0.5);
-      t.sawT = 4;
       this._fire(t, this._aim);
     }
 

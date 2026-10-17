@@ -10,7 +10,6 @@
 //     and pitch-shifted for Doppler, so a pass is heard before it is seen.
 //   • events  — crash, skid, sand, turbo and pass cues, read off consecutive server snapshots
 //     at 20 Hz. The voices live in gameCues.js. Each also rumbles a gamepad (phones buzz through the cue's own haptic).
-//   • music   — PoMusicDirector.tension, lifted on the final lap and when a rival is close.
 import { rumble } from './input.js';
 
 const GEAR_TOP = [70, 130, 195, 265, 345];   // sim units/s at the top of each gear
@@ -57,7 +56,6 @@ export function stop() {
         for (const node of [v.filter, v.gain, v.panner]) { try { node?.disconnect(); } catch { /* not connected */ } }
     }
     engine = null; rivals = []; ctx = null;
-    try { window.PoMusicDirector?.tension(0); } catch { /* optional */ }
 }
 
 /** Speed → engine note. Shifts up at the top of a gear and down with hysteresis, so the note saws like a gearbox. */
@@ -114,7 +112,7 @@ export function frame(cars, me, quiet) {
  * Per server snapshot (20 Hz). `prev` / `cur` are consecutive car arrays in roster order;
  * `me` is the local car's index (-1 when spectating: no cues, the engine bed is enough).
  */
-export function events(prev, cur, me, laps) {
+export function events(prev, cur, me) {
     const a = prev?.[me], b = cur?.[me];
     if (!a || !b) return;
     const now = performance.now();
@@ -139,19 +137,14 @@ export function events(prev, cur, me, laps) {
     if (b.boost >= 0.6 && a.boost < 0.6 && !(b.boostT > 0) && now - last.turbo > 5000) { last.turbo = now; cue('turbo'); }
 
     // A pass: a rival alongside (within 70 units) that was closing and is now pulling away.
-    let nearest = 1e9;
     for (let i = 0; i < cur.length; i++) {
         if (i === me || !prev[i]) continue;
         const d1 = Math.hypot(cur[i].x - b.x, cur[i].y - b.y), d0 = Math.hypot(prev[i].x - a.x, prev[i].y - a.y);
-        nearest = Math.min(nearest, d1);
         if (d1 < 70 && d1 > d0 && Math.abs(cur[i].v - b.v) > 35 && now - last.pass > 1500) {
             last.pass = now;
             cue('dopplerPass', { pan: Math.max(-1, Math.min(1, (cur[i].x - b.x) / 70)), pitch: cur[i].v > b.v ? 1.15 : 0.9 });
         }
     }
-    // Music follows the race: calm early, lifted on the final lap, a little more with a rival on your bumper.
-    const lapTension = b.finished ? 0 : b.lap >= laps ? 0.7 : b.lap === laps - 1 ? 0.3 : 0.12;
-    try { window.PoMusicDirector?.tension(lapTension + (nearest < 160 && !b.finished ? 0.2 : 0)); } catch { /* optional */ }
 }
 
 /** Start lights: one beep per lamp as it comes on. `lit` is 0-5. */

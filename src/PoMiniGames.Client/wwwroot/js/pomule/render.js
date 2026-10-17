@@ -15,8 +15,8 @@
 import * as W from './world.js';
 import { drawText } from './font.js';
 
-export const SCREEN_W = 384, SCREEN_H = 190;
-const MAP_Y = 10, MSG_Y = 141, STATUS_Y = 153, COLUMN_W = 48;
+export const SCREEN_W = 384, SCREEN_H = 190, MAP_Y = 10;
+const MSG_Y = 141, STATUS_Y = 153, COLUMN_W = 48;
 const PX = 4; // one fat pixel in world units (a plot is 64 units, 16 pixels)
 
 const GROUND = '#dcdce0';

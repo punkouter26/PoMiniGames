@@ -9,7 +9,7 @@
 import * as W from './world.js';
 import * as P from './physics.js';
 import * as Sfx from './audio.js';
-import { drawFrame } from './render.js';
+import { drawFrame, SCREEN_W, SCREEN_H, MAP_Y } from './render.js';
 import { buildTouchControls, isTouchDevice } from './touch.js';
 
 const TICK = 0.1;
@@ -216,10 +216,34 @@ function simulate(dt) {
   }
 }
 
+/** A point on the fat-pixel screen (render.js) in viewport px, for a cue's particle burst. */
+function screenPoint(bx, by) {
+  const r = g.canvas.getBoundingClientRect();
+  const scale = Math.min(g.view.w / SCREEN_W, g.view.h / SCREEN_H);
+  return {
+    x: r.left + (g.view.w - SCREEN_W * scale) / 2 + bx * scale,
+    y: r.top + (g.view.h - SCREEN_H * scale) / 2 + by * scale,
+  };
+}
+
+const worldPoint = (x, y) => screenPoint(x / 4, MAP_Y + y / 4); // 4 world units to a fat pixel
+const plotPoint = (i) => { const t = W.tileCenter(i); return worldPoint(t.x, t.y); };
+
+/** Where a message's sound happened: the highlighted plot in the land grant, else the player. */
+function soundAt() {
+  if (!g?.view) return null;
+  if (g.phase === LAND && g.snap[10] >= 0) return plotPoint(g.snap[10]);
+  const me = g.avatars[0];
+  return g.human && me && !me.hidden && !g.interior ? worldPoint(me.x, me.y) : null;
+}
+
 function onSnapshot(snap) {
   const before = g.phase;
   g.snap = snap;
   g.phase = snap[1];
+  // The land auction ticks with each new high bid, like the original's floor.
+  if (g.phase === AUCTION && before === AUCTION && snap[5] > 0 && snap[5] !== g.bid) Sfx.auctionTick();
+  g.bid = snap[5];
   if (g.phase === before) return;
   g.phaseTime = 0;
   g.units = 0;
@@ -363,6 +387,8 @@ window.PoMule = {
       g.removeTouch = buildTouchControls(host);
     }
     if (g.human) Sfx.tune();
+    // The host shakes with the cues' impact feel (a meteor, a claim).
+    g.unstage = window.PoImpact?.registerStage?.(host);
     g.last = performance.now();
     g.raf = requestAnimationFrame(frame);
     return true;
@@ -371,6 +397,10 @@ window.PoMule = {
   /** Terrain (a meteor can change it), owners, installed M.U.L.E.s and the Crystite the viewer may see. */
   setPlots(terrain, owner, installed, crystite) {
     if (!g) return;
+    // Only a meteor makes a crater: one appearing is the strike landing.
+    for (let i = 0; i < terrain.length; i++) {
+      if (terrain[i] === W.CRATER && g.terrain[i] !== W.CRATER) { Sfx.meteor(g.view ? plotPoint(i) : null); break; }
+    }
     g.terrain = terrain;
     g.tilesStale = true; // render.js repaints its cached picture of the plots
     g.owner = owner;
@@ -388,7 +418,7 @@ window.PoMule = {
     if (!g) return;
     g.message = String(text);
     g.messageLife = seconds;
-    Sfx[sound]?.();
+    Sfx[sound]?.(soundAt());
   },
 
   /** This month's output per plot, for the unit-by-unit count on the map. */
@@ -426,6 +456,7 @@ window.PoMule = {
     window.removeEventListener('keyup', onKeyUp);
     window.removeEventListener('blur', onBlur);
     g.removeTouch?.();
+    g.unstage?.();
     g.canvas.remove();
     g = null;
   },

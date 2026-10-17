@@ -4,9 +4,7 @@
 // mix graph (js/audioBus.js) through window.PoAudioBus on the 'sfx' bus, so global
 // mute/volume/ducking apply for free.
 //
-// There is no music in here: a drone would play UNDER the platform soundtrack, which
-// every game page already has. The siege steers that soundtrack instead, through
-// PoMusicDirector.tension (see setTension).
+// There is no music in here: background music is off app-wide.
 //
 // Every public method is throttle-guarded and mute-safe, so the engine can call them
 // from hot paths (collapse spawns, debris collide events) without its own bookkeeping.
@@ -571,26 +569,12 @@ export class VoxelAudio {
     this._burst(this.sfx, { filterType: 'highpass', freq: 2400, dur: 0.25, gain: 0.06, delay });
   }
 
-  // ── Music ──────────────────────────────────────────────────────────────
-
-  /**
-   * 0 = an empty field, 1 = in the vault under every gun. The platform soundtrack's own
-   * layer mixer does the rest: it thickens and speeds up with tension, and fades back to
-   * its resting level when this is released.
-   */
-  setTension(t) {
-    window.PoMusicDirector?.tension?.(this._paused ? 0 : clamp(t, 0, 1));
-  }
-
   setPaused(paused) {
     this._paused = paused;
-    if (paused) window.PoMusicDirector?.tension?.(0);
     if (this.rain && this.ctx) this.rain.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.2);
   }
 
   dispose() {
-    // Tension belongs to the run: leave it up and the catalog hums at siege pitch.
-    window.PoMusicDirector?.tension?.(0);
     if (this.rain) {
       try { this.rain.src.stop(); } catch { /* never started */ }
       for (const n of Object.values(this.rain)) { try { n.disconnect(); } catch { /* */ } }

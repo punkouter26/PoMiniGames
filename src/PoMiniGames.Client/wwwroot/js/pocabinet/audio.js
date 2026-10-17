@@ -29,7 +29,6 @@
 //     with excitement, plus one-shot cheers (formant-filtered noise and "woo"
 //     sweeps). Every exhaust pop (player crackle/shift, rival downshift) is also
 //     queued as an event so race.js can put a flame on that car (takePops).
-//   • music.js borrows the context and bus through graph().
 //
 // All continuous controls are setTargetAtTime, so per-frame calls never click.
 
@@ -737,11 +736,6 @@ export function cheer(strength = 1, pos = null) {
         o.start(at);
         o.stop(at + 1.05);
     }
-}
-
-/** The context and the mix bus, for music.js. Null until the first gesture. */
-export function graph() {
-    return ctx ? { ctx, bus } : null;
 }
 
 // ── One-shots ────────────────────────────────────────────────────────────────

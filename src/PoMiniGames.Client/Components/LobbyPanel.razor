@@ -212,10 +212,8 @@
     {
         if (firstRender)
         {
-            // The soundtrack's "lobby" state (a step up from the menu) and the audio bands
-            // the card's glow reads (LobbyPanel.razor.css). Both are optional modules:
-            // reduced-motion players never load the music director.
-            try { await JS.InvokeVoidAsync("PoMusicDirector.lobby"); } catch { /* not loaded */ }
+            // The --audio-* bands the card's glow reads (LobbyPanel.razor.css), driven by
+            // cues (a seat filling, Ready) and pointer movement in visualRuntime.js.
             try { await JS.InvokeVoidAsync("PoVisualRuntime.enableAudioReactive", true); } catch { /* not loaded */ }
         }
 
@@ -260,9 +258,7 @@
 
     public async ValueTask DisposeAsync()
     {
-        // The room is over: the match starts, or the player left (the director's route
-        // watch then takes a catalog route back to 'menu' on its own).
-        try { await JS.InvokeVoidAsync("PoMusicDirector.match", true); } catch { /* not loaded */ }
+        // The room is over: the match starts, or the player left.
         try { await JS.InvokeVoidAsync("PoVisualRuntime.enableAudioReactive", false); }
         catch { /* page unloading or module missing */ }
     }

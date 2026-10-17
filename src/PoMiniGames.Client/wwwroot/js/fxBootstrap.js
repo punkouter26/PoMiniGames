@@ -1,9 +1,8 @@
 // fxBootstrap.js — the always-on GFX/Sound bootstrap.
 //
 // Loaded as a classic module script from index.html BEFORE Blazor boots, so
-// the quality tier is decided before the first game asks for it, the palette
-// follows the route from the first paint, and the music director's lazy
-// AudioContext gesture kick is armed immediately.
+// the quality tier is decided before the first game asks for it and the palette
+// follows the route from the first paint.
 //
 // The heavier systems (glass captures, weather, WebGPU particles, prop
 // registry, material audio) are lazy-imported from the games that use them —
@@ -15,8 +14,8 @@
     // Option #7: skip ALL of the heavier GFX/audio systems when the user
     // opted into reduced motion (Profile → Preferences) or the OS asked for
     // it. The app.css blanket rule handles CSS animations, but JS-driven
-    // effects (WebGPU particles, glass captures, ambient music, the music
-    // director) don't see a CSS rule — they have to gate themselves, and
+    // effects (WebGPU particles, glass captures, spatial audio) don't see a
+    // CSS rule — they have to gate themselves, and
     // this is the one place that decides whether they get loaded at all.
     //
     // The data-motion attribute is set on <html> by the pre-paint script in
@@ -38,18 +37,15 @@
     }
 
     // Order matters: quality first (everyone reads it), palette second (writes
-    // the vars readers consume), then the audio director. Reduce-motion users
+    // the vars readers consume), then spatial audio. Reduce-motion users
     // still load qualityTiers (chrome like the FPS meter reads it) and the
     // palette bus (the route-accent pulse is theme-state, not motion) — the
     // dropped modules are the ones whose effect IS motion: impact flashes,
-    // spatial / material audio, the music director, and the WebGPU
-    // compute-shader particle field.
+    // spatial / material audio, and the WebGPU compute-shader particle field.
+    // There is no background music: it is off app-wide.
     var chain = load('js/qualityTiers.js')
         .then(function () { return load('js/paletteBus.js'); });
     if (!reduceMotion) {
-        // Background music is removed: ambientMusic.js and musicDirector.js are no longer
-        // loaded. Every PoMusicDirector / PoAmbientMusic caller already guards for the
-        // global being absent. Load both here again to bring the soundtrack back.
         chain = chain.then(function () { return load('js/spatialAudio.js'); });
     }
     // The route wipe. Loaded for everyone including reduced-motion users: the

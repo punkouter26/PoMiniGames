@@ -4,10 +4,11 @@
    pickers inside the panel's slots, and those elements carry the page's scope, not this
    file's. The pills (host / guest / ready and any game's badge) are the shared .app-chip. */
 
-/* The waiting room breathes with its soundtrack: the card's edge lights on each beat of
-   the lobby track (--audio-pulse in fx.css, from the bands visualRuntime.js publishes while
-   this panel is mounted). Silent or muted, the pulse is 0 and there is no ring at all. Colour only, no movement, so
-   it stays on under reduced motion like the app's other audio-reactive colour. */
+/* The waiting room answers what happens in it: the card's edge lights when a cue fires
+   (a seat filling, Ready) or the pointer sweeps across it (--audio-pulse in fx.css, from
+   the bands visualRuntime.js publishes while this panel is mounted). At rest the pulse is
+   0 and there is no ring at all. Colour only, no movement, so it stays on under reduced
+   motion like the app's other reactive colour. */
 .lobby {
     position: relative;
 }

@@ -218,6 +218,121 @@
 
     const o_intervalMs = 220;
 
+    // ── Hub glass: the catalog's cards over the ambient particle field ──────────
+    //
+    // The hub's background is a WebGL2 ray-march (ambientParticles.js) that usually
+    // renders in a worker, so its canvas cannot be read from here. Instead the field
+    // hands over a thumbnail (snapshot()) a few times a second; it is blurred, boosted
+    // and masked to match the canvas's own CSS fade, encoded ONCE, and shared by every
+    // card through `--hub-glass` on the canvas's parent. Each card then gets the slice of
+    // it that lies behind the card (`--hub-glass-pos/-size`), and fx.css paints it under
+    // a theme tint with a specular spot that follows the pointer (fxTilt.js writes
+    // --fx-mx/--fx-my on the hovered card).
+    //
+    // HIGH tier only (the effective data-gfx, not the ceiling), never under reduced
+    // motion. Anything else drops the live attribute and the card is its plain self.
+    const HUB_W = 160;
+    const HUB_MS = 250;
+    const HUB_CARDS = '[data-hub-glass], .home-card';
+    let _hub = null;
+
+    function hubAllowed() {
+        const root = document.documentElement;
+        if (root.getAttribute('data-gfx') !== 'high') return false;
+        if (root.getAttribute('data-motion') === 'reduce') return false;
+        try { if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false; } catch { /* old engine */ }
+        const q = window.PoQuality;
+        return !(q && q.reduceFlashing && q.reduceFlashing());
+    }
+
+    function hubPaint(h, src, w, ht) {
+        const c = h.scratch || (h.scratch = document.createElement('canvas'));
+        if (c.width !== w || c.height !== ht) { c.width = w; c.height = ht; }
+        const g = c.getContext('2d');
+        g.clearRect(0, 0, w, ht);
+        g.filter = 'blur(4px) saturate(1.5) brightness(1.15)';
+        g.drawImage(src, 0, 0, w, ht);
+        g.filter = 'none';
+        // The canvas is faded by `radial-gradient(ellipse at center, #000 45%, transparent 78%)`
+        // (Index.razor.css). A CSS ellipse with no size reaches the corners, hence the √2.
+        g.save();
+        g.globalCompositeOperation = 'destination-in';
+        g.translate(w / 2, ht / 2);
+        g.scale(w / 2 * Math.SQRT2, ht / 2 * Math.SQRT2);
+        const fade = g.createRadialGradient(0, 0, 0, 0, 0, 1);
+        fade.addColorStop(0.45, '#000');
+        fade.addColorStop(0.78, 'rgba(0,0,0,0)');
+        g.fillStyle = fade;
+        g.fillRect(-1, -1, 2, 2);
+        g.restore();
+        return 'url("' + c.toDataURL('image/webp', 0.6) + '")';
+    }
+
+    function hubPlace(h) {
+        const cr = h.canvas.getBoundingClientRect();
+        if (!cr.width || !cr.height) return;
+        const size = Math.round(cr.width) + 'px ' + Math.round(cr.height) + 'px';
+        h.host.querySelectorAll(HUB_CARDS).forEach(function (card) {
+            const r = card.getBoundingClientRect();
+            const pos = Math.round(cr.left - r.left) + 'px ' + Math.round(cr.top - r.top) + 'px';
+            // Write only on change: a resting grid costs no style invalidation at all.
+            if (card._hubPos !== pos) { card._hubPos = pos; card.style.setProperty('--hub-glass-pos', pos); }
+            if (card._hubSize !== size) { card._hubSize = size; card.style.setProperty('--hub-glass-size', size); }
+        });
+    }
+
+    function hubOff(h) {
+        h.host.removeAttribute('data-hub-glass-live');
+        h.live = false;
+    }
+
+    function hubTick() {
+        const h = _hub;
+        if (!h || h.busy) return;
+        if (!h.canvas.isConnected) { ambientStop(); return; }
+        if (document.hidden) return;
+        if (!hubAllowed()) { if (h.live) hubOff(h); return; }
+        const cw = h.canvas.clientWidth, ch = h.canvas.clientHeight;
+        if (!cw || !ch) return;
+        const w = HUB_W, ht = Math.max(24, Math.min(256, Math.round(HUB_W * ch / cw)));
+        h.busy = true;
+        h.snapshot(w, ht).then(function (src) {
+            h.busy = false;
+            if (_hub !== h || !src) { if (src && src.close) src.close(); return; }
+            try {
+                const url = hubPaint(h, src, w, ht);
+                h.host.style.setProperty('--hub-glass', url);
+                hubPlace(h);
+                if (!h.live) { h.host.setAttribute('data-hub-glass-live', ''); h.live = true; }
+            } catch { /* a capture that fails leaves the plain card */ }
+            if (src.close) src.close();
+        }, function () { h.busy = false; });
+    }
+
+    /**
+     * Start the hub glass over an ambient canvas. `snapshot(w, h)` resolves a frame
+     * thumbnail (ambientParticles.js). Idempotent; ambientStop() undoes it.
+     * @param {HTMLCanvasElement} canvas
+     * @param {(w:number, h:number) => Promise<CanvasImageSource|null>} snapshot
+     */
+    function ambient(canvas, snapshot) {
+        if (!canvas || !canvas.parentElement || typeof snapshot !== 'function') return;
+        if (_hub && _hub.canvas === canvas) return;
+        ambientStop();
+        _hub = { canvas: canvas, host: canvas.parentElement, snapshot: snapshot, timer: 0, busy: false, live: false, scratch: null };
+        _hub.timer = setInterval(hubTick, HUB_MS);
+        hubTick();
+    }
+
+    function ambientStop() {
+        const h = _hub;
+        if (!h) return;
+        _hub = null;
+        clearInterval(h.timer);
+        hubOff(h);
+        h.host.style.removeProperty('--hub-glass');
+    }
+
     if (typeof document !== 'undefined') {
         document.addEventListener('pointerdown', function (e) {
             if (!allowed()) return;
@@ -236,6 +351,8 @@
         attachPanel: attachPanel,
         attachHud: attachHud,
         auto: auto,
+        ambient: ambient,
+        ambientStop: ambientStop,
         stopAll: function () {
             _timers.forEach(function (id) { clearInterval(id); });
             _timers.clear();

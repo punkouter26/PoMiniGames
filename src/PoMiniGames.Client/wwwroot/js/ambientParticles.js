@@ -7,11 +7,17 @@
 // back to the in-thread renderer below — same shader, via particlesCore.js.
 //
 // This file keeps ownership of everything DOM-shaped (pointer, resize,
-// intersection, visibility, the CSS accent tokens, the analyser read) because a
+// intersection, visibility, the CSS accent tokens, the reactive bands) because a
 // worker cannot touch the DOM; it forwards those as messages.
+//
+// The bands are visualRuntime.js's (cue events and pointer speed), not the audio
+// analyser's: with background music off app-wide the analyser was flat.
+//
+// It also hands frame thumbnails to glassFx.js (snapshot()), so the hub's cards can
+// blur and tint the real field behind them on the high tier.
 
 import { initGl, drawFrame, disposeGl, DEFAULT_HUE_A, DEFAULT_HUE_B } from './particlesCore.js';
-import * as AudioBus from './audioBus.js';
+import { getLevels } from './visualRuntime.js';
 
 let worker = null;
 
@@ -37,6 +43,11 @@ let onVisibilityChange = null;
 let onPageHide = null;
 let bandTimer = 0;
 
+// Frame thumbnails (snapshot()): one request in flight at a time.
+let snapPending = null;     // { resolve, timer }
+let snapReq = null;         // main-thread path: { w, h } to take after the next drawFrame
+let snapCanvas = null;      // main-thread path: reused 2D scratch
+
 // The march costs far more per pixel than a point field would, so the
 // backing store is deliberately smaller than the display. The volume has no
 // hard edges — there is nothing in it that a human can see aliasing on — which
@@ -46,7 +57,7 @@ let bandTimer = 0;
 // quality change on the soft volume, and the home route drops to ~31 FPS.
 const MAX_DPR = 1.0;
 
-// Analyser → worker at ~15 Hz. The worker interpolates between messages, so the
+// Bands → worker at ~15 Hz. The worker interpolates between messages, so the
 // visual is smooth; posting per frame would clone a message 60×/s for 3 floats.
 const BAND_INTERVAL_MS = 66;
 
@@ -172,7 +183,62 @@ export function refreshTint() {
     if (worker) worker.postMessage({ type: 'tint', hueA, hueB });
 }
 
+function settleSnap(image) {
+    const p = snapPending;
+    snapPending = null;
+    snapReq = null;
+    if (!p) { if (image && image.close) image.close(); return; }
+    clearTimeout(p.timer);
+    p.resolve(image || null);
+}
+
+/**
+ * A thumbnail of the field as it is drawn right now, `w`×`h` px: an ImageBitmap (worker
+ * path, the caller closes it) or a reused canvas (main-thread path, valid until the next
+ * call). Resolves null when nothing is rendering. One request at a time.
+ * @returns {Promise<ImageBitmap|HTMLCanvasElement|null>}
+ */
+export function snapshot(w, h) {
+    if (snapPending) return Promise.resolve(null);
+    if (!worker && !gl) return Promise.resolve(null);
+    return new Promise((resolve) => {
+        // A worker that never answers (stopped mid-request) must not wedge the caller.
+        snapPending = { resolve, timer: setTimeout(() => settleSnap(null), 1000) };
+        if (worker) worker.postMessage({ type: 'snap', width: w, height: h });
+        else snapReq = { w, h };
+    });
+}
+
+/** Main-thread path: copy the frame just drawn into the scratch canvas and hand it over. */
+function takeSnap() {
+    const { w, h } = snapReq;
+    snapReq = null;
+    try {
+        snapCanvas = snapCanvas || document.createElement('canvas');
+        if (snapCanvas.width !== w || snapCanvas.height !== h) { snapCanvas.width = w; snapCanvas.height = h; }
+        const g = snapCanvas.getContext('2d');
+        g.clearRect(0, 0, w, h);
+        g.drawImage(gl.canvas, 0, 0, w, h);
+        settleSnap(snapCanvas);
+    } catch {
+        settleSnap(null);
+    }
+}
+
 export function start(canvas) {
+    const ok = startRender(canvas);
+    // Glass hub cards (high tier only — glassFx gates itself on every capture). glassFx
+    // arrives late in fxBootstrap's chain, so a first visit may beat it here: retry briefly.
+    const hook = (tries) => {
+        if (boundCanvas !== canvas) return;
+        if (window.PoGlass?.ambient) window.PoGlass.ambient(canvas, snapshot);
+        else if (tries > 0) setTimeout(() => hook(tries - 1), 1000);
+    };
+    if (ok) hook(3);
+    return ok;
+}
+
+function startRender(canvas) {
     refreshTint();
 
     // ── Preferred path: render in a worker ─────────────────────────────
@@ -183,6 +249,7 @@ export function start(canvas) {
             worker = new Worker(new URL('./particlesWorker.js', import.meta.url), { type: 'module' });
 
             worker.onmessage = (e) => {
+                if (e.data && e.data.type === 'snap') { settleSnap(e.data.bitmap); return; }
                 if (e.data && e.data.type === 'failed') {
                     // WebGL2 unavailable inside the worker. The canvas has
                     // already been transferred and cannot be reclaimed, so we
@@ -243,10 +310,9 @@ export function start(canvas) {
     function tick(now) {
         if (!gl) return;
         if (visible && inViewport) {
-            // No message hop on this path, so the analyser can be read directly
-            // each frame — getLevels() is a single getByteFrequencyData plus a
-            // 256-element reduce, which is cheaper than a postMessage would be.
-            const l = AudioBus.getLevels();
+            // No message hop on this path, so the bands are read directly each
+            // frame (one reused object, no allocation).
+            const l = getLevels();
             state.quality = quality;
             state.bass = l.bass;
             state.mid = l.mid;
@@ -258,6 +324,7 @@ export function start(canvas) {
             lastVx *= 0.9;
             lastVy *= 0.9;
             drawFrame(gl, uniforms, canvas.width, canvas.height, now - startTime, lastX, lastY, state);
+            if (snapReq) takeSnap();
         }
         raf = requestAnimationFrame(tick);
     }
@@ -266,7 +333,7 @@ export function start(canvas) {
 }
 
 /**
- * Poll the analyser on a timer and hand the bands to the worker.
+ * Poll the reactive bands on a timer and hand them to the worker.
  * A timer rather than rAF: this is a data feed at a deliberately low rate, and
  * rAF would tie it to the display refresh (240 Hz on some panels) for no gain.
  */
@@ -274,7 +341,7 @@ function startBandPump(send) {
     stopBandPump();
     bandTimer = setInterval(() => {
         if (document.hidden || !inViewport) return;
-        send(AudioBus.getLevels());
+        send(getLevels());
     }, BAND_INTERVAL_MS);
 }
 
@@ -287,6 +354,8 @@ export function stop() {
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
     stopBandPump();
+    if (window.PoGlass?.ambientStop) window.PoGlass.ambientStop();
+    settleSnap(null);
 
     if (worker) {
         try { worker.postMessage({ type: 'stop' }); } catch { /* already dead */ }
@@ -322,5 +391,5 @@ export function stop() {
 }
 
 if (typeof window !== 'undefined') {
-    window.PoAmbient = { start, stop, refreshTint };
+    window.PoAmbient = { start, stop, refreshTint, snapshot };
 }

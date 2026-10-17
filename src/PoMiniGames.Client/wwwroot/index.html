@@ -202,7 +202,7 @@
         <span class="dismiss">🗙</span>
     </div>
     <!-- Per-game interop is NOT loaded here any more (2026-08-07).
-         poFunQuizSplitHotkeys.js, gl-fps.js and ambientMusic.js were global
+         poFunQuizSplitHotkeys.js and gl-fps.js were global
          <script> tags, so every page in the app fetched and parsed ~39 KB of
          code that exactly one game (or one opt-out diagnostic) ever calls.
          Each is now imported at its point of use — see PoFunQuizPage and
@@ -230,7 +230,7 @@
          mix graph; five modules used to construct a context each. It must be
          imported before any module that plays a sound, hence its position here.
          visualRuntime.js runs the single rAF loop that publishes both the
-         analyser bands (--audio-*) and the adaptive-quality tier (data-gfx). -->
+         reactive bands (--audio-*, from cues and the pointer) and the adaptive-quality tier (data-gfx). -->
     <script type="module" src="js/audioBus.js"></script>
     <script type="module" src="js/visualRuntime.js"></script>
     <!-- §GFX-10 synthesis moved to an AudioWorklet; dsp.js is the main-thread
@@ -254,7 +254,7 @@
     <script type="module" src="js/fxTilt.js"></script>
     <!-- §GFX-12…21 the quality/palette/sound bootstrap. Decides the device's
          quality tier BEFORE any game asks for it, owns the dynamic accent
-         palette, arms the music director's audio-context gesture kick, and
+         palette, and
          background-probes WebGPU for the particle backend. Everything heavier
          (glass captures, weather, props) stays lazy in the games that use it. -->
     <script src="js/fxBootstrap.js" defer></script>

@@ -38,7 +38,7 @@ let buf = [];
 // clocks tick at the same rate, so this is a constant plus network jitter; the
 // easing in push() is what filters the jitter out.
 let clockOffset = null;
-let roster = [], localIdx = -1, totalLaps = 3;
+let roster = [], localIdx = -1;
 let raf = 0, mainId = null, finishing = false;
 let hudEls = null, chipEls = null;
 let interpolatedCars = [], playerCars = [], lastAudioAt = 0, lastProfileAt = 0;
@@ -185,7 +185,6 @@ window.PoRacer = {
     /** Track geometry, once per race. */
     setStatic(center, width, walls, boostPads, surfaceZones, theme, laps) {
         Render.setStatic(center, width, walls, boostPads, surfaceZones, theme);
-        totalLaps = laps || 3;
         Audio.start();
         // Weather of the day (weather.js): one seed per track and UTC day, so everyone on a track
         // drives under the same sky. A 2D overlay directly above the track canvas, under the HUD;
@@ -273,7 +272,7 @@ window.PoRacer = {
         if (buf.length > BUFFER_MAX) buf.shift();
 
         Audio.lights(countdownMs > 0 ? Math.min(5, Math.floor((3000 - countdownMs) / 500)) : 0);
-        if (running) Audio.events(prev, cars, localIdx, totalLaps);
+        if (running) Audio.events(prev, cars, localIdx);
         if (!raf) raf = requestAnimationFrame(frame);
     },
 

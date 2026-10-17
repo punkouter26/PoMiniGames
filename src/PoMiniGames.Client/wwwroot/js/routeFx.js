@@ -68,6 +68,12 @@
      * @param {string} path destination pathname
      */
     function play(path) {
+        // Blazor navigation raises no popstate, so this is paletteBus's route signal too:
+        // the accent (and the acoustic space it hands on) follows the destination. Before
+        // the motion gate, because the accent is theme state, not motion.
+        const key = ((path || '/').split('/')[1] || '').toLowerCase();
+        if (window.PoPalette && window.PoPalette.setGame) window.PoPalette.setGame(key);
+
         if (motionReduced()) return;
 
         const accents = accentsFor(path);

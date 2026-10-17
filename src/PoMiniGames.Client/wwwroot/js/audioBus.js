@@ -153,8 +153,7 @@ function buildGraph(ctx) {
     reverbReturn.gain.value = 0.9;
 
     // Background music is switched off app-wide: the music bus is deliberately left
-    // unconnected, so everything routed to it (ambientMusic.js, the music director) is
-    // silent. Reconnect it to preMaster to bring the soundtrack back.
+    // unconnected, so anything still routed to it is silent.
     sfx.connect(preMaster);
     ui.connect(preMaster);
 
@@ -360,6 +359,11 @@ export function isAvailable() {
     return !!(window.AudioContext || window.webkitAudioContext);
 }
 
+/** True once the shared context exists. Never creates it (unlike context()/contextSync()). */
+export function hasContext() {
+    return !!_ctx;
+}
+
 // One-shot gesture listeners so the context is live the moment the player first
 // interacts, rather than on the first sound (which would drop that sound).
 if (typeof window !== 'undefined') {
@@ -398,6 +402,6 @@ if (typeof window !== 'undefined') {
     // shared graph quietly stops being shared.
     window.PoAudioBus = {
         context, contextSync, bus, busSync, isMuted, setMuted, getVolume, setVolume,
-        duck, setReverb, setSpaceBuffer, reverbSend, panner, getLevels, resume, isAvailable,
+        duck, setReverb, setSpaceBuffer, reverbSend, panner, getLevels, resume, isAvailable, hasContext,
     };
 }

@@ -45,6 +45,27 @@ let currentVy = 0;
 // frame is exactly the kind of garbage this worker exists to avoid.
 const state = { quality: 1, bass: 0, mid: 0, treble: 0, hueA, hueB, mouseVx: 0, mouseVy: 0 };
 
+// A thumbnail of the frame for the hub's glass cards (glassFx.js), asked for a few times a
+// second. Taken right after drawFrame, inside the same task, because a WebGL buffer without
+// preserveDrawingBuffer is only readable in the frame it was drawn in. The 2D scratch canvas
+// is reused; transferToImageBitmap hands its pixels over without a copy.
+let snapW = 0, snapH = 0;
+let snapCanvas = null, snapCtx = null;
+
+function takeSnap() {
+    if (!snapCanvas) { snapCanvas = new OffscreenCanvas(snapW, snapH); snapCtx = snapCanvas.getContext('2d'); }
+    if (snapCanvas.width !== snapW || snapCanvas.height !== snapH) { snapCanvas.width = snapW; snapCanvas.height = snapH; }
+    snapW = 0;
+    try {
+        snapCtx.clearRect(0, 0, snapCanvas.width, snapCanvas.height);
+        snapCtx.drawImage(canvas, 0, 0, snapCanvas.width, snapCanvas.height);
+        const bitmap = snapCanvas.transferToImageBitmap();
+        self.postMessage({ type: 'snap', bitmap }, [bitmap]);
+    } catch {
+        self.postMessage({ type: 'snap', bitmap: null });
+    }
+}
+
 function tick(now) {
     if (!gl) return;
     if (visible && inViewport) {
@@ -67,6 +88,7 @@ function tick(now) {
         state.mouseVy = currentVy;
 
         drawFrame(gl, u, canvas.width, canvas.height, now - startTime, mouseX, mouseY, state);
+        if (snapW) takeSnap();
     }
     raf = requestAnimationFrame(tick);
 }
@@ -117,6 +139,12 @@ self.onmessage = (e) => {
             target.bass = m.bass || 0;
             target.mid = m.mid || 0;
             target.treble = m.treble || 0;
+            break;
+        case 'snap':
+            // Not drawing (hidden, scrolled away): answer now rather than leave the asker waiting.
+            if (!gl || !visible || !inViewport || typeof OffscreenCanvas !== 'function') { self.postMessage({ type: 'snap', bitmap: null }); break; }
+            snapW = Math.max(1, Math.min(256, m.width | 0));
+            snapH = Math.max(1, Math.min(256, m.height | 0));
             break;
         case 'tint':
             if (Array.isArray(m.hueA) && m.hueA.length === 3) hueA = m.hueA;

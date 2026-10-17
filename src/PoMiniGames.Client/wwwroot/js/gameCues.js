@@ -21,6 +21,12 @@
 //   poracer     motorised — saws, filter sweeps, no pitched melody at all
 //   posports    rubber and air — bouncy sine blips, whistle
 //   quiz        bright bell-tones, unambiguous right/wrong
+//   pomule      an Atari 800 sound chip — bare square waves, exact pitches, no jitter
+//
+// Two scopes have NO voices: pocabinet and pojevarena. Both synthesise their own sound
+// (Cabinet in its own world-space AudioContext, JevArena per creature in its audio.js),
+// so their cues carry only the feel — impact, hitstop, haptics — fired with the sound
+// that already plays. One table still describes every game's feel in one place.
 //
 // PITCH JITTER: every cue is detuned by a small random amount on each play.
 // Without it, a rapid sequence of identical cues (a combo, a fast quiz round,
@@ -31,6 +37,7 @@ import * as Dsp from './dsp.js';
 import * as AudioBus from './audioBus.js';
 import * as Impact from './impactBus.js';
 import * as Fx from './gpuFx.js';
+import * as Visual from './visualRuntime.js';
 
 /** Semitone → frequency ratio. */
 const R = (s) => Math.pow(2, s / 12);
@@ -562,7 +569,79 @@ const CUES = {
             feel: 'light', scale: 0.7, fx: { preset: 'dust', scale: 0.6 },
         },
     },
+
+    // ── PoMule — an Atari 800 sound chip ───────────────────────────────
+    // Square waves with a flat body and a hard stop, at exact pitches: jitter 0 on
+    // all of them, because the 1983 chip had none and a detuned blip reads as modern.
+    // Callers pass `pitch` for the stepped ones (a unit counted up, a price on the floor).
+    // pomule/audio.js is the only caller; it adds the screen position for the bursts.
+    pomule: {
+        step: { voices: [v('square', 110, 0.025, 0.026, { decay: 0.024, cutoff: 2400 })], feel: null, jitter: 0 },
+        unit: { voices: [v('square', 330, 0.05, 0.045, { decay: 0.05, cutoff: 5000 })], feel: null, jitter: 0 },
+        price: { voices: [v('square', 220, 0.03, 0.035, { decay: 0.03, cutoff: 5000 })], feel: null, jitter: 0 },
+        auctionTick: { voices: [v('square', 1200, 0.018, 0.03, { decay: 0.017, cutoff: 6000 })], feel: null, jitter: 0 },
+        trade: {
+            voices: [
+                v('square', 660, 0.05, 0.05, { decay: 0.05, cutoff: 5000 }),
+                v('square', 880, 0.07, 0.05, { decay: 0.07, cutoff: 5000, delay: 0.05 }),
+            ],
+            feel: null, jitter: 0,
+        },
+        claim: {
+            voices: [
+                v('square', 440, 0.08, 0.055, { decay: 0.08, cutoff: 5000 }),
+                v('square', 660, 0.12, 0.055, { decay: 0.12, cutoff: 5000, delay: 0.08 }),
+            ],
+            feel: 'select', jitter: 0, fx: { preset: 'sparks', scale: 0.5 },
+        },
+        buy: { voices: [v('square', 520, 0.1, 0.05, { freqEnd: 780, sweep: 0.1, decay: 0.1, cutoff: 5000 })], feel: 'tick', jitter: 0 },
+        refuse: { voices: [v('saw', 160, 0.18, 0.055, { decay: 0.17, cutoff: 1800 })], feel: 'light', scale: 0.4, jitter: 0 },
+        bray: {
+            voices: [
+                v('saw', 620, 0.22, 0.05, { freqEnd: 240, sweep: 0.22, decay: 0.22, cutoff: 2600 }),
+                v('saw', 520, 0.30, 0.05, { freqEnd: 140, sweep: 0.30, decay: 0.30, cutoff: 2200, delay: 0.24 }),
+            ],
+            feel: 'light', scale: 0.5, jitter: 0,
+        },
+        wampus: {
+            // Five rising steps, a 1983 "you got it".
+            voices: [0, 1, 2, 3, 4].map((i) => v('square', 500 + i * 120, 0.06, 0.05, { decay: 0.06, cutoff: 5200, delay: i * 0.06 })),
+            feel: 'select', jitter: 0, fx: { preset: 'sparks', scale: 0.9 },
+        },
+        meteor: {
+            // A falling whistle, then the crater: noise sweeping shut over a low square thud.
+            voices: [
+                v('square', 1320, 0.34, 0.04, { freqEnd: 180, sweep: 0.34, decay: 0.34, cutoff: 3000 }),
+                v('noise', 0, 0.45, 0.16, { decay: 0.42, cutoff: 3200, cutoffEnd: 180, q: 1.2, sweep: 0.42, delay: 0.3 }),
+                v('square', 55, 0.30, 0.07, { freqEnd: 38, sweep: 0.28, decay: 0.28, cutoff: 600, delay: 0.3 }),
+            ],
+            feel: 'medium', scale: 0.8, jitter: 0, fx: { preset: 'impact', scale: 0.9 },
+        },
+    },
+
+    // ── PoCabinet — feel only (sound: pocabinet/audio.js) ──────────────
+    // Wired from pocabinet/race.js where the race already plays the sound. Solo races
+    // only: the hitstop rides the local sim clock, which online belongs to the server.
+    pocabinet: {
+        wall: { voices: [], feel: 'light' },
+        contact: { voices: [], feel: 'medium', scale: 0.8 },
+        overtake: { voices: [], feel: 'select' },
+        finish: { voices: [], feel: 'win', scale: 0.7 },
+    },
+
+    // ── PoJevArena — feel only (sound: pojevarena/audio.js) ────────────
+    // The arena already rings every hit and KO per creature. These add the weight: a
+    // big hit leans on the impact envelope the renderer shakes with (getPunch) and a
+    // knockout gets a hitstop. Small hits stay feel-free — a 20-unit melee would buzz.
+    pojevarena: {
+        hitBig: { voices: [], feel: 'light', scale: 0.8 },
+        boulder: { voices: [], feel: 'medium', scale: 0.7 },
+        ko: { voices: [], feel: 'medium' },
+    },
 };
+
+/** How hard a cue of each impact kind lights the reactive bands (visualRuntime.kick). */
+const KICK = { tick: 0.25, select: 0.4, light: 0.5, medium: 0.7, heavy: 1, win: 1, lose: 0.6 };
 
 /** Cues that should also fire a personal-best celebration. */
 const CELEBRATE = new Set(['win', 'goal', 'finish']);
@@ -581,6 +660,7 @@ const CELEBRATE = new Set(['win', 'goal', 'finish']);
  * @param {number} [opts.gain=1] level multiplier
  * @param {number} [opts.scale=1] impact/particle strength multiplier
  * @param {boolean} [opts.silent] skip audio, keep the visual (for muted replays)
+ * @param {boolean} [opts.fx] false skips the particle burst (no position to put it at)
  */
 export function fire(scope, name, opts) {
     const o = opts || {};
@@ -588,7 +668,7 @@ export function fire(scope, name, opts) {
     const cue = table[name] || CUES.ui[name];
     if (!cue) return;
 
-    if (!o.silent && !AudioBus.isMuted()) {
+    if (!o.silent && cue.voices.length && !AudioBus.isMuted()) {
         const jitter = cue.jitter == null ? 0.35 : cue.jitter;
         // One detune value for the whole cue, not per voice: detuning voices
         // independently would break the intervals the cue is built from.
@@ -617,8 +697,9 @@ export function fire(scope, name, opts) {
 
     const strength = (o.scale == null ? 1 : o.scale) * (cue.scale == null ? 1 : cue.scale);
     if (cue.feel) Impact.impact(cue.feel, strength);
+    Visual.kick((cue.feel ? KICK[cue.feel] || 0.4 : 0.2) * Math.min(1, strength));
 
-    if (cue.fx) {
+    if (cue.fx && o.fx !== false) {
         const fxOpts = { preset: cue.fx.preset, scale: (cue.fx.scale || 1) * strength };
         if (CELEBRATE.has(name) && cue.fx.preset === 'confetti') {
             Fx.celebrate(fxOpts.scale);

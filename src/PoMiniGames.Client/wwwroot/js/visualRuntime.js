@@ -1,11 +1,15 @@
 // visualRuntime.js — one rAF loop that owns two jobs:
 //
-//   AUDIO-REACTIVE VISUALS
-//      Reads the analyser at the end of audioBus.js's chain and publishes three
-//      normalised bands as CSS custom properties on <html>:
+//   REACTIVE VISUALS (the --audio-* bands)
+//      Publishes four normalised bands as CSS custom properties on <html>:
 //          --audio-bass  --audio-mid  --audio-treble  --audio-peak   (0..1)
 //      Any stylesheet can then react without touching JS, e.g.
 //          box-shadow: 0 0 calc(var(--audio-bass) * 40px) var(--accent);
+//      They used to be the analyser's read of the soundtrack. With background music
+//      off app-wide that read was flat except for a twitch on each click, so the
+//      bands are now driven by what the player DOES: every cue (gameCues.js calls
+//      kick() with the cue's weight) is a hit on the low band, and pointer speed
+//      feeds the high band. The names stay, so no stylesheet had to change.
 //
 //   ADAPTIVE QUALITY
 //      Measures real frame cadence and degrades effects before the player feels
@@ -19,8 +23,6 @@
 //
 // The loop parks itself entirely when the tab is hidden and when neither job has
 // a consumer — an idle page should cost nothing.
-
-import * as AudioBus from './audioBus.js';
 
 const TIERS = {
     high:   { blur: 14, particles: 1.00, shadows: 1 },
@@ -68,6 +70,85 @@ let _warmedAt = 0;   // set on the first measurement window; see WARMUP_MS
 
 // Reused so the loop allocates nothing per frame.
 const _root = typeof document !== 'undefined' ? document.documentElement : null;
+
+// ── Reactive bands ─────────────────────────────────────────────────────
+// Two envelopes, both 0..1 and both decaying every frame:
+//   _hit    — cue events. kick() adds; it falls back with a ~140 ms half-life,
+//             so a tap reads as a blink and a flurry of hits as a held glow.
+//   _motion — pointer speed, smoothed. Capped low in the bass band so sweeping the
+//             mouse across the catalog breathes the chrome, never pumps it.
+const HIT_HALF_LIFE_MS = 140;
+const MOTION_HALF_LIFE_MS = 260;
+const POINTER_FULL_PX_PER_MS = 2.6;   // a brisk flick across a laptop screen
+let _hit = 0;
+let _motion = 0;
+let _lastStep = 0;
+let _px = 0, _py = 0, _pt = 0;
+let _pointerBound = false;
+// Last value written per band, in hundredths: write only on change, so an idle page
+// costs no style recalculation at all.
+const _written = [-1, -1, -1, -1];
+const BAND_VARS = ['--audio-bass', '--audio-mid', '--audio-treble', '--audio-peak'];
+// Reused by getLevels() — the particle field polls it.
+const _levels = { bass: 0, mid: 0, treble: 0, peak: 0 };
+
+function onPointerMove(e) {
+    const t = e.timeStamp || performance.now();
+    const dt = t - _pt;
+    if (_pt && dt > 0 && dt < 120) {
+        const speed = Math.hypot(e.clientX - _px, e.clientY - _py) / dt;
+        const v = Math.min(1, speed / POINTER_FULL_PX_PER_MS);
+        if (v > _motion) _motion += (v - _motion) * 0.35;
+    }
+    _px = e.clientX; _py = e.clientY; _pt = t;
+}
+
+function bindPointer(on) {
+    if (typeof window === 'undefined' || on === _pointerBound) return;
+    _pointerBound = on;
+    if (on) window.addEventListener('pointermove', onPointerMove, { passive: true });
+    else window.removeEventListener('pointermove', onPointerMove);
+}
+
+function writeBand(i, v) {
+    const q = Math.round(v * 100);
+    if (q === _written[i]) return;
+    _written[i] = q;
+    _root.style.setProperty(BAND_VARS[i], String(q / 100));
+}
+
+function stepBands(now) {
+    const dt = _lastStep ? Math.min(100, now - _lastStep) : 16;
+    _lastStep = now;
+    _hit *= Math.pow(0.5, dt / HIT_HALF_LIFE_MS);
+    _motion *= Math.pow(0.5, dt / MOTION_HALF_LIFE_MS);
+    if (_hit < 0.004) _hit = 0;
+    if (_motion < 0.004) _motion = 0;
+    // The low tier is the machine that cannot spare the repaint; fx.css already hides
+    // the readers there, so publish rest values rather than recalculating styles.
+    const live = _tier !== 'low';
+    _levels.bass = live ? Math.min(1, _hit + _motion * 0.3) : 0;
+    _levels.mid = live ? Math.min(1, _hit * 0.6 + _motion * 0.6) : 0;
+    _levels.treble = live ? _motion : 0;
+    _levels.peak = live ? Math.max(_hit, _motion) : 0;
+    writeBand(0, _levels.bass);
+    writeBand(1, _levels.mid);
+    writeBand(2, _levels.treble);
+    writeBand(3, _levels.peak);
+}
+
+/**
+ * A cue fired: light the bands. `weight` 0..1 (gameCues.js maps a cue's impact kind
+ * onto it). Cheap and safe to call at any rate — it only raises a number.
+ * @param {number} [weight=0.5]
+ */
+export function kick(weight) {
+    const w = weight == null ? 0.5 : Math.max(0, Math.min(1, weight));
+    _hit = Math.min(1, _hit + w * (1 - _hit * 0.5));
+}
+
+/** The current bands (one reused object — read it, do not keep it). */
+export function getLevels() { return _levels; }
 
 // qualityTiers.js (PoQuality) owns the ceiling: the device read, the battery cap and the
 // player's own choice in Settings. This loop only moves BELOW that ceiling, and stands
@@ -148,17 +229,8 @@ function step(now) {
         }
     }
 
-    // ── audio bands → CSS variables ─────────────────────────────────
-    if (_audioReactive && _root) {
-        const l = AudioBus.getLevels();
-        // Two decimals is enough for a visual and keeps style recalc cheap —
-        // writing full float precision every frame measurably increases the
-        // cost of the subsequent style pass.
-        _root.style.setProperty('--audio-bass', l.bass.toFixed(2));
-        _root.style.setProperty('--audio-mid', l.mid.toFixed(2));
-        _root.style.setProperty('--audio-treble', l.treble.toFixed(2));
-        _root.style.setProperty('--audio-peak', l.peak.toFixed(2));
-    }
+    // ── cue + pointer envelopes → CSS variables ─────────────────────
+    if (_audioReactive && _root) stepBands(now);
 
     _rafId = requestAnimationFrame(step);
 }
@@ -179,13 +251,17 @@ function stopLoop() {
     _rafId = 0;
 }
 
-/** Turn on the analyser → CSS-variable pump. */
+/** Turn on the cue/pointer → CSS-variable pump. Pages that read the bands ask for it. */
 export function enableAudioReactive(on) {
     _audioReactive = on !== false;
+    bindPointer(_audioReactive);
     if (!_audioReactive && _root) {
-        for (const v of ['--audio-bass', '--audio-mid', '--audio-treble', '--audio-peak']) {
-            _root.style.setProperty(v, '0');
+        _hit = 0; _motion = 0; _lastStep = 0;
+        for (let i = 0; i < BAND_VARS.length; i++) {
+            _written[i] = 0;
+            _root.style.setProperty(BAND_VARS[i], '0');
         }
+        _levels.bass = _levels.mid = _levels.treble = _levels.peak = 0;
     }
     if (_audioReactive) ensureRunning(); else if (!_adaptive) stopLoop();
 }
@@ -232,5 +308,6 @@ if (typeof document !== 'undefined') {
 if (typeof window !== 'undefined') {
     window.PoVisualRuntime = {
         enableAudioReactive, enableAdaptiveQuality, setQualityTier, getTier, getFps, syncWithQuality,
+        kick, getLevels,
     };
 }

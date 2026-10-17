@@ -49,7 +49,7 @@ import { resolveQuality, createRenderer } from './quality.js';
 import { setQuality, SkyEnvironment, markHotCarve, tickMaterials, resetMaterials } from './materials.js';
 import { ParticleSystem } from './particles.js';
 import { DecalField } from './decals.js';
-import { FortressGuns, Chalice, OUTER_HALF, INNER_HALF, KEEP_HALF } from './fortress.js';
+import { FortressGuns, Chalice } from './fortress.js';
 import { ShrapnelField } from './shrapnel.js';
 import { createPhysicsWorld, PHYSICS_STEP as SI_PHYSICS_STEP } from './physics.js';
 import { Avatar } from './avatar.js';
@@ -339,7 +339,6 @@ export class Engine {
     this.audio?.setQuality(this.q); // before the first cue: it decides the reverb graph
     this._prevLocked = false;
     this._cueClock = 1.5;
-    this._tensionClock = 0;
     this._heartClock = 0;
     this._steamClock = 0;
     this._stride = 0;
@@ -1017,20 +1016,8 @@ export class Engine {
     if (!this.q.reducedMotion) this._hitStopT = HIT_STOP_S;
   }
 
-  /** Enemy presence cues + music tension, on their own slow clocks. */
+  /** Enemy presence cues, on their own slow clock. */
   _updateAudioAmbience(dt) {
-    this._tensionClock -= dt;
-    if (this._tensionClock <= 0) {
-      this._tensionClock = 1;
-      // How deep into the fortress, and how many guns have had a line on the player
-      // lately. The rings are squares, so "depth" is the larger of |x| and |z|.
-      const p = this.player.position;
-      const reach = Math.max(Math.abs(p.x), Math.abs(p.z));
-      const depth = reach < KEEP_HALF ? 0.75 : reach < INNER_HALF ? 0.5 : reach < OUTER_HALF ? 0.3 : 0.1;
-      this.audio.setTension(depth + Math.min(0.3, this.guns.sightedCount * 0.06)
-        + (this.hp <= LOW_HP ? 0.15 : 0) + this.enemies.count / 40);
-    }
-
     this._cueClock -= dt;
     if (this._cueClock > 0 || this.enemies.enemies.length === 0) return;
     this._cueClock = 0.8 + Math.random() * 0.6;

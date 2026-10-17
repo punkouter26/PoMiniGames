@@ -5,6 +5,7 @@ using PoMiniGames.Domain.Services;
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.Integrity;
 using PoMiniGames.Features.MatchHistory;
+using PoMiniGames.Features.Shared;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoBrawl.Online;
@@ -129,8 +130,8 @@ public static class PoBrawlOnlineMatchEndpoints
                     }
 
                     await storage.RecordPoBrawlOnlineMatchAsync(
-                        winnerPrincipalId: PoBrawlLobbyService.SanitizePrincipal(winnerPid),
-                        loserPrincipalId: PoBrawlLobbyService.SanitizePrincipal(loserPid),
+                        winnerPrincipalId: PrincipalIds.Sanitize(winnerPid),
+                        loserPrincipalId: PrincipalIds.Sanitize(loserPid),
                         winnerDisplayName: winnerName,
                         loserDisplayName: loserName,
                         isDraw: isDraw);

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
+using PoMiniGames.Infrastructure;
 
 namespace PoMiniGames.Features.Auth;
 
@@ -32,7 +33,7 @@ public static class AuthEndpoints
             // Must match SignInDevelopmentUserAsync's guard (Dev + Test) exactly. If sign-out
             // checked IsDevelopment() alone, a dev session minted under Test could be created but
             // never cleared. Any asymmetry here strands sessions.
-            if (!environment.IsDevelopment() && !environment.IsEnvironment("Test"))
+            if (!environment.IsDevOrTest())
             {
                 return Results.NotFound();
             }
@@ -90,7 +91,7 @@ public static class AuthEndpoints
             HttpContext context,
             IWebHostEnvironment environment) =>
         {
-            if (!environment.IsDevelopment() && !environment.IsEnvironment("Test"))
+            if (!environment.IsDevOrTest())
             {
                 return Results.NotFound();
             }
@@ -143,7 +144,7 @@ public static class AuthEndpoints
             var microsoftConfigured = auth.FullyConfigured;
             // Dev + Test envs expose the Guest dev-bypass
             // path so the SPA can auto-sign-in as Guest without OAuth.
-            var devLoginEnabled = environment.IsDevelopment() || environment.IsEnvironment("Test");
+            var devLoginEnabled = environment.IsDevOrTest();
             var autoGuestLogin = devLoginEnabled && configuration.GetValue<bool>("Auth:AutoGuestLogin");
             var msalAuthority = NormalizeAuthorityForMsal(auth.Authority);
 
@@ -240,7 +241,7 @@ public static class AuthEndpoints
         // never reaches here — Program.cs only maps these endpoints in non-Production
         // environments, and the StartupSecretValidator fails-fast in Prod if
         // AutoGuestLogin or FakeAuth scheme slip through.
-        if (!environment.IsDevelopment() && !environment.IsEnvironment("Test"))
+        if (!environment.IsDevOrTest())
         {
             return Results.NotFound();
         }

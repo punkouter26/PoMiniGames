@@ -116,7 +116,7 @@ internal static class TelemetryExtensions
                     Retry = { MaxRetries = 2, NetworkTimeout = TimeSpan.FromSeconds(3) },
                 });
 
-            if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Test"))
+            if (builder.Environment.IsDevOrTest())
             {
                 // In Development, a failed Key Vault load must NOT abort startup. If the
                 // developer is offline, not `az login`'d, or the vault's subscription is in a

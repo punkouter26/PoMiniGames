@@ -1,3 +1,5 @@
+using PoMiniGames.Infrastructure;
+
 namespace PoMiniGames.Features.Shared;
 
 /// <summary>
@@ -24,7 +26,7 @@ public static class AiMockFallback
     /// E2E "Test" environment only.
     /// </summary>
     public static bool IsNonProduction(IHostEnvironment environment)
-        => environment.IsDevelopment() || environment.IsEnvironment("Test");
+        => environment.IsDevOrTest();
 
     /// <summary>
     /// True when the game's <c>UseMockAI</c> flag is set AND the environment permits mocks —

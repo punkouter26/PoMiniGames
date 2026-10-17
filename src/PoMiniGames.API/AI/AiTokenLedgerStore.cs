@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Azure;
 using Azure.Data.Tables;
+using PoMiniGames.Infrastructure;
 using PoMiniGames.Infrastructure.Storage;
 
 namespace PoMiniGames.AI;
@@ -151,7 +152,7 @@ public sealed class TableAiTokenLedgerStore : IAiTokenLedgerStore
                 table,
                 PartitionFor(day),
                 RowKeyFor(identity),
-                () => new LedgerEntity { Identity = Truncate(identity), Spent = 0 },
+                () => new LedgerEntity { Identity = identity.Truncate(120), Spent = 0 },
                 entity =>
                 {
                     entity.Spent += delta;
@@ -206,7 +207,4 @@ public sealed class TableAiTokenLedgerStore : IAiTokenLedgerStore
     /// </summary>
     private static string RowKeyFor(string identity)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)));
-
-    private static string Truncate(string value)
-        => value.Length <= 120 ? value : value[..120];
 }

@@ -24,13 +24,13 @@ internal static class AuthExtensions
         // sign in as Guest without going through the MSAL/OAuth handshake. Production
         // NEVER gets this — a startup guard in Program.cs enforces that even if the
         // config flag slips in (see FakeAuthHandler + StartupSecretValidator).
-        var devLoginEnabled = env.IsDevelopment() || env.IsEnvironment("Test");
+        var devLoginEnabled = env.IsDevOrTest();
 
         // Fake auth (header-driven) is gated to non-Production environments behind an
         // explicit config flag. Both Dev and Test honor it so e2e fixtures can opt
         // into header-driven identity assertions; Production guards remain intact via
         // StartupSecretValidator (throws if FakeAuth is ever registered in Prod).
-        var fakeAuthEnabled = (env.IsDevelopment() || env.IsEnvironment("Test"))
+        var fakeAuthEnabled = env.IsDevOrTest()
             && configuration.GetValue<bool>("Auth:EnableFakeAuth");
 
         var authBuilder = services.AddAuthentication(options =>

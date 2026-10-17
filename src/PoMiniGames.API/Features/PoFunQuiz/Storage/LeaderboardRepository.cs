@@ -1,5 +1,6 @@
 using Azure;
 using Azure.Data.Tables;
+using PoMiniGames.Infrastructure;
 
 namespace PoMiniGames.Features.PoFunQuiz.Storage;
 
@@ -28,7 +29,7 @@ public sealed class LeaderboardRepository(TableServiceClient tableServiceClient)
         // Server-side sanitization: override any client-supplied PlayerName with the
         // authenticated user. The caller is responsible for setting PlayerName to
         // the email claim (or "anon-<guid>" for guest mode) before invoking.
-        var playerName = Truncate(Sanitize(entry.PlayerName), 32);
+        var playerName = Sanitize(entry.PlayerName).Truncate(32);
         var score = Math.Clamp(entry.Score, 0, 10_000); // hard cap
         var maxStreak = Math.Max(0, entry.MaxStreak);
         var datePlayed = entry.DatePlayed == default ? DateTime.UtcNow : entry.DatePlayed;
@@ -119,5 +120,4 @@ public sealed class LeaderboardRepository(TableServiceClient tableServiceClient)
     }
 
     private static string Sanitize(string s) => System.Text.RegularExpressions.Regex.Replace(s ?? string.Empty, "<.*?>", string.Empty);
-    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
 }

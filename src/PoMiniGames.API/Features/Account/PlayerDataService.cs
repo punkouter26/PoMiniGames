@@ -109,7 +109,7 @@ public sealed class PlayerDataService(
         new("PoBrawlProgress", ["p"], []),
 
         // Live 1v1 Elo (POST /api/pobrawl/matches): one row per principal, stored trimmed and
-        // lower-cased (PoBrawlLobbyService.SanitizePrincipal) in PrincipalId.
+        // lower-cased (PrincipalIds.Sanitize) in PrincipalId.
         new("PoBrawlPlayerRatings", ["pobrawlplayerelo"], [], UserIdField: "PrincipalId",
             MapId: id => id.Trim().ToLowerInvariant()),
 

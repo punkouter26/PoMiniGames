@@ -119,7 +119,7 @@ public sealed class TableDistributedCache : IDistributedCache
             if (table is null) return;
             var entity = new TableEntity(PartitionFor(key), RowKeyFor(key))
             {
-                [KeyColumn] = Truncate(key),
+                [KeyColumn] = key.Truncate(512),
                 [ExpiresColumn] = ExpiryFor(options),
                 [ChunkCountColumn] = 0,
             };
@@ -274,8 +274,6 @@ public sealed class TableDistributedCache : IDistributedCache
     /// <summary>First byte of the hash as hex: 256 partitions, so writes spread rather than
     /// hot-spotting one partition server.</summary>
     private static string PartitionFor(string key) => RowKeyFor(key)[..2];
-
-    private static string Truncate(string value) => value.Length <= 512 ? value : value[..512];
 
     /// <summary>
     /// Keys can embed user-supplied text (a typed answer). Log the hash, not the content.

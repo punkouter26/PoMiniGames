@@ -21,10 +21,14 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Chat client.</b> From the keyed <see cref="IChatClient"/> registration rather than the bare
-/// <c>AIFoundryChatClientCache</c>, which is what puts the resilience pipeline, the per-identity
-/// spend ceiling and the usage/health telemetry in this game's call path. None of them were in it
-/// before — the cache hands back a raw SDK client, and this service used it directly.
+/// <b>Chat client.</b> Resolved through <see cref="GameChatClientFactory"/>, which puts the
+/// resilience pipeline, the per-identity spend ceiling and the usage/health telemetry in this
+/// game's call path.
+/// </para>
+/// <para>
+/// <b>Paid, opt-in only.</b> The round director reaches this service only for a host who turned on
+/// Fresh AI questions or the AI judge (and is allowed to); by default questions come from
+/// <see cref="CoupleQuizQuestionBank"/> and answers are scored by <see cref="AnswerMatcher"/>.
 /// </para>
 /// <para>
 /// <b>Similarity scoring</b> prefers embeddings over a chat completion; see

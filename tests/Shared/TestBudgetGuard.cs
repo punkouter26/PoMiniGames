@@ -33,6 +33,13 @@ public static class TestBudgetGuard
         // "if (Features.UseMockAI) AddSingleton<MockX>()" branch wins.
         ["PoFunQuiz:Features:UseMockAI"] = "true",
         ["PoCoupleQuiz:Features:UseMockAI"] = "true",
+        // Free, but still a live network call: tests deal FunQuiz questions from the bundled set,
+        // never from opentdb.com. Fresh AI is switched off too, so no test request can reach the
+        // paid generator even as a signed-in identity.
+        ["PoFunQuiz:OpenTriviaDb:Enabled"] = "false",
+        ["PoFunQuiz:AllowFreshAi"] = "false",
+        ["PoCoupleQuiz:Features:AllowFreshAi"] = "false",
+        ["PoCoupleQuiz:Features:AllowAiJudge"] = "false",
         // PoJevArena has no mock fallback in any real environment; this switch is honoured only
         // when the host environment is "Test", and swaps in the deterministic StubJevClient.
         // The empty key keeps a developer's real OpenRouter key out of every test host.

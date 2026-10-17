@@ -54,6 +54,14 @@
              CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- PoFunQuiz's bundled question set: the floor under the bank when storage and Open Trivia DB
+       are both unreachable. Embedded (not Content) so it can never be missing from a deployment;
+       the Web SDK would otherwise also publish it as a loose .json content file. -->
+  <ItemGroup>
+    <Content Remove="Features/PoFunQuiz/Data/questions.json" />
+    <EmbeddedResource Include="Features/PoFunQuiz/Data/questions.json" LogicalName="PoFunQuiz.questions.json" />
+  </ItemGroup>
+
   <!-- Expose internals (e.g. PoRacerSim) to the unit-test tier so the AI sim can be
        driven headlessly in a bot-only race for regression testing. -->
   <ItemGroup>

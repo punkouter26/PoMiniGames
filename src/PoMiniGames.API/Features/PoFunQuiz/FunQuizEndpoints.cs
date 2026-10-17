@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Options;
 using PoMiniGames.Domain.Services;
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.PoFunQuiz.Storage;
@@ -18,22 +18,23 @@ public static class FunQuizEndpoints
     {
         var group = app.MapGroup("/funquiz").WithTags("PoFunQuiz");
 
-        // ── Question generation ──────────────────────────────────────────
-        // This call is deliberately not cached here. Memoizing the finished, already-dealt
-        // list of questions would give every game started inside the same window a
-        // byte-identical quiz — same questions, same order, same option order — defeating
-        // the per-game shuffling in AiQuizGeneratorService.SelectVariedSet.
+        // ── Questions ────────────────────────────────────────────────────
+        // Free by default: dealt from the permanent question bank (Open Trivia DB + the bundled
+        // set + earlier top-ups). `source=FreshAi` asks the paid model instead, and is honoured
+        // only when PoFunQuiz:AllowFreshAi is on AND the caller is a signed-in player, not a
+        // guest; anyone else silently gets the bank.
         //
-        // That costs nothing upstream: the generator has its OWN HybridCache over the
-        // question POOL (6 h, stampede-protected), so concurrent requests still collapse
-        // into a single model call. The layer which is allowed to cache caches the raw
-        // material, and the dealing — which subset, in which order, with options
-        // shuffled — happens per request. Cache the pool, not the hand.
+        // Not cached here. Memoizing the finished, already-dealt list would give every game in
+        // the same window a byte-identical quiz. The pool is cached (bank in memory, AI batches in
+        // HybridCache under two fixed batch sizes); the dealing happens per request.
 
         group.MapGet("/quiz/questions", async (
             [FromQuery] int count,
             [FromQuery] string? category,
-            IOpenAIService ai,
+            [FromQuery] string? source,
+            HttpContext ctx,
+            IFunQuizQuestionSource questionSource,
+            IOptionsSnapshot<FunQuizOptions> quizOptions,
             CancellationToken cancellationToken) =>
         {
             if (count <= 0) count = 10;
@@ -50,17 +51,19 @@ public static class FunQuizEndpoints
             var cat = Enum.TryParse<QuestionCategory>(category, ignoreCase: true, out var c)
                 ? c
                 : QuestionCategory.General;
+            // The paid path needs a real signed-in identity: the group's RequireAuthorization also
+            // admits guests, and a guest must never be able to spend on the model.
+            var mode = quizOptions.Value.Resolve(source, RequestIdentity.Resolve(ctx.User).IsAuthenticated);
+
             // Called directly. The AsyncLocal identity the request middleware set is still on
-            // this flow here — the note that used to sit here explained why it had to be carried
-            // in HybridCache factory state instead (the factory runs off-flow, so a generation
-            // was billed to nobody: measured at 809 tokens against a 0-token budget entry). That
-            // hazard belongs to the generator's internal cache now, which handles it there.
-            var questions = await ai.GenerateQuizQuestionsAsync(cat, count, cancellationToken);
+            // this flow, so a Fresh AI generation is billed to this caller (the generator carries
+            // it into its HybridCache factory state itself).
+            var questions = await questionSource.GetQuestionsAsync(cat, count, mode, cancellationToken);
             return Results.Ok(questions);
         })
         .RequireRateLimiting("ai-generation")
         .WithName("FunQuiz_GetQuestions")
-        .WithSummary("Generate PoFunQuiz questions (gpt-5-nano on the shared po-aiservices-shared account)");
+        .WithSummary("PoFunQuiz questions: the free bank by default, or Fresh AI for signed-in players (source=FreshAi)");
 
         // ── Leaderboard ────────────────────────────────────────────────────────
 

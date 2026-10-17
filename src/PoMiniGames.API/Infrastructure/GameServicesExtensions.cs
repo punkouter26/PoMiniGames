@@ -207,10 +207,15 @@ internal static class GameServicesExtensions
                     sp.GetRequiredService<ILogger<PoMiniGames.Infrastructure.TableDistributedCache>>()));
         services.AddHybridCache();
         services.AddSingleton<IOpenAIService, AiQuizGeneratorService>();
-        // Off-peak warm of the question cache. Disabled unless PoMiniGames:AI:QuizPrebake:Enabled
-        // is set — it is the one background job here that deliberately spends tokens, so it does
-        // not get to switch itself on. Only worth running because the HybridCache L2 above is now
-        // durable; against an in-process cache it would warm entries an F1 recycle then discards.
+        // Free question pipeline (default): Table Storage bank + Open Trivia DB + bundled set.
+        // The AI generator above is reached only for opted-in Fresh AI requests.
+        services.AddOptions<FunQuizOptions>().BindConfiguration(FunQuizOptions.SectionName);
+        services.AddHttpClient(OpenTriviaDbClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10));
+        services.AddSingleton<OpenTriviaDbClient>();
+        services.AddSingleton<PoMiniGames.Features.PoFunQuiz.Storage.QuizBankRepository>();
+        services.AddSingleton<FunQuizQuestionService>();
+        services.AddSingleton<IFunQuizQuestionSource>(sp => sp.GetRequiredService<FunQuizQuestionService>());
+        // Background bank filler: free sources only unless QuizPrebake:AllowAiTopUp is set.
         services.AddOptions<QuizPrebakeOptions>().BindConfiguration(QuizPrebakeOptions.SectionName);
         services.AddHostedService<QuizPrebakeService>();
         services.AddSingleton<PoMiniGames.Features.PoFunQuiz.Storage.LeaderboardRepository>();

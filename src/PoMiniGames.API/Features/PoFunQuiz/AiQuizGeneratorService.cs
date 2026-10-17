@@ -8,22 +8,20 @@ using static PoMiniGames.AI.AiText;
 namespace PoMiniGames.Features.PoFunQuiz;
 
 /// <summary>
-/// Server-side Azure OpenAI question generator for PoFunQuiz. Backed by the shared
-/// Azure AI Foundry hub in the <c>PoShared</c> resource group; the <c>funquiz</c>
-/// deployment is resolved through <see cref="AIFoundryOptions"/>.
+/// Server-side AI question generator for PoFunQuiz — the PAID path, reached only for an
+/// opted-in "Fresh AI" request (see <see cref="FunQuizQuestionService"/>); the default is the
+/// free question bank. The <c>funquiz</c> deployment is resolved through <see cref="AIFoundryOptions"/>.
 ///
 /// <para><b>Mock fallback</b>: gated on <c>IsDevelopment() || IsEnvironment("Test")</c>
-/// AND the explicit <c>UseMockAI</c> flag. In Production, missing config causes an
-/// <see cref="InvalidOperationException"/> on first call rather than silently serving
-/// fabricated data.</para>
+/// AND <c>PoFunQuiz:Features:UseMockAI</c> (bound as <see cref="FunQuizOptions"/>). In Production,
+/// missing config causes an <see cref="InvalidOperationException"/> on first call rather than
+/// silently serving fabricated data.</para>
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Chat client.</b> Resolved from the keyed <see cref="IChatClient"/> registration, not from
-/// <c>AIFoundryChatClientCache</c>. Going to the cache handed back a bare SDK <c>ChatClient</c>,
-/// which meant this game — like PoCoupleQuiz — ran with no resilience pipeline, no
-/// circuit breaker, no concurrency limit, no token accounting and no health tracking. Every
-/// cross-cutting guarantee the AI layer documents was, for this service, not in the call path at all.
+/// <b>Chat client.</b> Resolved through <see cref="GameChatClientFactory"/>, the decorated client
+/// that carries the resilience pipeline, circuit breaker, concurrency limit, token accounting and
+/// health tracking every AI call is meant to go through.
 /// </para>
 /// <para>
 /// <b>Output contract.</b> The reply is schema-constrained where the deployment supports it
@@ -49,7 +47,7 @@ public sealed class AiQuizGeneratorService : IOpenAIService
     /// <summary>Hard cap on questions per call, mirrored by the endpoint's own guard.</summary>
     public const int MaxQuestionsPerCall = 50;
 
-    private readonly IConfiguration _configuration;
+    private readonly IOptionsMonitor<FunQuizOptions> _quizOptions;
     private readonly IHostEnvironment _environment;
     private readonly ILogger<AiQuizGeneratorService> _logger;
     private readonly GameChatClientFactory _clients;
@@ -58,7 +56,7 @@ public sealed class AiQuizGeneratorService : IOpenAIService
     private readonly Microsoft.Extensions.Caching.Hybrid.HybridCache _hybridCache;
 
     public AiQuizGeneratorService(
-        IConfiguration configuration,
+        IOptionsMonitor<FunQuizOptions> quizOptions,
         IHostEnvironment environment,
         ILogger<AiQuizGeneratorService> logger,
         GameChatClientFactory clients,
@@ -66,7 +64,7 @@ public sealed class AiQuizGeneratorService : IOpenAIService
         AiDecisionOptionsCache optionsCache,
         Microsoft.Extensions.Caching.Hybrid.HybridCache hybridCache)
     {
-        _configuration = configuration;
+        _quizOptions = quizOptions;
         _environment = environment;
         _logger = logger;
         _clients = clients;
@@ -102,7 +100,7 @@ public sealed class AiQuizGeneratorService : IOpenAIService
             }
         }
 
-        var useMock = _configuration.GetValue<bool>("PoFunQuiz:Features:UseMockAI");
+        var useMock = _quizOptions.CurrentValue.Features.UseMockAI;
         if (Features.Shared.AiMockFallback.ShouldUseMock(_environment, useMock))
         {
             _logger.MockEnabled(_environment.EnvironmentName);
@@ -139,7 +137,12 @@ public sealed class AiQuizGeneratorService : IOpenAIService
         // call per category per 6 h — only the output token count of that single call goes
         // up — and SelectVariedSet below deals a different random hand out of it for every
         // game. Pool 24 / deal 10 is over 1.9 million distinct combinations before ordering.
-        var batchCount = Math.Max(count, QuestionPoolSize);
+        //
+        // Only TWO batch sizes exist: QuestionPoolSize, or MaxQuestionsPerCall for any count above
+        // it. Sizing the batch to the request (Math.Max(count, pool)) made every count from 25 to 50
+        // its own cache key — 26 separate paid generations per category for what is the same
+        // request. Bucketing caps that at two, and the dealer below still hands back only `count`.
+        var batchCount = count <= QuestionPoolSize ? QuestionPoolSize : MaxQuestionsPerCall;
 
         // ── Durable batch cache (HybridCache) ─────────────────────────────
         // The prompt for a (category, batchCount) pair is IDENTICAL every time — the model is
@@ -196,10 +199,12 @@ public sealed class AiQuizGeneratorService : IOpenAIService
         var pool = QuestionPoolCache.GetOrAdd(category, _ => new List<QuizQuestion>());
         lock (pool)
         {
-            var seen = new HashSet<string>(pool.Select(q => q.Text), StringComparer.OrdinalIgnoreCase);
+            // Normalized-hash identity (QuizQuality.Hash), not exact text: "What's the capital of
+            // France" and "What is the capital of France?" are one question.
+            var seen = new HashSet<string>(pool.Select(q => QuizQuality.Hash(q.Text)), StringComparer.Ordinal);
             foreach (var question in batch)
             {
-                if (seen.Add(question.Text))
+                if (seen.Add(QuizQuality.Hash(question.Text)))
                 {
                     pool.Add(question);
                 }
@@ -454,6 +459,7 @@ public sealed class AiQuizGeneratorService : IOpenAIService
         }
 
         var results = new List<QuizQuestion>();
+        var seenInBatch = new HashSet<string>(StringComparer.Ordinal);
         var rejected = 0;
         try
         {
@@ -471,7 +477,7 @@ public sealed class AiQuizGeneratorService : IOpenAIService
 
             foreach (var item in array.EnumerateArray())
             {
-                if (TryReadQuestion(item, category) is { } question)
+                if (TryReadQuestion(item, category) is { } question && seenInBatch.Add(QuizQuality.Hash(question.Text)))
                     results.Add(question);
                 else
                     rejected++;
@@ -526,7 +532,8 @@ public sealed class AiQuizGeneratorService : IOpenAIService
             options.Add(value);
         }
 
-        if (options.Count != 4 || correct < 0 || correct > 3) return null;
+        // Four distinct options, the answer not printed in the question, no giveaway length.
+        if (QuizQuality.Reject(text, options, correct) is not null) return null;
 
         var difficulty =
             item.TryGetProperty("difficulty", out var d)

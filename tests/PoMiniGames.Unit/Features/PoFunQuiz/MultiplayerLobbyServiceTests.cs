@@ -7,7 +7,7 @@ namespace PoMiniGames.Unit.Features.PoFunQuiz;
 /// <summary>
 /// Unit tests for the PoFunQuiz in-memory multiplayer lobby. Uses the
 /// <see cref="MockOpenAIService"/>-style static question generator indirectly through
-/// <see cref="MultiplayerLobbyService"/> with a stub <see cref="IOpenAIService"/>.
+/// <see cref="MultiplayerLobbyService"/> with a stub <see cref="IFunQuizQuestionSource"/>.
 /// </summary>
 /// <remarks>
 /// <para>Player lifecycle (Join/Remove) is one theory; scoring updates are another.</para>
@@ -18,13 +18,13 @@ namespace PoMiniGames.Unit.Features.PoFunQuiz;
 /// </remarks>
 public sealed class MultiplayerLobbyServiceTests
 {
-    private sealed class StubAi : IOpenAIService
+    private sealed class StubQuestions : IFunQuizQuestionSource
     {
-        public Task<IReadOnlyList<QuizQuestion>> GenerateQuizQuestionsAsync(QuestionCategory category, int count, CancellationToken cancellationToken = default) =>
+        public Task<IReadOnlyList<QuizQuestion>> GetQuestionsAsync(QuestionCategory category, int count, QuizSourceMode mode, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<QuizQuestion>>(MockOpenAIService.GenerateQuestions(category, count));
     }
 
-    private MultiplayerLobbyService NewLobby() => new(new StubAi(), NullLogger<MultiplayerLobbyService>.Instance);
+    private MultiplayerLobbyService NewLobby() => new(new StubQuestions(), NullLogger<MultiplayerLobbyService>.Instance);
 
     private Task<(MultiplayerGame Game, bool Created)> JoinAsync(
         MultiplayerLobbyService lobby, string conn, string name, QuestionCategory category = QuestionCategory.General, int questions = 5) =>

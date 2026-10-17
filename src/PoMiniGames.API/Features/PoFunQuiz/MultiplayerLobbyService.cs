@@ -19,11 +19,11 @@ namespace PoMiniGames.Features.PoFunQuiz;
 /// matched while the first pair plays. "Single lobby" is about the <em>entry point</em>:
 /// at most one game is ever in <see cref="GameState.Waiting"/> with a free seat.</para>
 /// </remarks>
-public class MultiplayerLobbyService(IOpenAIService ai, ILogger<MultiplayerLobbyService> logger)
+public class MultiplayerLobbyService(IFunQuizQuestionSource questions, ILogger<MultiplayerLobbyService> logger)
 {
     private readonly ConcurrentDictionary<string, MultiplayerGame> _games = new();
     private readonly ConcurrentDictionary<string, string> _connectionToGame = new();
-    private readonly IOpenAIService _ai = ai;
+    private readonly IFunQuizQuestionSource _questions = questions;
     private readonly ILogger<MultiplayerLobbyService> _logger = logger;
 
     // Guards lobby *membership* (open-seat search, player add, player removal). The
@@ -50,10 +50,12 @@ public class MultiplayerLobbyService(IOpenAIService ai, ILogger<MultiplayerLobby
             if (open is not null) return (open, false);
         }
 
-        // Nobody waiting → this player opens the lobby, and its questions are generated
-        // for the category *they* picked. Deliberately outside the gate: the AI call takes
-        // seconds, and holding a lock across it would stall every other player's join.
-        var questions = (await _ai.GenerateQuizQuestionsAsync(category, questionCount, ct)).ToList();
+        // Nobody waiting → this player opens the lobby, and its questions are dealt for the
+        // category *they* picked — from the free bank: a lobby is shared with a stranger, so the
+        // opener's paid Fresh AI preference does not apply here. Deliberately outside the gate: a
+        // cold bank can take a moment (storage read, Open Trivia DB top-up), and holding a lock
+        // across it would stall every other player's join.
+        var questions = (await _questions.GetQuestionsAsync(category, questionCount, QuizSourceMode.Bank, ct)).ToList();
 
         lock (_gate)
         {

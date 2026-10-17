@@ -25,6 +25,9 @@ public sealed class StorageInitializer
     public static readonly string[] AdditionalTables =
     [
         "PoFunQuizPlayers",
+        // PoFunQuiz permanent question bank (PartitionKey = category, RowKey = normalized-text
+        // hash). Name must match QuizBankRepository.TableName.
+        "PoFunQuizBank",
         // Per-identity daily AI token spend (PartitionKey = yyyy-MM-dd, RowKey = identity hash).
         // Ensured eagerly because the budget check runs on the first model call of a cold host,
         // and a lazy create there would put a table-creation round trip inside a player's turn.

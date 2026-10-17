@@ -869,6 +869,13 @@
 @media (prefers-reduced-motion: reduce) {
   .fq-solo-reveal { animation: none; }
 }
+/* Open Trivia DB attribution (CC BY-SA 4.0) under the quiz. Quiet, but readable in both themes. */
+.fq-credit {
+  margin: 0.75rem 0 0;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
 
 /* ── PoRacer results reveal ──────────────────────────────────────────────
    js/poracer/index.js `reveal` puts `racer-vt` on <html> for the length of one View

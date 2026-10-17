@@ -6,8 +6,8 @@ using PoMiniGames.Shared.Games.PoEcosystem;
 namespace PoMiniGames.Features.PoEcosystem;
 
 /// <summary>
-/// PoEcosystem's server surface. Authenticated: the caller's cloud slots, sharing, the
-/// chronicle and cloud thoughts. Anonymous: the gallery of shared islands and their bytes.
+/// PoEcosystem's server surface. Authenticated: the caller's cloud slots, sharing and the
+/// clans' culture tables. Anonymous: the gallery of shared islands and their bytes.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -95,65 +95,7 @@ public static class EcosystemEndpoints
             .Produces<EcoWorldMeta>()
             .RequireRateLimiting("highscores");
 
-        group.MapPost("/chronicle", async (EcoChronicleRequest request, EcosystemChronicleService chronicler, CancellationToken ct) =>
-            {
-                if (request.Log is { Length: > EcosystemChronicleService.MaxLogLines * 2 }) return Results.BadRequest(new { error = "too many log lines" });
-                try { return Results.Ok(await chronicler.WriteAsync(request, ct)); }
-                catch (InvalidOperationException) { return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
-            })
-            .WithName("PoEcosystemChronicle")
-            .Produces<EcoChronicle>()
-            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
-            .RequireRateLimiting("ai-generation");
-
-        group.MapPost("/thought", async (EcoThoughtRequest request, EcosystemChronicleService chronicler, CancellationToken ct) =>
-            {
-                if (string.IsNullOrWhiteSpace(request.Prompt) || request.Prompt.Length > 2_000) return Results.BadRequest(new { error = "prompt is required and bounded" });
-                try { return Results.Ok(await chronicler.ThinkAsync(request, ct)); }
-                catch (InvalidOperationException) { return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
-            })
-            .WithName("PoEcosystemThought")
-            .Produces<EcoThoughtReply>()
-            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
-            .RequireRateLimiting("ai-generation");
-
-        group.MapPost("/thoughts/batch", async (EcoThoughtBatchRequest request, EcosystemChronicleService chronicler, CancellationToken ct) =>
-            {
-                if (request.Items is null || request.Items.Count == 0 || request.Items.Count > 16) return Results.BadRequest(new { error = "items required (1-16)" });
-                try { return Results.Ok(await chronicler.ThinkBatchAsync(request, ct)); }
-                catch (InvalidOperationException) { return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
-            })
-            .WithName("PoEcosystemThoughtBatch")
-            .Produces<EcoThoughtBatchReply>()
-            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
-            .RequireRateLimiting("ai-generation");
-
-        group.MapPost("/treaty", async (EcoTreatyRequest request, EcosystemChronicleService chronicler, CancellationToken ct) =>
-            {
-                if (request.TribeA is null || request.TribeB is null) return Results.BadRequest(new { error = "both tribes required" });
-                try { return Results.Ok(await chronicler.NegotiateTreatyAsync(request, ct)); }
-                catch (InvalidOperationException) { return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
-            })
-            .WithName("PoEcosystemTreaty")
-            .Produces<EcoTreatyReply>()
-            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
-            .RequireRateLimiting("ai-generation");
-
-        group.MapPost("/milestone-lore", async (EcoMilestoneLoreRequest request, EcosystemChronicleService chronicler, CancellationToken ct) =>
-            {
-                if (string.IsNullOrWhiteSpace(request.MilestoneType)) return Results.BadRequest(new { error = "milestone type required" });
-                try { return Results.Ok(await chronicler.GenerateMilestoneLoreAsync(request, ct)); }
-                catch (InvalidOperationException) { return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
-            })
-            .WithName("PoEcosystemMilestoneLore")
-            .Produces<EcoMilestoneLoreReply>()
-            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
-            .RequireRateLimiting("ai-generation");
-
-        group.MapGet("/culture/{seed:int}", (int seed, EcosystemChronicleService chronicler) =>
-            {
-                return Results.Ok(chronicler.GenerateTribeCultures(seed));
-            })
+        group.MapGet("/culture/{seed:int}", (int seed) => Results.Ok(EcosystemCulture.ForSeed(seed)))
             .WithName("PoEcosystemCulture")
             .Produces<EcoCultureProfile[]>();
 

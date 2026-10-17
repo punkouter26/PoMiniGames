@@ -21,7 +21,7 @@ namespace PoMiniGames.Features.PoFunQuiz;
 /// <para>
 /// <b>Chat client.</b> Resolved from the keyed <see cref="IChatClient"/> registration, not from
 /// <c>AIFoundryChatClientCache</c>. Going to the cache handed back a bare SDK <c>ChatClient</c>,
-/// which meant this game — like PoCoupleQuiz and PoJoker — ran with no resilience pipeline, no
+/// which meant this game — like PoCoupleQuiz — ran with no resilience pipeline, no
 /// circuit breaker, no concurrency limit, no token accounting and no health tracking. Every
 /// cross-cutting guarantee the AI layer documents was, for this service, not in the call path at all.
 /// </para>

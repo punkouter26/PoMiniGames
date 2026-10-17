@@ -142,8 +142,6 @@
          game through its rename to PoBrawl, which styles itself from
          PoBrawlPage.razor.css (.pb-*). It stayed preloaded on every page for
          7.8 KB that could never match an element. -->
-    <!-- PoJoker (demo game): hand-written medieval-dark theme (scoped to .pojoker-root) -->
-    <link rel="preload" href="css/pojoker-theme.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="alternate icon" type="image/png" href="favicon.png" />
     <link rel="manifest" href="manifest.webmanifest" />
@@ -232,14 +230,12 @@
         <span class="dismiss">🗙</span>
     </div>
     <!-- Per-game interop is NOT loaded here any more (2026-08-07).
-         poFunQuizSplitHotkeys.js, pojoker-speech-interop.js,
-         pojoker-audio-interop.js, gl-fps.js and ambientMusic.js were global
+         poFunQuizSplitHotkeys.js, gl-fps.js and ambientMusic.js were global
          <script> tags, so every page in the app fetched and parsed ~39 KB of
          code that exactly one game (or one opt-out diagnostic) ever calls.
-         Each is now imported at its point of use — see JokerAudioService,
-         JokerSpeechService, PoFunQuizPage and FpsCounter.
-         They assign their window.* globals on evaluation, so the existing
-         InvokeVoidAsync("poJokerAudio.…") style call sites are unchanged. -->
+         Each is now imported at its point of use — see PoFunQuizPage and
+         FpsCounter. They assign their window.* globals on evaluation, so the
+         existing InvokeVoidAsync("global.fn") style call sites are unchanged. -->
     <script src="_framework/blazor.webassembly.js"></script>
 
     <!-- ── Game engines: route-gated, NOT loaded here ──────────────────────────

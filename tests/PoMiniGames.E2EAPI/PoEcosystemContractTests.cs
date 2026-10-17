@@ -26,8 +26,6 @@ public class PoEcosystemContractTests
     [InlineData("PUT", "/api/ecosystem/worlds/1?name=x", HttpStatusCode.Unauthorized)]
     [InlineData("DELETE", "/api/ecosystem/worlds/1", HttpStatusCode.Unauthorized)]
     [InlineData("POST", "/api/ecosystem/worlds/1/share", HttpStatusCode.Unauthorized)]
-    [InlineData("POST", "/api/ecosystem/chronicle", HttpStatusCode.Unauthorized)]
-    [InlineData("POST", "/api/ecosystem/thought", HttpStatusCode.Unauthorized)]
     [InlineData("GET", "/api/ecosystem/gallery?top=5", HttpStatusCode.OK)]
     [InlineData("GET", "/api/ecosystem/gallery/nosuchcode/data", HttpStatusCode.NotFound)]
     public async Task Routes_AnswerAnonymousCallersAsContracted(string method, string path, HttpStatusCode expected)

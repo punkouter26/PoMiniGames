@@ -4,8 +4,7 @@
 // Creature stride: x, y, z, yaw, scale, speciesId, goal, lifeStage, then the five BASE traits
 // (boldness, sociability, curiosity, greed, diligence), then hunger, health and a flag word.
 // The traits ride the frame so the renderer can tint every creature by one of them (the
-// evolution view) without a second channel; they are the base values, not the nudged ones,
-// because inheritance is what the tint is meant to show. Hunger, health and the flags
+// evolution view) without a second channel. Hunger, health and the flags
 // are what the naturalist lenses and the watched-creature marks read: all
 // observation, none of it ever travels back.
 // Prop stride:     x, y, z, qx, qy, qz, qw, propKind (kind*8 + sizeIndex).
@@ -18,7 +17,7 @@ const PROP_STRIDE = 8;
 export const FRAME = Object.freeze({
   HEADER_INTS: 8,
   H_TICK: 0, H_COUNT: 1, H_PROPS: 2, H_FLAGS: 3, H_SELECTED: 4, H_SPEED: 5, H_YEAR: 6, H_DAY_MILLI: 7,
-  FLAG_PAUSED: 1, FLAG_LLM_READY: 2,
+  FLAG_PAUSED: 1,
   CREATURE_STRIDE,
   PROP_STRIDE,
   TRAIT_OFFSET: 8,

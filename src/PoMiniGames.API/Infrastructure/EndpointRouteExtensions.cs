@@ -14,10 +14,9 @@ using PoMiniGames.Features.PoMarbleRace;   // moved out of Features.HighScores s
 using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.Features.MatchHistory;
 using PoMiniGames.Features.PoCoupleQuiz;  // CoupleQuizHub (the slice's only server surface)
-using PoMiniGames.Features.PoEcosystem;   // cloud world slots, gallery, chronicle (2026-09-14)
+using PoMiniGames.Features.PoEcosystem;   // cloud world slots, gallery (2026-09-14)
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoJevArena;    // Jev-driven 10v10 arena (2026-09-25)
-using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Features.PoRacer;
 using PoMiniGames.Features.PoCabinet; // T4-T6: career, score, lobby + race hubs
 using PoMiniGames.Features.PoVoxelStrike;
@@ -100,23 +99,21 @@ internal static class EndpointRouteExtensions
         gameApi.MapSavePlayerStats();
         gameApi.MapMarbleRaceHighScoresEndpoints();
         gameApi.MapPoBrawlLeaderboardEndpoints();
-        gameApi.MapPoBrawlPresserEndpoints();
         // The 1P ladder run per claim identity, so it follows a player across devices.
         gameApi.MapPoBrawlProgressEndpoints();
         gameApi.MapMatchHistoryEndpoints();
         // PoCoupleQuiz is SignalR-first — CoupleQuizHub below is its entire server surface.
         gameApi.MapFunQuizEndpoints();
-        gameApi.MapPoJokerEndpoints();
         gameApi.MapPoRacerScoreEndpoints();
         gameApi.MapPoCabinetScoreEndpoints();
-        gameApi.MapPoCabinetAiEndpoints();
+        gameApi.MapPoCabinetTalkEndpoints();
         gameApi.MapPoSportsHighScoresEndpoints();
         gameApi.MapPoVoxelStrikeScoreEndpoints();
         gameApi.MapPoMuleScoreEndpoints();
         // PoBrawl online (lobby + match hub) — match result ingest endpoint. Same
         // shape as PoRacer's score endpoints: authenticated, rate-limited highscores.
         gameApi.MapPoBrawlOnlineMatchEndpoints();
-        // PoEcosystem: the caller's three cloud slots, sharing, the chronicle and cloud thoughts.
+        // PoEcosystem: the caller's three cloud slots and sharing.
         gameApi.MapPoEcosystemEndpoints();
         // PoJevArena: Jev status/allowance, match registration and the decision proxy. Inside the
         // authenticated group because every route spends or reveals the caller's Jev allowance.

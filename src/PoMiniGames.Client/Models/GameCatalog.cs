@@ -9,8 +9,8 @@ namespace PoMiniGamesClient.Models;
 /// Modes marked here are shown as unavailable while offline instead.
 /// <para>
 /// This is per-<i>mode</i>, not per-game: a game's 1-player mode can run entirely on the
-/// scripted provider and is fully offline-playable, while PoJoker needs the joke API
-/// in every mode.
+/// scripted provider and is fully offline-playable, while Fun Quiz needs the questions
+/// API in every mode.
 /// </para>
 /// </param>
 public sealed record CatalogMode(GameMode Mode, string Url, bool RequiresNetwork = false)
@@ -32,7 +32,7 @@ public sealed record CatalogMode(GameMode Mode, string Url, bool RequiresNetwork
 /// </summary>
 /// <remarks>
 /// Every mode is a chip on the hub card. The card's title is not a link, so a primary
-/// mode needs its chip too; leaving it off would strand a 1-player mode (Joker, Fun Quiz)
+/// mode needs its chip too; leaving it off would strand a 1-player mode (Fun Quiz)
 /// with nothing on the hub leading to it.
 /// </remarks>
 public sealed record CatalogGame(GameKey Key, string Title, string Icon, IReadOnlyList<CatalogMode> Modes)
@@ -58,10 +58,8 @@ public sealed record CatalogEntry(
 /// </summary>
 /// <remarks>
 /// <para>
-/// Previously this was four hand-maintained per-mode lists, and they drifted: PoJoker
-/// appeared <i>only</i> under Demo, so it was watch-only from the home page despite
-/// having a working interactive route. Fun
-/// Quiz and Couple Quiz had the same gap for single-player. Modelling the game once,
+/// Previously this was four hand-maintained per-mode lists, and they drifted: Fun
+/// Quiz and Couple Quiz were missing from single-player despite having working routes. Modelling the game once,
 /// with its modes attached, is what makes that class of omission visible.
 /// </para>
 /// <para>
@@ -180,14 +178,6 @@ public static class GameCatalog
             new(GameMode.Demo, "/pomule/demo"),
         ]),
 
-        // Joker's set is fetched from a joke API mid-performance in every mode — there
-        // is no offline joke bank to fall back on.
-        new(GameKeys.PoJoker, "Joker", "🃏",
-        [
-            new(GameMode.OnePlayer, "/pojoker", RequiresNetwork: true),
-            new(GameMode.Demo, "/pojoker/demo", RequiresNetwork: true),
-        ]),
-
         // Questions come from /api/funquiz/quiz/questions, so even solo needs a server.
         new(GameKeys.PoFunQuiz, "Fun Quiz", "🧠",
         [
@@ -265,7 +255,7 @@ public static class GameCatalog
         .. new[]
         {
             GameKeys.TicTacToe, GameKeys.ConnectFive, GameKeys.PoRacer, GameKeys.PoMarbleRace,
-            GameKeys.PoVoxelStrike, GameKeys.PoJoker, GameKeys.PoBrawl, GameKeys.PoSports,
+            GameKeys.PoVoxelStrike, GameKeys.PoBrawl, GameKeys.PoSports,
             GameKeys.PoCabinet, GameKeys.PoMule, GameKeys.PoEcosystem, GameKeys.SandPlayground,
         }
         .Select(key => All.First(g => g.Key == key))

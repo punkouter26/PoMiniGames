@@ -3,8 +3,6 @@ using PoMiniGames.Features.PoCoupleQuiz;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoEcosystem;
-using PoMiniGames.Features.PoJoker;
-using PoMiniGames.Features.PoJoker.Storage;
 using PoMiniGames.Features.PoJevArena;
 using PoMiniGames.Features.PoJevArena.Jev;
 using PoMiniGames.Features.PoRacer;
@@ -39,7 +37,7 @@ internal static class GameServicesExtensions
         // ─── Centralized Azure AI Foundry hub (PoShared RG) ─────────────────
         // One shared AzureOpenAIClient + per-deployment ChatClient cache. Every
         // game that needs an AI model resolves through AIFoundryChatClientCache
-        // with its game key (couplequiz, funquiz, joker, ecosystem, pobrawl, pocabinet).
+        // with its game key (couplequiz, funquiz).
         services.AddOptions<AIFoundryOptions>()
             // Bind the configuration section the Key Vault secrets land in. This was missing:
             // the options object was built ONLY from the environment-variable overrides below,
@@ -132,10 +130,6 @@ internal static class GameServicesExtensions
         // makes the health-tracker keys predictable. Idempotent.
         services.AddGameChatClient(AIFoundryOptions.Games.CoupleQuiz);
         services.AddGameChatClient(AIFoundryOptions.Games.FunQuiz);
-        services.AddGameChatClient(AIFoundryOptions.Games.Joker);
-        services.AddGameChatClient(AIFoundryOptions.Games.Ecosystem);
-        services.AddGameChatClient(AIFoundryOptions.Games.PoBrawl);
-        services.AddGameChatClient(AIFoundryOptions.Games.PoCabinet);
         // /health gains an AI check, and /api/health/ai exposes the usage read-model that
         // AiUsageAccumulator has been filling with no reader.
         services.AddHealthChecks()
@@ -228,34 +222,9 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoFunQuiz.Storage.LeaderboardRepository>();
         services.AddSingleton<MultiplayerLobbyService>();
 
-        // PoJoker — demo-only autonomous comedy show. See Features/PoJoker/.
-        // AiJesterService is the production path (shared Azure OpenAI resilience); it
-        // falls back to MockAnalysisService in Dev/Test when PoJoker:AzureOpenAI is
-        // unconfigured, and throws in Production (StartupSecretValidator fails fast).
-        // The joke fetch is a typed HttpClient to JokeAPI.dev with the standard
-        // resilience handler; the storage client writes to the PoJokerPerformances
-        // table (PartitionKey = SessionId) ensured by StorageInitializer.
-        services.AddHttpClient(JokeApiClient.HttpClientName, client =>
-            {
-                client.Timeout = TimeSpan.FromSeconds(15);
-            })
-            .AddStandardResilienceHandler();
-        services.AddSingleton<IJokeApiClient>(sp => new JokeApiClient(
-            sp.GetRequiredService<IHttpClientFactory>().CreateClient(JokeApiClient.HttpClientName),
-            sp.GetRequiredService<ILogger<JokeApiClient>>()));
-        services.AddSingleton<MockAnalysisService>();
-        services.AddSingleton<IAnalysisService, AiJesterService>();
-        // Rewrites flagged jokes so the Jester performs a clean version instead of
-        // skipping them. Deliberately has no mock stand-in: a fabricated rewrite
-        // would report a joke as cleaned when it was not.
-        services.AddSingleton<JokeRewriteService>();
-        services.AddSingleton<JokeStorageClient>();
-
-        // PoEcosystem — cloud world slots + gallery (blob + table), and the chronicle /
-        // cloud-thought narrator. The store degrades to empty when storage is unreachable;
-        // the narrator follows the shared mock gate (PoEcosystem:Features:UseMockAI).
+        // PoEcosystem — cloud world slots + gallery (blob + table). The store degrades to
+        // empty when storage is unreachable.
         services.AddSingleton<EcosystemWorldStore>();
-        services.AddSingleton<EcosystemChronicleService>();
 
         // PoJevArena — Jev (TypeSafe, via OpenRouter) is the arena's only decision source.
         // The client is a typed HttpClient with its own per-call timeout and no retry pipeline
@@ -320,9 +289,6 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlLobbyService>();
         services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchRegistry>();
         services.AddHostedService<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchPump>();
-        // The post-fight press-conference line (one cheap model call per shown result modal).
-        services.AddSingleton<PoMiniGames.Features.PoBrawl.PoBrawlPresserService>();
-        services.AddSingleton<PoMiniGames.Features.PoCabinet.PoCabinetAiService>();
         services.AddSingleton<PoMiniGames.Features.PoBrawl.PoBrawlProgressStore>();
 
         // ConnectFive + TicTacToe online — turn-based 1v1 over SignalR. One shared

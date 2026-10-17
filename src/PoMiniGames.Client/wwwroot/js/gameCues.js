@@ -20,7 +20,6 @@
 //   pomarblerace glass and steel — bright, ringing, clean
 //   poracer     motorised — saws, filter sweeps, no pitched melody at all
 //   posports    rubber and air — bouncy sine blips, whistle
-//   pojoker     courtly brass and bells; square waves, dotted rhythms
 //   quiz        bright bell-tones, unambiguous right/wrong
 //
 // PITCH JITTER: every cue is detuned by a small random amount on each play.
@@ -426,63 +425,6 @@ const CUES = {
         },
     },
 
-    // ── PoJoker — comedy stage & responsive crowd ──────────────────────
-    pojoker: {
-        deal: {
-            voices: [v('noise', 0, 0.06, 0.08, { decay: 0.05, cutoff: 4200, cutoffEnd: 2200, q: 1.6, sweep: 0.05 })],
-            feel: 'tick', jitter: 1.5,
-        },
-        select: {
-            voices: [v('square', 784, 0.05, 0.07, { decay: 0.04, cutoff: 3000 })],
-            feel: 'select', bus: 'ui',
-        },
-        giggle: {
-            voices: [
-                v('sine', 600, 0.08, 0.08, { decay: 0.07, lfoRate: 14, lfoDepth: 0.6 }),
-                v('sine', 750, 0.08, 0.08, { decay: 0.07, delay: 0.09, lfoRate: 16, lfoDepth: 0.6 }),
-                v('sine', 900, 0.12, 0.09, { decay: 0.10, delay: 0.18, lfoRate: 18, lfoDepth: 0.6 }),
-            ],
-            feel: null,
-        },
-        laugh: {
-            voices: [
-                v('noise', 0, 0.55, 0.14, { decay: 0.50, cutoff: 1400, cutoffEnd: 2600, q: 2 }),
-                v('triangle', 440, 0.35, 0.09, { decay: 0.32, lfoRate: 12, lfoDepth: 0.7, delay: 0.05 }),
-            ],
-            feel: 'select', fx: { preset: 'coins', scale: 0.8 },
-        },
-        rimshot: {
-            voices: [
-                v('noise', 0, 0.08, 0.22, { decay: 0.07, cutoff: 4800, q: 1.2 }),
-                v('sine', 280, 0.09, 0.20, { freqEnd: 120, sweep: 0.07, decay: 0.08 }),
-                v('noise', 0, 0.35, 0.16, { decay: 0.32, cutoff: 7200, q: 2, delay: 0.12 }),
-            ],
-            feel: 'tick', fx: { preset: 'sparks', scale: 0.6 },
-        },
-        coin: {
-            voices: [
-                v('sine', 2093, 0.09, 0.10, { decay: 0.08 }),
-                v('sine', 3136, 0.13, 0.07, { decay: 0.12, delay: 0.03 }),
-            ],
-            feel: 'tick', jitter: 2.4, fx: { preset: 'coins', scale: 0.7 },
-        },
-        fanfare: {
-            voices: [
-                v('square', 523, 0.14, 0.11, { decay: 0.12, cutoff: 2600, drive: 0.25 }),
-                v('square', 523, 0.07, 0.11, { decay: 0.06, cutoff: 2600, drive: 0.25, delay: 0.16 }),
-                v('square', 659, 0.14, 0.11, { decay: 0.12, cutoff: 2800, drive: 0.25, delay: 0.24 }),
-                v('square', 784, 0.55, 0.13, { decay: 0.5, cutoff: 3200, drive: 0.25, delay: 0.40 }),
-            ],
-            feel: 'win', fx: { preset: 'coins', scale: 1.4 }, duck: 0.5,
-        },
-        bust: {
-            voices: [
-                v('square', 330, 0.35, 0.11, { freqEnd: 110, sweep: 0.33, decay: 0.32, cutoff: 1400, q: 2, drive: 0.4 }),
-            ],
-            feel: 'lose', duck: 0.4,
-        },
-    },
-
     // ── Quizzes — unambiguous bells & harmonic streaks ──────────────────
     quiz: {
         tick: { voices: [v('sine', 1400, 0.02, 0.035, { decay: 0.015 })], feel: null, jitter: 0 },
@@ -623,7 +565,7 @@ const CUES = {
 };
 
 /** Cues that should also fire a personal-best celebration. */
-const CELEBRATE = new Set(['win', 'goal', 'finish', 'fanfare']);
+const CELEBRATE = new Set(['win', 'goal', 'finish']);
 
 /**
  * Fire a cue: sound, screen feel and particles, together.

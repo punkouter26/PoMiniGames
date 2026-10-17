@@ -2,8 +2,6 @@
 // position lives here too: the god is not part of the world, so it never enters a snapshot.
 
 export const PREF_DEFAULTS = Object.freeze({
-  llmEnabled: true,
-  modelId: 'SmolLM2-360M-Instruct-q4f16_1-MLC',
   speed: 1,
   seed: '',
   sound: true,           // procedural ambience (render/audio.js)

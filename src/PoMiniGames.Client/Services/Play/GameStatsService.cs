@@ -152,8 +152,7 @@ public class GameStatsService
     }
 
     // ── Play counts (games with no win condition) ────────────────────────────
-    // PoJoker (AI jester) has no outcome and no score,
-    // so they carry neither a W/L record nor a leaderboard entry. A session count is
+    // Games with no outcome and no score (the simulations) carry neither a W/L record nor a leaderboard entry. A session count is
     // the only honest thing the profile can report for them — inventing a score
     // would be a new feature, not stats coverage.
     private const string PlayCountKeyPrefix = "pomini_plays_";

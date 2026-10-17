@@ -127,7 +127,7 @@ public static class AzureOpenAIResilience
     /// <list type="bullet">
     ///   <item><b>Concurrency.</b> <see cref="MaxConcurrentCalls"/> is 2 for the whole host. A busy game
     ///   issues a call per agent per heartbeat and would hold both permits essentially continuously,
-    ///   so PoJoker's two-calls-per-joke would spend its life in the queue and then be rejected by
+    ///   so an interactive request would spend its life in the queue and then be rejected by
     ///   <see cref="ConcurrencyQueueLimit"/>. Sharing a global permit count between a real-time loop
     ///   and an interactive request is a starvation bug, not a safety property.</item>
     ///   <item><b>Circuit state.</b> One breaker across all games means one game failing 30% of a
@@ -145,9 +145,6 @@ public static class AzureOpenAIResilience
     [
         AIFoundryOptions.Games.CoupleQuiz,
         AIFoundryOptions.Games.FunQuiz,
-        AIFoundryOptions.Games.Joker,
-        AIFoundryOptions.Games.Ecosystem,
-        AIFoundryOptions.Games.PoBrawl,
     ];
 
     /// <summary>Pipeline name for one game's partition.</summary>

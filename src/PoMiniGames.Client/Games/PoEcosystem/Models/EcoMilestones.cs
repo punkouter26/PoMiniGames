@@ -34,8 +34,6 @@ public static class EcoMilestones
         new("rebound", "🌱", "Back from the brink", "Saw a species fall to three or fewer and recover to twenty."),
         new("balance", "⚖️", "Balance of nature", "All four species thriving in near-perfect evenness (J ≥ 0.9) after year 10."),
         new("war", "⚔️", "Borders in flame", "Saw two clans go to war."),
-        new("treaty", "📜", "The council speaks", "Saw the Chieftain Council seal a pact."),
-        new("chronicle", "📖", "Chronicler", "Had a decade of history written into a saga."),
         new("watcher", "👁️", "Field researcher", "Kept five creatures on the watch-list at once."),
     ];
 
@@ -56,7 +54,11 @@ public sealed class EcoMilestoneTracker
 
     public EcoMilestoneTracker()
     {
-        _unlocked = LocalStorageService.GetItem(StorageKey, EcoMilestoneJsonContext.Default.DictionaryStringString) ?? [];
+        // Notes that no longer exist (the council and chronicler ones went with the AI) are
+        // dropped, so "N of M" never counts past the list.
+        _unlocked = (LocalStorageService.GetItem(StorageKey, EcoMilestoneJsonContext.Default.DictionaryStringString) ?? [])
+            .Where(kv => EcoMilestones.Find(kv.Key) is not null)
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
     }
 
     public IReadOnlyDictionary<string, string> Unlocked => _unlocked;
@@ -83,7 +85,6 @@ public sealed class EcoMilestoneTracker
         Check(fresh, "drought", s.Weather?.Kind == 3 && s.Weather.Intensity > 0.3);
         Check(fresh, "eruption", (s.NaturalEvents?.Eruption ?? 0) > 0);
         Check(fresh, "variety", s.Varieties is { Length: > 0 });
-        Check(fresh, "treaty", s.Treaties is { Length: > 0 });
         Check(fresh, "watcher", s.Watched is { Length: >= 5 } w && w.Count(x => x.Alive) >= 5);
         Check(fresh, "balance", s.Year >= 10 && s.Biodiversity is { Richness: 4, Evenness: >= 0.9 });
         if (s.Counts is { Length: EcoSpeciesInfo.Count } c)
@@ -106,16 +107,8 @@ public sealed class EcoMilestoneTracker
             Check(fresh, "outbreak", ev.Kind == "outbreak");
             Check(fresh, "extinction", ev.Kind == "extinction");
             Check(fresh, "war", ev.Kind == "diplomacy" && ev.Action == "war");
-            Check(fresh, "treaty", ev.Kind == "treaty");
         }
         return fresh;
-    }
-
-    public EcoMilestones.Milestone? Grant(string id)
-    {
-        var fresh = new List<EcoMilestones.Milestone>();
-        Check(fresh, id, true);
-        return fresh.FirstOrDefault();
     }
 
     private void Check(List<EcoMilestones.Milestone> fresh, string id, bool condition)

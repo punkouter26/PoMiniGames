@@ -1,13 +1,11 @@
 // index.js — the engine global (engineLoader contract): window.PoEcosystem.* is what the
 // Blazor page calls, window.__poeco() is the debug/E2E handle. This file owns the sim host
-// and the routing of its messages; the renderer (render/) and the thought bridge attach to
-// the engine object when present.
+// and the routing of its messages; the renderer (render/) attaches to the engine object
+// when present.
 import { createSimHost } from './host/simHost.js';
-import { CLOUD_MODEL_ID, LLM_STATE, MODELS, createThoughtBridge } from './host/thoughtBridge.js';
 import { fetchSpeciesInfo } from './host/naturalist.js';
 import { createRenderer } from './render/renderer.js';
 import { BINDABLE, DEFAULT_BINDINGS, mergeBindings } from './render/input.js';
-import { HOST } from './sim/core/config.js';
 import { createAudio } from './render/audio.js';
 import { createMusic } from './render/music.js';
 import { createLeitmotif } from './render/leitmotif.js';
@@ -47,8 +45,8 @@ function ensureStyles() {
 function createEngine(container, dotnetRef, opts) {
   const state = {
     container, dotnetRef, opts, host: null, mode: 'starting', ready: false, seed: null,
-    creatureCount: 0, simLag: 0, stats: null, llm: null, lastDetail: null, terrain: null, lastTiles: null,
-    renderer: null, thoughts: null, selected: NONE, directorSubject: NONE, frames: 0, errors: [], msgCounts: {},
+    creatureCount: 0, simLag: 0, stats: null, lastDetail: null, terrain: null, lastTiles: null,
+    renderer: null, selected: NONE, directorSubject: NONE, frames: 0, errors: [], msgCounts: {},
     audio: createAudio(), sound: true, wakeAudio: null,
     music: null,
     // Music inputs. The sim reports CUMULATIVE births/deaths, so the score is driven from
@@ -109,22 +107,8 @@ function createEngine(container, dotnetRef, opts) {
         return;
       case 'history':
         // The timeline: every landmark and the per-year rows, sent only when they grew.
-        invoke('OnHistory', JSON.stringify({ landmarks: msg.landmarks, years: msg.years, sagas: msg.sagas ?? [] }));
+        invoke('OnHistory', JSON.stringify({ landmarks: msg.landmarks, years: msg.years }));
         return;
-      case 'thoughtBatchRequest': {
-        // Cloud thoughts, eight creatures per server call. Always answered — an empty result
-        // is what releases the runtime's one batch in flight.
-        const done = (results) => state.host?.send({ type: 'thoughtBatchResult', results });
-        if (!dotnetRef || !state.thoughts?.cloudReady) { done([]); return; }
-        const items = (msg.items ?? []).map(it => ({ id: it.handle, species: it.species, name: it.name, hunger: it.hunger, thirst: it.thirst, health: it.health, goal: it.goal, nearby: it.nearby }));
-        dotnetRef.invokeMethodAsync('OnCloudThoughtBatch', JSON.stringify(items))
-          .then((json) => {
-            const reply = json ? JSON.parse(json) : null;
-            done((reply?.results ?? []).map(r => ({ handle: r.id, text: JSON.stringify({ thought: r.thought, trait: r.trait, delta: r.delta }) })));
-          })
-          .catch(() => done([]));
-        return;
-      }
       case 'frame':
         state.frames++;
         if (state.renderer) state.renderer.acceptFrame(msg.buffer, (buf) => state.host.send({ type: 'recycle', buffer: buf }, [buf]));
@@ -135,7 +119,7 @@ function createEngine(container, dotnetRef, opts) {
         state.renderer?.setTiles(msg);
         return;
       case 'stats':
-        state.stats = msg.stats; state.creatureCount = msg.stats.alive; state.simLag = msg.stats.simLag; state.llm = msg.stats.llm;
+        state.stats = msg.stats; state.creatureCount = msg.stats.alive; state.simLag = msg.stats.simLag;
         state.audio.setDay(msg.stats.dayFraction, msg.stats.season ?? 0);
         feedMusic(msg.stats);
         state.renderer?.setStats(msg.stats);
@@ -172,7 +156,7 @@ function createEngine(container, dotnetRef, opts) {
           // Diplomacy logs as kind 'diplomacy' with an action; the old checks here looked
           // for 'war_declared' / 'peace_treaty', which no log entry ever carried.
           if (ev.kind === 'diplomacy' && ev.action === 'war') { state.audio?.warHorn(); }
-          else if ((ev.kind === 'diplomacy' && ev.action === 'peace') || ev.kind === 'treaty') { state.audio?.tribalDrum(null, false); }
+          else if (ev.kind === 'diplomacy' && ev.action === 'peace') { state.audio?.tribalDrum(null, false); }
           if (ev.kind !== 'lightning' && ev.kind !== 'rockslide' && ev.kind !== 'eruption') continue;
           state.eventPressure = Math.min(1, state.eventPressure + (ev.kind === 'eruption' ? 0.8 : 0.45));
           // The renderer owns the whole reaction — particles, camera trauma, and the
@@ -201,11 +185,6 @@ function createEngine(container, dotnetRef, opts) {
       case 'detail':
         state.lastDetail = msg.detail;
         invoke('OnDetail', msg.detail ? JSON.stringify(msg.detail) : null);
-        return;
-      case 'thoughtRequest':
-        // The bridge answers asynchronously; a refusal (busy / not ready) cancels the
-        // sim's in-flight slot so the round-robin can offer another creature.
-        if (!state.thoughts || !state.thoughts.request(msg)) state.host.send({ type: 'thoughtCancel' });
         return;
       case 'saved':
         invoke('OnSaved', msg.tick, msg.reason);
@@ -471,11 +450,6 @@ function createEngine(container, dotnetRef, opts) {
   });
 
   extend(api, {
-    applyTreaty(treaty) {
-      const t = typeof treaty === 'string' ? JSON.parse(treaty) : treaty;
-      state.host?.send({ type: 'applyTreaty', treaty: t });
-    },
-    note: (kind, text, tile) => state.host?.send({ type: 'note', kind, text, tile: Number.isInteger(tile) ? tile : -1 }),
     flyTo: (x, z) => state.renderer?.flyTo(x, z),
     holdDirector(on) { state.directorHeld = !!on; state.renderer?.holdDirector(!!on); },
     settings: () => settingsSnapshot(),
@@ -539,14 +513,6 @@ function createEngine(container, dotnetRef, opts) {
   });
 
   async function startHost() {
-      state.thoughts = createThoughtBridge({
-        onResult: (handle, text) => state.host?.send({ type: 'thoughtResult', handle, text }),
-        onState: (s) => { state.llmState = s; invoke('OnLlmState', JSON.stringify(s)); },
-        // The cloud model: the Blazor side owns the API client, so each request round-trips
-        // through .NET and resolves with the server's text (null when refused or capped).
-        cloud: dotnetRef ? (handle, system, prompt) => dotnetRef.invokeMethodAsync('OnCloudThought', handle, system, prompt) : null,
-      });
-      if (opts.llmEnabled) state.thoughts.start(opts.modelId ?? MODELS[0].id);
       state.host = await createSimHost({
         onMessage,
         importCannon: () => import('cannon-es'),
@@ -554,7 +520,7 @@ function createEngine(container, dotnetRef, opts) {
       });
       state.mode = state.host.mode;
       state.host.send({
-        type: 'init', seed: hashString(opts.seed ?? ''), resume: !!opts.resume, llmEnabled: !!opts.llmEnabled,
+        type: 'init', seed: hashString(opts.seed ?? ''), resume: !!opts.resume,
         lowEnd: !!opts.lowEnd,
         // A demo, or a boot that is about to load a shared island: nothing it does is saved,
         // so the island this browser already holds is left exactly as it was.
@@ -589,19 +555,6 @@ function createEngine(container, dotnetRef, opts) {
     },
     follow: (handle) => state.renderer?.follow(handle ?? state.selected),
     newWorld: (seed) => state.host?.send({ type: 'newWorld', seed: hashString(seed ?? '') }),
-    async setLlm(enabled, modelId) {
-      // The cloud model answers eight creatures per call (the runtime batches and paces them);
-      // an in-browser model answers one at a time as fast as the GPU allows.
-      const target = modelId ?? state.thoughts?.modelId;
-      state.host?.send({ type: 'setLlmEnabled', enabled: !!enabled, batch: enabled && target === CLOUD_MODEL_ID ? HOST.thoughtBatchSize : 0 });
-      // Always release the sim's in-flight slot: start() tears the worker down, so any
-      // request already handed to the model will never be answered, and the sim would
-      // otherwise wait for that creature forever.
-      state.thoughts?.cancel();
-      state.host?.send({ type: 'thoughtCancel' });
-      if (enabled) await state.thoughts?.start(modelId ?? state.thoughts.modelId);
-      else state.thoughts?.dispose();
-    },
     saveNow: () => state.host?.send({ type: 'saveNow', reason: 'manual' }),
     exportSnapshot: (slot) => state.host?.send({ type: 'exportSnapshot', slot }),
     importSnapshot(bytes, ephemeral) {
@@ -655,7 +608,6 @@ function createEngine(container, dotnetRef, opts) {
       state.music?.dispose();
       state.audio.dispose();
       state.host?.send({ type: 'saveNow', reason: 'stop' });
-      state.thoughts?.dispose?.();
       state.renderer?.dispose?.();
       state.host?.dispose();
       state.host = null;
@@ -665,7 +617,6 @@ function createEngine(container, dotnetRef, opts) {
     get fps() { return state.renderer?.fps ?? 0; },
     get simLag() { return state.simLag; },
     get soundEnabled() { return state.sound; },
-    get llm() { return { sim: state.llm, bridge: state.llmState ?? { state: LLM_STATE.OFF }, models: MODELS }; },
     get player() { return state.renderer?.player ?? null; },
   });
   return api;
@@ -725,7 +676,7 @@ async function shareLink(title, text, url) {
 /**
  * Print the field journal. The page hands over plain data (JSON); the document is built
  * here, node by node with textContent, inside a throwaway iframe — so the HUD, the canvas
- * and the app shell are never in the print, and nothing a model wrote can be markup.
+ * and the app shell are never in the print, and no island text can be markup.
  */
 function printJournal(json) {
   let data;
@@ -742,27 +693,14 @@ function printJournal(json) {
     @page { margin: 18mm; }
     body { font: 11pt/1.5 Georgia, 'Iowan Old Style', serif; color: #111; margin: 0; }
     h1 { font-size: 22pt; margin: 0 0 2pt; } h2 { font-size: 14pt; margin: 18pt 0 6pt; border-bottom: 1px solid #999; padding-bottom: 2pt; }
-    h3 { font-size: 12pt; margin: 12pt 0 2pt; } p { margin: 0 0 6pt; } .sub { color: #555; font-size: 10pt; }
-    .epigraph { font-style: italic; color: #444; } ul { margin: 0; padding-left: 14pt; } li { margin-bottom: 2pt; }
-    article { break-inside: avoid; } .counts { font-variant-numeric: tabular-nums; }`;
+    p { margin: 0 0 6pt; } .sub { color: #555; font-size: 10pt; }
+    ul { margin: 0; padding-left: 14pt; } li { margin-bottom: 2pt; } .counts { font-variant-numeric: tabular-nums; }`;
   doc.head.appendChild(style);
   doc.title = data.title ?? 'Field journal';
   const body = doc.body;
   el('h1', data.title ?? 'Field journal', body);
   el('p', data.subtitle ?? '', body, 'sub');
   if (data.counts) el('p', data.counts, body, 'counts');
-  const section = (heading, items, render) => {
-    if (!Array.isArray(items) || items.length === 0) return;
-    el('h2', heading, body);
-    for (const it of items) render(it);
-  };
-  section('Chronicle', data.sagas, (s) => {
-    const a = el('article', null, body);
-    el('h3', s.title, a);
-    for (const para of String(s.saga ?? '').split(/\n+/)) if (para.trim()) el('p', para.trim(), a);
-    if (s.epigraph) el('p', '— ' + s.epigraph, a, 'epigraph');
-  });
-  section('Legends', data.legends, (l) => { const a = el('article', null, body); el('h3', l.title, a); el('p', l.text, a); });
   if (Array.isArray(data.landmarks) && data.landmarks.length) {
     el('h2', 'Timeline', body);
     const ul = el('ul', null, body);
@@ -798,7 +736,6 @@ const PoEcosystem = {
   setSpeed: (s) => engine?.setSpeed(s),
   select: (h) => engine?.select(h),
   newWorld: (seed) => engine?.newWorld(seed),
-  setLlm: (enabled, modelId) => engine?.setLlm(enabled, modelId),
   saveNow: () => engine?.saveNow(),
   debug: (op, arg) => engine?.debug(op, arg),
   exportTelemetry: () => engine?.exportTelemetry(),
@@ -808,9 +745,6 @@ const PoEcosystem = {
   lineage: (handle) => engine?.lineage(handle),
   exportSnapshot: (slot) => engine?.exportSnapshot(slot),
   importSnapshot: (bytes, ephemeral) => engine?.importSnapshot(bytes, ephemeral),
-  cloudModelId: () => CLOUD_MODEL_ID,
-  applyTreaty: (json) => engine?.applyTreaty(json),
-  note: (kind, text, tile) => engine?.note(kind, text, tile),
   flyTo: (x, z) => engine?.flyTo(x, z),
   holdDirector: (on) => engine?.holdDirector(on),
   settings: () => engine?.settings() ?? null,
@@ -845,10 +779,6 @@ const PoEcosystem = {
   restoreLock() { if (engine?.state.relock) { engine.state.relock = false; engine.state.renderer?.requestLock(); } },
   touchMove: (x, z) => engine?.state.renderer?.touchMove(x, z),
   touchRelease: () => engine?.state.renderer?.touchRelease(),
-  // The cloud entry is listed last: it needs no download and no WebGPU, but it spends the
-  // caller's daily allowance, so the settings panel presents it as its own switch.
-  models: () => [...MODELS.map(m => ({ ...m })), { id: CLOUD_MODEL_ID, label: 'Cloud model', vramMb: 0, note: 'Runs on the server; uses your daily AI allowance.' }],
-  async webGpuAvailable() { const { hasWebGpuSupport } = await import('./host/thoughtBridge.js'); return hasWebGpuSupport(); },
 };
 
 if (typeof window !== 'undefined') {

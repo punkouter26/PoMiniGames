@@ -141,7 +141,7 @@ public sealed class UiFeedbackService : IAsyncDisposable
     /// Fire the first cue in <paramref name="names"/> that this scope actually
     /// defines. Outcome cues are not named uniformly across games — a win is
     /// "win" in TicTacToe, "ko" in Brawl, "finish" in Marble Race, "goal" in
-    /// Sports, "fanfare" in Joker — so a shared component that wants "whatever
+    /// Sports — so a shared component that wants "whatever
     /// this game calls winning" has to ask for a list, not a name.
     /// </summary>
     public async ValueTask<bool> CueFirstAsync(string scope, string[] names, int[]? haptic = null)

@@ -63,7 +63,7 @@ public class ProfileCoverageUiTests
             because: "rendering the profile resolves the player id that play counts are keyed by");
 
         await page.EvaluateAsync(
-            "id => localStorage.setItem(`pomini_plays_pojoker_${id}`, '3')", playerId);
+            "id => localStorage.setItem(`pomini_plays_poecosystem_${id}`, '3')", playerId);
 
         await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
         await page.Locator(".prf-game-name").First.WaitForAsync(
@@ -74,16 +74,16 @@ public class ProfileCoverageUiTests
         // The whole point of the change: the profile used to report three of ten
         // games, so several games recorded stats no one could ever see.
         names.Should().Contain(["Tic-Tac-Toe", "Connect Five", "Brawl", "Sports",
-            "Fun Quiz", "Racer", "Couple Quiz", "Marble Race", "Joker", "Voxel Strike"]);
+            "Fun Quiz", "Racer", "Couple Quiz", "Marble Race", "Ecosystem", "Voxel Strike"]);
 
-        // Joker carries a session count, not a win rate.
-        var joker = page.Locator(".prf-game-card", new PageLocatorOptions
+        // Ecosystem carries a session count, not a win rate.
+        var ecosystem = page.Locator(".prf-game-card", new PageLocatorOptions
         {
-            HasText = "Joker",
+            HasText = "Ecosystem",
         }).First;
-        (await joker.Locator(".prf-game-plays").InnerTextAsync()).Should().Contain("3",
+        (await ecosystem.Locator(".prf-game-plays").InnerTextAsync()).Should().Contain("3",
             because: "a play-count-only game reports sessions where a rated game reports a record");
-        (await joker.Locator(".prf-game-wr").CountAsync()).Should().Be(0,
+        (await ecosystem.Locator(".prf-game-wr").CountAsync()).Should().Be(0,
             because: "a game with no win condition must not display a win rate");
     }
 

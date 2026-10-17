@@ -83,7 +83,7 @@ public partial class ProfilePage
     // would drift out of step with the hub. All this page owns is the
     // kind of record each game keeps; a game with no entry below still gets its row, as a
     // session count, which is the only stat that is honest for a game with no win
-    // condition and no score (Joker, PoEcosystem, SandPlayground).
+    // condition and no score (PoEcosystem, SandPlayground).
     private static readonly Dictionary<string, RatingKind> Kinds = new(StringComparer.OrdinalIgnoreCase)
     {
         ["tictactoe"] = RatingKind.Adaptive,
@@ -482,7 +482,7 @@ public partial class ProfilePage
             _entries.Add(entry);
 
             // The "session" count shown under the "Saved Matches" chip. Only
-            // PlayCountOnly games (Joker today) contribute, with their full local
+            // PlayCountOnly games contribute, with their full local
             // play count; rated games are already counted in the saved W/L, so
             // adding them would double-count.
             if (entry.Kind == RatingKind.PlayCountOnly)
@@ -491,7 +491,7 @@ public partial class ProfilePage
             }
 
             // Only games carrying a real W/L record feed the headline aggregates. A
-            // Joker session is not a match and must never dilute the overall win rate
+            // simulation session is not a match and must never dilute the overall win rate
             // or the donut; a Marble Race run is a score, not an outcome.
             if (!entry.HasRecord) continue;
 
@@ -535,10 +535,9 @@ public partial class ProfilePage
             ? hs.Value
             : null;
 
-    // Every PlayCountOnly game (Joker today) is a demo-only experience — the only
-    // entry point on the catalog is its /demo route, so a "Watch again" link from
-    // the profile card takes the user straight to it without bouncing through the
-    // home page first.
+    // A PlayCountOnly game is watched rather than won, so a "Watch again" link from
+    // the profile card takes the user straight to its /demo route without bouncing
+    // through the home page first.
     private static string DemoUrl(string gameKey) => $"/{gameKey}/demo";
 
     /// <summary>
@@ -607,7 +606,7 @@ public partial class ProfilePage
         // and threw IndexOutOfRangeException, crashing the whole profile page.
         //
         // Only games with a win rate the player has actually earned are plotted.
-        // Score-based (Marble Race) and play-count-only (Joker) games have
+        // Score-based (Marble Race) and play-count-only (PoEcosystem) games have
         // no win rate: plotting them would pin those axes to zero and read as
         // catastrophic losses. Unplayed W/L games are excluded for the same reason.
         // Both live in the breakdown grid instead, which has a proper unplayed state.

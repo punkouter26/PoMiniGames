@@ -21,7 +21,7 @@ namespace PoMiniGames.AI;
 /// </para>
 /// <para>
 /// The cache is keyed on (game, deployment, schema-name) so a per-task deployment swap (e.g.
-/// <c>joker.rating</c> vs <c>joker</c>) does not collapse the two onto one key. The
+/// <c>couplequiz.similarity</c> vs <c>couplequiz</c>) does not collapse the two onto one key. The
 /// capability-resolution pass (<see cref="AiModelCapabilities.For"/>) is also part of the key,
 /// because an override change in configuration should produce a fresh options instance.
 /// </para>
@@ -37,7 +37,7 @@ public sealed class AiDecisionOptionsCache
     /// Returns a cached <see cref="ChatOptions"/> for the given structured-decision call, building
     /// it on first request and reusing it on every subsequent call with the same arguments.
     /// </summary>
-    /// <param name="gameKey">Game or task key (<c>joker</c>, <c>joker.rating</c>, …). Becomes part
+    /// <param name="gameKey">Game or task key (<c>couplequiz</c>, <c>couplequiz.similarity</c>, …). Becomes part
     /// of the cache key so per-task deployment overrides do not collide.</param>
     /// <param name="deployment">Resolved deployment for the call. Becomes part of the cache key.</param>
     /// <param name="capabilityOverrides">Snapshot of capability overrides taken at the time of the

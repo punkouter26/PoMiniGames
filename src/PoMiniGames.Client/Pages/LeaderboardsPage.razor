@@ -140,8 +140,8 @@
                              class="lb-rows">
                             <div role="row" class="lb-row lb-row--head">
                                 <span role="columnheader" class="lb-rank" aria-label="Rank">#</span>
-                                @* The header is per-board, because the Joker board ranks
-                                   jokes and the Brawl Demo board fighters. *@
+                                @* The header is per-board, because the Brawl Demo board
+                                   ranks fighters. *@
                                 <span role="columnheader" class="lb-name">@NameLabelFor(board.GameKey)</span>
                                 <span role="columnheader" class="lb-value">@board.Unit</span>
                             </div>
@@ -172,9 +172,7 @@
               data-fx-holo="@(e.Rank <= 3 ? "6" : null)"
               data-lb-me="@(IsMe(e.Name) ? board.GameKey : null)">
             <span role="cell" class="lb-rank" aria-label="@($"Rank {e.Rank}")">@e.Rank</span>
-            @* title only when the row carries long-form text it had to clip (PoJoker
-               jokes): null everywhere else, and Blazor omits a null attribute. *@
-            <span role="cell" class="lb-name" title="@e.Detail">@DisplayName(e.Name)</span>
+            <span role="cell" class="lb-name">@DisplayName(e.Name)</span>
             <span role="cell" class="lb-value">@e.DisplayValue</span>
         </div>;
 
@@ -248,20 +246,17 @@
     // "XXX" rows. This page shows real players only (see VisibleRows).
     private const string PlaceholderName = "XXX";
 
-    // The Joker leaderboard keys its rows by an 8-hex-char session id when the
-    // caller doesn't pass X-Session-Id — readable in storage but ugly on screen.
-    // Render those rows as "Guest XXXX" so the board matches the signed-in
-    // identity chip and stops looking like a debugger trace.
+    // A row whose name is a bare hex session id (a guest that never picked a
+    // name) is readable in storage but ugly on screen. Render those rows as
+    // "Guest XXXX" so the board matches the signed-in identity chip.
     private static readonly System.Text.RegularExpressions.Regex ShortHexName =
         new("^[0-9a-fA-F]{6,16}$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-    // Column header must match what the row actually represents. PoJoker ranks
-    // jokes, not sessions, so its row "Name" is the joke setup and a "Player"
-    // header would mislead. Every other board shows a person / session, so
+    // Column header must match what the row actually represents. The Brawl Demo
+    // board ranks fighters, not players. Every other board shows a person, so
     // "Player" stays the default.
     private static string NameLabelFor(string gameKey) => gameKey switch
     {
-        "pojoker"      => "Joke",
         "pobrawldemo"  => "Fighter",
         _              => "Player",
     };

@@ -145,12 +145,10 @@
            .fq-option,
            .reload,
            /* The `.pvs-btn` family is used for every interaction in
-              PoVoxelStrike's lobby + game; `.retry-button` is the one PoJoker's
-              network-awaiting surface renders on a transient disconnect.
+              PoVoxelStrike's lobby + game.
               Without these the buttons would render at their intrinsic height
               (~28px) and miss the 44px floor on portrait phones. */
-           .pvs-btn, .pvs-btn-primary,
-           .retry-button) {
+           .pvs-btn, .pvs-btn-primary) {
         min-height: 44px;
     }
 
@@ -203,7 +201,7 @@
   --color-warning: #f59e0b;
   --color-error: #ef4444;
   /* ── Tiered accent bag (Fix #8 — single source of truth for status colour) ──
-     Each game's own brand colour (PoJoker gold,
+     Each game's own brand colour (PoEcosystem amber,
      etc.) stays scoped to its theme root, but every chip / button / focus ring
      reads from one of the tokens below so the universal chrome is identical.
      Slugs reflect semantic intent, not raw colour, so swapping palettes is a
@@ -227,7 +225,6 @@
   --accent-cyan: #22d3ee;
   --accent-amber: #fbbf24;
   --accent-gold: #ca8a04;
-  --accent-jester: #4338ca;
 
   /* ── Player identity ───────────────────────────────────────────────────
      The two sides of any local-versus screen. They exist so the 2P surfaces
@@ -273,7 +270,7 @@
      would let a game retheme its whole UI while the glow behind it stayed
      indigo.
      Declaring the triad here and re-pointing it inside a game's theme root
-     (e.g. `.pojoker-root { --fx-accent: var(--accent-gold); }`) retints every
+     (e.g. `.mygame-root { --fx-accent: var(--accent-gold); }`) retints every
      glass edge, aurora ring, impact flash and background curtain at once.
      Kept as plain colours, not gradients: the shader parses these through
      getComputedStyle and needs something that resolves to rgb(). */
@@ -469,7 +466,7 @@
      • Accent hues (--accent, --accent-success/warning/danger, --accent-cyan…).
        They carry semantic meaning and are already AA-legible on both surfaces;
        re-hueing them per scheme would fork the status vocabulary in two.
-     • Game-piece and per-game theme tokens (--disc-*, PoJoker's gold, PoEcosystem's
+     • Game-piece and per-game theme tokens (--disc-*, PoEcosystem's
        amber). Those paint inside a canvas or a self-contained board that sets its
        own backdrop, so a light page around them changes nothing they render.
 
@@ -1051,8 +1048,8 @@ h3[tabindex="0"]:focus-visible {
    these over per-page copies — both for bundle size (the WASM trim audit
    removes duplicated CSS) and for the visual cohesion the brief asks for.
 
-   Where a game needs a different visual treatment (PoJoker
-   medieval, Sand Playground sand palette), it can declare its own
+   Where a game needs a different visual treatment (Sand
+   Playground sand palette), it can declare its own
    `--color-accent-solid` and `--accent-cyan` inside its theme root; the
    primitives below pick the new hues up automatically. */
 

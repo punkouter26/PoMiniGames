@@ -1,6 +1,5 @@
 @* The island-wide thought stream (feature: thoughts feed). Newest first; clicking an
-   entry inspects that creature. Source badge distinguishes AI thoughts from instinct
-   templates — the same two sources the inspector popover marks. *@
+   entry inspects that creature. Every thought is an instinct template (sim/thoughts/templates.js). *@
 <ol class="poeco-thoughts" aria-label="Creature thoughts">
     @if (Thoughts.Count == 0)
     {
@@ -14,7 +13,6 @@
                 <button type="button" class="poeco-thought-item" title="Inspect @t.Name" @onclick="() => OnSelect.InvokeAsync(t.Handle)">
                     <i class="poeco-species-chip" style="background: @EcoSpeciesInfo.ColourOf(t.Species)" aria-hidden="true"></i>
                     <span class="poeco-thought-name">@t.Name</span>
-                    <span class="poeco-thought-src @(t.Source == 2 ? "poeco-thought-src--ai" : "")">@(t.Source == 2 ? "AI" : "instinct")</span>
                     <span class="poeco-thought-text">“@t.Text”</span>
                 </button>
             </li>

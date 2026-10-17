@@ -89,8 +89,8 @@ public sealed class AiFoundryHealthCheck : IHealthCheck
 
         if (failing.Count > 0)
         {
-            // Degraded, not Unhealthy: every AI-backed game here has a fallback (mock, cached, or
-            // a graceful "the Jester stumbled"), so a failing deployment degrades play rather than
+            // Degraded, not Unhealthy: every AI-backed game here has a fallback (mock or cached),
+            // so a failing deployment degrades play rather than
             // taking the host down. Reporting it as Unhealthy would take a healthy host out of
             // rotation over a dependency it can survive.
             return Task.FromResult(HealthCheckResult.Degraded(

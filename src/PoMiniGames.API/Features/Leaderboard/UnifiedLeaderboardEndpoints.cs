@@ -3,8 +3,6 @@ using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
-using PoMiniGames.Features.PoJoker;
-using PoMiniGames.Features.PoJoker.Storage;
 using PoMiniGames.Domain.Primitives;
 using PoRacerCatalog = PoMiniGames.Shared.Games.PoRacerCatalog;
 
@@ -42,11 +40,10 @@ public static class UnifiedLeaderboardEndpoints
             .RequireRateLimiting("leaderboard-read");
 
         boards.MapGet("",
-            async (IStorageService storage, LeaderboardRepository funQuiz,
-                   JokeStorageClient joker, int limit = 5) =>
+            async (IStorageService storage, LeaderboardRepository funQuiz, int limit = 5) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
-                var all = await BuildAllAsync(storage, funQuiz, joker, limit);
+                var all = await BuildAllAsync(storage, funQuiz, limit);
                 return Results.Ok(all);
             })
             .WithName("GetUnifiedLeaderboards")
@@ -54,11 +51,10 @@ public static class UnifiedLeaderboardEndpoints
             .Produces<IEnumerable<GameLeaderboardDto>>(StatusCodes.Status200OK);
 
         boards.MapGet("/{game}",
-            async (string game, IStorageService storage, LeaderboardRepository funQuiz,
-                   JokeStorageClient joker, int limit = 10) =>
+            async (string game, IStorageService storage, LeaderboardRepository funQuiz, int limit = 10) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
-                var board = await BuildOneAsync(storage, funQuiz, joker, game, limit);
+                var board = await BuildOneAsync(storage, funQuiz, game, limit);
                 return board is null ? Results.NotFound(new { message = $"No leaderboard for game '{game}'" })
                                      : Results.Ok(board);
             })
@@ -71,8 +67,7 @@ public static class UnifiedLeaderboardEndpoints
     }
 
     private static async Task<List<GameLeaderboardDto>> BuildAllAsync(
-        IStorageService storage, LeaderboardRepository funQuiz,
-        JokeStorageClient joker, int limit)
+        IStorageService storage, LeaderboardRepository funQuiz, int limit)
     {
         // Each board is an independent storage read, so fan them out concurrently instead
         // of awaiting one at a time. Wall-clock drops from the SUM of the per-board scans to
@@ -98,7 +93,6 @@ public static class UnifiedLeaderboardEndpoints
             // This is the board's only read; POST /api/pobrawl/elo is write only.
             SafeBuildPoBrawlDemoAsync(storage, limit),
             SafeBuildFunQuizAsync(funQuiz, limit),
-            SafeBuildPoJokerAsync(joker, limit),
             SafeBuildPoVoxelStrikeAsync(storage, limit),
             SafeBuildPoMuleAsync(storage, limit),
             SafeBuildOnlineMmrAsync(storage, limit),
@@ -151,11 +145,6 @@ public static class UnifiedLeaderboardEndpoints
         try { return await BuildFunQuizAsync(repo, limit); }
         catch { return EmptyBoard("Fun Quiz"); }
     }
-    private static async Task<GameLeaderboardDto> SafeBuildPoJokerAsync(JokeStorageClient client, int limit)
-    {
-        try { return await BuildPoJokerAsync(client, limit); }
-        catch { return EmptyBoard("Joker"); }
-    }
     private static async Task<GameLeaderboardDto> SafeBuildPoVoxelStrikeAsync(IStorageService storage, int limit)
     {
         try { return await BuildPoVoxelStrikeAsync(storage, limit); }
@@ -173,8 +162,7 @@ public static class UnifiedLeaderboardEndpoints
     }
 
     private static async Task<GameLeaderboardDto?> BuildOneAsync(
-        IStorageService storage, LeaderboardRepository funQuiz,
-        JokeStorageClient joker, string game, int limit)
+        IStorageService storage, LeaderboardRepository funQuiz, string game, int limit)
     {
         var key = game.ToLowerInvariant();
         if (string.Equals(key, "online-mmr", StringComparison.OrdinalIgnoreCase))
@@ -217,7 +205,6 @@ public static class UnifiedLeaderboardEndpoints
             // GameKey canonicalises "pocouplequiz" to "couplequiz", but the board is keyed by
             // the storage key the client writes stats under.
             "couplequiz" => await BuildWinRateAsync(storage, "pocouplequiz", "Couple Quiz", limit),
-            "joker" => await BuildPoJokerAsync(joker, limit),
             "povoxelstrike" => await BuildPoVoxelStrikeAsync(storage, limit),
             "pomule" => await BuildPoMuleAsync(storage, limit),
             _ => null,
@@ -536,53 +523,6 @@ public static class UnifiedLeaderboardEndpoints
             .ToList();
         PadWithPlaceholders(entries, limit, "0");
         return new GameLeaderboardDto("pofunquiz", "Fun Quiz", "Score", HigherIsBetter: true, entries);
-    }
-
-    /// <summary>
-    /// PoJoker scores a whole 10-joke show, and its rows are keyed by session rather than by
-    /// player (the show has no sign-in), so the display name is the shortened session id —
-    /// mirroring what /pojoker/leaderboard already shows.
-    /// </summary>
-    /// <summary>
-    /// Ranks the best JOKES, not the best sessions.
-    /// </summary>
-    /// <remarks>
-    /// This board used to list sessions by score, rendered as a truncated session id
-    /// ("a3f9…"). That is an opaque identifier: it told a reader nothing, could not be
-    /// matched to a person, and made the one board in the app whose subject is content
-    /// look like a debug dump. Every other board shows the achievement; here the
-    /// achievement IS the joke, so the joke is what it shows — ranked by the AI Jester's
-    /// own humour/cleverness/originality scores. See <see cref="TopJokeDto"/>.
-    /// </remarks>
-    private static async Task<GameLeaderboardDto> BuildPoJokerAsync(JokeStorageClient client, int limit)
-    {
-        var jokes = await client.GetTopJokesAsync(limit);
-        var entries = jokes
-            .Select((j, i) => new LeaderboardEntryDto(
-                i + 1, Ellipsize(j.Setup, JokeRowChars), j.Score,
-                j.Score.ToString("F1", CultureInfo.InvariantCulture),
-                // Full text on hover: the row is clipped to fit a narrow column, and the
-                // punchline is deliberately not in the visible part — a board should not
-                // spoil every joke on it at a glance.
-                Detail: j.FullText))
-            .ToList();
-        PadWithPlaceholders(entries, limit, "0.0");
-        return new GameLeaderboardDto("pojoker", "Joker", "Rating", HigherIsBetter: true, entries);
-    }
-
-    /// <summary>Visible characters of a joke setup before it is clipped.</summary>
-    private const int JokeRowChars = 48;
-
-    /// <summary>Clip to <paramref name="max"/> characters on a word boundary, with an ellipsis.</summary>
-    private static string Ellipsize(string text, int max)
-    {
-        var clean = text.Replace('\n', ' ').Replace('\r', ' ').Trim();
-        if (clean.Length <= max) return clean;
-        // Break at the last space inside the budget so the row never ends mid-word; fall back
-        // to a hard cut for text with no spaces in range (long URLs, agglutinative languages).
-        var cut = clean.LastIndexOf(' ', Math.Min(max, clean.Length - 1));
-        if (cut < max / 2) cut = max;
-        return string.Concat(clean.AsSpan(0, cut).TrimEnd(), "…");
     }
 
     /// <summary>Mirror of the client's Initials(): first 3 alphanumeric chars, uppercased.</summary>

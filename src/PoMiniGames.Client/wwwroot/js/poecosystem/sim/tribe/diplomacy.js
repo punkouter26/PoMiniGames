@@ -51,12 +51,10 @@ export function createDiplomacyManager(rng = null) {
                 tribeBId: tribeB.id,
                 tribeBName: tribeB.name,
                 text: `${tribeA.name} and ${tribeB.name} forged a lasting peace treaty`,
-                treatyPending: true,
                 reason: 'casualty armistice and resource depletion',
               };
               events.push(event);
-              // The log entry carries the pair and the moment, so the page can ask the
-              // Chieftain Council (/api/ecosystem/treaty) what the peace actually says.
+              // The log entry carries the pair: the timeline and the chronicle card read it.
               if (log) log.push({ tick, kind: 'diplomacy', action: 'peace', tribeA: tribeA.id, tribeB: tribeB.id, reason: event.reason, text: event.text });
             }
           }

@@ -4,7 +4,7 @@
 // Every game had its own idea of what a hit felt like, or no idea at all.
 // PoBrawl shook its own canvas from inside its render loop; MarbleRace punched
 // the FOV; ConnectFive did nothing. Nothing was shared, so nothing was
-// consistent, and the DOM-only games (TicTacToe, the quizzes, PoJoker) had no
+// consistent, and the DOM-only games (TicTacToe, the quizzes) had no
 // route to any of it because they have no render loop to hook.
 //
 // One bus now owns the four channels that make an interaction feel physical:
@@ -533,7 +533,7 @@ if (typeof document !== 'undefined') {
 
 if (typeof window !== 'undefined') {
     // Non-module access for the game engines that are plain scripts
-    // (racingInterop.js, pojoker-*) and for Blazor JS interop,
+    // (racingInterop.js) and for Blazor JS interop,
     // which cannot import an ES module without a dynamic import per call.
     window.PoImpact = {
         impact, shockwave, spring, addTrauma, hitstop, getPunch, getShake, getTimeScale,

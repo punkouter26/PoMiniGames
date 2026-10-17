@@ -157,19 +157,11 @@ builder.Services.AddScoped<PoMiniGamesClient.Games.PoSports.Services.PoSportsHub
 // is bound to the user's Blazor session lifetime.
 builder.Services.AddScoped<PoMiniGamesClient.Games.PoVoxelStrike.Services.PoVoxelStrikeMultiplayerClient>();
 builder.Services.AddScoped<PoEcosystemInteropService>();
-// PoEcosystem's server surface: cloud world slots, the gallery, the chronicle and cloud thoughts.
+// PoEcosystem's server surface: cloud world slots and the gallery.
 builder.Services.AddScoped<PoMiniGamesClient.Games.PoEcosystem.Services.PoEcosystemApiClient>();
 // PoJevArena's server surface: status/allowance, the creature library, match registration and
 // the Jev decision round trip (every call on the shared HttpClient pipeline).
 builder.Services.AddScoped<PoMiniGamesClient.Games.PoJevArena.PoJevArenaApiClient>();
-
-// ─── PoJoker (demo-only autonomous comedy show) ──────────────────────
-// TTS + Web-Audio effects run via JS interop
-// (pojoker-speech-interop.js / pojoker-audio-interop.js). PerformanceSettings is a plain
-// singleton consumed by JesterStage when it constructs the PerformanceOrchestrator.
-builder.Services.AddScoped<PoMiniGamesClient.Games.PoJoker.JokerSpeechService>();
-builder.Services.AddScoped<PoMiniGamesClient.Games.PoJoker.JokerAudioService>();
-builder.Services.AddSingleton<PoMiniGames.Shared.Games.PoJoker.PerformanceSettings>();
 
 var host = builder.Build();
 

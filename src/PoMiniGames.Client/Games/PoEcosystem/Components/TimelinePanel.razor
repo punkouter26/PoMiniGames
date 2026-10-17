@@ -4,7 +4,7 @@
    in for the rows.
 
    One row per year from the sim (populations, the tribe's tier and Shannon diversity), with
-   the landmarks — tech, wars and pacts, storms and droughts, outbreaks, extinctions, new
+   the landmarks — tech, war and peace, storms and droughts, outbreaks, extinctions, new
    varieties — as markers along the top. A window (start year + span) scrubs through it;
    clicking a landmark that happened somewhere flies the camera there. Native SVG: the rows
    are at most two thousand, which a polyline draws without help.
@@ -158,7 +158,7 @@
     private static readonly (string Kind, string Label)[] Kinds =
     [
         ("tech", "Tech"), ("diplomacy", "Diplomacy"), ("weather", "Weather"), ("outbreak", "Outbreaks"),
-        ("extinction", "Extinctions"), ("variety", "Varieties"), ("eruption", "Eruptions"), ("legend", "Legends"),
+        ("extinction", "Extinctions"), ("variety", "Varieties"), ("eruption", "Eruptions"),
     ];
     private static readonly double MaxShannon = Math.Log(4);
 
@@ -234,7 +234,8 @@
     // Landmarks carry the year they fell in; the tick places them inside it.
     private double FractionOfYear(EcoLandmark lm) => TicksPerYear <= 0 ? 0 : (lm.Tick % TicksPerYear) / (double)TicksPerYear;
 
-    // Treaties and wars read as one family on the chart.
+    // Islands saved before the council was removed may still carry "treaty" landmarks: they
+    // read as diplomacy on the chart.
     private static string KindClass(string kind) => kind == "treaty" ? "diplomacy" : kind;
 
     private string Summary => Rows.Length < 2 ? "No history yet"

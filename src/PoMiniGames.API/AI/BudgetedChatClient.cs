@@ -12,8 +12,7 @@ namespace PoMiniGames.AI;
 /// the <c>POST /api/infer</c> relay — so it bounded one caller and nothing else. Every other AI
 /// surface in the host was unmetered: PoFunQuiz will generate up to 50 questions per request,
 /// PoCoupleQuiz scores
-/// a model call per answer pair per round, and PoJoker runs an autonomous show loop issuing two to
-/// three calls per joke. None of them charged a token.
+/// a model call per answer pair per round. None of them charged a token.
 /// </para>
 /// <para>
 /// Enforcing it in a decorator rather than in an endpoint filter is what makes the coverage total.
@@ -85,8 +84,8 @@ public sealed class BudgetedChatClient : DelegatingChatClient
     }
 
     /// <summary>
-    /// Same gate for streamed calls. PoJoker streams its verdict and stops reading early, so the
-    /// provider's usage update often never arrives; the charge then falls back to an estimate
+    /// Same gate for streamed calls. A caller that stops reading early may never see the
+    /// provider's usage update; the charge then falls back to an estimate
     /// from the text that did, which under-counts the prompt but never charges nothing.
     /// </summary>
     public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(

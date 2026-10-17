@@ -18,9 +18,9 @@
 // landmark survives the wait. A century of history must not become a slideshow.
 const MIN_GAP_MS = 30000;
 const SHOW_MS = 5200;
-const PRIORITY = { extinction: 6, variety: 4, tech: 5, treaty: 3, diplomacy: 3, eruption: 4, outbreak: 4, weather: 1 };
+const PRIORITY = { extinction: 6, variety: 4, tech: 5, diplomacy: 3, eruption: 4, outbreak: 4, weather: 1 };
 const KICKER = {
-  extinction: 'Extinction', variety: 'A new variety', tech: 'A new age', treaty: 'Treaty',
+  extinction: 'Extinction', variety: 'A new variety', tech: 'A new age',
   eruption: 'Eruption', outbreak: 'Outbreak', weather: 'Weather',
 };
 
@@ -32,8 +32,8 @@ export function isChronicleEvent(ev) {
   return true;
 }
 
-// THE TICKER. Everything smaller than a landmark — a field note, a legend the Herald
-// wrote, a decade turning, a pact — queues here rather than becoming a toast on top of the
+// THE TICKER. Everything smaller than a landmark — a field note, a settled wager —
+// queues here rather than becoming a toast on top of the
 // card above for the same moment: one quiet line under the status chip at a time, a few
 // seconds each. Toasts are kept for what the viewer asked to be told about (a watched creature, an alert of their own, something they just did).
 const TICK_MS = 4600;

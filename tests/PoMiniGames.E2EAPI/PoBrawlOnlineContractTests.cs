@@ -45,13 +45,9 @@ public class PoBrawlOnlineContractTests
     /// <summary>
     /// Every PoBrawl game-data POST must answer an anonymous caller with 401. One theory over
     /// the routes rather than a method each — the E2E-API tier sits at its 25-method ceiling.
-    /// The presser row also proves the route is on the authenticated group: mapped
-    /// on <c>app</c> by mistake it would have answered 400/200 here instead.
     /// </summary>
     [Theory]
     [InlineData("/api/pobrawl/matches")]
-    [InlineData("/api/pobrawl/presser")]
-    [InlineData("/api/pobrawl/intro")]
     public async Task PostPoBrawlRoutes_Anonymous_Return401(string path)
     {
         using var client = _factory.CreateClient();

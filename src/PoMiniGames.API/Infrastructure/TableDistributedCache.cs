@@ -15,8 +15,7 @@ namespace PoMiniGames.Infrastructure;
 /// <b>Why.</b> <c>AddHybridCache()</c> was registered with no <see cref="IDistributedCache"/>
 /// behind it, so the "L1/L2" the registration comment advertises was L1 only — an in-process
 /// memory cache. Every entry it holds is the cached result of a paid model call: PoFunQuiz's
-/// 12-question batch per (category, count), PoJoker's punchline and explanation per joke,
-/// PoCoupleQuiz's similarity scores. On App Service F1 the host cannot enable AlwaysOn, so it is
+/// 12-question batch per (category, count) and PoCoupleQuiz's similarity scores. On App Service F1 the host cannot enable AlwaysOn, so it is
 /// recycled whenever the site goes idle, and every one of those entries was re-generated — at full
 /// generation rates — on the next visit.
 /// </para>
@@ -265,8 +264,8 @@ public sealed class TableDistributedCache : IDistributedCache
     }
 
     /// <summary>
-    /// Full SHA-256 hex of the key. Cache keys are composed from game data (category names, joke
-    /// text) and may contain <c>/</c>, <c>\</c>, <c>#</c> or <c>?</c>, all illegal in a Table
+    /// Full SHA-256 hex of the key. Cache keys are composed from game data (category names, player
+    /// answers) and may contain <c>/</c>, <c>\</c>, <c>#</c> or <c>?</c>, all illegal in a Table
     /// Storage key. Hashing avoids sanitising, which could collide two distinct keys onto one row.
     /// </summary>
     private static string RowKeyFor(string key)
@@ -279,7 +278,7 @@ public sealed class TableDistributedCache : IDistributedCache
     private static string Truncate(string value) => value.Length <= 512 ? value : value[..512];
 
     /// <summary>
-    /// Keys can embed user-supplied text (a joke setup). Log the hash, not the content.
+    /// Keys can embed user-supplied text (a typed answer). Log the hash, not the content.
     /// </summary>
     private static string Redact(string key) => RowKeyFor(key)[..12];
 }

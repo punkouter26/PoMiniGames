@@ -38,7 +38,6 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     public event Action<IReadOnlyList<EcoThought>>? ThoughtsReceived;   // island-wide thought feed
     public event Action<EcoDetail?>? DetailReceived;
     public event Action<int, EcoLineage?>? LineageReceived;      // handle, tree (null when forgotten)
-    public event Action<EcoLlmState>? LlmStateReceived;
     public event Action<int>? Picked;
     public event Action<int>? SpeedChanged;
     public event Action<string, string?>? ActionRequested;       // dashboard, escape, map, pointerLock…
@@ -48,10 +47,6 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     public event Action<string, string>? EngineError;
     /// <summary>The engine has a gzip'd snapshot ready for the cloud (slot, bytes).</summary>
     public event Action<string, byte[]>? SnapshotExported;
-    /// <summary>A creature wants a cloud thought (handle, system prompt, user prompt).</summary>
-    public event Func<int, string, string, Task<string?>>? CloudThoughtRequested;
-    /// <summary>Up to eight creatures want cloud thoughts in one server call; answered with the reply.</summary>
-    public event Func<EcoThoughtPromptItem[], Task<EcoThoughtBatchReply?>>? CloudThoughtBatchRequested;
     /// <summary>The timeline grew (a landmark or a year row was added).</summary>
     public event Action<EcoHistory>? HistoryReceived;
 
@@ -71,7 +66,7 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
 
     /// <param name="ephemeral">Nothing this boot does is saved: a demo, or a visit to a shared island.
     /// The island this browser already holds is left as it was.</param>
-    public async ValueTask<bool> StartAsync(string containerId, string? minimapId, string? seed, bool resume, bool llmEnabled, string? modelId, bool lowEnd, bool demo = false, bool ephemeral = false)
+    public async ValueTask<bool> StartAsync(string containerId, string? minimapId, string? seed, bool resume, bool lowEnd, bool demo = false, bool ephemeral = false)
     {
         if (!await LoadEngineAsync()) return false;
         _self ??= DotNetObjectReference.Create(this);
@@ -79,8 +74,6 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
         {
             ["seed"] = seed ?? string.Empty,
             ["resume"] = resume,
-            ["llmEnabled"] = llmEnabled,
-            ["modelId"] = modelId,
             ["lowEnd"] = lowEnd,
             ["minimapId"] = minimapId,
             ["demo"] = demo,
@@ -94,7 +87,6 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     public ValueTask SelectAsync(int handle) => SafeInvokeAsync("PoEcosystem.select", handle);
     public ValueTask FollowAsync(int handle) => SafeInvokeAsync("PoEcosystem.follow", handle);
     public ValueTask NewWorldAsync(string? seed) => SafeInvokeAsync("PoEcosystem.newWorld", seed ?? string.Empty);
-    public ValueTask SetLlmAsync(bool enabled, string? modelId) => SafeInvokeAsync("PoEcosystem.setLlm", enabled, modelId);
     public ValueTask SaveNowAsync() => SafeInvokeAsync("PoEcosystem.saveNow");
     public ValueTask DebugAsync(string op) => SafeInvokeAsync("PoEcosystem.debug", op);
     public ValueTask ExportTelemetryAsync() => SafeInvokeAsync("PoEcosystem.exportTelemetry");
@@ -176,22 +168,7 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     /// <summary>Boot a world from gzip'd snapshot bytes. Ephemeral worlds never autosave over the local one.</summary>
     public ValueTask ImportSnapshotAsync(byte[] bytes, bool ephemeral) => SafeInvokeAsync("PoEcosystem.importSnapshot", bytes, ephemeral);
 
-    // ── council · lore · camera ──────────────────────────────────────────
-    /// <summary>Hand the sim a Chieftain Council answer to apply (the tribe store bounds it).</summary>
-    public ValueTask ApplyTreatyAsync(int tribeA, int tribeB, EcoTreatyReply reply) =>
-        SafeInvokeAsync("PoEcosystem.applyTreaty", new
-        {
-            tribeA,
-            tribeB,
-            action = reply.Action,
-            resource = reply.DemandedResource,
-            amount = reply.ResourceAmount,
-            peaceYears = reply.PeaceYears,
-            title = reply.Title,
-            narrative = reply.Narrative,
-        });
-    /// <summary>Record a line of lore on the island's timeline (kind "legend").</summary>
-    public ValueTask NoteAsync(string kind, string text, int tile = -1) => SafeInvokeAsync("PoEcosystem.note", kind, text, tile);
+    // ── camera ───────────────────────────────────────────────────────────
     public ValueTask FlyToAsync(double x, double z) => SafeInvokeAsync("PoEcosystem.flyTo", x, z);
     /// <summary>Keep the auto-director off while something (the tour) needs the camera still.</summary>
     public ValueTask HoldDirectorAsync(bool on) => SafeInvokeAsync("PoEcosystem.holdDirector", on);
@@ -235,34 +212,12 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
         catch (JSDisconnectedException) { return []; }
     }
 
-    // ── cloud thoughts ───────────────────────────────────────────────────
-    /// <summary>Hand a server-side answer back to the creature that asked for it.</summary>
-    public ValueTask DeliverCloudThoughtAsync(int handle, string? text) => SafeInvokeAsync("PoEcosystem.cloudThoughtResult", handle, text);
-
     /// <summary>Current ambience preference (engine-side, persisted in localStorage).</summary>
     public async ValueTask<bool> SoundEnabledAsync()
     {
         try { return await _js.InvokeAsync<bool>("PoEcosystem.soundEnabled"); }
         catch (JSException) { return true; }
         catch (JSDisconnectedException) { return true; }
-    }
-
-    public async ValueTask<bool> WebGpuAvailableAsync()
-    {
-        try { return await _js.InvokeAsync<bool>("PoEcosystem.webGpuAvailable"); }
-        catch (JSException) { return false; }
-        catch (JSDisconnectedException) { return false; }
-    }
-
-    public async ValueTask<IReadOnlyList<EcoModel>> ModelsAsync()
-    {
-        try
-        {
-            var json = await _js.InvokeAsync<string>("JSON.stringify", await _js.InvokeAsync<object>("PoEcosystem.models"));
-            return JsonSerializer.Deserialize(json, EcoJsonContext.Default.EcoModelArray) ?? [];
-        }
-        catch (JSException) { return []; }
-        catch (JSDisconnectedException) { return []; }
     }
 
     // ── callbacks from the engine ────────────────────────────────────────
@@ -307,13 +262,6 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     public void OnLineage(int handle, string? json) =>
         LineageReceived?.Invoke(handle, string.IsNullOrEmpty(json) ? null : Deserialize(json, EcoJsonContext.Default.EcoLineage));
 
-    [JSInvokable]
-    public void OnLlmState(string json)
-    {
-        var state = Deserialize(json, EcoJsonContext.Default.EcoLlmState);
-        if (state is not null) LlmStateReceived?.Invoke(state);
-    }
-
     [JSInvokable] public void OnPick(int handle) => Picked?.Invoke(handle);
     [JSInvokable] public void OnSpeed(int speed) => SpeedChanged?.Invoke(speed);
     [JSInvokable] public void OnAction(string action, string? value) => ActionRequested?.Invoke(action, value);
@@ -328,34 +276,6 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     {
         var history = Deserialize(json, EcoJsonContext.Default.EcoHistory);
         if (history is not null) HistoryReceived?.Invoke(history);
-    }
-
-    /// <summary>A batch of creatures for the cloud model; returns the reply as JSON (null when refused).</summary>
-    [JSInvokable]
-    public async Task<string?> OnCloudThoughtBatch(string itemsJson)
-    {
-        var handler = CloudThoughtBatchRequested;
-        var items = Deserialize(itemsJson, EcoJsonContext.Default.EcoThoughtPromptItemArray);
-        if (handler is null || items is not { Length: > 0 }) return null;
-        try
-        {
-            var reply = await handler(items);
-            return reply is null ? null : JsonSerializer.Serialize(reply, EcoJsonContext.Default.EcoThoughtBatchReply);
-        }
-        catch { return null; }
-    }
-
-    /// <summary>
-    /// A creature's cloud-thought request. Answered by whoever subscribed (the viewer, which
-    /// owns the API client); an unanswered request gets null so the sim moves on.
-    /// </summary>
-    [JSInvokable]
-    public async Task<string?> OnCloudThought(int handle, string system, string prompt)
-    {
-        var handler = CloudThoughtRequested;
-        if (handler is null) return null;
-        try { return await handler(handle, system, prompt); }
-        catch { return null; }
     }
 
     private async ValueTask<bool> LoadEngineAsync()

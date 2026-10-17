@@ -1,5 +1,5 @@
-// templates.js — thoughts without a model: chosen by species and the dominant
-// drive, flavoured by the dominant trait. Templates never apply nudges.
+// templates.js — a creature's thought: chosen by species and the dominant drive,
+// flavoured by the dominant trait. Pure flavour text; no rule reads it.
 import { dominantDrive } from '../creatures/drives.js';
 import { dominantTrait } from '../creatures/traits.js';
 

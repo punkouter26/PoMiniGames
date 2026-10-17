@@ -113,7 +113,7 @@ public sealed class GameChatClientFactory
 
         var logger = _loggerFactory.CreateLogger($"PoMiniGames.AI.{gameKey}");
 
-        // Health trackers are registered per game, and a task key ("joker.rating") shares its
+        // Health trackers are registered per game, and a task key ("couplequiz.similarity") shares its
         // game's tracker: a task is not a separate dependency to be healthy or unhealthy about.
         var healthKey = HealthKeyFor(gameKey);
 
@@ -151,7 +151,7 @@ public sealed class GameChatClientFactory
     }
 
     /// <summary>
-    /// The game a key belongs to. <c>joker.rating</c> → <c>joker</c>; anything without a task
+    /// The game a key belongs to. <c>couplequiz.similarity</c> → <c>couplequiz</c>; anything without a task
     /// suffix is already a game key.
     /// </summary>
     private static string HealthKeyFor(string gameKey)
@@ -181,7 +181,7 @@ public static class GameChatClientRegistration
     /// <remarks>
     /// Idempotent. Every registration here is a <c>TryAdd</c> so the slices that call this
     /// cannot double-register a health tracker or fight
-    /// over the keyed client. Task-scoped clients (<c>joker.rating</c>) are NOT registered here:
+    /// over the keyed client. Task-scoped clients (<c>couplequiz.similarity</c>) are NOT registered here:
     /// they share their game's tracker and are resolved from <see cref="GameChatClientFactory"/>
     /// directly, because a task is a call-site concern, not a dependency.
     /// </remarks>

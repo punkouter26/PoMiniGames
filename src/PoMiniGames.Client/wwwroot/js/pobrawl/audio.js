@@ -73,8 +73,7 @@ function autoDisconnect(source, nodes) {
   };
 }
 
-// Announcer voice, cached (getVoices() is slow). Not shared with pojoker-speech-interop.js:
-// this wants an American, deep, LOCAL voice — network voices ("Natural", "Online") lag
+// Announcer voice, cached (getVoices() is slow). It wants an American, deep, LOCAL voice — network voices ("Natural", "Online") lag
 // hundreds of ms, and a late "K.O." is worse than a robotic one.
 let _announcerVoice = null;
 let _announcerVoiceResolved = false;

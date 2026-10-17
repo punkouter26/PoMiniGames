@@ -21,7 +21,6 @@
         pobrawl:       ['#f97316', '#ef4444'],   // ember
         tictactoe:     ['#34d399', '#60a5fa'],
         connectfive:   ['#f43f5e', '#38bdf8'],
-        pojoker:       ['#f59e0b', '#d946ef'],
         poracer:       ['#f0abfc', '#38bdf8'],   // synthwave
         posports:      ['#4ade80', '#facc15'],
         povoxelstrike: ['#fb923c', '#38bdf8'],

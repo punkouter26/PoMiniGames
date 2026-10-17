@@ -5,9 +5,9 @@
      Island  the timeline (the one population chart), the world log, the almanac, field
              notes, wagers
      Life    thoughts, the watch-list and its alerts, evolution
-     Tribes  the clans side by side, their territories, the ladder, diplomacy, the chronicle
+     Tribes  the clans side by side, their territories, the ladder, diplomacy, the journal
      Worlds  which island this is: seed and new world, cloud slots and the gallery
-     ⚙       AI thoughts, graphics, accessibility, controls
+     ⚙       the tour, graphics, accessibility, controls
    There is no header row (the HUD chip already shows year, day, alive); Close sits on the
    tab row, and speed lives in the HUD. The active tab is component state — the dashboard is
    reopened often and remembers where it was. *@
@@ -75,8 +75,7 @@
         }
         else if (_tab == "tribe")
         {
-            <TribePanel Stats="@Stats" Sagas="@Sagas" Busy="@ChronicleBusy" FromYear="@ChronicleFromYear" ReadOnly="@ReadOnly" Thumb="@CurrentThumb"
-                        OnWrite="@OnWriteChronicle" OnPrint="@OnPrintJournal" OnFocusTribe="@OnFocusTribe" Legends="@Legends" />
+            <TribePanel Stats="@Stats" Thumb="@CurrentThumb" OnPrint="@OnPrintJournal" OnFocusTribe="@OnFocusTribe" />
         }
         else if (_tab == "worlds")
         {
@@ -91,36 +90,7 @@
         {
             <div class="poeco-overlay-grid">
                 <section class="poeco-panel poeco-panel--settings">
-                    <h3>AI thoughts</h3>
-                    @if (WebGpu)
-                    {
-                        <label class="poeco-switch">
-                            <input type="checkbox" checked="@LlmOn" @onchange="ToggleLlm" />
-                            <span>Let creatures think (@ModelLabel)</span>
-                        </label>
-                        <label class="poeco-field">
-                            <span>Model</span>
-                            <select value="@SelectedModel" @onchange="ChangeModel">
-                                @foreach (var m in Models.Where(m => m.Id != "cloud"))
-                                {
-                                    <option value="@m.Id">@m.Label — @(m.VramMb) MB</option>
-                                }
-                            </select>
-                        </label>
-                        @if (Llm is not null && Llm.State == "loading")
-                        {
-                            <div class="poeco-progress"><span style="width: @($"{Llm.Progress * 100:0}%")"></span></div>
-                        }
-                        @if (Llm is not null && !string.IsNullOrWhiteSpace(Llm.Message))
-                        {
-                            <p class="poeco-note">@Llm.Message</p>
-                        }
-                    }
-                    <label class="poeco-switch" title="Routes creatures' thoughts through the server model every twenty seconds. Works without WebGPU; spends your daily AI allowance, so it is capped per session.">
-                        <input type="checkbox" checked="@CloudThoughts" @onchange="ToggleCloud" />
-                        <span>Cloud thoughts (@CloudThoughtsLeft left this session)</span>
-                    </label>
-                    <p class="poeco-note">@ThoughtsNote</p>
+                    <h3>Getting started</h3>
                     <button type="button" class="poeco-btn poeco-btn--sm" @onclick="OnReplayTour">Show the getting-started tour again</button>
                 </section>
                 <section class="poeco-panel poeco-panel--chart">
@@ -147,30 +117,18 @@
 
     protected override void OnInitialized() => _tab = Tabs.Any(t => t.Id == InitialTab) ? InitialTab : "island";
 
-    private string ThoughtsNote =>
-        (WebGpu ? "" : "No WebGPU here, so thoughts come from instinct templates or the cloud model. ")
-        + (Stats?.Llm is { } counters ? $"{counters.Applied} thoughts applied, {counters.Rejected} rejected." : "");
-
     [Parameter] public EcoStats? Stats { get; set; }
     [Parameter] public IReadOnlyList<EcoEvent> Events { get; set; } = [];
     [Parameter] public IReadOnlyList<EcoThought> Thoughts { get; set; } = [];
-    [Parameter] public IReadOnlyList<EcoSaga> Sagas { get; set; } = [];
     [Parameter] public EcoWorldMeta[] Worlds { get; set; } = [];
     [Parameter] public EcoSharedWorld[] Gallery { get; set; } = [];
-    [Parameter] public EcoLlmState? Llm { get; set; }
-    [Parameter] public IReadOnlyList<EcoModel> Models { get; set; } = [];
-    [Parameter] public bool WebGpu { get; set; }
-    [Parameter] public bool CloudThoughts { get; set; }
-    [Parameter] public int CloudThoughtsLeft { get; set; }
     [Parameter] public bool SignedIn { get; set; }
     [Parameter] public bool CloudBusy { get; set; }
     [Parameter] public string? CloudMessage { get; set; }
-    [Parameter] public bool ChronicleBusy { get; set; }
-    [Parameter] public int ChronicleFromYear { get; set; }
     [Parameter] public int Tint { get; set; } = -1;
     [Parameter] public string Seed { get; set; } = "";
     [Parameter] public int CurrentSeed { get; set; }
-    /// <summary>A visited island or a past decade: nothing is saved, wagered or chronicled.</summary>
+    /// <summary>A visited island or a past decade: nothing is saved or wagered.</summary>
     [Parameter] public bool ReadOnly { get; set; }
     [Parameter] public EventCallback<string> SeedChanged { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
@@ -180,9 +138,7 @@
     [Parameter] public EventCallback<int> OnSelectKin { get; set; }
     [Parameter] public EventCallback<int> OnUnwatch { get; set; }
     [Parameter] public EventCallback<int> OnTint { get; set; }
-    [Parameter] public EventCallback<(bool Enabled, string? ModelId)> OnLlmToggle { get; set; }
     [Parameter] public EventCallback<string?> OnNewWorld { get; set; }
-    [Parameter] public EventCallback OnWriteChronicle { get; set; }
     [Parameter] public EventCallback OnPrintJournal { get; set; }
     [Parameter] public EventCallback OnCloudRefresh { get; set; }
     [Parameter] public EventCallback<string> OnCloudSave { get; set; }
@@ -206,7 +162,6 @@
     [Parameter, EditorRequired] public EcoWagerBook Wagers { get; set; } = default!;
     [Parameter, EditorRequired] public EcoAlertBook Alerts { get; set; } = default!;
     [Parameter] public IReadOnlyList<EcoSpeciesCard> Cards { get; set; } = [];
-    [Parameter] public IReadOnlyList<(int Year, string Epithet, string Legend)> Legends { get; set; } = [];
     [Parameter] public EcoSettings? ViewSettings { get; set; }
     [Parameter] public string? Capturing { get; set; }
     [Parameter] public string DailySeed { get; set; } = "";
@@ -220,17 +175,9 @@
 
     private string? CurrentThumb => Thumbs.TryGetValue(CurrentSeed, out var url) && url.Length > 0 ? url : null;
 
-    private bool LlmOn => Llm is not null && Llm.State is "loading" or "ready" && Llm.ModelId != "cloud";
-    private string SelectedModel => Llm?.ModelId is { } id && id != "cloud" ? id : Models.FirstOrDefault()?.Id ?? "";
-    private string ModelLabel => Models.FirstOrDefault(m => m.Id == SelectedModel)?.Label ?? "in-browser model";
-
     // The log carries the tick; the year it fell in is derived from the sim's own clock
     // constants rather than a hardcoded ticks-per-year in the markup.
     private int Year(EcoEvent ev) => Stats is null || Stats.Tick <= 0 ? 0 : (int)((long)ev.Tick * Stats.Year / Math.Max(1, Stats.Tick));
-
-    private Task ToggleLlm(ChangeEventArgs e) => OnLlmToggle.InvokeAsync((e.Value is true, SelectedModel));
-    private Task ToggleCloud(ChangeEventArgs e) => OnLlmToggle.InvokeAsync((e.Value is true, "cloud"));
-    private Task ChangeModel(ChangeEventArgs e) => OnLlmToggle.InvokeAsync((true, e.Value?.ToString()));
 
     private Task OnKeyDown(KeyboardEventArgs e) => e.Key == "Escape" && Capturing is null ? OnClose.InvokeAsync() : Task.CompletedTask;
 

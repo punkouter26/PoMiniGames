@@ -91,20 +91,13 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(List<FunQuizLeaderboardRow>))]
 [JsonSerializable(typeof(FunQuizLeaderboardRow[]))]
 [JsonSerializable(typeof(FunQuizLeaderboardSubmission))]
-// PoJoker
-[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoJoker.JokeDto))]
-[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoJoker.JokeFlags))]
-[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoJoker.JokeAnalysisDto))]
 // PoRacer
 [JsonSerializable(typeof(PoRacerScoreDto))]
 [JsonSerializable(typeof(List<PoRacerScoreDto>))]
 // PoBrawlOnline: the 1v1 result ingest (write only; it answers 204).
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlMatchResultDto))]
 // PoBrawl post-fight press conference.
-[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlPresserRequest))]
-[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlPresserReply))]
-// PoBrawl ring introduction + cross-device ladder progress.
-[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlIntroRequest))]
+// PoBrawl cross-device ladder progress.
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoCabinetBanterPool))]
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoCabinetDebriefRequest))]
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoCabinetDebriefReply))]

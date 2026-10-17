@@ -167,8 +167,8 @@
        with the sticky top bar) and surfaces the build version + a "support" link.
 
        It is hidden on game routes: its ~54px is exactly the space a portrait game
-       page needs to fit without vertical scroll (PoBrawl would overflow by 33px,
-       PoJoker by 49px), and its links are support/dev surfaces, not gameplay
+       page needs to fit without vertical scroll (PoBrawl would overflow by 33px),
+       and its links are support/dev surfaces, not gameplay
        surfaces; the brand link already returns to the hub, where the footer
        remains. The contentinfo landmark stays on every other route. *@
     @if (!IsGameRoute)
@@ -199,7 +199,7 @@
     // src/PoMiniGames.Client/Games/. Drives footer suppression (see footer note).
     private static readonly HashSet<string> GameRoutePrefixes = new()
     {
-        "tictactoe", "connectfive", "pobrawl", "funquiz", "pojoker",
+        "tictactoe", "connectfive", "pobrawl", "funquiz",
         "pomarblerace", "posports", "povoxelstrike",
         "sandplayground", "poecosystem", "poracer", "couplequiz",
         "pocabinet", "pojevarena", "pomule",

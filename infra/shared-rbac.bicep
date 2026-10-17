@@ -30,7 +30,7 @@ param webAppPrincipalId string
 // remains on a separate Contributor role held by humans, not the Web App.
 //
 // Without it every model call fails authorization before it is ever billed:
-// PoFunQuiz's JoinLobby (which generates the quiz), PoCoupleQuiz and PoJoker
+// PoFunQuiz's JoinLobby (which generates the quiz) and PoCoupleQuiz
 // all report failures with zero calls and zero tokens on /api/health/ai.
 var cognitiveServicesUserRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',

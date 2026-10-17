@@ -46,40 +46,6 @@ public enum PoBrawlOutcome
     Draw = 2,
 }
 
-// ──────────────────────  Post-fight press conference  ──────────────────────
-//
-// POST /api/pobrawl/presser. One cheap model call per finished local
-// match, and only when the result modal is actually shown: a line in the speaker's
-// voice about the fight that just happened. The request is numbers and roster ids
-// ONLY — the server resolves both names from PoBrawlRoster and never puts a
-// caller-supplied string into the prompt, so there is nothing to inject.
-
-/// <summary>What the speaker did in the fight, from the speaker's own side.</summary>
-/// <param name="SpeakerId">Roster id of the fighter at the podium (a president or <c>bob</c>).</param>
-/// <param name="OpponentId">Roster id of the fighter they faced.</param>
-/// <param name="Outcome">Result from the speaker's perspective.</param>
-/// <param name="Knockout">True for a KO finish, false for a decision or draw at the bell.</param>
-public sealed record PoBrawlPresserRequest(
-    string SpeakerId,
-    string OpponentId,
-    PoBrawlOutcome Outcome,
-    bool Knockout,
-    int Hits,
-    int OpponentHits,
-    int Blocks,
-    int BestCombo,
-    int BiggestHit,
-    int Seconds);
-
-/// <summary>The line, and who said it. <paramref name="Mock"/> marks a canned fallback.</summary>
-public sealed record PoBrawlPresserReply(string Speaker, string Text, bool Mock);
-
-/// <summary>
-/// The ring introduction the PA reads under the VS splash (POST /api/pobrawl/intro). Roster ids
-/// only — the server writes every word the model sees. Answered with a <see cref="PoBrawlPresserReply"/>.
-/// </summary>
-public sealed record PoBrawlIntroRequest(string P1Id, string P2Id);
-
 /// <summary>
 /// A player's 1P ladder progress (GET/PUT /api/pobrawl/progress), so a run follows them across
 /// devices. The client keeps the same numbers in localStorage and the newer copy wins the rung.

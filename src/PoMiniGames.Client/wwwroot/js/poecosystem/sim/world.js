@@ -20,7 +20,7 @@ import { TREE_STATE, browseTree, burnTree, chopTree, createTrees, dryUpTrees, st
 import { SPECIES, SPECIES_ID } from './creatures/species.js';
 import { drink, feed, stepDrives } from './creatures/drives.js';
 import { DEATH_CAUSE, LIFE_STAGE, checkVitals, killCreature, oldAgeDeathChance, spawnCreature, updateLifeStage } from './creatures/lifecycle.js';
-import { TRAIT, activeNudge, effectiveTrait, randomTraits } from './creatures/traits.js';
+import { TRAIT, baseTrait, randomTraits } from './creatures/traits.js';
 import { canMate, chooseSex, inheritTraits, litterSize } from './creatures/genetics.js';
 import { createNamer } from './creatures/names.js';
 import { createLineage } from './creatures/lineage.js';
@@ -35,14 +35,11 @@ import { pickStrikeTile, strikeLightning } from './events/lightning.js';
 import { stepCorridors, triggerRockslide } from './events/rockslide.js';
 import { stepFire } from './events/fire.js';
 import { erupt, stepLava } from './events/volcano.js';
-import { createThoughtScheduler } from './thoughts/scheduler.js';
-import { buildPrompt } from './thoughts/prompt.js';
 import { templateThought } from './thoughts/templates.js';
-import { THOUGHT_SOURCE, applyThought } from './thoughts/nudges.js';
 import { createLedger } from './telemetry/ledger.js';
 import { nullPhysics } from './physics/world.js';
 import { createTribeStore } from './tribe/tribeStore.js';
-import { WEATHER_NAMES, createWeather, getWeatherState, setWeatherState, stepWeather, triggerCatastrophicDrought, weatherTelemetry } from './events/weather.js';
+import { createWeather, getWeatherState, setWeatherState, stepWeather, triggerCatastrophicDrought, weatherTelemetry } from './events/weather.js';
 import { isSick, stepDisease } from './creatures/disease.js';
 
 export { nullPhysics };   // re-exported: createWorld's default physics lives beside it
@@ -63,7 +60,6 @@ function scanOrder(r) {
   return o;
 }
 const HEAT_CELL = 4;        // metres per heat-grid cell (50 × 50 over the 200 m island)
-const JOURNAL_MAX = 12;
 
 /**
  * Build a world. `terrain` may be supplied when the caller has already generated the
@@ -160,9 +156,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   const burnt = [];   // { tile, ticksLeft }
   const secsToTicks = (s) => Math.round(s / TICK_SECONDS);
   const naturalEvents = { lightning: 0, rockslide: 0, eruption: 0, drought: 0 };
-  // Thoughts: the LLM round-robin (driven by the host) and the template cadence (ours).
-  const thoughtScheduler = createThoughtScheduler();
-  const thoughtStats = { requested: 0, applied: 0, rejected: 0 };
+  // Thoughts: a template thought on the next creature in turn, every few seconds.
   let templateCursor = 0;
   // Almanac (dashboard): lifetime counters. Pure bookkeeping — no rule reads them and no
   // RNG stream is touched, so a world stays bit-identical whether or not they run.
@@ -199,19 +193,17 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   const landmarks = createEventLog(HISTORY.landmarksMax);
   const yearHistory = [];
   let lastYearSampled = -1;
-  // ── heat, journal and the rest: bookkeeping no rule reads and no RNG touches ──
+  // ── heat and the rest: bookkeeping no rule reads and no RNG touches ──
   // Heat: where things happened, on a coarse grid (HEAT_CELL metres a cell) — deaths, kills
   // by a predator, and creature-seconds spent sick. The minimap's data layers draw these.
   const heatSide = Math.ceil(size / HEAT_CELL);
   const heat = { deaths: new Uint16Array(heatSide * heatSide), kills: new Uint16Array(heatSide * heatSide), sick: new Uint16Array(heatSide * heatSide) };
   const heatCell = (x, z) => Math.min(heatSide - 1, Math.max(0, (z / HEAT_CELL) | 0)) * heatSide + Math.min(heatSide - 1, Math.max(0, (x / HEAT_CELL) | 0));
   const warm = (grid, c) => { if (grid[c] < 65535) grid[c]++; };
-  // The journal: the sagas the page had written for this island, so they travel with a save.
-  const journal = [];
   // Every module logs through log.push (the tribe store, lightning, tech…), so the one
   // place to catch a landmark without touching each of them is the push itself. Weather
   // only counts when it is news — a storm or a drought.
-  const LANDMARK_KINDS = new Set(['tech', 'extinction', 'eruption', 'diplomacy', 'treaty', 'variety', 'outbreak', 'legend', 'weather']);
+  const LANDMARK_KINDS = new Set(['tech', 'extinction', 'eruption', 'diplomacy', 'variety', 'outbreak', 'weather']);
   const pushLog = log.push;
   log.push = (ev) => {
     const entry = pushLog(ev);
@@ -328,17 +320,10 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     return true;
   }
 
-  /**
-   * One definition of "may I overwrite this creature's thought?": a live LLM thought (one
-   * whose nudge has not decayed yet) wins, anything else may be replaced by a template.
-   * The tick cadence, detail() and thoughts.template() all go through here.
-   */
+  /** A template thought for creature i: the tick cadence and detail() both go through here. */
   function giveTemplateThought(i) {
-    if (e.lastThoughtSource[i] === THOUGHT_SOURCE.LLM && e.nudgeEndTick[i] > clock.tick) return false;
     e.lastThought[i] = templateThought(world, i, streams.cosmetic);
-    e.lastThoughtSource[i] = THOUGHT_SOURCE.TEMPLATE;
-    thoughtFeed.push({ tick: clock.tick, kind: 'thought', handle: e.handle(i), name: nameOf(i), species: e.species[i], source: THOUGHT_SOURCE.TEMPLATE, text: e.lastThought[i] });
-    return true;
+    thoughtFeed.push({ tick: clock.tick, kind: 'thought', handle: e.handle(i), name: nameOf(i), species: e.species[i], text: e.lastThought[i] });
   }
 
   function fireNaturalEvent(kind) {
@@ -483,8 +468,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       if (cd <= TECH.campfireScareRadius && cd < ctx.threatDist) { const [cx, cz] = campfireXZ(); ctx.threatDist = Math.max(1, cd); ctx.threatX = cx; ctx.threatZ = cz; }
     }
     // Alerted by a herd-mate but unable to see the predator: believe the alarm. This is a
-    // perception rule, so it belongs here — senses() feeds the LLM prompt from the same
-    // ctx, and would otherwise tell the model 'threat none' while the creature flees.
+    // perception rule, so it belongs here.
     if (ctx.threatDist === Infinity && isAlerted(e, i, tick)) {
       ctx.threatX = e.alertX[i]; ctx.threatZ = e.alertZ[i];
       ctx.threatDist = Math.max(1, Math.hypot(x - ctx.threatX, z - ctx.threatZ));
@@ -591,7 +575,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
           return;
         }
         wander(e, i, streams.behavior, sp.walkSpeed * 0.6);
-        const social = effectiveTrait(e, i, TRAIT.SOCIABILITY, tick);
+        const social = baseTrait(e, i, TRAIT.SOCIABILITY);
         if (social > 0.3) {
           const h = herdCohesion(e, spatial, i, BEHAVIOR.herdRadius);
           if (h.n > 0) {
@@ -867,7 +851,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     phys.step(dt);
 
     // A template thought lands on the next creature in turn every few seconds, so the
-    // inspector always has something to show even with the model off.
+    // inspector always has something to show.
     if (tick % THOUGHTS.templateEveryTicks === 0 && e.count > 0) {
       for (let n = 0; n < e.cap; n++) {
         const i = (templateCursor + n) % e.cap;
@@ -967,20 +951,18 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       tribes: tribeStore ? tribeStore.toTelemetry() : null,
       buildings: tribeStore?.getBuildingsTelemetry ? tribeStore.getBuildingsTelemetry() : [],
       caravans: tribeStore?.getCaravansTelemetry ? tribeStore.getCaravansTelemetry() : [],
-      treaties: tribeStore?.treatyTelemetry ? tribeStore.treatyTelemetry() : [],
       weather: weatherTelemetry(weather),
       sick: sick.slice(),
       varieties: varieties.map(v => ({ species: v.species, name: v.name, year: v.year })),
       maxGeneration: lineage.maxGeneration,
       biodiversity: biodiversity(),
       landmarkCount: landmarks.count, landmarkLastId: landmarks.recent(1)[0]?.id ?? 0, yearCount: yearHistory.length,
-      sagaCount: journal.length,
     };
   }
 
-  /** The timeline's data: every landmark, the per-year rows and the journal (sent only when they change). */
+  /** The timeline's data: every landmark and the per-year rows (sent only when they change). */
   function history() {
-    return { landmarks: landmarks.all(), years: yearHistory.map(r => r.slice()), sagas: journal.map(s => ({ ...s })) };
+    return { landmarks: landmarks.all(), years: yearHistory.map(r => r.slice()) };
   }
 
   /** The per-creature STATE word of the render frame (sim/frame.js): sick, watched. */
@@ -1078,10 +1060,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     // every creature, so one is minted here rather than at any single call site.
     if (!e.lastThought[i]) giveTemplateThought(i);
     const sp = SPECIES[e.species[i]]; const tick = clock.tick;
-    const traits = []; const baseTraits = [];
-    for (let k = 0; k < TRAITS.length; k++) { traits.push(effectiveTrait(e, i, k, tick)); baseTraits.push(e.traits[i * TRAITS.length + k]); }
-    const nudgeTrait = e.nudgeTrait[i];
-    const nudge = nudgeTrait >= 0 && activeNudge(e, i, nudgeTrait, tick) !== 0 ? { trait: TRAITS[nudgeTrait], delta: activeNudge(e, i, nudgeTrait, tick) } : null;
+    const traits = [];
+    for (let k = 0; k < TRAITS.length; k++) traits.push(baseTrait(e, i, k));
     // Parents are looked up through the lineage first so a dead parent keeps its name in
     // the inspector instead of vanishing the moment it dies.
     const parentName = (h) => { const p = e.resolve(h); if (p !== NONE) return nameOf(p); return lineage.get(h)?.name ?? ''; };
@@ -1090,8 +1070,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       handle, name: nameOf(i), species: sp.id, speciesName: sp.name, sex: e.sex[i],
       watched: watched.has(handle), children: family?.children.length ?? 0, descendants: family?.descendants ?? 0, generation: family?.generation ?? 0,
       ageYears: e.age[i], lifeStage: e.lifeStage[i], hunger: e.hunger[i], thirst: e.thirst[i], health: e.health[i],
-      traits, baseTraits, nudge, goal: GOAL_NAMES[e.goal[i]] ?? 'Idle', goalSince: e.goalSince[i],
-      lastThought: e.lastThought[i], lastThoughtSource: e.lastThoughtSource[i],
+      traits, goal: GOAL_NAMES[e.goal[i]] ?? 'Idle', goalSince: e.goalSince[i],
+      lastThought: e.lastThought[i],
       mother: parentName(e.mother[i]), father: parentName(e.father[i]), x: e.x[i], y: e.y[i], z: e.z[i],
       sick: isSick(e, i, tick),
     };
@@ -1138,7 +1118,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     for (const c of ENTITY_COLS) cols[c] = e[c].slice();
     return {
       clock: clock.getState(), rng: streams.getState(), namer: namer.getState(), log: log.getState(),
-      scheduler: scheduler.getState(), thoughtScheduler: thoughtScheduler.getState(), thoughtStats: { ...thoughtStats },
+      scheduler: scheduler.getState(),
       templateCursor, nextCarcassId, lastFullTick, naturalEvents: { ...naturalEvents }, extinct: extinct.slice(),
       popHistory: popHistory.map(r => r.slice()),
       tileState: tileState.slice(), fear: fear.slice(),
@@ -1166,14 +1146,13 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       varieties: varieties.map(v => ({ ...v, traits: v.traits.slice() })), varietyBase: varietyBase.map(b => (b ? b.slice() : null)),
       landmarks: landmarks.getState(), yearHistory: yearHistory.map(r => r.slice()), lastYearSampled,
       heat: { deaths: heat.deaths.slice(), kills: heat.kills.slice(), sick: heat.sick.slice() },
-      journal: journal.map(s => ({ ...s })),
       lava: world.lava ? { front: world.lava.front.slice(), tiles: world.lava.tiles.slice(), endTick: world.lava.endTick, nextCreep: world.lava.nextCreep } : null,
     };
   }
   function setState(s) {
     clock.setState(s.clock); streams.setState(s.rng); namer.setState(s.namer); log.setState(s.log);
-    scheduler.setState(s.scheduler); thoughtScheduler.setState(s.thoughtScheduler);
-    Object.assign(thoughtStats, s.thoughtStats); templateCursor = s.templateCursor | 0; nextCarcassId = s.nextCarcassId | 0; lastFullTick = s.lastFullTick;
+    scheduler.setState(s.scheduler);
+    templateCursor = s.templateCursor | 0; nextCarcassId = s.nextCarcassId | 0; lastFullTick = s.lastFullTick;
     Object.assign(naturalEvents, s.naturalEvents); for (let k = 0; k < 4; k++) extinct[k] = !!s.extinct[k];
     ended = !!s.ended;
     if (s.trees?.foliage && trees.foliage) trees.foliage.set(s.trees.foliage);
@@ -1194,9 +1173,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     if (s.landmarks) landmarks.setState(s.landmarks);
     yearHistory.length = 0; for (const r of s.yearHistory ?? []) yearHistory.push(r.slice());
     lastYearSampled = Number.isInteger(s.lastYearSampled) ? s.lastYearSampled : -1;
-    // Heat and the journal are additive: an older save restores with both empty.
+    // Heat is additive: an older save restores with it empty.
     for (const k of ['deaths', 'kills', 'sick']) { heat[k].fill(0); if (s.heat?.[k]?.length === heat[k].length) heat[k].set(s.heat[k]); }
-    journal.length = 0; for (const j of s.journal ?? []) journal.push({ ...j });
     popHistory.length = 0; for (const r of s.popHistory) popHistory.push(r.slice());
     tileState.set(s.tileState); fear.set(s.fear);
     grass.biomass.set(s.grass.biomass); grass.cursor = s.grass.cursor | 0;
@@ -1252,89 +1230,10 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     scheduler, corridors, boulders, fires, burnt, ignite, rebuildShoreField, lava: null,
     thoughtFeed, telemetry: ledger, lineage, tribe,
     erupt: () => erupt(world),
-    senses: (i) => ({ ...perceive(i) }),
-    thoughts: {
-      get pending() { return thoughtScheduler.pending; },
-      next(selected = NONE) {
-        const h = thoughtScheduler.next(e, selected);
-        if (h === NONE) return null;
-        thoughtStats.requested++;
-        return { handle: h, prompt: buildPrompt(world, e.resolve(h)) };
-      },
-      apply(handle, text) {
-        const r = applyThought(world, handle, text, THOUGHT_SOURCE.LLM);
-        thoughtScheduler.complete(handle);
-        if (r.applied) thoughtStats.applied++; else thoughtStats.rejected++;
-        const i = e.resolve(handle);
-        if (i !== NONE) thoughtFeed.push({ tick: clock.tick, kind: 'thought', handle, name: nameOf(i), species: e.species[i], source: e.lastThoughtSource[i], text: e.lastThought[i] });
-        return r;
-      },
-      cancel() { thoughtScheduler.cancel(); },
-      /**
-       * The batched cloud path (/api/ecosystem/thoughts/batch): up to `n` creatures as the
-       * structured items the endpoint takes. Each answer comes back through apply(), so a
-       * batched thought is validated and nudged exactly like a single one.
-       */
-      batch(n, selected = NONE) {
-        const out = [];
-        for (const h of thoughtScheduler.take(e, selected, n)) {
-          const i = e.resolve(h);
-          if (i === NONE) continue;
-          const c = perceive(i);
-          const near = [];
-          if (c.threatDist !== Infinity) near.push(`danger ${Math.round(c.threatDist)} m away`);
-          if (c.preyDist !== Infinity) near.push(`prey ${Math.round(c.preyDist)} m away`);
-          if (c.foodDist !== Infinity) near.push(`${c.foodKind === 'bush' ? 'berries' : c.foodKind || 'food'} ${Math.round(c.foodDist)} m away`);
-          if (c.mateDist !== Infinity) near.push('a mate close by');
-          if (isSick(e, i, clock.tick)) near.push('feeling sick');
-          near.push(c.night ? 'night' : 'day');
-          if (weather.kind !== 0) near.push(WEATHER_NAMES[weather.kind].toLowerCase());
-          out.push({
-            handle: h, species: SPECIES[e.species[i]].name, name: nameOf(i),
-            hunger: Math.round(e.hunger[i] * 100) / 100, thirst: Math.round(e.thirst[i] * 100) / 100, health: Math.round(e.health[i] * 100) / 100,
-            goal: GOAL_NAMES[e.goal[i]] ?? 'Idle', nearby: near.join(', '),
-          });
-        }
-        thoughtStats.requested += out.length;
-        return out;
-      },
-      /**
-       * Give one creature a template thought now. The rotation takes minutes to reach
-       * everyone, so the inspector would otherwise open on an empty quote for a creature
-       * that has not had its turn. Never overwrites a live LLM thought.
-       */
-      template(handle) {
-        const i = e.resolve(handle);
-        return i === NONE ? false : giveTemplateThought(i);
-      },
-      stats() { return { ...thoughtStats }; },
-      scheduler: thoughtScheduler,
-    },
     step, stats, detail, debug, applyCommand, kill, spawn, getState, setState,
     lineageOf, rename, setWatched, tribeStore,
     weather, history, biodiversity,
     frameState, find, kinOf, heatmap,
-    /** A council's answer to a diplomatic moment (the /treaty endpoint), applied by the tribe store. */
-    applyTreaty: (t) => (tribeStore?.applyTreaty ? tribeStore.applyTreaty(t, log, clock.tick) : false),
-    /**
-     * A line of lore the page earned from the server (milestone legends): logged, and so kept
-     * on the timeline. A 'saga' is a decade chronicle — JSON { fromYear, toYear, title, saga,
-     * epigraph } — kept in the journal, which the snapshot carries.
-     */
-    note(kind, text, tile = NONE) {
-      if (kind === 'saga') {
-        let s; try { s = JSON.parse(text); } catch { return false; }
-        const clip = (v, n) => String(v ?? '').trim().slice(0, n);
-        const saga = clip(s?.saga, 1600);
-        if (!saga) return false;
-        journal.push({ fromYear: s.fromYear | 0, toYear: s.toYear | 0, title: clip(s.title, 100), saga, epigraph: clip(s.epigraph, 200) });
-        if (journal.length > JOURNAL_MAX) journal.shift();
-        return true;
-      }
-      if (kind !== 'legend' || typeof text !== 'string' || !text.trim()) return false;
-      log.push({ tick: clock.tick, kind, tile, text: text.trim().slice(0, 300) });
-      return true;
-    },
   };
   return world;
 }

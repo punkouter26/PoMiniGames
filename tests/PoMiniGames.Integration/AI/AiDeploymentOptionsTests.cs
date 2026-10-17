@@ -1,7 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.AI;
+using System.Text.Json;
 using PoMiniGames.AI;
-using PoMiniGames.Features.PoJoker;
 
 namespace PoMiniGames.Integration;
 
@@ -31,15 +31,19 @@ namespace PoMiniGames.Integration;
 /// </remarks>
 public class AiDeploymentOptionsTests
 {
+    private static readonly JsonElement ProbeSchema = JsonDocument.Parse(
+        """{ "type": "object", "properties": { "score": { "type": "number" } }, "required": ["score"], "additionalProperties": false }""")
+        .RootElement.Clone();
+
     /// <param name="requestedKey">Game or <c>game.task</c> key the call site asks for.</param>
     /// <param name="expectedDeployment">Deployment that key must resolve to.</param>
     /// <param name="expectSchema">Whether <c>json_schema</c> may be sent to it.</param>
     /// <param name="expectReasoning">Whether <c>reasoning_effort</c> may be sent to it.</param>
     [Theory]
     // A task key with its own entry wins.
-    [InlineData("joker.rating", "gpt-5-nano", true, true)]
+    [InlineData("couplequiz.rating", "gpt-5-nano", true, true)]
     // A task key with no entry falls back to its GAME, not to the global default.
-    [InlineData("joker.explain", "gpt-5.4-nano", true, true)]
+    [InlineData("couplequiz.explain", "gpt-5.4-nano", true, true)]
     // A plain game key resolves its own entry.
     [InlineData("funquiz", "gpt-5.4-mini", true, true)]
     // An unknown key falls through to the default.
@@ -55,8 +59,8 @@ public class AiDeploymentOptionsTests
             DefaultDeployment = "gpt-5.4-nano",
             Deployments = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                ["joker"] = "gpt-5.4-nano",
-                ["joker.rating"] = "gpt-5-nano",
+                ["couplequiz"] = "gpt-5.4-nano",
+                ["couplequiz.rating"] = "gpt-5-nano",
                 ["funquiz"] = "gpt-5.4-mini",
                 ["couplequiz.similarity"] = "Phi-4-mini-instruct",
             },
@@ -66,7 +70,7 @@ public class AiDeploymentOptionsTests
         deployment.Should().Be(expectedDeployment);
 
         var chatOptions = AiDecisionChatOptions.ForStructuredJson(
-            AiJesterService.VerdictSchema,
+            ProbeSchema,
             schemaName: "probe",
             maxOutputTokens: 128,
             deployment: deployment,

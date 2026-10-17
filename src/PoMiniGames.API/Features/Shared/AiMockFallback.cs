@@ -5,7 +5,7 @@ namespace PoMiniGames.Features.Shared;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Three services (PoCoupleQuiz, PoFunQuiz, PoJoker) carried byte-identical private
+/// The AI services (PoCoupleQuiz, PoFunQuiz) carried byte-identical private
 /// <c>IsNonProduction()</c> helpers and the same "mock only when the flag is on AND the
 /// environment is safe" decision. Duplicated predicates drift — the standing example is
 /// <c>IFaceAnalysisService</c>, which ended up unmocked because one copy of a related

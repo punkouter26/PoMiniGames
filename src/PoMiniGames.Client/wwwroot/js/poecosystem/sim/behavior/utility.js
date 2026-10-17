@@ -1,12 +1,11 @@
 // utility.js — goal selection. Every goal is scored from drives × traits ×
 // what the creature perceives (`ctx`, built by world.js each re-score); the best wins
 // unless the current goal is within the hysteresis margin, which stops dithering.
-// Traits are read through effectiveTrait so LLM nudges act here and only here.
 import { BEHAVIOR, TICK_SECONDS } from '../core/config.js';
 import { NONE } from '../core/entities.js';
 import { LIFE_STAGE } from '../creatures/lifecycle.js';
 import { SPECIES } from '../creatures/species.js';
-import { TRAIT, effectiveTrait } from '../creatures/traits.js';
+import { TRAIT, baseTrait } from '../creatures/traits.js';
 
 export const GOAL = Object.freeze({
   WANDER: 0, EAT: 1, DRINK: 2, FLEE: 3, HUNT: 4, MATE: 5, FOLLOW_PARENT: 6, RETURN_HOME: 7, CHOP: 8, BUILD: 9, REST: 10,
@@ -34,11 +33,11 @@ export function scoreGoals(e, i, ctx) {
   const sp = SPECIES[e.species[i]];
   const tick = ctx.tick ?? 0;
   const h = e.hunger[i]; const t = e.thirst[i];
-  const bold = effectiveTrait(e, i, TRAIT.BOLDNESS, tick);
-  const social = effectiveTrait(e, i, TRAIT.SOCIABILITY, tick);
-  const curious = effectiveTrait(e, i, TRAIT.CURIOSITY, tick);
-  const greed = effectiveTrait(e, i, TRAIT.GREED, tick);
-  const diligent = effectiveTrait(e, i, TRAIT.DILIGENCE, tick);
+  const bold = baseTrait(e, i, TRAIT.BOLDNESS);
+  const social = baseTrait(e, i, TRAIT.SOCIABILITY);
+  const curious = baseTrait(e, i, TRAIT.CURIOSITY);
+  const greed = baseTrait(e, i, TRAIT.GREED);
+  const diligent = baseTrait(e, i, TRAIT.DILIGENCE);
   const fear = ctx.fear ?? 0;
 
   s[GOAL.WANDER] = 0.15 + 0.15 * curious;

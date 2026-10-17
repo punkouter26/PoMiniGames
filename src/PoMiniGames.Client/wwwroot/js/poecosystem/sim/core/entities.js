@@ -9,11 +9,10 @@ import { TRAITS } from './config.js';
 
 export const NONE = -1;
 
-const F32 = ['x', 'y', 'z', 'yaw', 'vx', 'vz', 'age', 'hunger', 'thirst', 'health', 'scale', 'nudgeDelta', 'dist'];
-const U8 = ['species', 'lifeStage', 'state', 'goal', 'sex', 'alive', 'lastThoughtSource'];
-const I8 = ['nudgeTrait'];
+const F32 = ['x', 'y', 'z', 'yaw', 'vx', 'vz', 'age', 'hunger', 'thirst', 'health', 'scale', 'dist'];
+const U8 = ['species', 'lifeStage', 'state', 'goal', 'sex', 'alive'];
 const U16 = ['offspring'];              // children ever born to this creature (telemetry)
-const I32 = ['mother', 'father', 'target', 'leader', 'homeTile', 'memFoodTile', 'memFoodTick', 'memWaterTile', 'memWaterTick', 'birthTick', 'gestationEndTick', 'lastMateTick', 'goalSince', 'nudgeEndTick', 'alertTick', 'pendingFather',
+const I32 = ['mother', 'father', 'target', 'leader', 'homeTile', 'memFoodTile', 'memFoodTick', 'memWaterTile', 'memWaterTick', 'birthTick', 'gestationEndTick', 'lastMateTick', 'goalSince', 'alertTick', 'pendingFather',
   // Disease (creatures/disease.js): sick while tick < sickUntil, immune while tick < immuneUntil.
   'sickUntil', 'immuneUntil'];
 const F32_EXTRA = ['alertX', 'alertZ'];   // where the alarm came from (see behavior/social.js)
@@ -23,7 +22,6 @@ export function createEntities(cap) {
   for (const c of F32) e[c] = new Float32Array(cap);
   for (const c of F32_EXTRA) e[c] = new Float32Array(cap);
   for (const c of U8) e[c] = new Uint8Array(cap);
-  for (const c of I8) e[c] = new Int8Array(cap);
   for (const c of U16) e[c] = new Uint16Array(cap);
   for (const c of I32) e[c] = new Int32Array(cap);
   e.traits = new Float32Array(cap * TRAITS.length);
@@ -37,7 +35,6 @@ export function createEntities(cap) {
     for (const c of F32) e[c][i] = 0;
     for (const c of F32_EXTRA) e[c][i] = 0;
     for (const c of U8) e[c][i] = 0;
-    for (const c of I8) e[c][i] = NONE;
     for (const c of U16) e[c][i] = 0;
     for (const c of I32) e[c][i] = NONE;
     e.traits.fill(0, i * TRAITS.length, (i + 1) * TRAITS.length);
@@ -77,7 +74,7 @@ export function createEntities(cap) {
   };
 
   /** Typed-array column names, for the frame encoder and snapshot code. */
-  e.columns = () => [...F32, ...F32_EXTRA, ...U8, ...I8, ...U16, ...I32, 'traits', 'gen'];
+  e.columns = () => [...F32, ...F32_EXTRA, ...U8, ...U16, ...I32, 'traits', 'gen'];
 
   /** Snapshot support: the free list must be restored in order to stay deterministic. */
   e.getFreeList = () => free.slice();

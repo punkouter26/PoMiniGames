@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PoMiniGames.AI;
-using PoMiniGames.Features.PoJoker;
 
 namespace PoMiniGames.Unit.Infrastructure;
 
@@ -77,7 +76,6 @@ public sealed class AIFoundryCentralizationTests
             new AIFoundryClientFactory(empty, NullLogger<AIFoundryClientFactory>.Instance), empty);
         cache.Resolve(AIFoundryOptions.Games.FunQuiz).Should().BeNull();
         cache.Resolve(AIFoundryOptions.Games.CoupleQuiz).Should().BeNull();
-        cache.Resolve(AIFoundryOptions.Games.Joker).Should().BeNull();
 
         // The factory must be a singleton — building two AzureOpenAIClient instances
         // (one per request) would double the underlying HTTPS connections and
@@ -107,7 +105,6 @@ public sealed class AIFoundryCentralizationTests
         var config = new ConfigurationBuilder().Build();
         config["PoFunQuiz:AzureOpenAI:ApiKey"].Should().BeNull();
         config["PoCoupleQuiz:AzureOpenAI:ApiKey"].Should().BeNull();
-        config["PoJoker:AzureOpenAI:ApiKey"].Should().BeNull();
     }
 
     private sealed class TestOptionsMonitor<T> : IOptionsMonitor<T>

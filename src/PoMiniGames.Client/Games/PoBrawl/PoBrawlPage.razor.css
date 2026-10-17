@@ -1039,12 +1039,6 @@
     color: var(--accent-ink);
 }
 
-.pb-presser-wait {
-    margin: 0;
-    color: var(--color-text-secondary);
-    font-size: var(--text-sm);
-}
-
 /* ── Breaking News result package ─────────────────────────────────────
    Engine DOM (news.js), hence ::deep. A cable-news lower third over the result frame.
    Slides in, never blinks; the only continuous motion is the ticker crawl, which

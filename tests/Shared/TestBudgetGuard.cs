@@ -33,10 +33,6 @@ public static class TestBudgetGuard
         // "if (Features.UseMockAI) AddSingleton<MockX>()" branch wins.
         ["PoFunQuiz:Features:UseMockAI"] = "true",
         ["PoCoupleQuiz:Features:UseMockAI"] = "true",
-        ["PoJoker:Features:UseMockAI"] = "true",
-        ["PoEcosystem:Features:UseMockAI"] = "true",
-        ["PoBrawl:Features:UseMockAI"] = "true",
-        ["PoCabinet:Features:UseMockAI"] = "true",
         // PoJevArena has no mock fallback in any real environment; this switch is honoured only
         // when the host environment is "Test", and swaps in the deterministic StubJevClient.
         // The empty key keeps a developer's real OpenRouter key out of every test host.

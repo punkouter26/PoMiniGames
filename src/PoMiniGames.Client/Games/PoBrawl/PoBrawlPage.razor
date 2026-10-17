@@ -264,17 +264,9 @@
     // Breaking News lower third (news.js) is on screen long enough to be read.
     private const int LadderResultHoldMs = 2600;
 
-    // ── Post-fight press conference (POST /api/pobrawl/presser) ───────────
-    private PoMiniGames.Shared.Games.PoBrawlPresserReply? _presser;
-    private bool _presserLoading;
+    // ── Post-fight press conference (scripted, PoBrawlPressLines) ─────────
+    private PoBrawlPressLine? _presser;
     private int _presserGeneration;
-
-    // ── Ring introduction (POST /api/pobrawl/intro) ──────────────────────
-    // The one model line a local fight gets: the PA introduces the pair under the VS splash.
-    // Fetched early (the 1P intro card is up for a while) and handed to the engine, which
-    // speaks and captions it and holds the splash for it.
-    private Task<string?>? _introLine;
-    private string? _introLineFor;
 
     // ── Online (PoBrawlNetSession; the arena is a puppet of the server's fight) ──
     private PoBrawlNetSession? _net;
@@ -508,20 +500,13 @@
         }
 
         @* One line from the podium, read out by the PA. Flavour only — the result above is
-           already final, so a failed fetch simply shows nothing. *@
-        @if (_presserLoading || _presser is not null)
+           already final. *@
+        @if (_presser is { } p)
         {
             <figure class="pb-presser">
                 <figcaption class="pb-presser-head"><span aria-hidden="true">🎤</span> Post-fight press conference</figcaption>
-                @if (_presser is { } p)
-                {
-                    <blockquote class="pb-presser-line">“@p.Text”</blockquote>
-                    <div class="pb-presser-who">— @p.Speaker</div>
-                }
-                else
-                {
-                    <p class="pb-presser-wait">The podium mic squeals…</p>
-                }
+                <blockquote class="pb-presser-line">“@p.Text”</blockquote>
+                <div class="pb-presser-who">— @p.Speaker</div>
             </figure>
         }
 
@@ -628,7 +613,6 @@
             _p2Char = Roster[_ladder].Id;
             LocalStorageService.SetItem(LadderKey, _ladder.ToString());
             LocalStorageService.SetItem(LadderAtKey, remote.UpdatedAtUnixMs.ToString());
-            PrefetchIntro();
         }
         if (remote.BestKoSeconds > 0 && (_bestKo == 0 || remote.BestKoSeconds < _bestKo)) SaveBestKo(remote.BestKoSeconds);
         _clears = Math.Max(_clears, remote.Clears);
@@ -648,8 +632,6 @@
             await StartOnlineAsync();
             return;
         }
-        // 1P only: 2P fetches its introduction once both players have picked.
-        if (_mode == "1p") PrefetchIntro();
     }
 
     /// <summary>Everything this page keeps per player name: stats, Elo, the rung, the fastest KO, the clears.</summary>
@@ -680,7 +662,6 @@
         {
             LoadLocalProgress();
             UpdateStats();
-            if (_mode == "1p") PrefetchIntro();
             StateHasChanged();
         });
     }
@@ -759,7 +740,6 @@
             // still starts a legal, mirror-free fight.
             _p1Char = PickableRoster[_p1Sel].Id;
             _p2Char = PickableRoster[_p2Sel].Id;
-            PrefetchIntro();
         }
         // 1P keeps the ladder matchup chosen in OnInitialized (BOB vs the rung).
         if (_mode == "1p" && _training)
@@ -789,7 +769,7 @@
         var localSide = _net?.Snapshot is { IsSpectator: false } snap
             ? (snap.LocalSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? 1 : 2)
             : 0;
-        var introLine = await TakeIntroAsync();
+        var introLine = IntroLine();
         try
         {
             // Route-gated engine load (wwwroot/js/engineLoader.js): it has to be pulled in
@@ -876,7 +856,6 @@
         _recap = null;
         _lastRecap = null;
         _presser = null;
-        _presserLoading = false;
         ++_presserGeneration;
         _winner = 0;
         _phase = "fighting";
@@ -935,32 +914,12 @@
     }
 
     // ── Ring introduction ────────────────────────────────────────────────
-    private void PrefetchIntro()
-    {
-        if (_demo || _mode == "online" || !Auth.IsAuthenticated) return;
-        var key = $"{_p1Char}|{_p2Char}";
-        if (_introLineFor == key && _introLine is not null) return;
-        _introLineFor = key;
-        _introLine = FetchIntroAsync(_p1Char, _p2Char);
-    }
-
-    private async Task<string?> FetchIntroAsync(string p1, string p2) =>
-        (await ApiService.GetPoBrawlIntroAsync(new PoMiniGames.Shared.Games.PoBrawlIntroRequest(p1, p2)))?.Text;
-
     /// <summary>
-    /// The introduction for the fight about to start, if it is ready within a beat. Consumed —
-    /// the next fight fetches its own. A slow model costs the fight its introduction, never its start.
+    /// The PA's introduction for the fight about to start, handed to the engine, which speaks
+    /// and captions it under the VS splash. Local fights only.
     /// </summary>
-    private async Task<string?> TakeIntroAsync()
-    {
-        if (_training || _demo || _mode == "online") return null;
-        PrefetchIntro();
-        if (_introLine is not { } task) return null;
-        _introLine = null;
-        _introLineFor = null;
-        var done = await Task.WhenAny(task, Task.Delay(1200));
-        return done == task ? await task : null;
-    }
+    private string? IntroLine() =>
+        _training || _demo || _mode == "online" ? null : PoBrawlPressLines.Intro(_p1Char, _p2Char)?.Text;
 
     // ── Training room (1P) ───────────────────────────────────────────────
     // Entered from the intro card; left by the bar's "Back to the ladder". Either direction
@@ -982,14 +941,12 @@
     }
 
     // ── Post-fight press conference ──────────────────────────────────────
-    // Only called on the paths that SHOW the result modal, so a 1P win rolling into the next
-    // rung asks for nothing and a kiosk left running in demo spends no tokens.
+    // Only called on the paths that SHOW the result modal.
     private async Task StartPresserAsync()
     {
-        var generation = ++_presserGeneration;
+        ++_presserGeneration;
         _presser = null;
-        _presserLoading = false;
-        if (!Auth.IsAuthenticated || _lastRecap is not { } r) return;
+        if (_lastRecap is not { } r) return;
 
         // 1P: the president at the podium (winner or loser, it is their press conference).
         // 2P: the winner, or player 1 on a draw.
@@ -998,7 +955,7 @@
         var outcome = _winner == 0 ? PoMiniGames.Shared.Games.PoBrawlOutcome.Draw
             : speakerWon ? PoMiniGames.Shared.Games.PoBrawlOutcome.Win
             : PoMiniGames.Shared.Games.PoBrawlOutcome.Loss;
-        var request = new PoMiniGames.Shared.Games.PoBrawlPresserRequest(
+        var reply = PoBrawlPressLines.Press(new PoBrawlPressLines.Bout(
             SpeakerId: speakerIsP2 ? _p2Char : _p1Char,
             OpponentId: speakerIsP2 ? _p1Char : _p2Char,
             Outcome: outcome,
@@ -1009,14 +966,7 @@
             Blocks: speakerIsP2 ? r.P2Blocks : r.P1Blocks,
             BestCombo: speakerIsP2 ? r.P2BestCombo : r.P1BestCombo,
             BiggestHit: speakerIsP2 ? r.P2BiggestHit : r.P1BiggestHit,
-            Seconds: (int)Math.Round(_lastKo));
-
-        _presserLoading = true;
-        await InvokeAsync(StateHasChanged);
-        var reply = await ApiService.GetPoBrawlPresserAsync(request);
-        // A newer match (or leaving training) superseded this request while it was in flight.
-        if (generation != _presserGeneration) return;
-        _presserLoading = false;
+            Seconds: (int)Math.Round(_lastKo)));
         _presser = reply;
         // The shell's live region reads it.
         if (reply is not null) _announcement = $"Press conference — {reply.Speaker}: {reply.Text}";
@@ -1253,10 +1203,8 @@
             // Hold on the result first (see LadderResultHoldMs). Leaving for training or
             // navigating away inside the hold supersedes this roll.
             var generation = _presserGeneration;
-            // The next president's ring introduction is fetched under the hold.
             var nextP2 = Roster[_ladder].Id;
             _p2Char = nextP2;
-            PrefetchIntro();
             // The KO cinematic runs on the RENDER clock — frozen in a backgrounded tab — while
             // the hold below is wall-clock. Wait the 'ko' phase out (capped) so the roll never
             // cuts the ragdoll/replay the player was owed; accessor lives in index.js.
@@ -1277,7 +1225,7 @@
             _phase = "fighting";
             ResetRoundHud();
             await InvokeAsync(StateHasChanged);
-            var introLine = await TakeIntroAsync();
+            var introLine = IntroLine();
             try { await JSRuntime.InvokeVoidAsync("PoBrawl.next", _p2Char, _ladder + 1, introLine); }
             catch (Exception ex) { Console.Error.WriteLine($"[PoBrawl] next-match failed: {ex.Message}"); }
             return;

@@ -216,23 +216,21 @@ public sealed record PoCabinetFinalEntry(
     double BestLapSeconds = -1,
     int CarId = -1);
 
-// ──────────────────────────────  AI: banter + debrief  ──────────────────────────────
+// ──────────────────────────────  Banter + debrief  ──────────────────────────────
 
 /// <summary>
-/// The officials' radio lines for one track (GET /api/pocabinet/banter?track=): official id →
+/// The officials' scripted radio lines (GET /api/pocabinet/banter): official id →
 /// kind (<c>preRace</c>, <c>passed</c>, <c>lead</c>, <c>finish</c>) → lines. The solo race picks
-/// from it client-side, so a whole race costs at most this one request. <see cref="Mock"/>
-/// marks the scripted fallback.
+/// from it client-side, so a whole race costs at most this one request.
 /// </summary>
 public sealed class PoCabinetBanterPool
 {
     public Dictionary<string, Dictionary<string, List<string>>> Lines { get; set; } = new();
-    public bool Mock { get; set; }
 }
 
 /// <summary>
-/// Numbers only (POST /api/pocabinet/debrief) — the server clamps them and writes every word the
-/// model sees. <see cref="SectorDeltas"/> is seconds vs the personal-best lap per third of the
+/// Numbers only (POST /api/pocabinet/debrief) — the server clamps them and writes the tips from
+/// them. <see cref="SectorDeltas"/> is seconds vs the personal-best lap per third of the
 /// lap (+ = slower); empty when there is no reference lap. Percentages are 0–100;
 /// <see cref="WorstPointPct"/> is where on the lap the most time went (-1 = unknown).
 /// </summary>
@@ -252,4 +250,4 @@ public sealed record PoCabinetDebriefRequest(
     int Laps);
 
 /// <summary>The race engineer's read: a satirical headline and up to three concrete tips.</summary>
-public sealed record PoCabinetDebriefReply(string Headline, IReadOnlyList<string> Tips, bool Mock);
+public sealed record PoCabinetDebriefReply(string Headline, IReadOnlyList<string> Tips);

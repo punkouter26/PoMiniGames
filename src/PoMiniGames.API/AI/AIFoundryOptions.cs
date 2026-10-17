@@ -4,8 +4,7 @@ namespace PoMiniGames.AI;
 /// Centralized Azure AI Foundry binding used by every AI-consuming service in the host.
 /// <para>
 /// Replaces the per-game configuration sections (<c>PoFunQuiz:AzureOpenAI:*</c>,
-/// <c>PoCoupleQuiz:AzureOpenAI:*</c>, <c>PoJoker:AzureOpenAI:*</c>,
-/// and <c>Inference:*</c>) with a single source-of-truth resolved at startup from Key Vault.
+/// <c>PoCoupleQuiz:AzureOpenAI:*</c> and <c>Inference:*</c>) with a single source-of-truth resolved at startup from Key Vault.
 /// </para>
 /// <para>
 /// <b>Configuration contract</b> (resolved by <see cref="Microsoft.Extensions.Configuration.KeyVaultConfigurationProvider"/>
@@ -121,9 +120,9 @@ public sealed class AIFoundryOptions
             || host.EndsWith(".inference.ai.azure.com", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Game → deployment allowlist. Recognised game keys: <c>couplequiz</c>, <c>funquiz</c>,
-    /// <c>joker</c>, <c>ecosystem</c>, <c>pobrawl</c> (plus <c>game.task</c> keys, see <see cref="Tasks"/>). Populated either from a nested configuration
-    /// section (<c>PoMiniGames:AI:Deployments:joker</c>) or from the flat Key Vault secret
+    /// Game → deployment allowlist. Recognised game keys: <c>couplequiz</c>, <c>funquiz</c>
+    /// (plus <c>game.task</c> keys, see <see cref="Tasks"/>). Populated either from a nested configuration
+    /// section (<c>PoMiniGames:AI:Deployments:funquiz</c>) or from the flat Key Vault secret
     /// <c>PoMiniGames--AI--Deployments</c> in the form <c>game=deployment,game=deployment</c>
     /// (parsed in <c>GameServicesExtensions</c>).
     /// </summary>
@@ -132,7 +131,7 @@ public sealed class AIFoundryOptions
     /// This is a plain settable <see cref="Dictionary{TKey, TValue}"/> because that is the shape the
     /// configuration binder handles reliably. A readonly <see cref="IDictionary{TKey, TValue}"/>
     /// over a case-insensitive field does not work: the binder does not populate the existing
-    /// instance through the indexer, so with <c>PoMiniGames:AI:Deployments:joker = gpt-5.4-nano</c>
+    /// instance through the indexer, so with <c>PoMiniGames:AI:Deployments:funquiz = gpt-5.4-nano</c>
     /// present in configuration <see cref="ResolveDeployment"/> would still return
     /// <see cref="DefaultDeployment"/>, silently running every game on the Key Vault default while
     /// <c>/api/infer/status</c> reported the per-game name from a separate raw-config read.
@@ -190,13 +189,6 @@ public sealed class AIFoundryOptions
     {
         public const string CoupleQuiz = "couplequiz";
         public const string FunQuiz = "funquiz";
-        public const string Joker = "joker";
-        /// <summary>PoEcosystem: the decade chronicle (and, via a task key, cloud thoughts).</summary>
-        public const string Ecosystem = "ecosystem";
-        /// <summary>PoBrawl: only the post-fight press conference, via <see cref="Tasks.PoBrawlPresser"/>.</summary>
-        public const string PoBrawl = "pobrawl";
-        /// <summary>PoCabinet: radio banter and the race debrief, via task keys. Shares the default pipeline.</summary>
-        public const string PoCabinet = "pocabinet";
     }
 
     /// <summary>
@@ -205,42 +197,14 @@ public sealed class AIFoundryOptions
     /// </summary>
     /// <remarks>
     /// Model choice is per game, but cost is per task, and inside a single game the tasks are not
-    /// remotely alike. PoJoker asks a model to invent a punchline (wants a capable model) and, in
-    /// the same breath, to emit three numbers between 0 and 1 (wants the cheapest thing that can
-    /// count). Pinning both to one deployment means paying the harder task's rate for the easier
-    /// one on every joke.
+    /// remotely alike. PoCoupleQuiz asks a model to write questions (wants a capable model) and
+    /// to score how alike two answers are (wants the cheapest thing that can count). Pinning both
+    /// to one deployment means paying the harder task's rate for the easier one on every round.
     /// </remarks>
     public static class Tasks
     {
-        /// <summary>PoJoker: scoring a joke's originality/cleverness/humour.</summary>
-        public const string JokerRating = "joker.rating";
-
-        /// <summary>PoJoker: rewriting a flagged joke.</summary>
-        public const string JokerRewrite = "joker.rewrite";
-
         /// <summary>PoCoupleQuiz: scoring similarity between two answers (chat fallback path).</summary>
         public const string CoupleQuizSimilarity = "couplequiz.similarity";
-
-        /// <summary>PoEcosystem: one creature's one-sentence thought, for browsers without WebGPU. A cheap-model job.</summary>
-        public const string EcosystemThought = "ecosystem.thought";
-
-        /// <summary>PoEcosystem: batched thoughts for multiple creatures in a single completion.</summary>
-        public const string EcosystemThoughtBatch = "ecosystem.thought.batch";
-
-        /// <summary>PoEcosystem: chieftain council diplomatic treaty negotiation.</summary>
-        public const string EcosystemTreaty = "ecosystem.treaty";
-
-        /// <summary>PoEcosystem: historical oral legends commemorating civilization milestones.</summary>
-        public const string EcosystemMilestoneLore = "ecosystem.lore";
-
-        /// <summary>PoBrawl: the one-line post-fight press conference. A cheap-model job.</summary>
-        public const string PoBrawlPresser = "pobrawl.presser";
-
-        /// <summary>PoCabinet: the officials' per-track radio line pool (one call per track per day). Cheap model.</summary>
-        public const string PoCabinetBanter = "pocabinet.banter";
-
-        /// <summary>PoCabinet: the post-race headline + tips from the race numbers. Cheap model.</summary>
-        public const string PoCabinetDebrief = "pocabinet.debrief";
     }
 
     /// <summary>
@@ -271,7 +235,7 @@ public sealed class AIFoundryOptions
         if (Lookup(gameKey) is { } exact)
             return exact;
 
-        // "joker.rating" with no entry of its own falls back to "joker" before the global default.
+        // "couplequiz.similarity" with no entry of its own falls back to "couplequiz" before the global default.
         var dot = gameKey.IndexOf('.');
         if (dot > 0 && Lookup(gameKey[..dot]) is { } game)
             return game;

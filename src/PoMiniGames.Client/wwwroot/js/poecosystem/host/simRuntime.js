@@ -2,24 +2,21 @@
 // decision 2: "one runtime, two hosts"). The worker wraps it in self.onmessage, simHost.js
 // runs it inline when workers fail, and Vitest drives it with a fake `post`.
 //
-// In:  probe · init · newWorld · setSpeed · pause · resume · select · setLlmEnabled ·
-//      thoughtResult · thoughtBatchResult · thoughtCancel · saveNow · recycle · debug ·
-//      exportTelemetry · lineage · rename · watch · exportSnapshot · importSnapshot ·
-//      applyTreaty · note · find · kin · heat · keyframes · openKeyframe · returnHome · dispose
+// In:  probe · init · newWorld · setSpeed · pause · resume · select · saveNow · recycle ·
+//      debug · exportTelemetry · lineage · rename · watch · exportSnapshot · importSnapshot ·
+//      find · kin · heat · keyframes · openKeyframe · returnHome · dispose
 // Out: probeResult · ready · terrain · frame (transferred) · tiles · stats · events ·
-//      thoughts · detail · thoughtRequest · thoughtBatchRequest · saved · debugResult ·
-//      telemetry · lineage · snapshotBytes (transferred) · history · found · kin ·
-//      heat (transferred) · keyframes · error
+//      thoughts · detail · saved · debugResult · telemetry · lineage ·
+//      snapshotBytes (transferred) · history · found · kin · heat (transferred) · keyframes · error
 import { CREATURE_CAP, HOST, LOW_END_CREATURE_CAP, PROP_CAP } from '../sim/core/config.js';
 import { NONE } from '../sim/core/entities.js';
-import { createFrameBuffer, encodeFrame, FRAME } from '../sim/frame.js';
+import { createFrameBuffer, encodeFrame } from '../sim/frame.js';
 import { createWorld } from '../sim/world.js';
 import { createPhysics } from '../sim/physics/world.js';
 import { generateIsland } from '../sim/terrain/island.js';
 import { restoreWorld, snapshotWorld } from '../sim/persistence/snapshot.js';
 import { clearKeyframes, deleteWorld, listKeyframes, loadKeyframe, loadWorld, loadWorldMeta, saveKeyframe, saveWorld } from '../sim/persistence/idb.js';
 import { packSnapshot, unpackSnapshot } from '../sim/persistence/codec.js';
-import { SYSTEM_PROMPT } from '../sim/thoughts/prompt.js';
 
 export function createSimRuntime(post, deps = {}) {
   const {
@@ -31,7 +28,6 @@ export function createSimRuntime(post, deps = {}) {
 
   let world = null;
   let selected = NONE;
-  let llmEnabled = false;
   let paused = false;
   let pool = [];
   let lastWall = 0;
@@ -43,17 +39,9 @@ export function createSimRuntime(post, deps = {}) {
   let lastBushCount = -1;   // the tiles message carries the bush list only when it changed
   // A visited (shared) world is ephemeral: it runs, but never autosaves over the local one.
   let ephemeral = false;
-  // Cloud thoughts answer in batches (setLlmEnabled { batch }): one server call voices up to
-  // HOST.thoughtBatchSize creatures. The runtime paces the batches itself — offering one on
-  // every tick, as the single-thought path does, would build eight prompts twenty times a
-  // second only for the bridge to refuse them.
-  let batchSize = 0;
-  let batchInFlight = false;
-  let lastBatchAt = -Infinity;
   // The timeline ('history') is re-sent only when a landmark or a year row was added.
   let sentLandmarkId = -1;
   let sentYearCount = -1;
-  let sentSagaCount = -1;
   // The time machine: one keyframe per KEYFRAME_YEARS of the player's own world. `past` is
   // the year of the keyframe being visited (-1 in the present); a visit is ephemeral, so the
   // past can be watched again and never saved over the present.
@@ -89,8 +77,7 @@ export function createSimRuntime(post, deps = {}) {
     pool = [];
     for (let k = 0; k < HOST.frameBuffers; k++) pool.push(createFrameBuffer(world.entities.cap, PROP_CAP));
     selected = NONE;
-    batchInFlight = false;
-    sentLandmarkId = -1; sentYearCount = -1; sentSagaCount = -1;
+    sentLandmarkId = -1; sentYearCount = -1;
     lastYear = world.clock.year();
     lastBushCount = world.bushes.count;   // the terrain payload just carried the list
     lastWall = now(); lastSaveWall = now();
@@ -103,7 +90,6 @@ export function createSimRuntime(post, deps = {}) {
 
   function boot(msg) {
     caps = { creatureCap: msg.lowEnd ? LOW_END_CREATURE_CAP : (msg.caps?.creatureCap ?? CREATURE_CAP), substeps: msg.lowEnd ? 1 : (msg.caps?.substeps ?? 2) };
-    llmEnabled = !!msg.llmEnabled;
     // A demo, or a boot that is about to load somebody else's island: never autosaved, so it
     // cannot write over the island the player left here.
     ephemeral = !!msg.ephemeral; past = -1;
@@ -127,9 +113,9 @@ export function createSimRuntime(post, deps = {}) {
     const traits = new Float32Array(s.traitHistory.length * 20);
     for (let k = 0; k < s.traitHistory.length; k++) traits.set(s.traitHistory[k], k * 20);
     const { popHistory: _ph, traitHistory: _th, ...rest } = s;
-    post({ type: 'stats', stats: { ...rest, llm: world.thoughts.stats(), llmEnabled, simLag, popHistory: history, traitHistory: traits } }, [history.buffer, traits.buffer]);
-    if (s.landmarkLastId !== sentLandmarkId || s.yearCount !== sentYearCount || s.sagaCount !== sentSagaCount) {
-      sentLandmarkId = s.landmarkLastId; sentYearCount = s.yearCount; sentSagaCount = s.sagaCount;
+    post({ type: 'stats', stats: { ...rest, simLag, popHistory: history, traitHistory: traits } }, [history.buffer, traits.buffer]);
+    if (s.landmarkLastId !== sentLandmarkId || s.yearCount !== sentYearCount) {
+      sentLandmarkId = s.landmarkLastId; sentYearCount = s.yearCount;
       post({ type: 'history', ...world.history() });
     }
   }
@@ -157,7 +143,7 @@ export function createSimRuntime(post, deps = {}) {
   function postFrame() {
     if (pool.length === 0) return;
     const buffer = pool.pop();
-    encodeFrame(world, buffer, { selected, flags: llmEnabled ? FRAME.FLAG_LLM_READY : 0 });
+    encodeFrame(world, buffer, { selected });
     post({ type: 'frame', buffer }, [buffer]);
   }
   function postKeyframes() {
@@ -210,16 +196,6 @@ export function createSimRuntime(post, deps = {}) {
       postFrame();
       const year = world.clock.year();
       if (year !== lastYear) { lastYear = year; if (year > 0 && year % KEYFRAME_YEARS === 0) keyframe(); }
-    }
-    if (llmEnabled && batchSize > 1) {
-      const t = now();
-      if (!batchInFlight && t - lastBatchAt >= HOST.thoughtBatchEveryMs) {
-        const items = world.thoughts.batch(batchSize, selected);
-        if (items.length) { batchInFlight = true; lastBatchAt = t; post({ type: 'thoughtBatchRequest', items }); }
-      }
-    } else if (llmEnabled) {
-      const req = world.thoughts.next(selected);
-      if (req) post({ type: 'thoughtRequest', handle: req.handle, prompt: req.prompt, system: SYSTEM_PROMPT });
     }
     if (wall - lastSaveWall >= HOST.autosaveSeconds * 1000) { lastSaveWall = wall; save('autosave'); }
   }
@@ -276,20 +252,6 @@ export function createSimRuntime(post, deps = {}) {
         case 'pause': paused = true; return;
         case 'resume': paused = false; lastWall = now(); return;
         case 'select': selected = msg.handle ?? NONE; if (world) postDetail(); return;
-        case 'setLlmEnabled':
-          llmEnabled = !!msg.enabled;
-          batchSize = llmEnabled ? Math.max(0, Math.min(HOST.thoughtBatchSize, msg.batch | 0)) : 0;
-          batchInFlight = false;
-          if (!llmEnabled && world) world.thoughts.cancel();
-          return;
-        case 'thoughtResult': if (world) world.thoughts.apply(msg.handle, msg.text); return;
-        case 'thoughtBatchResult':
-          batchInFlight = false;
-          if (world) for (const r of msg.results ?? []) world.thoughts.apply(r.handle, r.text);
-          return;
-        case 'thoughtCancel': world?.thoughts.cancel(); batchInFlight = false; return;
-        case 'applyTreaty': if (world && world.applyTreaty(msg.treaty ?? {})) { postStats(); postEvents(); } return;
-        case 'note': if (world && world.note(msg.kind, msg.text, msg.tile ?? NONE)) { postEvents(); postStats(); } return;
         case 'find': if (world) post({ type: 'found', id: msg.id ?? 0, results: world.find({ text: msg.text, sort: msg.sort, limit: msg.limit ?? 12 }) }); return;
         case 'kin': if (world) post({ type: 'kin', handle: msg.handle, kin: world.kinOf(msg.handle) }); return;
         case 'heat': {

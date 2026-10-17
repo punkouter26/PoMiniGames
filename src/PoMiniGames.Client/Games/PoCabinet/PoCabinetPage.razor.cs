@@ -379,8 +379,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
-    /// The officials' line pool (AI-written per track per day, scripted fallback) for the solo
-    /// race. Not awaited by the start: the first call of the day can take seconds, and a race
+    /// The officials' scripted line pool for the solo race. Not awaited by the start: a race
     /// that starts without banter only misses the grid line.
     /// </summary>
     private async Task LoadBanterAsync(string trackId)
@@ -767,7 +766,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
 
     /// <summary>
     /// The race engineer: the telemetry numbers (race.js) plus the result go to the server, which
-    /// writes the headline and tips (model or rule-based). Demo races don't ask — nobody drove.
+    /// writes the headline and tips from them. Demo races don't ask — nobody drove.
     /// </summary>
     private async Task LoadDebriefAsync(JsonElement facts)
     {

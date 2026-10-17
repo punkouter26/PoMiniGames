@@ -22,7 +22,6 @@ export const PROP_CAP = 256;               // ragdoll parts + logs + rocks + pro
 // ── Personality ──────────────────────────────────────────────────────────
 export const TRAITS = Object.freeze(['boldness', 'sociability', 'curiosity', 'greed', 'diligence']);
 export const TRAIT_MUTATION_SIGMA = 0.08;  // offspring = mean(parents) + N(0, sigma), clamped [0,1]
-export const NUDGE = Object.freeze({ maxDelta: 0.25, decaySeconds: 60 });
 
 // ── Seeded PRNG streams (SPEC / plan decision 4) ─────────────────────────
 // One independent stream per subsystem so adding a cosmetic draw never shifts a
@@ -249,9 +248,7 @@ export const HISTORY = Object.freeze({ landmarksMax: 300, yearsMax: 2000 });
 
 // ── Thoughts ─────────────────────────────────────────────────
 export const THOUGHTS = Object.freeze({
-  maxPromptChars: 600,
-  maxThoughtChars: 120,
-  templateEveryTicks: 40,    // with the LLM off (or between its answers) a template thought lands every 2 s
+  templateEveryTicks: 40,    // a template thought lands every 2 s
   feedCap: 40,               // island-wide thought stream kept for the dashboard's feed panel
 });
 
@@ -263,6 +260,4 @@ export const HOST = Object.freeze({
   detailEveryTicks: 5,       // inspector refresh for the selected creature
   tilesEveryTicks: 20,       // tile state / grass / tree state sync once per second
   autosaveSeconds: 10,
-  thoughtBatchSize: 8,       // cloud thoughts: creatures per server call (the endpoint takes 8)
-  thoughtBatchEveryMs: 20000,
 });

@@ -135,8 +135,7 @@ public static class AiDecisionChatOptions
     }
 
     /// <summary>
-    /// Plain bounded text, for the one output in this solution that is genuinely prose (PoJoker's
-    /// punchline prediction and its two-sentence explanation). Still capability-aware: the output
+    /// Plain bounded text, for short prose replies (the warmup ping). Still capability-aware: the output
     /// ceiling is only safe on a reasoning deployment when minimal effort travels with it.
     /// </summary>
     public static ChatOptions ForBoundedText(

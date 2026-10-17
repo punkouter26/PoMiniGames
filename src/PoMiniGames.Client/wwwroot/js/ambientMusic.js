@@ -70,7 +70,6 @@ const MODES = {
 
 // Per-game presets. Add a key here to give a game its own arrangement.
 const PRESETS = {
-    pojoker:      { root: 65.41, scale: 'dorian',          cutoff: 760, drift: 0.070, pluck: 0.85, wave: 'triangle', space: 'hall',     bpm: 96,  bassWave: 'triangle', arpWave: 'square' },
     poracer:      { root: 73.42, scale: 'wholeTone',       cutoff: 940, drift: 0.110, pluck: 0.25, wave: 'sawtooth', space: 'outdoor',  bpm: 132, bassWave: 'saw',      arpWave: 'square' },
     pomarblerace: { root: 49.00, scale: 'lydian',          cutoff: 640, drift: 0.050, pluck: 0.65, wave: 'triangle', space: 'tunnel',   bpm: 104, bassWave: 'triangle', arpWave: 'triangle' },
     pobrawl:      { root: 61.74, scale: 'aeolian',         cutoff: 720, drift: 0.080, pluck: 0.30, wave: 'sawtooth', space: 'arena',    bpm: 116, bassWave: 'saw',      arpWave: 'square' },

@@ -14,7 +14,7 @@ for PoMule · **Deferred** = planned after PoMule v1.
 | `src/PoMiniGames.Domain` | `GameKey`, high-score models, Elo, `ScoreRules`, name sanitizer | `GameKey.PoMule`, `PoMuleHighScore`, a score-range rule | Extended |
 | `src/PoMiniGames.Infrastructure` | Table/Blob storage, `HighScoreDescriptor<T>` leaderboards | One descriptor for the PoMule board | Extended |
 | `src/PoMiniGames.API` | Host, auth, 15 SignalR hubs, vertical slices in `Features/<Slice>` | New slice `Features/PoMule/` with high-score endpoints only (no hub) | Extended |
-| `src/PoMiniGames.Client` | Blazor WASM shell, 14 game pages, JS engines in `wwwroot/js/<game>/` | `Games/PoMule/` page and components in Radzen; `wwwroot/js/pomule/` canvas renderer; Radzen package, theme and services | Extended |
+| `src/PoMiniGames.Client` | Blazor WASM shell, 13 game pages, JS engines in `wwwroot/js/<game>/` | `Games/PoMule/` page and components in Radzen; `wwwroot/js/pomule/` canvas renderer; Radzen package, theme and services | Extended |
 | `tests/*` | Four capped tiers (100/50/25/25) plus `node --test` files | PoMule tests in every tier; Unit ceiling needs a decision (see `SPEC.md` open question 1) | Extended |
 | `infra/`, `.github/` | Bicep and deploy workflow | None | Retained |
 
@@ -32,20 +32,20 @@ for PoMule · **Deferred** = planned after PoMule v1.
 | Shared audio and palette buses | Client `wwwroot/js/gameCues.js`, `paletteBus.js`, `spatialAudio.js` | Yes, reuse existing cues | Retained |
 | Online play (SignalR hubs, lobbies, invites) | API `Features/*`, Client per-game clients | No | Retained |
 | Server score verification | API `Features/PoSports`, `PoCabinet` | No (engine sits in Shared so it can be added later) | Retained |
-| AI text (Azure AI Foundry) | API `AI/`, quiz and joker slices | No | Retained |
+| AI text (Azure AI Foundry) | API `AI/`, quiz slices | No | Retained |
 | Cloud saves and gallery | API `Features/PoEcosystem`, Blob storage | No | Retained |
 | Radzen component library | Client | Yes: all PoMule non-canvas UI | New |
-| Radzen in the hub, settings sheet, leaderboards and the other 14 games | Client | No | Deferred |
+| Radzen in the hub, settings sheet, leaderboards and the other 13 games | Client | No | Deferred |
 
 ## Existing games
 
-All fourteen are retained and still evolving; none is pruned or reworked by this effort.
+All thirteen are retained and still evolving; none is pruned or reworked by this effort.
 
 | Group | Games |
 |---|---|
 | Racers | PoRacer, PoCabinet, PoMarbleRace |
 | Action and sims | PoBrawl, PoSports, PoVoxelStrike, PoJevArena, PoEcosystem, SandPlayground |
-| Quiz and AI | PoCoupleQuiz, PoFunQuiz, PoJoker |
+| Quiz and AI | PoCoupleQuiz, PoFunQuiz |
 | Board | TicTacToe, ConnectFive |
 
 ## PoMule: who decides what

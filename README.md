@@ -7,7 +7,7 @@ AI-powered games.
 
 ## Overview
 
-Fifteen small games on one website. The browser runs each game in full, including its
+Fourteen small games on one website. The browser runs each game in full, including its
 computer opponents; the server signs players in, referees online play, checks and stores
 scores, and talks to AI models on the player's behalf.
 
@@ -22,7 +22,7 @@ scores, and talks to AI models on the player's behalf.
   they are; there is no Player table.
 - **Computer opponents are hand-written rules, not trained models.** Difficulty is a table of
   numbers in source. The exceptions are hosted models: Azure AI Foundry chat models write
-  jokes, quizzes, banter and chronicles, and TypeSafe's Jev makes PoJevArena's battle calls.
+  quizzes, banter and chronicles, and TypeSafe's Jev makes PoJevArena's battle calls.
   Each has a daily cap per player and a scripted fallback.
 - **Works offline.** A score that cannot reach the server is parked in the browser and sent
   automatically later.
@@ -48,7 +48,6 @@ scores, and talks to AI models on the player's behalf.
 | PoBrawl | Physics brawler with a presidents ladder + fighter Elo demo board |
 | PoCoupleQuiz | Two-player realtime couples quiz (SignalR) |
 | PoFunQuiz | AI-generated multiplayer quiz lobby |
-| PoJoker | AI joke judge with a grandma audience |
 | PoMarbleRace | Physics marble race on baked GLB tracks; online 2-player via host-streamed physics |
 | PoRacer | Canvas racer with WebGL effects, solo races, and a multiplayer lobby |
 | PoCabinet | 3D circuit racer: solo career across four tracks, AI officials, and a server-simulated online lobby |
@@ -95,7 +94,7 @@ scripts/                        Working scripts only — see scripts/README.md
   Guest login exists only in Development/Test and only from loopback. The whole app sits
   behind the sign-in gate; leaderboard reads are anonymous at the API, and all game-data
   writes require auth + antiforgery.
-- UI is native Blazor + plain CSS for fourteen of the games. PoMule is the first screen built
+- UI is native Blazor + plain CSS for thirteen of the games. PoMule is the first screen built
   on Radzen (Material Dark); the hub, settings, leaderboards and the other games move to
   Radzen next. Until then PoMule's page loads the Radzen stylesheet itself and removes it on
   the way out.

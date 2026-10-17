@@ -5,8 +5,8 @@ using PoMiniGames.Shared.Games.PoEcosystem;
 namespace PoMiniGamesClient.Games.PoEcosystem.Services;
 
 /// <summary>
-/// The island's server surface: cloud world slots, the public gallery, the chronicle, and
-/// cloud thoughts. Every call is best-effort and returns null/empty on failure — the engine
+/// The island's server surface: cloud world slots, the public gallery, and the clans'
+/// culture tables. Every call is best-effort and returns null/empty on failure — the engine
 /// keeps running whatever the network does, and the dashboard says "could not reach the
 /// cloud" rather than throwing through a render.
 /// </summary>
@@ -89,62 +89,6 @@ public sealed class PoEcosystemApiClient
         catch { return null; }
     }
 
-    public async Task<EcoChronicle?> WriteChronicleAsync(EcoChronicleRequest request, CancellationToken ct = default)
-    {
-        try
-        {
-            using var response = await _http.PostAsJsonAsync("/api/ecosystem/chronicle", request, EcoApiJsonContext.Default.EcoChronicleRequest, ct);
-            if (!response.IsSuccessStatusCode) return null;
-            return await response.Content.ReadFromJsonAsync(EcoApiJsonContext.Default.EcoChronicle, ct);
-        }
-        catch { return null; }
-    }
-
-    public async Task<string?> ThinkAsync(string system, string prompt, CancellationToken ct = default)
-    {
-        try
-        {
-            using var response = await _http.PostAsJsonAsync("/api/ecosystem/thought", new EcoThoughtRequest(system, prompt), EcoApiJsonContext.Default.EcoThoughtRequest, ct);
-            if (!response.IsSuccessStatusCode) return null;
-            var reply = await response.Content.ReadFromJsonAsync(EcoApiJsonContext.Default.EcoThoughtReply, ct);
-            return reply?.Text;
-        }
-        catch { return null; }
-    }
-
-    public async Task<EcoThoughtBatchReply?> ThinkBatchAsync(EcoThoughtBatchRequest request, CancellationToken ct = default)
-    {
-        try
-        {
-            using var response = await _http.PostAsJsonAsync("/api/ecosystem/thoughts/batch", request, EcoApiJsonContext.Default.EcoThoughtBatchRequest, ct);
-            if (!response.IsSuccessStatusCode) return null;
-            return await response.Content.ReadFromJsonAsync(EcoApiJsonContext.Default.EcoThoughtBatchReply, ct);
-        }
-        catch { return null; }
-    }
-
-    public async Task<EcoTreatyReply?> NegotiateTreatyAsync(EcoTreatyRequest request, CancellationToken ct = default)
-    {
-        try
-        {
-            using var response = await _http.PostAsJsonAsync("/api/ecosystem/treaty", request, EcoApiJsonContext.Default.EcoTreatyRequest, ct);
-            if (!response.IsSuccessStatusCode) return null;
-            return await response.Content.ReadFromJsonAsync(EcoApiJsonContext.Default.EcoTreatyReply, ct);
-        }
-        catch { return null; }
-    }
-
-    public async Task<EcoMilestoneLoreReply?> GenerateMilestoneLoreAsync(EcoMilestoneLoreRequest request, CancellationToken ct = default)
-    {
-        try
-        {
-            using var response = await _http.PostAsJsonAsync("/api/ecosystem/milestone-lore", request, EcoApiJsonContext.Default.EcoMilestoneLoreRequest, ct);
-            if (!response.IsSuccessStatusCode) return null;
-            return await response.Content.ReadFromJsonAsync(EcoApiJsonContext.Default.EcoMilestoneLoreReply, ct);
-        }
-        catch { return null; }
-    }
-
     public async Task<EcoCultureProfile[]?> GetCultureAsync(int seed, CancellationToken ct = default)
     {
         try
@@ -159,18 +103,6 @@ public sealed class PoEcosystemApiClient
 [JsonSerializable(typeof(EcoWorldMeta[]))]
 [JsonSerializable(typeof(EcoSharedWorld[]))]
 [JsonSerializable(typeof(EcoShareRequest))]
-[JsonSerializable(typeof(EcoChronicleRequest))]
-[JsonSerializable(typeof(EcoChronicle))]
-[JsonSerializable(typeof(EcoThoughtRequest))]
-[JsonSerializable(typeof(EcoThoughtReply))]
-[JsonSerializable(typeof(EcoThoughtPromptItem))]
-[JsonSerializable(typeof(EcoThoughtBatchRequest))]
-[JsonSerializable(typeof(EcoThoughtItemResult))]
-[JsonSerializable(typeof(EcoThoughtBatchReply))]
-[JsonSerializable(typeof(EcoTreatyRequest))]
-[JsonSerializable(typeof(EcoTreatyReply))]
-[JsonSerializable(typeof(EcoMilestoneLoreRequest))]
-[JsonSerializable(typeof(EcoMilestoneLoreReply))]
 [JsonSerializable(typeof(EcoCultureProfile))]
 [JsonSerializable(typeof(EcoCultureProfile[]))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true)]

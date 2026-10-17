@@ -76,10 +76,10 @@ public sealed class AiWarmupService : BackgroundService
         if (!options.IsConfigured)
             return;
 
-        var deployment = options.ResolveDeployment(AIFoundryOptions.Games.Joker);
+        var deployment = options.ResolveDeployment(AIFoundryOptions.Games.FunQuiz);
         try
         {
-            var chat = _clients.ForDeployment(AIFoundryOptions.Games.Joker, deployment);
+            var chat = _clients.ForDeployment(AIFoundryOptions.Games.FunQuiz, deployment);
             if (chat is null)
                 return;
 

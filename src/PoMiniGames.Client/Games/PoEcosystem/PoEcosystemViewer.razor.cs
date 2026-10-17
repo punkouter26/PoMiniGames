@@ -22,16 +22,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 {
     private const int LogCapacity = 200;
     private const int ThoughtCapacity = 60;
-    private const int ChronicleEveryYears = 10;
-    // Cloud thoughts spend the caller's daily AI allowance, so a session gets a fixed
-    // number and then falls back to instinct templates (see thoughtBridge.js 'cloud').
-    private const int CloudThoughtsPerSession = 60;
-    // The Chieftain Council and the Herald are server model calls too. They are the clans'
-    // own voice (the viewer never asks for them), but each spends the viewer's allowance,
-    // so a session gets a handful and a minimum spacing.
-    private const int TreatiesPerSession = 6;
-    private const int LegendsPerSession = 8;
-    private static readonly TimeSpan TreatySpacing = TimeSpan.FromSeconds(30);
     private const string TourDoneKey = "poeco:tourDone";
     private const int TicksPerYear = 600;   // YEAR_SECONDS / TICK_SECONDS in sim/core/config.js
 
@@ -62,8 +52,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private EcoStats? _stats;
     private EcoDetail? _detail;
     private EcoLineage? _lineage;
-    private EcoLlmState? _llm;
-    private IReadOnlyList<EcoModel> _models = [];
     private EcoSaveInfo? _resumePrompt;
     private EcoWorldMeta[] _worlds = [];
     private EcoSharedWorld[] _gallery = [];
@@ -76,20 +64,14 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private bool _lineageOpen;
     private bool _narrow;
     private bool _showKeys;
-    private bool _webGpu;
     private bool _sound = true;
     private bool _directorOn;
     private string _directorCaption = "";
     private bool _pipOn;
     private bool _cloudBusy;
-    private bool _chronicleBusy;
-    private bool _cloudThoughts;
     private bool _visiting;                 // a gallery world: read-only, never autosaved locally
-    private int _cloudThoughtsSpent;
     private int _selected = -1;
     private int _lastStanding = -1;
-    private int _chronicledToYear;          // the last year a saga covered (or was offered for)
-    private int _chronicleOfferYear = -1;   // a decade rolled over and no saga was written yet
     private HashSet<int> _watched = [];
     private List<EcoCultureProfile> _cultures = [];
 
@@ -112,21 +94,14 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     /// <summary>A visit — a shared island or a past decade: it runs, and nothing is written into it or saved.</summary>
     private bool ReadOnly => _visiting || _past >= 0;
 
-    /// <summary>The island's journal (the sim keeps it; the snapshot carries it), oldest first.</summary>
-    private IReadOnlyList<EcoSaga> Sagas => _history?.Sagas ?? [];
-
     private (string Id, string Label, string What) LayerInfo =>
         EcoMapLayer.All.FirstOrDefault(l => l.Id == _layer) is { Id: not null } l ? l : EcoMapLayer.All[0];
 
-    // ── timeline, field notes, council/herald, tour, viewing settings ──
+    // ── timeline, field notes, tour, viewing settings ──
     private EcoHistory? _history;
     private readonly EcoMilestoneTracker _milestones = new();
     private EcoSpeciesCard[] _cards = [];
     private bool _cardsRequested;
-    private readonly List<(int Year, string Epithet, string Legend)> _legends = [];
-    private int _treatiesAsked;
-    private int _legendsAsked;
-    private DateTimeOffset _lastTreatyAt = DateTimeOffset.MinValue;
     private EcoSettings? _viewSettings;
     private string? _capturing;                     // the action whose key is being rebound
     private bool _tourActive;
@@ -144,7 +119,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         Interop.ThoughtsReceived += OnThoughts;
         Interop.DetailReceived += OnDetail;
         Interop.LineageReceived += OnLineage;
-        Interop.LlmStateReceived += OnLlmState;
         Interop.Picked += OnPicked;
         Interop.SpeedChanged += OnSpeedChanged;
         Interop.ActionRequested += OnAction;
@@ -152,8 +126,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         Interop.PipChanged += OnPip;
         Interop.EngineError += OnEngineError;
         Interop.SnapshotExported += OnSnapshotExported;
-        Interop.CloudThoughtRequested += OnCloudThoughtAsync;
-        Interop.CloudThoughtBatchRequested += OnCloudThoughtBatchAsync;
         Interop.HistoryReceived += OnHistory;
         Interop.Found += OnFound;
         Interop.KeyframesReceived += OnKeyframes;
@@ -165,18 +137,10 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         await Viewport.RefreshAsync();
         _narrow = Viewport.IsNarrow;
 
-        // Three independent interop round-trips (a WebGPU adapter request, the model list,
-        // and an IndexedDB probe) — run them together rather than one after another.
         // A demo always starts a fresh island and a share link goes straight to the visit,
         // so neither asks whether there is an island to resume.
         var visiting = !string.IsNullOrWhiteSpace(VisitCode);
-        var webGpu = Interop.WebGpuAvailableAsync().AsTask();
-        var models = Interop.ModelsAsync().AsTask();
-        var probe = IsDemo || visiting ? Task.FromResult(new EcoSaveInfo(false, 0, 0, 0, 0, null)) : Interop.ProbeSaveAsync().AsTask();
-        await Task.WhenAll(webGpu, models, probe);
-        _webGpu = webGpu.Result;
-        _models = models.Result;
-        var save = probe.Result;
+        var save = IsDemo || visiting ? new EcoSaveInfo(false, 0, 0, 0, 0, null) : await Interop.ProbeSaveAsync();
         if (save.Exists) _resumePrompt = save;
         else
         {
@@ -196,8 +160,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             minimapId: "poeco-minimap",
             seed: string.IsNullOrWhiteSpace(_seedInput) ? null : _seedInput,
             resume: resume,
-            llmEnabled: _webGpu && !IsDemo,
-            modelId: null,
             lowEnd: _narrow,
             demo: IsDemo,
             // Neither a demo nor the island booted only to be replaced by a visit is saved:
@@ -221,10 +183,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         _lastStanding = -1;
         _lineage = null;
         _lineageOpen = false;
-        _chronicledToYear = 0;
-        _chronicleOfferYear = -1;
         _history = null;
-        _legends.Clear();
         _found = [];
         _compare = null;
         _selected = -1;
@@ -263,14 +222,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         }
         else if (stats.LastStanding < 0 && !stats.Silent && !allAnimalsDead) _banner = null;
 
-        // Every ten years the chronicler is offered a decade. Offered, not written: a saga is
-        // a model call, and the player decides whether this decade deserves one.
-        var decade = stats.Year / ChronicleEveryYears * ChronicleEveryYears;
-        if (decade > 0 && decade > _chronicledToYear && _chronicleOfferYear != decade && !ReadOnly)
-        {
-            _chronicleOfferYear = decade;
-            Ticker($"📖 Year {decade}: a decade has passed — its chronicle can be written (Tribes).");
-        }
         AnnounceNotes(_milestones.Observe(stats));
 
         // The viewer's own alerts are the one kind of island news that is still a toast:
@@ -301,24 +252,12 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private void OnHistory(EcoHistory history)
     {
         _history = history;
-        // The journal and the legends live in the island, so a resumed, cloud-loaded or
-        // visited world arrives with them: the last chronicled year and the legend list are
-        // rebuilt from it rather than starting empty.
-        if (history.Sagas is { Length: > 0 } sagas) _chronicledToYear = Math.Max(_chronicledToYear, sagas.Max(s => s.ToYear));
-        if (_legends.Count == 0)
-        {
-            foreach (var l in history.Landmarks.Where(l => l.Kind == "legend").OrderByDescending(l => l.Tick).Take(20))
-            {
-                var cut = l.Text.IndexOf(" — ", StringComparison.Ordinal);
-                _legends.Add(cut > 0 ? (l.Year, l.Text[..cut], l.Text[(cut + 3)..]) : (l.Year, "Legend", l.Text));
-            }
-        }
         if (!ReadOnly) foreach (var line in _wagers.Settle(history.Years)) Ticker($"🎲 {line}");
         if (_dashboardOpen) InvokeAsync(StateHasChanged);
     }
 
     /// <summary>
-    /// The island's own news — a field note, a legend, a decade turning, a pact — as a quiet
+    /// The island's own news — a field note, a settled wager — as a quiet
     /// line under the status chip (render/chronicle.js), not toasts stacked in the corner on
     /// top of the chronicle card for the same moment.
     /// </summary>
@@ -346,55 +285,10 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             // the timeline; toasting them as well said everything twice.
             if (ev.Kind == "death" && ev.Creature is { } dead && _watched.Contains(dead)) Toasts.Show(ev.Text, ToastType.Warning);
             else if (ev.Kind == "birth" && ((ev.Mother is { } m && _watched.Contains(m)) || (ev.Father is { } f && _watched.Contains(f)))) Toasts.Show(ev.Text, ToastType.Success);
-            else if (ev.Kind == "tech") _ = RecordLegendAsync(ev);
-            else if (ev.Kind == "diplomacy" && ev.Action is "war" or "peace") _ = ConveneCouncilAsync(ev);
-            else if (ev.Kind == "treaty") Ticker($"📜 {ev.Text}");
         }
         AnnounceNotes(_milestones.Observe(events));
         InvokeAsync(StateHasChanged);
     }
-
-    // ── the Chieftain Council and the Herald (server models; the clans' voice, not ours) ──
-    /// <summary>
-    /// A war or a peace just happened between two clans: ask the council what the pact says
-    /// and hand the answer to the sim, which bounds and applies it. The viewer never starts
-    /// this — the sim's own diplomacy does — so the island stays unsteered.
-    /// </summary>
-    private async Task ConveneCouncilAsync(EcoEvent ev)
-    {
-        if (!Auth.IsAuthenticated || ReadOnly || _treatiesAsked >= TreatiesPerSession) return;
-        if (DateTimeOffset.UtcNow - _lastTreatyAt < TreatySpacing) return;
-        if (ev.TribeA is not { } a || ev.TribeB is not { } b || _stats?.Tribes is not { } tribes) return;
-        var ta = tribes.FirstOrDefault(t => t.Id == a);
-        var tb = tribes.FirstOrDefault(t => t.Id == b);
-        if (ta is null || tb is null) return;
-        _treatiesAsked++;
-        _lastTreatyAt = DateTimeOffset.UtcNow;
-        var recent = _log.TakeLast(12).Where(e => e.Kind is "diplomacy" or "trade" or "treaty").Select(e => e.Text).ToList();
-        var reply = await Api.NegotiateTreatyAsync(new EcoTreatyRequest(Seed, _stats.Year, ta, tb, ev.Reason ?? ev.Text, recent));
-        if (reply is null) return;
-        await Interop.ApplyTreatyAsync(a, b, reply);
-    }
-
-    /// <summary>The tribe climbed a tier: the Herald names the moment, and it joins the timeline.</summary>
-    private async Task RecordLegendAsync(EcoEvent ev)
-    {
-        if (!Auth.IsAuthenticated || ReadOnly || _legendsAsked >= LegendsPerSession || _stats is null) return;
-        _legendsAsked++;
-        var tribe = ev.Text.Contains(" advanced to ", StringComparison.Ordinal) ? ev.Text[..ev.Text.IndexOf(" advanced to ", StringComparison.Ordinal)] : _stats.Tech?.Tribe ?? "The tribe";
-        var milestone = ev.Level is { } level ? TechName(level) : "Advancement";
-        var lore = await Api.GenerateMilestoneLoreAsync(new EcoMilestoneLoreRequest(Seed, _stats.Year, milestone, tribe, ev.Text));
-        if (lore is null) return;
-        _legends.Insert(0, (_stats.Year, lore.Epithet, lore.OralLegend));
-        if (_legends.Count > 20) _legends.RemoveAt(_legends.Count - 1);
-        await Interop.NoteAsync("legend", $"{lore.Epithet} — {lore.OralLegend}", ev.Tile ?? -1);
-        Ticker($"📜 {lore.Epithet}");
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private static string TechName(int level) => level switch { 1 => "Fire", 2 => "Palisade", 3 => "Farming", 4 => "Watchtower", _ => "Camp" };
-
-    private int Seed => int.TryParse(_seedInput, out var s) ? s : 0;
 
     private void OnThoughts(IReadOnlyList<EcoThought> thoughts)
     {
@@ -420,12 +314,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     {
         _lineage = tree;
         if (tree is null) { _lineageOpen = false; Toasts.Show("Nothing is known about that creature's family."); }
-        InvokeAsync(StateHasChanged);
-    }
-
-    private void OnLlmState(EcoLlmState state)
-    {
-        _llm = state;
         InvokeAsync(StateHasChanged);
     }
 
@@ -697,18 +585,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         }
     }
 
-    private Task SetLlmAsync((bool Enabled, string? ModelId) choice)
-    {
-        // "cloud" is not an in-browser model: it routes each thought through the server.
-        if (choice.ModelId == "cloud")
-        {
-            _cloudThoughts = choice.Enabled;
-            return Interop.SetLlmAsync(choice.Enabled, "cloud").AsTask();
-        }
-        _cloudThoughts = false;
-        return Interop.SetLlmAsync(choice.Enabled, choice.ModelId).AsTask();
-    }
-
     private async Task NewWorldAsync(string? seed)
     {
         _banner = null;
@@ -893,46 +769,8 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
     private bool _returning;
 
-    // ── chronicle ────────────────────────────────────────────────────────
-    private async Task WriteChronicleAsync()
-    {
-        if (_stats is null || _chronicleBusy || ReadOnly) return;
-        _chronicleBusy = true;
-        await InvokeAsync(StateHasChanged);
-        var toYear = _stats.Year;
-        var fromYear = _chronicledToYear;
-        // The log is the last 200 events; the chronicler gets the ones inside this span.
-        var lines = _log
-            .Select(ev => (Year: YearOf(ev), ev.Text))
-            .Where(t => t.Year >= fromYear)
-            .TakeLast(80)
-            .Select(t => $"Y{t.Year}: {t.Text}")
-            .ToArray();
-        var a = _stats.Almanac;
-        var almanac = a is null ? null : $"born {string.Join('/', a.Born)}, died {string.Join('/', a.Died)}, huts built {a.HutsBuilt}, trees felled {a.TreesFelled}, oldest {a.OldestName} ({a.OldestAge:0.0} y)";
-        var request = new EcoChronicleRequest(
-            int.TryParse(_seedInput, out var seed) ? seed : 0, fromYear, toYear,
-            _stats.Tech?.Tribe ?? "island", _stats.Counts, _stats.Extinct, lines, almanac);
-        var saga = await Api.WriteChronicleAsync(request);
-        if (saga is null) Toasts.Show("The chronicler is unavailable right now.", ToastType.Warning);
-        else
-        {
-            if (_milestones.Grant("chronicle") is { } note) AnnounceNotes([note]);
-            // The saga goes INTO the island (the sim's journal, which the snapshot carries) and
-            // comes back on the history message — so it survives Resume and a cloud save. It
-            // used to live in a list on this component and was gone on the next load.
-            await Interop.NoteAsync("saga", System.Text.Json.JsonSerializer.Serialize(
-                new EcoSaga(fromYear, toYear, saga.Title, saga.Saga, saga.Epigraph), EcoJsonContext.Default.EcoSaga));
-            _chronicledToYear = toYear;
-            _chronicleOfferYear = -1;
-        }
-        _chronicleBusy = false;
-        await InvokeAsync(StateHasChanged);
-    }
-
     /// <summary>
-    /// The field journal as a printable page: the sagas, the legends, the timeline and the
-    /// field notes. The engine builds it in a throwaway frame and calls the browser's print
+    /// The field journal as a printable page: the timeline and the field notes. The engine builds it in a throwaway frame and calls the browser's print
     /// dialog — "Save as PDF" is the export.
     /// </summary>
     private Task PrintJournalAsync()
@@ -945,46 +783,9 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             Title: $"Field journal — the {stats?.Tech?.Tribe ?? "island"} island",
             Subtitle: $"Seed {_seed} · year {stats?.Year ?? 0} · printed {DateTime.Now:d MMMM yyyy}",
             Counts: counts,
-            Sagas: Sagas.Select(s => new EcoJournalEntry($"{s.Title} (years {s.FromYear}–{s.ToYear})", s.Saga, s.Epigraph)).ToArray(),
-            Legends: _legends.OrderBy(l => l.Year).Select(l => new EcoJournalEntry($"Year {l.Year} — {l.Epithet}", Text: l.Legend)).ToArray(),
-            Landmarks: (_history?.Landmarks ?? []).Where(l => l.Kind != "legend").Select(l => $"Year {l.Year}: {l.Text}").ToArray(),
+            Landmarks: (_history?.Landmarks ?? []).Select(l => $"Year {l.Year}: {l.Text}").ToArray(),
             Notes: EcoMilestones.All.Where(m => _milestones.Unlocked.ContainsKey(m.Id)).Select(m => $"{m.Title} — {m.What}").ToArray());
         return Interop.PrintJournalAsync(journal).AsTask();
-    }
-
-    private int YearOf(EcoEvent ev) => _stats is null || _stats.Tick <= 0 ? 0 : (int)((long)ev.Tick * _stats.Year / Math.Max(1, _stats.Tick));
-
-    // ── cloud thoughts ───────────────────────────────────────────────────
-    private async Task<string?> OnCloudThoughtAsync(int handle, string system, string prompt)
-    {
-        if (!_cloudThoughts || _cloudThoughtsSpent >= CloudThoughtsPerSession) return null;
-        _cloudThoughtsSpent++;
-        var text = await Api.ThinkAsync(system, prompt);
-        if (_cloudThoughtsSpent == CloudThoughtsPerSession)
-        {
-            Toasts.Show("Cloud thoughts for this session are used up; creatures are back on instinct.");
-            _cloudThoughts = false;
-            _ = Interop.SetLlmAsync(false, null);
-        }
-        return text;
-    }
-
-    /// <summary>
-    /// Batched cloud thoughts: eight creatures per server call, paced by the sim runtime. Counts
-    /// against the same per-session cap as single thoughts — one call, one unit.
-    /// </summary>
-    private async Task<EcoThoughtBatchReply?> OnCloudThoughtBatchAsync(EcoThoughtPromptItem[] items)
-    {
-        if (!_cloudThoughts || _cloudThoughtsSpent >= CloudThoughtsPerSession) return null;
-        _cloudThoughtsSpent++;
-        var reply = await Api.ThinkBatchAsync(new EcoThoughtBatchRequest(items));
-        if (_cloudThoughtsSpent == CloudThoughtsPerSession)
-        {
-            Toasts.Show("Cloud thoughts for this session are used up; creatures are back on instinct.");
-            _cloudThoughts = false;
-            _ = Interop.SetLlmAsync(false, null);
-        }
-        return reply;
     }
 
     // ── dashboard tabs · today's island ──────────────────────────────────
@@ -1162,7 +963,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         Interop.ThoughtsReceived -= OnThoughts;
         Interop.DetailReceived -= OnDetail;
         Interop.LineageReceived -= OnLineage;
-        Interop.LlmStateReceived -= OnLlmState;
         Interop.Picked -= OnPicked;
         Interop.SpeedChanged -= OnSpeedChanged;
         Interop.ActionRequested -= OnAction;
@@ -1170,8 +970,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         Interop.PipChanged -= OnPip;
         Interop.EngineError -= OnEngineError;
         Interop.SnapshotExported -= OnSnapshotExported;
-        Interop.CloudThoughtRequested -= OnCloudThoughtAsync;
-        Interop.CloudThoughtBatchRequested -= OnCloudThoughtBatchAsync;
         Interop.HistoryReceived -= OnHistory;
         Interop.Found -= OnFound;
         Interop.KeyframesReceived -= OnKeyframes;

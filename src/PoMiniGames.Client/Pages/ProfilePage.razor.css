@@ -426,7 +426,7 @@
     text-decoration: underline;
 }
 
-/* Session count for games with no outcome and no score (Joker).
+/* Session count for games with no outcome and no score (PoEcosystem, SandPlayground).
    Sits where the W/L/D bar would be on a rated game, so the breakdown grid
    keeps one consistent card height. */
 .prf-game-plays {

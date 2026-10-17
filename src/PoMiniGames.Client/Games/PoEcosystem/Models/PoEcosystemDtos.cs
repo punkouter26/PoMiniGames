@@ -45,8 +45,6 @@ public sealed record EcoStats(
     bool Silent,
     int Carcasses,
     double SimLag,
-    bool LlmEnabled,
-    EcoLlmCounters Llm,
     int[] PopHistory,
     EcoNaturalEvents NaturalEvents,
     EcoAlmanac? Almanac = null,
@@ -65,8 +63,7 @@ public sealed record EcoStats(
     int[]? Sick = null,
     EcoVariety[]? Varieties = null,
     int MaxGeneration = 0,
-    EcoBiodiversity? Biodiversity = null,
-    EcoTreaty[]? Treaties = null);
+    EcoBiodiversity? Biodiversity = null);
 
 /// <summary>The island's weather (sim/events/weather.js). Kind: 0 clear · 1 rain · 2 storm · 3 drought · 4 snow.</summary>
 public sealed record EcoWeather(int Kind, string Name, double Intensity, double Wetness, int[]? Counts);
@@ -77,20 +74,13 @@ public sealed record EcoVariety(int Species, string Name, int Year);
 /// <summary>Shannon diversity H', Pielou evenness J and species richness S.</summary>
 public sealed record EcoBiodiversity(double Shannon, double Evenness, int Richness);
 
-/// <summary>A pact the Chieftain Council wrote and the tribe store applied.</summary>
-public sealed record EcoTreaty(int Tick, int TribeA, int TribeB, string Action, string Title, string Narrative, int Paid, string Resource, int Years);
-
 /// <summary>One timeline marker: an event worth remembering, where it happened (tile, -1 if nowhere).</summary>
 public sealed record EcoLandmark(int Id, int Tick, int Year, string Kind, string Text, int Tile);
 
 /// <summary>
-/// The timeline's data: landmarks, one row per year [year, rabbits, deer, wolves, humans, tech, H'×1000],
-/// and the journal — the sagas written for this island, which the snapshot carries.
+/// The timeline's data: landmarks and one row per year [year, rabbits, deer, wolves, humans, tech, H'×1000].
 /// </summary>
-public sealed record EcoHistory(EcoLandmark[] Landmarks, int[][] Years, EcoSaga[]? Sagas = null);
-
-/// <summary>One decade chronicle as the island keeps it (sim/world.js journal).</summary>
-public sealed record EcoSaga(int FromYear, int ToYear, string Title, string Saga, string Epigraph);
+public sealed record EcoHistory(EcoLandmark[] Landmarks, int[][] Years);
 
 /// <summary>One finder result: a living creature and where it stands.</summary>
 public sealed record EcoFound(int Handle, string Name, int Species, double AgeYears, double Health, double Hunger, int Young, bool Sick, bool Watched, double X, double Z);
@@ -135,10 +125,7 @@ public static class EcoLens
 }
 
 /// <summary>What the printed field journal holds (index.js printJournal builds the page from it).</summary>
-public sealed record EcoJournalPrint(string Title, string Subtitle, string Counts, EcoJournalEntry[] Sagas, EcoJournalEntry[] Legends, string[] Landmarks, string[] Notes);
-
-/// <summary>One journal entry: a saga (Saga + Epigraph) or a legend (Text).</summary>
-public sealed record EcoJournalEntry(string Title, string? Saga = null, string? Epigraph = null, string? Text = null);
+public sealed record EcoJournalPrint(string Title, string Subtitle, string Counts, string[] Landmarks, string[] Notes);
 
 /// <summary>The minimap's data layers (render/minimap.js MAP_LAYERS).</summary>
 public static class EcoMapLayer
@@ -189,9 +176,7 @@ public sealed record EcoTech(int Level, string Name, string Tribe, bool Campfire
 public sealed record EcoWatched(int Handle, string Name, int Species, bool Alive, double AgeYears, string Cause);
 
 /// <summary>One entry in the island-wide thought feed (dashboard).</summary>
-public sealed record EcoThought(int Id, int Tick, int Handle, string Name, int Species, int Source, string Text);
-
-public sealed record EcoLlmCounters(int Requested, int Applied, int Rejected);
+public sealed record EcoThought(int Id, int Tick, int Handle, string Name, int Species, string Text);
 
 public sealed record EcoNaturalEvents(int Lightning, int Rockslide, int Eruption);
 
@@ -200,8 +185,8 @@ public sealed record EcoNaturalEvents(int Lightning, int Rockslide, int Eruption
 /// parents; deaths carry the creature — that is what lets the watch-list react.
 /// </summary>
 public sealed record EcoEvent(int Id, int Tick, string Kind, string Text, int? Species, string? Cause, int? Creature = null, int? Mother = null, int? Father = null, int? Level = null,
-    // Diplomacy entries carry the pair and the moment (sim/tribe/diplomacy.js) so the page can
-    // ask the council what the peace or the war actually says; weather entries carry the kind.
+    // Diplomacy entries carry the action and the pair (sim/tribe/diplomacy.js); weather
+    // entries carry the kind.
     string? Action = null, int? TribeA = null, int? TribeB = null, string? Reason = null, int? Tile = null, int? Weather = null);
 
 /// <summary>Everything the inspector popover shows about the creature under the crosshair.</summary>
@@ -217,11 +202,8 @@ public sealed record EcoDetail(
     double Thirst,
     double Health,
     double[] Traits,
-    double[] BaseTraits,
-    EcoNudge? Nudge,
     string Goal,
     string LastThought,
-    int LastThoughtSource,
     string Mother,
     string Father,
     double X,
@@ -232,8 +214,6 @@ public sealed record EcoDetail(
     int Descendants = 0,
     int Generation = 0,
     bool Sick = false);
-
-public sealed record EcoNudge(string Trait, double Delta);
 
 /// <summary>One node of a family tree (sim/creatures/lineage.js).</summary>
 public sealed record EcoKin(int Handle, string Name, int Species, int Sex, bool Alive, string Cause, int BornTick, int DiedTick);
@@ -249,12 +229,6 @@ public sealed record EcoLineage(
     int Descendants,
     int Generation);
 
-/// <summary>The in-browser model's state, for the settings panel.</summary>
-public sealed record EcoLlmState(string State, string ModelId, double Progress, string Message);
-
-/// <summary>One selectable model (id, label, VRAM in MB, one-line note).</summary>
-public sealed record EcoModel(string Id, string Label, int VramMb, string Note);
-
 /// <summary>Result of probing IndexedDB for a saved world.</summary>
 public sealed record EcoSaveInfo(bool Exists, int Seed, int Tick, int Year, long SavedAt, int[]? Counts);
 
@@ -262,8 +236,6 @@ public sealed record EcoSaveInfo(bool Exists, int Seed, int Tick, int Year, long
 [JsonSerializable(typeof(EcoEvent[]))]
 [JsonSerializable(typeof(EcoDetail))]
 [JsonSerializable(typeof(EcoLineage))]
-[JsonSerializable(typeof(EcoLlmState))]
-[JsonSerializable(typeof(EcoModel[]))]
 [JsonSerializable(typeof(EcoSaveInfo))]
 [JsonSerializable(typeof(EcoAlmanac))]
 [JsonSerializable(typeof(EcoThought[]))]
@@ -276,9 +248,6 @@ public sealed record EcoSaveInfo(bool Exists, int Seed, int Tick, int Year, long
 [JsonSerializable(typeof(EcoHistory))]
 [JsonSerializable(typeof(EcoSettings))]
 [JsonSerializable(typeof(EcoSpeciesCard[]))]
-[JsonSerializable(typeof(EcoThoughtPromptItem[]))]
-[JsonSerializable(typeof(EcoThoughtBatchReply))]
-[JsonSerializable(typeof(EcoTreatyReply))]
 [JsonSerializable(typeof(EcoFound[]))]
 [JsonSerializable(typeof(EcoKeyframes))]
 [JsonSerializable(typeof(EcoIslandPeek))]

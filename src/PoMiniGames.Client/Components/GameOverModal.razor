@@ -81,7 +81,7 @@
                     {
                         <li class="gps-modal-board-row gps-modal-board-row--@e.Rank @(IsMe(e) ? "gps-modal-board-row--me" : null)">
                             <span class="gps-modal-board-rank">@e.Rank</span>
-                            <span class="gps-modal-board-name" title="@e.Detail">@LeaderboardNames.Pretty(e.Name)</span>
+                            <span class="gps-modal-board-name">@LeaderboardNames.Pretty(e.Name)</span>
                             <span class="gps-modal-board-value">@e.DisplayValue</span>
                         </li>
                     }
@@ -196,11 +196,11 @@
     /// <summary>
     /// Outcome cue names, in the order to try them. Games name winning
     /// differently — "win" in TicTacToe/ConnectFive, "ko" in Brawl, "finish" in
-    /// Marble Race, "goal" in Sports, "fanfare" in Joker — so the modal asks for
+    /// Marble Race, "goal" in Sports — so the modal asks for
     /// the family and takes whichever this game defines. The final entry in each
     /// list is the shared "ui" fallback, which every scope resolves.
     /// </summary>
-    private static readonly string[] WinCues = ["win", "ko", "finish", "goal", "fanfare", "correct", "confirm"];
+    private static readonly string[] WinCues = ["win", "ko", "finish", "goal", "correct", "confirm"];
     private static readonly string[] LossCues = ["death", "bust", "crash", "wrong", "timeout", "error"];
     private static readonly string[] DrawCues = ["draw", "whistle", "reveal", "confirm"];
 

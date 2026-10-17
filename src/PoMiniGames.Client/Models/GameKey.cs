@@ -21,8 +21,8 @@ namespace PoMiniGamesClient.Models;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Four of these are <em>aliases</em> rather than canonical keys: the Domain catalogue
-/// stores Couple Quiz, Fun Quiz and Joker without the "Po" prefix. The values
+/// Two of these are <em>aliases</em> rather than canonical keys: the Domain catalogue
+/// stores Couple Quiz and Fun Quiz without the "Po" prefix. The values
 /// here are kept as they are on purpose — they are already live leaderboard partition
 /// keys in Table Storage and cached stat keys in browser localStorage, so renaming them
 /// would orphan real data rather than tidy it.
@@ -41,7 +41,6 @@ public static class GameKeys
     public static readonly GameKey PoMarbleRace = new("pomarblerace");
     public static readonly GameKey PoCoupleQuiz = new("pocouplequiz");
     public static readonly GameKey PoFunQuiz = new("pofunquiz");
-    public static readonly GameKey PoJoker = new("pojoker");
     public static readonly GameKey PoBrawl = new("pobrawl");
     public static readonly GameKey PoSports = new("posports");
 

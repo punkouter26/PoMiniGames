@@ -88,7 +88,6 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
 
     public static readonly GameKey CoupleQuiz = new("couplequiz");
     public static readonly GameKey FunQuiz = new("funquiz");
-    public static readonly GameKey Joker = new("joker");
 
     public static readonly GameKey ConnectFive = new("connectfive");
     public static readonly GameKey TicTacToe = new("tictactoe");
@@ -130,7 +129,7 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     // a game missing here gets its stats and leaderboard calls rejected with a 400.
     private static readonly GameKey[] All =
     {
-        CoupleQuiz, FunQuiz, Joker,
+        CoupleQuiz, FunQuiz,
         ConnectFive, TicTacToe, PoMarbleRace,
         PoRacer, PoBrawl, PoBrawlDemo, PoBrawlKo, PoSports,
         PoVoxelStrike, PoEcosystem, SandPlayground,
@@ -146,8 +145,8 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     /// <para>
     /// The app never settled on whether the "Po" prefix belongs in an identifier. This
     /// catalogue says <c>funquiz</c>; the client's <c>GameKeys</c> list says
-    /// <c>pofunquiz</c>; the routes say <c>/funquiz</c> but <c>/pobrawl</c>; the API
-    /// groups say <c>/api/joker</c> but <c>/api/poracer</c>. Four games are affected.
+    /// <c>pofunquiz</c>; the routes say <c>/funquiz</c> but <c>/pobrawl</c>. Four games
+    /// are affected.
     /// </para>
     /// <para>
     /// This table is the single place that reconciles them. It replaces an inline
@@ -167,7 +166,6 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
         // "Po"-prefixed forms the client sends for keys this catalogue stores bare.
         ["pocouplequiz"] = CoupleQuiz,
         ["pofunquiz"] = FunQuiz,
-        ["pojoker"] = Joker,
         // Bare forms for keys this catalogue stores prefixed — the drift runs both ways.
         ["marblerace"] = PoMarbleRace,
         ["sports"] = PoSports,

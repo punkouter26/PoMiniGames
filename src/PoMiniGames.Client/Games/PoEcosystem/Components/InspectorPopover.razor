@@ -81,15 +81,10 @@
     <div class="poeco-traits">
         @for (var k = 0; k < TraitNames.Length; k++)
         {
-            var nudged = Detail.Nudge is not null && Detail.Nudge.Trait == TraitNames[k];
-            <div class="poeco-trait @(nudged ? "poeco-trait--nudged" : "")">
+            <div class="poeco-trait">
                 <span class="poeco-trait-name">@TraitNames[k]</span>
                 <span class="poeco-trait-track"><span class="poeco-trait-fill" style="width: @Pct(Detail.Traits[k])"></span></span>
                 <span class="poeco-trait-value">@Detail.Traits[k].ToString("0.00")</span>
-                @if (nudged)
-                {
-                    <span class="poeco-nudge">@(Detail.Nudge!.Delta >= 0 ? "+" : "")@Detail.Nudge.Delta.ToString("0.00")</span>
-                }
             </div>
         }
     </div>
@@ -100,7 +95,6 @@
     {
         <blockquote class="poeco-thought">
             “@Detail.LastThought”
-            <cite>@(Detail.LastThoughtSource == 2 ? "AI thought" : "instinct")</cite>
         </blockquote>
     }
 

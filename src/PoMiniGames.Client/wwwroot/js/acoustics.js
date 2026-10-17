@@ -78,7 +78,7 @@ const SPACES = {
         taps: [[38, 0.40], [67, 0.34], [103, 0.29], [158, 0.22], [216, 0.16]],
         send: 0.38,
     },
-    /** The quizzes and PoJoker. Smooth, flattering, mid-sized hall. */
+    /** The quizzes. Smooth, flattering, mid-sized hall. */
     hall: {
         seconds: 1.8, decay: 3.1, damping: 0.45, predelay: 18,
         taps: [[19, 0.40], [33, 0.33], [52, 0.27], [79, 0.20]],

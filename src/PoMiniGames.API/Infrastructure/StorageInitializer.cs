@@ -25,9 +25,6 @@ public sealed class StorageInitializer
     public static readonly string[] AdditionalTables =
     [
         "PoFunQuizPlayers",
-        // PoJoker (demo-only): per-session joke-performance records that back the
-        // /api/joker/leaderboard surface (PartitionKey = SessionId).
-        "PoJokerPerformances",
         // Per-identity daily AI token spend (PartitionKey = yyyy-MM-dd, RowKey = identity hash).
         // Ensured eagerly because the budget check runs on the first model call of a cold host,
         // and a lazy create there would put a table-creation round trip inside a player's turn.

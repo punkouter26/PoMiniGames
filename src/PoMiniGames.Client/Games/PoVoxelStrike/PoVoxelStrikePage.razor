@@ -206,6 +206,8 @@
     [Parameter] public string? Mode { get; set; }
     /// <summary>An arena to replay, as the 8 hex digits the run summary shows.</summary>
     [SupplyParameterFromQuery(Name = "seed")] public string? SeedQuery { get; set; }
+    /// <summary>Any value opens solo on the Daily Siege (the hub's Today card links here with it).</summary>
+    [SupplyParameterFromQuery(Name = "daily")] public string? DailyQuery { get; set; }
 
     private const string Container = "povoxelstrike-container";
 
@@ -410,12 +412,13 @@
     protected override void OnParametersSet()
     {
         var mode = GameModes.Parse(Mode);
-        var key = $"{mode}|{SeedQuery}";
+        var key = $"{mode}|{SeedQuery}|{DailyQuery}";
         if (key == _routeKey) return;
         _routeKey = key;
         _routeDirty = true;
         _demo = mode == GameMode.Demo;
         _tab = mode == GameMode.Multiplayer ? Tab.Online : Tab.Solo;
+        if (mode == GameMode.OnePlayer && !string.IsNullOrEmpty(DailyQuery)) _solo = SoloRun.Daily;
         _seedOverride = uint.TryParse(SeedQuery, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var seed) && seed > 0
             ? seed
             : null;

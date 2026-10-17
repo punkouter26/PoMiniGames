@@ -105,15 +105,15 @@ public class ProfileCoverageUiTests
             new LocatorWaitForOptions { Timeout = 30_000 });
 
         // Online: nothing is suppressed.
-        (await page.Locator(".gl-offline-banner").CountAsync()).Should().Be(0);
+        (await page.Locator(".gl-offline-pill").CountAsync()).Should().Be(0);
         (await page.Locator(".home-mode-chip--offline").CountAsync()).Should().Be(0);
 
         await page.Context.SetOfflineAsync(true);
 
-        // The banner is the whole reason offline support is discoverable: with a
+        // The pill is the whole reason offline support is discoverable: with a
         // service worker installed the shell keeps working, so without it a failing
         // multiplayer game reads as a bug rather than as a connection problem.
-        await page.Locator(".gl-offline-banner").WaitForAsync(
+        await page.Locator(".gl-offline-pill").WaitForAsync(
             new LocatorWaitForOptions { Timeout = 15_000 });
 
         // Every hub-backed entry must stop being navigable — otherwise the player is
@@ -137,7 +137,7 @@ public class ProfileCoverageUiTests
             .Should().Be(1, because: "Tic-Tac-Toe runs entirely in the browser");
 
         await page.Context.SetOfflineAsync(false);
-        await page.Locator(".gl-offline-banner").WaitForAsync(new LocatorWaitForOptions
+        await page.Locator(".gl-offline-pill").WaitForAsync(new LocatorWaitForOptions
         {
             State = WaitForSelectorState.Detached,
             Timeout = 15_000,

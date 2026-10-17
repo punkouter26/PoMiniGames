@@ -14,7 +14,7 @@
 
    Anything rendered by more than one layout lives HERE, and
    MainLayout.razor.css keeps only what is unique to MainLayout's markup (the
-   offline banner, .gl-content, the toast stack). A second scoped copy of these
+   status pills, .gl-content, the toast stack). A second scoped copy of these
    selectors would drift, and which one a user saw would depend on which layout
    rendered the bar.
    ───────────────────────────────────────────────────────────────────────── */
@@ -259,12 +259,20 @@
     cursor: pointer;
 }
 
+/* :focus-visible, not :focus: the menu focuses its first item when it opens, and after
+   a mouse click that should not paint a highlight the pointer never asked for. */
 .gl-overflow-item:hover,
-.gl-overflow-item:focus {
+.gl-overflow-item:focus-visible {
     background: var(--color-surface-hover, rgba(255, 255, 255, 0.08));
 }
 
-/* Sign out sits apart from the three destinations above it. */
+/* The page the player is on (aria-current="page"). */
+.gl-overflow-item[aria-current="page"] {
+    font-weight: 700;
+    box-shadow: inset 3px 0 0 var(--color-accent);
+}
+
+/* Sign out sits apart from the destinations above it. */
 .gl-overflow-item--sep {
     margin-top: 0.3rem;
     border-top: 1px solid var(--color-border);
@@ -364,64 +372,7 @@
     .gl-account-caret { display: none; }
 }
 
-/* ── Footer landmark ────────────────────────────────────────────────────────
-   The <footer> gives screen-reader users a site-info landmark to jump to.
-   Below-content strip with build label + two outbound links. Visual contract:
-   small, low contrast, non-interactive chrome — never competes with the
-   sticky top bar for attention. */
-.gl-footer {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-5);
-    padding: 0.85rem var(--space-5);
-    border-top: 1px solid var(--color-border);
-    background: var(--surface-2);
-    color: var(--color-text-secondary);
-    font-size: var(--text-xs);
-    flex-wrap: wrap;
-}
-
-/* The footer is persistent chrome on every route. On a short phone a flat 53px
-   is 8% of the viewport spent on a build stamp and two links, so it is tightened
-   here rather than hidden — the build number is genuinely useful when someone
-   reports a bug — and the links keep their 24px hit area via their own padding. */
-@media (max-height: 780px), (max-width: 640px) {
-    .gl-footer {
-        padding: 0.35rem var(--space-3);
-        gap: var(--space-3);
-    }
-}
-
-/* Eliminate unwanted vertical scrolling on very short viewports (mobile landscape, small split views) */
-@media (max-height: 640px) {
-    .gl-footer {
-        display: none;
-    }
-}
-
-.gl-footer-build {
-    font-weight: 700;
-    color: var(--color-text-primary);
-    letter-spacing: 0.04em;
-}
-
-.gl-footer-link {
-    color: var(--color-text-secondary);
-    text-decoration: none;
-    border-radius: var(--radius-sm);
-    /* Vertical padding keeps the hit area at the 24px touch-target floor without
-       making the footer chrome any louder. */
-    padding: 0.3rem 0.5rem;
-    min-height: 24px;
-    box-sizing: border-box;
-    transition: color var(--dur-base) var(--ease-standard),
-                background var(--dur-base) var(--ease-standard);
-}
-
-.gl-footer-link:hover,
-.gl-footer-link:focus-visible {
-    color: var(--color-text-primary);
-    background: var(--surface-3);
-    outline: none;
-}
+/* -- Hub launch morph --
+   While js/app.js runs the card-to-title view transition it sets data-hero-nav on the root;
+   routeFx's colour wipe would otherwise sweep over the morph on the same frames. */
+:root[data-hero-nav] .po-route-wipe { display: none; }

@@ -5,9 +5,6 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>PoMiniGames</title>
-    <!-- Hold the first frame until the boot splash heading is parsed: it is the far end of the
-         card-to-game view transition (see #po-boot-hero below). -->
-    <link rel="expect" href="#po-boot-hero" blocking="render" />
     <base href="/" />
 
     <!-- Bug fix QA #10: start the WASM download as early as possible so the
@@ -191,31 +188,6 @@
 </head>
 
 <body>
-    <!-- Card-to-game morph (2026-10-01). A hub chip is a full page load (js/app.js), so the
-         pressed card cannot morph into the game's own intro card: this splash is the first
-         frame of the new document. app.js names the card's heading `po-hero` and leaves its
-         icon and title in sessionStorage; this heading takes the same name (app.css), so the
-         browser's cross-document view transition glides the card up into it while the game
-         boots underneath. With no key, or a key for another path (direct load, back button),
-         it stays hidden and the splash is the plain spinner.
-         A sibling of #app, not a child: Blazor empties #app the moment it mounts, a beat
-         before the first real page renders, and the heading has to bridge that beat. app.css
-         hides it once #app holds anything but the spinner. Keep the script directly after
-         the element: it has to run before the first frame is painted. -->
-    <div id="po-boot-hero" class="po-boot-hero" hidden><span></span><strong></strong></div>
-    <script>
-        (function () {
-            try {
-                var h = JSON.parse(sessionStorage.getItem('poHero') || 'null');
-                sessionStorage.removeItem('poHero');
-                if (!h || h.path !== location.pathname + location.search) return;
-                var el = document.getElementById('po-boot-hero');
-                el.firstChild.textContent = h.icon;
-                el.lastChild.textContent = h.title;
-                el.hidden = false;
-            } catch (e) { /* storage blocked or a bad value: the plain spinner */ }
-        })();
-    </script>
     <div id="app">
         <svg class="loading-progress" viewBox="0 0 100 100">
             <circle r="40" cx="50" cy="50" />

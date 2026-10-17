@@ -30,7 +30,7 @@ public sealed class ScoreSyncService
         _store = store;
     }
 
-    /// <summary>Raised whenever the pending count changes so UI (the sync pill) can react.</summary>
+    /// <summary>Raised whenever the pending count changes, so the installed app's badge can follow it (MainLayout).</summary>
     public event Action? Changed;
 
     /// <summary>
@@ -108,6 +108,7 @@ public sealed class ScoreSyncService
         // Don't hammer the network per-item when the backend is plainly down.
         _flushing = true;
         var synced = 0;
+        var countChanged = false;
         try
         {
             if (!await _api.IsAvailableAsync()) return 0;
@@ -140,19 +141,19 @@ public sealed class ScoreSyncService
 
             // A game can enqueue another score while an HTTP submit is awaiting a response.
             var processedIds = items.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
-            remaining.AddRange(_store.Load().Where(i => !processedIds.Contains(i.Id)));
+            var current = _store.Load();
+            remaining.AddRange(current.Where(i => !processedIds.Contains(i.Id)));
             _store.Save(remaining);
+            // Dropped (rejected) entries shrink the queue too, without a single sync.
+            countChanged = remaining.Count != current.Count;
         }
         finally
         {
             _flushing = false;
         }
 
-        if (synced > 0)
-        {
-            Changed?.Invoke();
-            Flushed?.Invoke(synced);
-        }
+        if (synced > 0 || countChanged) Changed?.Invoke();
+        if (synced > 0) Flushed?.Invoke(synced);
         return synced;
     }
 

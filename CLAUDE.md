@@ -100,6 +100,6 @@ node --test tests/pomule-world.test.mjs                        # JS engine tests
     asked.
 - **Constraints:**
   - PoEcosystem is observation-only: never add controls that change its world.
-  - In Chromium, `wwwroot/js/app.js` turns links inside `.home-card` (the hub's game cards) into a
-    full document load for the card-to-title view transition, which reboots WASM. Every other
-    in-app `<a>` goes through the Blazor router.
+  - Every in-app `<a>` goes through the Blazor router. Hub links marked `data-hub-nav` are
+    launched by `wwwroot/js/app.js` (`PoHubNav.go`): `Blazor.navigateTo` inside a same-document
+    view transition that morphs the card into the game's title. No WASM reboot.

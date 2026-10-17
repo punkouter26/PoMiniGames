@@ -103,6 +103,8 @@
     [Parameter] public string? Code { get; set; }
     /// <summary>Online: 1 joins the meet as a spectator (the lobby's Watch link).</summary>
     [SupplyParameterFromQuery(Name = "watch")] public int WatchQuery { get; set; }
+    /// <summary>Solo: any value opens on the daily meet (the hub's Today card links here with it).</summary>
+    [SupplyParameterFromQuery(Name = "daily")] public string? DailyQuery { get; set; }
 
     /// <summary>Lane setup passed to PoSports.init — lower-case members to match the JS shape.</summary>
     private sealed record PlayerSetup(string character, string name, bool human, int? layout);
@@ -496,6 +498,7 @@
               : routeMode == GameMode.TwoPlayer ? "2p"
               : "1p";
         _watch = _mode == "online" && WatchQuery == 1;
+        if (_mode == "1p" && !string.IsNullOrEmpty(DailyQuery)) _event = "daily";
         _playerName = PlayerNameService.GetPlayerName();
         _stats = _gameStats.GetStats("posports", _playerName);
         if (_demo) Kiosk.SetCurrent("posports-demo");

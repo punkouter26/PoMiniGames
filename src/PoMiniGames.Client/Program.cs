@@ -116,6 +116,10 @@ builder.Services.AddScoped<MatchHistoryService>();
 // Game invites: push opt-in for this device and invite-a-past-opponent.
 builder.Services.AddScoped<InviteService>();
 builder.Services.AddScoped<ActivityFeedService>();
+// The hub's Today card (a daily pick plus a cross-game streak the Profile page also shows) and
+// its memory of pinned games and the last game opened.
+builder.Services.AddScoped<DailyChallengeService>();
+builder.Services.AddScoped<HubPrefsService>();
 // Native Web Audio micro-feedback — shared across every game so the platform
 // has a consistent sound vocabulary. Lazily resolves the AudioContext on first call.
 builder.Services.AddScoped<UiFeedbackService>();

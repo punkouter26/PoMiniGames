@@ -591,29 +591,9 @@ html, body, #app {
   animation-timing-function: var(--ease-standard);
 }
 
-/* Card-to-game morph. The boot splash's heading (index.html #po-boot-hero) and the hub card
-   the player pressed (named by js/app.js at click time) share one transition name, so the
-   card's icon and title travel to the splash instead of cross-fading with the page. */
-.po-boot-hero {
-    position: absolute;
-    inset: calc(38vh - 5.75rem) 0 auto 0;
-    width: max-content;
-    max-width: 92vw;
-    margin: 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    font-family: var(--font-display);
-    font-size: 1.9rem;
-    font-weight: 700;
-    color: var(--color-text-primary);
-    view-transition-name: po-hero;
-}
-/* Gone once Blazor has put a real element in #app (a layout, the login screen): until
-   then it bridges the gap between the splash and the first page render. */
-.po-boot-hero[hidden],
-body:has(#app > :not(.loading-progress, .loading-progress-text)) .po-boot-hero { display: none; }
-.po-boot-hero > span { font-size: 2.6rem; line-height: 1; }
+/* Card-to-game morph. js/app.js names the pressed hub card's heading `po-hero` and, once the
+   router has swapped the page in place, the game's title in the top bar, so the card's icon
+   and title travel into the title instead of cross-fading with the page. */
 
 ::view-transition-group(po-hero) {
   animation-duration: 420ms;

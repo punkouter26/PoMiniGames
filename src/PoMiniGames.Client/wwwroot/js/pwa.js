@@ -63,6 +63,19 @@ window.poPwa = (() => {
 
         setUpdateListener(dotNetRef) { updateListener = dotNetRef; },
 
+        // The installed app's icon badge: how many scores are parked waiting to sync
+        // (ScoreSyncService). Feature-detected; where the Badging API is missing, or the
+        // app is not installed, the call is a no-op or rejects, and either is fine.
+        setBadge(count) {
+            try {
+                if (count > 0 && 'setAppBadge' in navigator) {
+                    navigator.setAppBadge(count).catch(() => { });
+                } else if ('clearAppBadge' in navigator) {
+                    navigator.clearAppBadge().catch(() => { });
+                }
+            } catch { /* not supported in this context */ }
+        },
+
         // ── Update-toast routing ─────────────────────────────────────────
         // One call handing .NET everything it needs to decide whether the "new
         // version" toast may show: demo/kiosk pages stay silent (a reel has

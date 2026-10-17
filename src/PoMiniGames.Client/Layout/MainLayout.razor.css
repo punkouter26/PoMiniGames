@@ -13,30 +13,29 @@
    the bar here would change one layout and silently not the other two.
 
    The test for whether a rule belongs in this file: does its markup appear ONLY
-   in MainLayout.razor? Offline banner, .gl-content and the toast stack pass.
+   in MainLayout.razor? The status pills, .gl-content and the toast stack pass.
    Everything else does not. */
 
-/* ── Offline banner ─────────────────────────────────────────────────────────
-   Deliberately calmer than the mock-data banner: being offline is a supported
-   state the app keeps working in, not a developer warning, so it informs without
-   shimmering or shouting. */
-.gl-offline-banner {
-    width: 100%;
-    display: flex;
+/* ── Offline status pill ─────────────────────────────────────────────────────
+   It sits in the top bar's right rail, so it changes no page's height: as a
+   full-width banner above the bar, going offline pushed every game down until it
+   scrolled. Calm on purpose: offline is a state the app keeps working in. */
+.gl-status-pill {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-4);
-    font-size: 0.82rem;
-    font-weight: 600;
-    /* Reads on the slate fill in both schemes, so it is stated once rather than
-       re-pointed per theme — the fill is opaque and scheme-invariant by design. */
-    color: #f8fafc;
-    background: rgba(71, 85, 105, 0.96);
-    border-bottom: 1px solid rgba(148, 163, 184, 0.35);
-    position: sticky;
-    top: 0;
-    z-index: var(--z-banner);
+    gap: 0.35rem;
+    flex: 0 0 auto;
+    min-height: 1.75rem;
+    padding: 0.15rem 0.6rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    background: var(--surface-2);
+    color: var(--color-text-primary);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    cursor: help;
 }
 
 .gl-offline-dot {
@@ -44,14 +43,41 @@
     height: 0.5rem;
     border-radius: var(--radius-pill);
     background: var(--color-warning);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-warning) 30%, transparent);
     flex: 0 0 auto;
 }
 
-@media (max-width: 480px) {
-    .gl-offline-banner {
-        font-size: var(--text-xs);
-        padding: var(--space-1) var(--space-2);
+/* Narrow phones: the right rail also holds the account initial, and the centre rail
+   a game's title. The pill keeps its mark and drops its word to the a11y tree only. */
+@media (max-width: 420px) {
+    .gl-status-pill {
+        justify-content: center;
+        width: 1.75rem;
+        padding: 0;
     }
+    .gl-status-pill__label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+}
+
+/* Read by assistive technology, not drawn: the connectivity live region and the
+   contentinfo landmark. */
+.gl-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
 }
 
 /* ── Skip link ──

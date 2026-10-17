@@ -7,6 +7,10 @@
 @inject OnlineStatusService OnlineStatus
 @inject ToastService Toasts
 @inject IWebAssemblyHostEnvironment Env
+@inject DailyChallengeService Daily
+@inject HubPrefsService HubPrefs
+@inject GameStatsService GameStats
+@inject PoMiniGamesClient.Games.PoMule.PoMuleSaveStore MuleSaves
 @implements IAsyncDisposable
 
 @* ─────────────────────────────────────────────────────────────────────────
@@ -39,30 +43,39 @@
        under it said what fifteen game cards say by existing. *@
     <h1 class="home-title">PoMiniGames</h1>
 
-    <div class="home-grid">
-    @* One action. Leaderboards, My Stats and Settings live in the top bar's account
-       menu, which is on every route; the demo reel is the only control that
-       belongs to this page.
+    @* The hub bar: everything on this page that is not a game card, in one compact
+       block above the grid (two rows on a phone, one on a wide screen). Today's game,
+       the demo reel, the filters and the "Continue" shortcuts. Leaderboards, My Stats
+       and Settings live in the top bar's account menu, on every route.
 
-       It is a cell of the grid, not a row above it: fifteen games leave one empty
-       cell in a four-column grid, and this fills it (Index.razor.css moves it to the
-       end there and stretches it across the top on narrower grids). First in the DOM
-       either way, so it stays the first tab stop. *@
-    <div class="home-actions">
-        @* aria-pressed below is a literal string, not a bare bool: Blazor renders
-           a bool-valued attribute as an HTML boolean attribute, which emits
-           aria-pressed="" when true and drops it entirely when false — neither is
-           a valid ARIA state.
+       Links carrying data-hub-nav are launched by js/app.js: an in-app navigation
+       wrapped in a view transition that morphs the pressed card into the game's title.
 
-           Note this comment sits OUTSIDE the tag on purpose. A Razor comment
-           block inside an attribute list is not treated as a comment at all —
-           it is parsed as an attribute NAME, and the runtime then throws
-           InvalidCharacterError from setAttribute, taking down the whole page
-           render. Keep markup comments between elements, never between
-           attributes. *@
+       Keep markup comments between elements, never between attributes: a Razor
+       comment inside an attribute list is parsed as an attribute NAME, and
+       setAttribute then throws InvalidCharacterError and takes the page down. *@
+    <div class="home-bar">
+        <a class="home-today @(_doneToday ? "home-today--done" : null)"
+           href="@_today.Url" data-hub-nav
+           aria-label="@TodayLabel"
+           @onclick="MarkDailyPlayed">
+            <span class="home-today-kicker">Today</span>
+            <span class="home-today-game" data-hero><span aria-hidden="true">@_today.Game.Icon</span> @_today.Game.Title</span>
+            @if (_streak > 0 || _doneToday)
+            {
+                <span class="home-today-streak" title="Daily streak: days in a row you have played Today's game">
+                    <span aria-hidden="true">@(_doneToday ? "✓" : "🔥")</span> @_streak
+                </span>
+            }
+        </a>
+
+        @* aria-pressed is a literal string, not a bare bool: Blazor renders a bool-valued
+           attribute as an HTML boolean attribute, which is not a valid ARIA state. The
+           visible text shortens on a narrow phone, so the full name is the aria-label. *@
         <button type="button"
                 class="home-action home-action--demo @(Kiosk.IsActive ? "home-action--on" : null)"
                 aria-pressed="@(Kiosk.IsActive ? "true" : "false")"
+                aria-label="@(Kiosk.IsActive ? "Stop demos" : "Watch all demos")"
                 title="@(Kiosk.IsActive ? "Stop watching all demos" : "Auto-play every demo in turn")"
                 @onclick="ToggleWatchAll">
             <span class="home-action-icon" aria-hidden="true">
@@ -72,33 +85,92 @@
                     <polygon points="10 8 15 10.5 10 13 10 8" fill="currentColor" stroke="none"/>
                 </svg>
             </span>
-            @(Kiosk.IsActive ? "Stop demos" : "Watch all demos")
+            <span class="home-action-label home-action-label--long" aria-hidden="true">@(Kiosk.IsActive ? "Stop demos" : "Watch all demos")</span>
+            <span class="home-action-label home-action-label--short" aria-hidden="true">@(Kiosk.IsActive ? "Stop" : "Demos")</span>
         </button>
+
+        <div class="home-filters" role="group" aria-label="Show games">
+            @foreach (var f in Filters)
+            {
+                <button type="button" class="home-filter"
+                        aria-pressed="@(_filter == f.Filter ? "true" : "false")"
+                        title="@f.Hint"
+                        @onclick="() => _filter = f.Filter">@f.Label</button>
+            }
+            <button type="button" class="home-filter home-filter--pins"
+                    aria-pressed="@(_editPins ? "true" : "false")"
+                    aria-label="@(_editPins ? "Done pinning" : "Pin favourites")"
+                    title="@(_editPins ? "Done pinning" : "Pin favourite games to the top")"
+                    @onclick="() => _editPins = !_editPins">@(_editPins ? "Done" : "★")</button>
+        </div>
+
+        @if (ContinueItems.Any())
+        {
+            <nav class="home-continue" aria-label="Continue playing">
+                <span class="home-continue-kicker" aria-hidden="true">Continue</span>
+                @foreach (var c in ContinueItems)
+                {
+                    <a class="home-continue-chip" href="@c.Url" data-hub-nav
+                       title="@($"Continue: {c.Detail}")" aria-label="@($"Continue {c.Detail}")">
+                        <span class="home-continue-icon" aria-hidden="true" data-hero>@c.Icon</span>
+                        <span class="home-continue-label" aria-hidden="true">@c.Title</span>
+                    </a>
+                }
+            </nav>
+        }
     </div>
 
-        @foreach (var game in GameCatalog.AllSorted)
+    <div class="home-grid">
+        @foreach (var game in VisibleGames)
         {
-            <article class="home-card" aria-labelledby="@($"home-card-{game.Key.Value}")">
-                @* The card heading is a non-interactive title block (icon + title +
-                   optional subtitle). The 1P / 2P / Online / Demo labels live
-                   exclusively in the chip row below so every card advertises the
-                   same set of affordances and no card duplicates its own mode label
-                   as a heading chip. *@
-                <div class="home-card-head @(IsPlayable(game.Primary) ? null : "home-card-head--offline")"
-                     data-fx-tilt="@(IsPlayable(game.Primary) ? "9" : null)"
-                     aria-disabled="@(IsPlayable(game.Primary) ? null : "true")"
-                     title="@(IsPlayable(game.Primary) ? null : "Needs a connection — unavailable offline")">
-                    <span class="home-card-icon" aria-hidden="true">@game.Icon</span>
-                    <span class="home-card-title" id="@($"home-card-{game.Key.Value}")">@game.Title</span>
-                </div>
+            var pinned = HubPrefs.IsPinned(game.Key);
+            var playable = IsPlayable(game.Primary);
+            <article class="home-card @(pinned ? "home-card--pinned" : null)" aria-labelledby="@($"home-card-{game.Key.Value}")">
+                @* The heading opens the game's main mode: one large target on every card,
+                   however small a short phone makes the chips. Out of the tab order,
+                   because the first chip is the same destination for a keyboard. *@
+                @if (playable && !_editPins)
+                {
+                    <a class="home-card-head" href="@game.Primary.Url" data-hub-nav tabindex="-1"
+                       title="@($"Play {game.Title} — {GameModes.ToDescription(game.Primary.Mode)}")">
+                        <span class="home-card-icon" aria-hidden="true">@game.Icon</span>
+                        <span class="home-card-title" id="@($"home-card-{game.Key.Value}")">@game.Title</span>
+                        @if (pinned)
+                        {
+                            <span class="home-card-pin-mark" aria-hidden="true">★</span>
+                        }
+                    </a>
+                }
+                else
+                {
+                    <div class="home-card-head @(playable ? null : "home-card-head--offline")"
+                         aria-disabled="@(playable ? null : "true")"
+                         title="@(playable ? null : "Needs a connection — unavailable offline")">
+                        <span class="home-card-icon" aria-hidden="true">@game.Icon</span>
+                        <span class="home-card-title" id="@($"home-card-{game.Key.Value}")">@game.Title</span>
+                        @if (pinned)
+                        {
+                            <span class="home-card-pin-mark" aria-hidden="true">★</span>
+                        }
+                    </div>
+                }
 
-                @* One chip per mode the catalogue declares, no exceptions: the card
-                   title is a label, so a hidden chip would leave that mode unreachable
-                   from this page. *@
+                @* One chip per mode the catalogue declares, no exceptions, so no mode is
+                   unreachable from here. While pinning, the chips make way for the pin. *@
                 <div class="home-card-modes">
-                    @foreach (var m in game.Modes)
+                    @if (_editPins)
                     {
-                        @ModeChip(game, m)
+                        <button type="button" class="home-pin"
+                                aria-pressed="@(pinned ? "true" : "false")"
+                                aria-label="@($"Pin {game.Title} to the top")"
+                                @onclick="() => HubPrefs.TogglePin(game.Key)">@(pinned ? "★ Pinned" : "☆ Pin")</button>
+                    }
+                    else
+                    {
+                        @foreach (var m in game.Modes)
+                        {
+                            @ModeChip(game, m)
+                        }
                     }
                 </div>
             </article>
@@ -135,19 +207,61 @@
     // Activity feed (recent matches).
     private IReadOnlyList<ActivityFeedService.FeedItem> _activity = Array.Empty<ActivityFeedService.FeedItem>();
 
+    // ── Today ──
+    private DailyPick _today = DailyChallengeService.PickFor(DateTime.UtcNow);
+    private int _streak;
+    private bool _doneToday;
+
+    private string TodayLabel =>
+        $"Today's game: {_today.Game.Title}{(_today.Seeded ? ", today's seeded run" : "")}. "
+        + (_doneToday ? $"Played today, streak {_streak}." : _streak > 0 ? $"Daily streak {_streak}." : "Start a daily streak.");
+
+    // ── Filters and pins ──
+    private enum HubFilter { All, OnePlayer, TwoPlayer, Online }
+
+    private static readonly (HubFilter Filter, string Label, string Hint)[] Filters =
+    [
+        (HubFilter.All, "All", "Every game"),
+        (HubFilter.OnePlayer, "1P", "Games to play solo against the CPU"),
+        (HubFilter.TwoPlayer, "2P", "Games for two players on one device"),
+        (HubFilter.Online, "Online", "Games to play online"),
+    ];
+
+    // Not remembered between visits: a hub that opens with half its games missing reads as
+    // broken. Pins are remembered (HubPrefsService).
+    private HubFilter _filter = HubFilter.All;
+    private bool _editPins;
+
+    private bool Matches(CatalogGame game) => _filter switch
+    {
+        HubFilter.OnePlayer => game.Find(GameMode.OnePlayer) is not null,
+        HubFilter.TwoPlayer => game.Find(GameMode.TwoPlayer) is not null,
+        HubFilter.Online => game.Find(GameMode.Multiplayer) is not null,
+        _ => true,
+    };
+
+    // Pinned games first; OrderBy is stable, so each group keeps the catalog's alphabetical order.
+    private IEnumerable<CatalogGame> VisibleGames =>
+        GameCatalog.AllSorted.Where(Matches).OrderBy(g => HubPrefs.IsPinned(g.Key) ? 0 : 1);
+
+    // ── Continue ──
+    private sealed record ContinueItem(string Icon, string Title, string Detail, string Url, CatalogMode Mode);
+
+    private readonly List<ContinueItem> _continue = [];
+
+    private IEnumerable<ContinueItem> ContinueItems => _continue.Where(c => IsPlayable(c.Mode));
+
     // Offline, a hub-backed or API-backed mode is not playable: with the service
     // worker installed the shell loads fine without a network, so leaving these
     // navigable would drop the player into a lobby that can never connect. Modes
     // that run locally stay fully playable.
     private bool IsPlayable(CatalogMode mode) => !mode.RequiresNetwork || OnlineStatus.IsOnline;
 
-    // data-fx-tilt: fxTilt.js gives the chip a pointer-tracked 3D tilt. Only the
-    // navigable variant gets it — tilting a disabled chip would advertise an
-    // affordance that is not there.
+    // data-hub-nav: js/app.js launches the game in place, morphing the card into its title.
     private RenderFragment ModeChip(CatalogGame game, CatalogMode m) =>
         IsPlayable(m)
             ? @<a class="home-mode-chip home-mode-chip--@(m.Mode.ToString().ToLowerInvariant())"
-                  href="@(m.ChipUrl ?? m.Url)"
+                  href="@(m.ChipUrl ?? m.Url)" data-hub-nav
                   title="@($"{game.Title} — {GameModes.ToDescription(m.Mode)}")"
                   aria-label="@($"{game.Title}, {GameModes.ToDescription(m.Mode)}")">@GameModes.ToLabel(m.Mode)</a>
             : @<span class="home-mode-chip home-mode-chip--offline"
@@ -167,6 +281,10 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _today = Daily.Today;
+        ReadStreak();
+        await LoadContinueAsync();
+
         // Pull the feed once on initial render. The ActivityFeedService is
         // best-effort — it never throws — so we can await it without a try
         // and still get a graceful empty feed if the API is offline.
@@ -178,6 +296,55 @@
         {
             _activity = Array.Empty<ActivityFeedService.FeedItem>();
         }
+    }
+
+    private void ReadStreak()
+    {
+        _streak = Daily.CurrentStreak;
+        _doneToday = Daily.DoneToday;
+    }
+
+    // Counted on launch: the Today card is the challenge, and the streak is for showing up.
+    private void MarkDailyPlayed()
+    {
+        Daily.MarkPlayed();
+        ReadStreak();
+    }
+
+    /// <summary>
+    /// The "Continue" shortcuts: the last game mode opened, a PoMule match in progress, and (added
+    /// after the first render, since it needs IndexedDB) a saved Ecosystem island.
+    /// </summary>
+    private async Task LoadContinueAsync()
+    {
+        var muleSaved = await MuleSaves.LoadAsync() is not null;
+        var last = HubPrefs.LastPlayed
+            ?? (GameStats.GetLastPlayedGame() is { } card ? HubPrefsService.Resolve(card.Url) : null);
+
+        // The Mule and Ecosystem entries below are the better version of "last played" for
+        // those two games, so a last-played pointing at either gives way to them.
+        if (last is { } l && l.Game.Key != GameKeys.PoEcosystem && !(muleSaved && l.Game.Key == GameKeys.PoMule))
+        {
+            _continue.Add(new ContinueItem(l.Game.Icon, l.Game.Title,
+                $"{l.Game.Title}, {GameModes.ToDescription(l.Mode.Mode)}", l.Mode.Url, l.Mode));
+        }
+        if (muleSaved && GameCatalog.All.First(g => g.Key == GameKeys.PoMule) is var mule
+            && mule.Find(GameMode.OnePlayer) is { } muleSolo)
+        {
+            _continue.Add(new ContinueItem(mule.Icon, mule.Title, $"{mule.Title}, your match in progress", muleSolo.Url, muleSolo));
+        }
+    }
+
+    private async Task AddEcoIslandAsync()
+    {
+        bool saved;
+        try { saved = await JS.InvokeAsync<bool>("PoHub.hasEcoIsland"); }
+        catch { return; /* app.js not loaded: no shortcut, nothing lost */ }
+        if (!saved) return;
+        var eco = GameCatalog.All.First(g => g.Key == GameKeys.PoEcosystem);
+        if (eco.Find(GameMode.OnePlayer) is not { } solo) return;
+        _continue.Add(new ContinueItem(eco.Icon, eco.Title, $"{eco.Title}, your island", solo.Url, solo));
+        StateHasChanged();
     }
 
     private static string FormatRelative(DateTimeOffset when)
@@ -197,6 +364,7 @@
         // probe so low-memory phones and prefers-reduced-motion users skip
         // the GPU wake entirely; the CSS gradient behind the canvas is the
         // fallback for everyone else.
+        if (firstRender) await AddEcoIslandAsync();
         if (firstRender && !_ambientStarted)
         {
             _ambientStarted = true;

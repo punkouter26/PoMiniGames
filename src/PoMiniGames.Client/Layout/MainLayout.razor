@@ -13,6 +13,7 @@
 @inject AppUpdateService AppUpdate
 @inject PlaySessionService PlaySessions
 @inject NavigationManager NavigationManager
+@inject HubPrefsService HubPrefs
 
 <div class="gl-page">
     @* First tab stop on every route. The header is persistent chrome (brand, game
@@ -21,17 +22,6 @@
        reaching the game. Visually hidden until focused. *@
     <a class="gl-skip-link" href="#main-content">Skip to content</a>
 
-    @* Offline is silent without this: the service worker serves a fully working app
-       shell with no network, so an online-only game failing would read as a bug
-       rather than as a connection problem. Scores earned offline are parked by
-       ScoreSyncService and replayed on reconnect — say so, so it isn't lost work. *@
-    @if (!OnlineStatus.IsOnline)
-    {
-        <div class="gl-offline-banner" role="status" aria-live="polite">
-            <span class="gl-offline-dot" aria-hidden="true"></span>
-            <span>Offline — you can keep playing. Scores will sync when you reconnect.</span>
-        </div>
-    }
     <header class="gl-top-bar">
         @* <nav> landmark. The brand link IS this app's persistent navigation on
            every route, so a screen-reader user needs a landmark to jump to.
@@ -69,6 +59,20 @@
         </div>
 
         <div class="gl-auth">
+            @* Offline status pill. It used to be a full-width banner above the bar, and
+               going offline pushed every game page down until it scrolled. The service
+               worker serves a working shell with no network, so without a signal an
+               online-only game failing reads as a bug rather than a connection problem.
+               The tooltip says scores are parked, not lost; the live region says it aloud. *@
+            @if (!OnlineStatus.IsOnline)
+            {
+                <span class="gl-status-pill gl-offline-pill" title="Offline — you can keep playing. Scores will sync when you reconnect.">
+                    <span class="gl-offline-dot" aria-hidden="true"></span>
+                    <span class="gl-status-pill__label">Offline</span>
+                </span>
+            }
+            @* Always in the DOM: a live region only announces changes to one that already exists. *@
+            <span class="gl-sr-only" role="status" aria-live="polite">@_connectivityAnnouncement</span>
             @if (AuthState.IsConfigured && !AuthState.IsLoading)
             {
                 @* Live ELO badge for single-player rated games, projected here by
@@ -76,8 +80,8 @@
                    nothing outside a rated 1P game. *@
                 <SectionOutlet SectionName="game-elo" />
                 @* The account menu: the name chip is the one button, and it holds every
-                   page-level destination. It is the only way to the settings sheet from
-                   inside a game (the footer is hidden on game routes). There is no gear.
+                   page-level destination, the service Status page included. There is no
+                   gear and no visible footer.
 
                    There is no signed-out branch. AuthGate renders the login screen in
                    place of this layout until a session exists, so a signed-out control
@@ -91,23 +95,28 @@
                 {
                     <button type="button" class="gl-account-trigger"
                             popovertarget="gl-account-menu"
+                            aria-haspopup="menu"
                             aria-label="@($"Account menu, signed in as {AuthUserLabel}")"
                             title="@AuthUserTitle">
                         <span class="gl-account-initial" aria-hidden="true">@AuthUserInitial</span>
                         <span class="gl-account-name" aria-hidden="true">@AuthUserLabel</span>
                         <span class="gl-account-caret" aria-hidden="true">▾</span>
                     </button>
-                    <div id="gl-account-menu" popover="auto" class="gl-overflow-panel">
-                        <button type="button" class="gl-overflow-item"
-                                popovertarget="gl-account-menu" popovertargetaction="hide"
-                                @onclick='() => GoTo("/profile")'>My Stats</button>
-                        <button type="button" class="gl-overflow-item"
-                                popovertarget="gl-account-menu" popovertargetaction="hide"
-                                @onclick='() => GoTo("/leaderboards")'>Leaderboards</button>
-                        <button type="button" class="gl-overflow-item"
+                    @* role="menu": js/app.js adds focus-on-open and arrow keys, which is what
+                       the role promises. aria-current marks the page the player is on. *@
+                    <div id="gl-account-menu" popover="auto" class="gl-overflow-panel"
+                         role="menu" aria-label="Account">
+                        @foreach (var (path, label) in MenuPages)
+                        {
+                            <button type="button" class="gl-overflow-item" role="menuitem"
+                                    aria-current="@(IsCurrent(path) ? "page" : null)"
+                                    popovertarget="gl-account-menu" popovertargetaction="hide"
+                                    @onclick="() => GoTo(path)">@label</button>
+                        }
+                        <button type="button" class="gl-overflow-item" role="menuitem"
                                 popovertarget="gl-account-menu" popovertargetaction="hide"
                                 @onclick="Settings.RequestOpen">Settings</button>
-                        <button type="button" class="gl-overflow-item gl-overflow-item--sep"
+                        <button type="button" class="gl-overflow-item gl-overflow-item--sep" role="menuitem"
                                 popovertarget="gl-account-menu" popovertargetaction="hide"
                                 @onclick="SignOut">Sign out</button>
                     </div>
@@ -148,23 +157,11 @@
        nothing unless the reel is actually running. *@
     <KioskControlBar />
 
-    @* The footer is the page's <footer> landmark, so a screen-reader user has a
-       site-info landmark to jump to. It renders below the page content (no overlap
-       with the sticky top bar) and surfaces the build version + a "support" link.
-
-       It is hidden on game routes: its ~54px is exactly the space a portrait game
-       page needs to fit without vertical scroll (PoBrawl would overflow by 33px),
-       and its links are support/dev surfaces, not gameplay
-       surfaces; the brand link already returns to the hub, where the footer
-       remains. The contentinfo landmark stays on every other route. *@
-    @if (!IsGameRoute)
-    {
-        <footer class="gl-footer" aria-label="Site information">
-            <span class="gl-footer-build">PoMiniGames</span>
-            @* Settings lives in the top bar's account menu, which is on every route. *@
-            <a class="gl-footer-link" href="/health" aria-label="Service health">Status</a>
-        </footer>
-    }
+    @* The contentinfo landmark, visually hidden. The visible footer row held a build
+       label and a Status link; Status is in the account menu now, and the row's height
+       was space every page needed (the hub's grid, a portrait game). The landmark
+       stays so a screen-reader user still finds the site's end. *@
+    <footer class="gl-sr-only" aria-label="Site information">PoMiniGames</footer>
 
     @* The one settings sheet. Mounted here so it exists on every route; it opens
        itself when anything calls Settings.RequestOpen(). *@
@@ -178,28 +175,23 @@
     private Action<int>? _onScoresFlushed;
     private Action? _onOnlineFlush;
     private EventHandler<LocationChangedEventArgs>? _onLocationChanged;
+    private Action? _onPendingChanged;
 
-    // First path segment match — every game keeps all of
-    // its routes under one segment (/pobrawl, /pobrawl/demo, /posports/lobby,
-    // /couplequiz/game, …), so segment[0] alone decides. Keep in sync with
-    // src/PoMiniGames.Client/Games/. Drives footer suppression (see footer note).
-    private static readonly HashSet<string> GameRoutePrefixes = new()
-    {
-        "tictactoe", "connectfive", "pobrawl", "funquiz",
-        "pomarblerace", "posports", "povoxelstrike",
-        "sandplayground", "poecosystem", "poracer", "couplequiz",
-        "pocabinet", "pojevarena", "pomule",
-    };
+    // What the polite live region last said. Empty until connectivity first changes, so a
+    // page load announces nothing.
+    private string _connectivityAnnouncement = "";
+    private bool _announcedOffline;
 
-    private bool IsGameRoute
-    {
-        get
-        {
-            var path = new Uri(NavigationManager.Uri).AbsolutePath.Trim('/');
-            if (path.Length == 0) return false;
-            return GameRoutePrefixes.Contains(path.Split('/')[0]);
-        }
-    }
+    // The account menu's page destinations, in order. Settings (a sheet) and Sign out follow.
+    private static readonly (string Path, string Label)[] MenuPages =
+    [
+        ("/profile", "My Stats"),
+        ("/leaderboards", "Leaderboards"),
+        ("/health", "Status"),
+    ];
+
+    private bool IsCurrent(string path) =>
+        string.Equals(new Uri(NavigationManager.Uri).AbsolutePath.TrimEnd('/'), path, StringComparison.OrdinalIgnoreCase);
 
     // Top-bar identity for a signed-in user: prefer the display name, fall back to
     // the email/username. The full email is surfaced via the tooltip so a truncated
@@ -237,8 +229,25 @@
         _onAuthStateChanged = () => InvokeAsync(StateHasChanged);
         AuthState.StateChanged += _onAuthStateChanged;
 
-        _onOnlineStateChanged = () => InvokeAsync(StateHasChanged);
+        _onOnlineStateChanged = () => InvokeAsync(() =>
+        {
+            if (!OnlineStatus.IsOnline)
+            {
+                _announcedOffline = true;
+                _connectivityAnnouncement = "You're offline. You can keep playing; scores will sync when you reconnect.";
+            }
+            else if (_announcedOffline)
+            {
+                _announcedOffline = false;
+                _connectivityAnnouncement = "Back online.";
+            }
+            StateHasChanged();
+        });
         OnlineStatus.StateChanged += _onOnlineStateChanged;
+
+        // The installed app's badge counts the scores still parked for sync.
+        _onPendingChanged = () => _ = UpdateBadgeAsync();
+        ScoreSync.Changed += _onPendingChanged;
 
         // The payoff moment for the whole offline-score story: parked runs reaching
         // the board. Subscribed to the service rather than fired at the sign-in call
@@ -272,7 +281,13 @@
         // because Blazor WASM navigation raises no DOM event a JS module could hear —
         // paletteBus only catches popstate, and the musicDirector polls at 1.2 s,
         // which is far too coarse to start a 260 ms transition on.
-        _onLocationChanged = (_, args) => _ = PlayRouteWipeAsync(args.Location);
+        // The same event feeds the hub's "Continue" strip: one place sees every navigation,
+        // so no game page has to remember to record itself.
+        _onLocationChanged = (_, args) =>
+        {
+            HubPrefs.Record(NavigationManager.ToBaseRelativePath(args.Location).Insert(0, "/"));
+            _ = PlayRouteWipeAsync(args.Location);
+        };
         NavigationManager.LocationChanged += _onLocationChanged;
 
         Settings.Load();
@@ -300,10 +315,20 @@
         // not delay the rest of this after-render pass, and FlushAsync is
         // re-entrancy guarded so racing the reconnect handler is harmless.
         _ = ScoreSync.FlushAsync();
+        await UpdateBadgeAsync();
+        // A direct load of a game route counts as opening it, same as a navigation.
+        HubPrefs.Record(NavigationManager.ToBaseRelativePath(NavigationManager.Uri).Insert(0, "/"));
         // The pre-paint script in index.html has already stamped the theme, so
         // this is not what avoids a flash. It attaches the OS-preference
         // listener that keeps "Auto" live when the system flips mid-session.
         await Settings.ApplyAsync();
+    }
+
+    /// <summary>Mirror the parked-score count onto the installed app's icon (feature-detected in pwa.js).</summary>
+    private async Task UpdateBadgeAsync()
+    {
+        try { await JS.InvokeVoidAsync("poPwa.setBadge", ScoreSync.PendingCount); }
+        catch { /* pwa.js not loaded yet: the next change retries */ }
     }
 
     /// <summary>
@@ -396,8 +421,7 @@
         }
     }
 
-    // Account-menu destinations. NavigateTo, not an <a>: app.js turns every in-app
-    // link click into a full page load.
+    // Account-menu destinations: menu items are buttons, so they navigate in code.
     private async Task GoTo(string path)
     {
         await Feedback.TapAsync();
@@ -435,6 +459,10 @@
         if (_onLocationChanged is not null)
         {
             NavigationManager.LocationChanged -= _onLocationChanged;
+        }
+        if (_onPendingChanged is not null)
+        {
+            ScoreSync.Changed -= _onPendingChanged;
         }
     }
 }

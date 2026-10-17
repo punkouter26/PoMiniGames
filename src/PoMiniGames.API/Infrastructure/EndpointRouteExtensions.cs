@@ -77,7 +77,7 @@ internal static class EndpointRouteExtensions
 
         // ── Authenticated game API ─────────────────────────────────────────
         // All game-data endpoints require a valid session. Per-endpoint rate
-        // limits (highscores, ai-generation, infer) are declared
+        // limits (highscores, ai-generation, ...) are declared
         // inside each slice; the group adds the auth gate only.
         //
         // The "/api" prefix lives here, not in the slices: it is exactly the scope

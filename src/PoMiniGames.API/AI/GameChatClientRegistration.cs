@@ -34,12 +34,12 @@ namespace PoMiniGames.AI;
 /// provider failure. A caller out of allowance is not a sick deployment.
 /// </para>
 /// <para>
-/// Composition is per <b>deployment</b>, not per game, because <c>/api/infer</c> lets a caller
-/// select a model from the server-side allowlist. The first cut of this took the game's client
-/// from DI and reached past it to the bare cache for any other deployment — so the moment the
-/// client actually used per-request selection (which it does on every call, naming the deployment
-/// the status endpoint reported), every guarantee here was bypassed again and the telemetry went
-/// silent. One decorated client per deployment, cached, is what keeps that from being possible.
+/// Composition is per <b>deployment</b>, not per game, because one game's tasks can resolve to
+/// different deployments (the <c>game.task</c> keys under <c>PoMiniGames:AI:Deployments</c>, such
+/// as <c>couplequiz.similarity</c>). The first cut of this took the game's client from DI and
+/// reached past it to the bare cache for any other deployment — so the moment a call named a
+/// deployment of its own, every guarantee here was bypassed again and the telemetry went silent.
+/// One decorated client per deployment, cached, is what keeps that from being possible.
 /// </para>
 /// </remarks>
 public sealed class GameChatClientFactory

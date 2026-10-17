@@ -15,7 +15,6 @@ public sealed class PoCabinetUiSettings
 {
     // No volume, mute, reduced-motion or colour-safe here: those are the app's
     // settings, not Cabinet's. settings.js ignores any value an older build stored for them.
-    public bool Music { get; set; } = true;
     public double HudScale { get; set; } = 1;
     public string Weather { get; set; } = "clear";
     public string TouchControls { get; set; } = "auto";

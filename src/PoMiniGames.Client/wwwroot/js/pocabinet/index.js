@@ -21,7 +21,7 @@
 //   PoCabinet.startReplay() / replayCommand(cmd, value) / stopReplay()
 //   PoCabinet.recordClip() -> 'shared' | 'downloaded' | 'unavailable'
 //   PoCabinet.lapProof() -> { inputs, wet }               — solo score verification
-//   PoCabinet.setBanter(lines)                             — officials' radio (AI pool; text only)
+//   PoCabinet.setBanter(lines)                             — officials' radio (scripted pool; text only)
 //
 //   PoCabinet.loadSettings() / saveSettings(patch) / applySettings(scene, settings)
 //   PoCabinet.getRecords(trackId) / recordTrackResult(trackId, bestLap, sectors)

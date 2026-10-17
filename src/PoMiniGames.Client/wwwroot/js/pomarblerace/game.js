@@ -208,7 +208,6 @@ export class Game {
     this._sectorStart = 0;
     this._surface = 'surface'; // what the camera's marble is rolling on, for the audio bed
     this._airT = 0;
-    this._nearFinish = 0;
     this._ghostOn = (() => { try { return localStorage.getItem(GHOST_PREF) !== '0'; } catch { return true; } })();
     this._ghost = null;        // { best: {time, track}|null, mesh, times, vals, next } for the race in progress
     // Only procedural maps re-roll between races (map.regenerate). The authored course is fixed
@@ -222,12 +221,10 @@ export class Game {
     this.track = null;
 
     // Weather derives from the race seed, so every client of the same
-    // seed computes the same sky with zero network traffic. The match
-    // state wakes the reactive soundtrack. Both are optional modules — a
-    // missing one costs atmosphere, never functionality. (Placed after the
-    // seed assignment: the seed IS the weather input.)
+    // seed computes the same sky with zero network traffic. It is an optional
+    // module — a missing one costs atmosphere, never functionality. (Placed after
+    // the seed assignment: the seed IS the weather input.)
     this._weatherType = window.PoWeather?.apply({ seed: String(this.seed), stage: this.container }) || 'clear';
-    window.PoMusicDirector?.match(true);
     // Scene-composited glass behind the pick card and podium panels.
     // Deferred a beat — the renderer canvas exists by now, but its first frame
     // does not, and glassFx captures live so the panels update as the race runs.
@@ -460,8 +457,6 @@ export class Game {
     // the weather overlay a rAF loop — both must die with the game.
     if (this._glassStop) this._glassStop();
     window.PoWeather?.stop();
-    window.PoMusicDirector?.tension?.(0);
-    window.PoMusicDirector?.match(false);
   }
 
   // ── internals ──
@@ -536,7 +531,6 @@ export class Game {
     // chosen win/loss by then, and overwriting it here would wash that straight out.
     if (p === 'pick') this._setGrade('pick');
     else if (p === 'racing') this._setGrade('racing');
-    if (p !== 'racing') window.PoMusicDirector?.tension?.(0);
     // Skip phase notifications while the intro is up. The host can't react to OnPhase('pick') until resume()
     // fires anyway, and a notify during intro would race the host's
     // StartPickCountdown. The constructor's first _setPhase('pick') is
@@ -923,13 +917,12 @@ export class Game {
 
       // Audio beds ride the focused marble's speed and how close the race is to resolving.
       // #10: tightened the range (400→300) and eased it (pow 0.6) so the bed ramps up harder
-      // and sooner as the leader runs at the line — the music leans into the finish.
+      // and sooner as the leader runs at the line.
       const leaderNow = order[0];
       const nearRaw = leaderNow
         ? 1 - Math.max(0, Math.min(1, (this.track.finishS - leaderNow.s) / 300))
         : 0;
       const nearFinish = Math.pow(nearRaw, 0.6);
-      this._nearFinish = nearFinish;
       // The rolling bed rides the marble on camera (not the leader) and what it is touching.
       const rolling = this._lastFocus || leaderNow;
       this.audio.updateBeds(rolling ? rolling.speed : 0, nearFinish, this.phase === 'racing', this._surface);
@@ -1041,15 +1034,6 @@ export class Game {
     window.PoImpact?.impact('win', 0.8);
   }
 
-  // GFX #1 — the soundtrack's tension: how close the leader is to the line, plus whether you are
-  // in the scoring places. PoMusicDirector dedupes small changes, so 10 Hz is fine.
-  _setTension(place) {
-    const md = window.PoMusicDirector;
-    if (!md || !md.tension) return;
-    const contention = place >= 1 && place <= SCORE_TOP ? 0.3 : place >= 1 && place <= SCORE_TOP * 2.5 ? 0.15 : 0;
-    md.tension(0.15 + 0.45 * this._nearFinish + contention);
-  }
-
   // Per-track record for the intro card's track buttons (F7). Local only; demo never counts.
   _recordTrackStat(place, time) {
     const all = readTrackStats();
@@ -1112,7 +1096,6 @@ export class Game {
     // #3 — the result grade, set AFTER _setPhase so it isn't overwritten by a phase grade.
     this._setGrade(won ? 'win' : 'loss');
     this.audio.playSting(won);
-    if (!this.demo) window.PoMusicDirector?.verdict?.(won);
     this._sendTick(); // final standings
     // The run's races ride along (appended — positional contract) for the board submission.
     // Your own finish time rides along too (0 when you did not finish), offered as the map's
@@ -1174,7 +1157,6 @@ export class Game {
     for (const m of order) m.prevPlace = m.place;
 
     const myPlace = me && !me.eliminated ? me.place : -1;
-    if (this.phase === 'racing') this._setTension(this.demo ? -1 : myPlace);
     this._invoke('OnRaceTick', myPlace, order.length);
   }
 
@@ -1270,9 +1252,9 @@ export class Game {
     const order = this.marbleSet.leaderboard();
     const leaderNow = order[0];
     const nearRaw = leaderNow ? 1 - Math.max(0, Math.min(1, (this.track.finishS - leaderNow.s) / 300)) : 0;
-    this._nearFinish = Math.pow(nearRaw, 0.6);
+    const nearFinish = Math.pow(nearRaw, 0.6);
     const rolling = this._lastFocus || leaderNow;
-    this.audio.updateBeds(rolling ? rolling.speed : 0, this._nearFinish, true, this._surfaceOf(rolling, dt));
+    this.audio.updateBeds(rolling ? rolling.speed : 0, nearFinish, true, this._surfaceOf(rolling, dt));
     this._setGrade(this.marbleSet.progress() >= 0.86 ? 'final' : 'racing');
 
     const focus = this._pickShot(order);
@@ -1295,7 +1277,6 @@ export class Game {
     if (!this.dotnet) return;
     const h = this._guestHud || {};
     const place = h.guestPlace ?? -1;
-    this._setTension(place);
     this._invoke('OnRaceTick', place, h.field || order.length);
   }
 
@@ -1307,7 +1288,6 @@ export class Game {
     this._setPhase('result');
     this._setGrade(won ? 'win' : 'loss');
     this.audio.playSting(!!won);
-    window.PoMusicDirector?.verdict?.(!!won);
   }
 
   // Guest: the host has moved on to the next race, on this seed.

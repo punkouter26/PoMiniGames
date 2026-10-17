@@ -207,7 +207,7 @@ function loop(m, now) {
         noteDrawTime(m, performance.now() - t0);
 
         m.hudAcc += dt;
-        if (m.hudAcc >= HUD_EVERY_S) { m.hudAcc = 0; pushHud(m); pushInspectors(m); driveMusic(m, views); }
+        if (m.hudAcc >= HUD_EVERY_S) { m.hudAcc = 0; pushHud(m); pushInspectors(m); }
         if (m.world.over) beginShow(m);
     } else if (m.mode === 'killcam') {
         runKillcam(m, dt);
@@ -261,7 +261,7 @@ function drawReplay(m, dt) {
     if (m.hudAcc >= 0.1) { m.hudAcc = 0; pushBlackBox(m); }
 }
 
-// ── Camera, slow motion, music ───────────────────────────────────────────────
+// ── Camera, slow motion ──────────────────────────────────────────────────────
 
 /**
  * The auto-director: drift toward the thickest fighting and tighten on it, punch in on a
@@ -306,20 +306,6 @@ function onKnockout(m, e, now) {
     for (const team of ['blue', 'red']) {
         if (counts[team] === 1 && !m.stung[team]) { m.stung[team] = true; m.audio.sting(); }
     }
-}
-
-/** The soundtrack's tension: how much of the field is locked in melee, plus a last-stand lift. */
-function driveMusic(m, views) {
-    const d = window.PoMusicDirector;
-    if (!d?.tension) return;
-    let alive = 0, engaged = 0;
-    for (const v of views) {
-        if (!v.alive) continue;
-        alive++;
-        if (views.some(o => o.alive && o.team !== v.team && Math.hypot(o.x - v.x, o.y - v.y) < ENGAGED_M)) engaged++;
-    }
-    const c = sim.teamCounts(m.world);
-    d.tension(0.2 + 0.5 * (alive ? engaged / alive : 0) + (Math.min(c.blue, c.red) <= 2 ? 0.3 : 0));
 }
 
 // ── The end sequence: kill cam → ceremony → Black Box ────────────────────────
@@ -374,7 +360,6 @@ function beginCeremony(m) {
     const colors = w.winner === 'draw' ? [m.teamColor('blue'), m.teamColor('red'), '#ffd84a'] : [m.teamColor(w.winner), '#ffd84a', '#ffffff'];
     m.fx.confetti(colors, w.tick);
     m.audio.fanfare();
-    window.PoMusicDirector?.verdict?.(true);
 }
 
 function runCeremony(m, dt) {

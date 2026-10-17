@@ -134,7 +134,7 @@ public sealed class AIFoundryOptions
     /// instance through the indexer, so with <c>PoMiniGames:AI:Deployments:funquiz = gpt-5.4-nano</c>
     /// present in configuration <see cref="ResolveDeployment"/> would still return
     /// <see cref="DefaultDeployment"/>, silently running every game on the Key Vault default while
-    /// <c>/api/infer/status</c> reported the per-game name from a separate raw-config read.
+    /// a status endpoint (since removed) reported the per-game name from a separate raw-config read.
     /// </para>
     /// <para>
     /// The binder may replace the dictionary, so the comparer is not guaranteed;
@@ -213,8 +213,8 @@ public sealed class AIFoundryOptions
     /// <summary>
     /// Returns the deployment name for the supplied game key, falling back to
     /// <see cref="DefaultDeployment"/> when no override is configured. The single resolver for
-    /// this question — <c>/api/infer/status</c> and the chat-client construction both go through
-    /// it, having previously used different logic and disagreed.
+    /// this question — the quiz services and the chat-client construction both go through it
+    /// (<see cref="GameChatClientFactory.DeploymentFor"/>), so they cannot disagree.
     /// </summary>
     /// <remarks>
     /// <para>

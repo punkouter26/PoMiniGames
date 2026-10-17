@@ -11,8 +11,8 @@ namespace PoMiniGames.AI;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every AI-consuming service calls <see cref="AiDecisionChatOptions.ForStructuredJson"/> or
-/// <see cref="AiDecisionChatOptions.ForBoundedText"/> per request — both rebuild the
+/// Every AI-consuming service calls <see cref="AiDecisionChatOptions.ForStructuredJson"/> per
+/// request, which rebuilds the
 /// <see cref="Microsoft.Extensions.AI.ChatResponseFormat"/> (which clones a
 /// <see cref="JsonElement"/> onto its own buffer) and, on reasoning-family deployments, allocate a
 /// <see cref="ChatCompletionOptions"/> via the raw representation factory. Measured locally on a

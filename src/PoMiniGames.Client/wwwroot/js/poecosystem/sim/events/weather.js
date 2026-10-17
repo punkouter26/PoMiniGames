@@ -43,7 +43,7 @@ function begin(world, weather, kind, seconds) {
   if (!changed) return;
   weather.counts[kind] = (weather.counts[kind] ?? 0) + 1;
   // Clear skies after clear skies is not news; any other change is logged so the timeline
-  // and the chronicler can tell a wet decade from a dry one.
+  // and the chronicle cards can tell a wet decade from a dry one.
   world.log.push({ tick, kind: 'weather', weather: kind, text: OPENERS[kind] });
 }
 

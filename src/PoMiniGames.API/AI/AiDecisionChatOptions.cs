@@ -109,29 +109,4 @@ public static class AiDecisionChatOptions
 
         return options;
     }
-
-    /// <summary>
-    /// Plain bounded text, for short prose replies (the warmup ping). Still capability-aware: the output
-    /// ceiling is only safe on a reasoning deployment when minimal effort travels with it.
-    /// </summary>
-    public static ChatOptions ForBoundedText(
-        int maxOutputTokens,
-        string deployment,
-        IReadOnlyDictionary<string, string>? capabilityOverrides = null)
-    {
-        var caps = AiModelCapabilities.For(deployment, capabilityOverrides);
-        var options = new ChatOptions { MaxOutputTokens = maxOutputTokens };
-
-        if (caps.SupportsReasoningEffort)
-        {
-#pragma warning disable OPENAI001 // see MinimalReasoning
-            options.RawRepresentationFactory = _ => new ChatCompletionOptions
-            {
-                ReasoningEffortLevel = MinimalReasoning,
-            };
-#pragma warning restore OPENAI001
-        }
-
-        return options;
-    }
 }

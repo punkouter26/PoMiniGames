@@ -21,12 +21,20 @@ Rules for any AI agent working in this repository.
 
 ## Finding your way
 
-- Check for a `DOCS` folder in the repository root to get an overall summary of the project.
+- Check the `DOCS` folder in the repository root and `README.md` first for an overall summary of
+  the project and its architecture.
+- Keep both up to date: whenever a dependency, a configuration key or a major endpoint changes,
+  update `DOCS` and `README.md` in the same change.
 
 ## Reporting back
 
 - At the end of any answer longer than 100 words, add a TLDR summary of about 20 words.
 - If more than 100 lines of code are removed overall in one prompt, mention it.
 - When a change to the UI is made, take an annotated screenshot showing the old and the new UI
-  with the changes marked. Place the image in the `SCREENSHOTS` folder inside an HTML file and
-  give its valid full path.
+  with the changes marked. Save it as `SCREENSHOTS/YYMMDD-feature-name.html` (for example
+  `SCREENSHOTS/261017-score-panel.html`) and give its valid full path.
+- When a code change is longer than 20 lines, add a three-line summary at the end, one line per
+  level:
+  1. Toddler: one sentence giving the simple idea behind the change.
+  2. Child: one sentence on what it now does.
+  3. Adult: one sentence on the technical or architectural change.

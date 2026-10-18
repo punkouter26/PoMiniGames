@@ -320,6 +320,7 @@ class DirectorMethods {
     d.cuts.n++;
     d.shot = shot;
     d.whip = null;
+    this._show('cut', { shot: shot.name, whip: !!whip });
     const fov = this._rig(shot, c);
     clampRadius(shot.pos, shot.name);
     // A whip only reads when the view actually swings; for a small move it is a lurch.

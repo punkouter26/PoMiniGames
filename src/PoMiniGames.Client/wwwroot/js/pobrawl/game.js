@@ -43,6 +43,7 @@ import { Spectacle, REWIND_SEC } from './spectacle.js';
 import { Cup } from './cup.js';
 import { Ceremony } from './ceremony.js';
 import { Director } from './director.js';
+import { Show, SHOW_MODULES } from './show.js';
 
 const MAX_FRAME_DT = 0.05;
 
@@ -372,6 +373,8 @@ export class BrawlGame {
     this._initSpectacle();
     // Tournament only: round looks, crowd fill, Elo storyline, the belt (cup.js, ceremony.js).
     this._initCup();
+    // The showtime layer: charge aura, balloons, LED boards, replay, result glass, audio show (show.js).
+    this._initShow();
 
     // Impact light pool: reused PointLights flashed at hit points. A fixed
     // pool keeps the scene's light count constant (adding/removing lights at
@@ -620,6 +623,7 @@ export class BrawlGame {
       this._updateEffects(dt);
       this._updateCrowd(dt);
       this._updateFx(dt);
+      this._updateShow(dt);
       this._updateLighting(dt);
       this.atmoT += dt;
       updateAtmosphere(this.arena, dt, this.atmoT, this.excited, this._phoneLevel);
@@ -648,6 +652,8 @@ export class BrawlGame {
       this.composer.render();
       // The director's iso-cam inset, drawn over the finished frame (director.js).
       this._renderIsoCam();
+      // Showtime modules that read the finished frame (replay grade, result glass).
+      this._renderShow(now);
       // Same task as the render, or the WebGL canvas is already cleared.
       if (this.clip) this.clip.mirror(now);
       // The result shatter snapshots the frame, so it has the same constraint.
@@ -1149,6 +1155,7 @@ export class BrawlGame {
   _startCountdown() {
     this.phase = 'countdown';
     this.phaseT = 0;
+    this._show('countdown');
     this.clock = 0;
     this.winner = 0;
     // Rebuild the corner crate stacks so each round opens with an intact ring.
@@ -1314,6 +1321,7 @@ export class BrawlGame {
     // left at 'result' re-ran the whole reset (fighter rebuild + recompile) every tick.
     this.phase = 'intro';
     this.phaseT = 0;
+    this._show('reset');
     let p1 = this.options.p1Character, p2 = this.options.p2Character;
     if (randomize) {
       const ids = this.rng.shuffle(CHARACTER_IDS);
@@ -1450,6 +1458,7 @@ export class BrawlGame {
       }
       if (this.phaseT >= 3.7) {
         this.phase = 'fighting';
+        this._show('fight');
         this.combat.startGame();
         this._setBanner('');
       }
@@ -2103,6 +2112,7 @@ export class BrawlGame {
     f.chargeSparkT = 0;
     f.animator.setBlocking(false);
     f.animator.setCharge(name, f.chargeAmt);
+    this._show('chargeStart', { f, name });
   }
 
   _enterAttack(f, name, chargeAmt = 0) {
@@ -2121,6 +2131,7 @@ export class BrawlGame {
     f.attack = ATTACKS[name];
     f.chargeName = null;
     f.chargeMul = 1 + (CHARGE_MAX_MUL - 1) * chargeAmt;
+    this._show('release', { f, name, chargeAmt });
     // Per-swing timing multipliers (Eisenhower "Operation Overlord": 1.5×
     // windup, 0.5× active; cleared at swing completion). Read by _tryHit
     // for the phase boundary check.
@@ -2979,6 +2990,7 @@ export class BrawlGame {
     // light buzz in the hand.
     this._rumble(defender, 0.3 + 0.6 * power, 0.5, 80 + 140 * power);
     this._rumble(attacker, 0.08, 0.2 + 0.35 * power, 55);
+    this._show('hit', { attacker, defender, dmg, point, region, power });
   }
 
   /**
@@ -3133,6 +3145,7 @@ export class BrawlGame {
     if (this._resizeObs) { this._resizeObs.disconnect(); this._resizeObs = null; }
     if (this._dropResumeAudio) this._dropResumeAudio();
     window.removeEventListener('keydown', this._onMuteKey);
+    this._disposeShow();
     this._disposeTraining();
     this._disposeNet();
     this._disposeCommentary();
@@ -3199,4 +3212,4 @@ export class BrawlGame {
 // Must run at module scope, after the class declaration and before any instance
 // is constructed. index.js only ever imports BrawlGame from here, so by the time
 // `new BrawlGame()` can be reached these methods are already on the prototype.
-mixin(BrawlGame.prototype, SceneSetup, PersonalityEffects, Vfx, Cinematics, HitResolution, Training, Netplay, Commentary, Spectacle, Cup, Ceremony, Director);
+mixin(BrawlGame.prototype, SceneSetup, PersonalityEffects, Vfx, Cinematics, HitResolution, Training, Netplay, Commentary, Spectacle, Cup, Ceremony, Director, Show, ...SHOW_MODULES);

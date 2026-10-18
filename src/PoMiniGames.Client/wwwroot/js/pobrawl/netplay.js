@@ -378,6 +378,7 @@ class NetplayMethods {
       this._hideSplash();
       this._snapCameraToFraming();
       this.phase = 'fighting';
+      this._show('fight');
       this.phaseT = 0;
       this.combat.startGame();
       this._setBanner('');
@@ -510,6 +511,7 @@ class NetplayMethods {
       this._spawnSparks(hit.point, 0x9ad0ff, 6, 1.0);
       this._flashImpactLight(hit.point, 3, 0x9ad0ff, 0.1);
       this.audio.block(hit.point);
+      this._show('block', { point: hit.point });
       attacker.animator.applyReaction('shoulderR', 4, 0, -3);
       attacker.animator.applyReaction('elbowR', -6, 0, 0);
       defender.animator.applyReaction('elbowL', -3.5, 0, 0);

@@ -162,6 +162,7 @@ class PersonalityEffectsMethods {
     const cfg = PERSONALITIES[f.charId]?.onSuper;
     if (!per || !cfg || per.superMeter < 1.0) return;
     per.superMeter = 0;
+    this._show('super', { f });
     per.superActiveMode = cfg.mode;
     per.superFiredAt = this.t;
     this._applySuperEffect(f, cfg);

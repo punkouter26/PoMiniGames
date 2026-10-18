@@ -18,6 +18,11 @@ window.PoBrawl = {
     if (!el) { console.error('[PoBrawl] container not found:', containerId); return; }
     game = new BrawlGame(el, dotnetRef, { ...options });
     game.start();
+    // Headless harnesses: ?debug (or localStorage pobrawl.debug) exposes the live engine as
+    // window.__pobrawl(). The sign-in redirect can drop the query, hence the storage flag.
+    let debug = /[?&]debug/.test(location.search);
+    try { debug ||= !!localStorage.getItem('pobrawl.debug'); } catch { /* storage blocked */ }
+    if (debug) window.__pobrawl = () => game;
   },
   /**
    * 1P ladder: roll into the next round without a re-init (splash → countdown,

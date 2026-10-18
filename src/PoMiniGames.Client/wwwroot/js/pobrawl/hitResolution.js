@@ -151,6 +151,7 @@ class HitResolutionMethods {
     this.shakeT = 0.16;
     this.shakeAmp = 0.1;
     this.audio.block(mid);
+    this._show('block', { point: mid });
     this.excited = Math.max(this.excited, 0.5);
   }
 
@@ -334,12 +335,14 @@ class HitResolutionMethods {
         this.haptics?.perfectGuard(defender);
         if (this.audio) {
           this.audio.block(hit.point);
+          this._show('block', { point: hit.point });
           this.audio.whoosh();
         }
       } else {
         this._spawnSparks(hit.point, 0x9ad0ff, 6, 1.0);
         this._flashImpactLight(hit.point, 3, 0x9ad0ff, 0.1);
         this.audio.block(hit.point);
+        this._show('block', { point: hit.point });
         // A guard taking a blow is felt as a short high buzz, never the big motor.
         this._rumble(defender, 0, 0.35, 45);
       }
@@ -446,6 +449,7 @@ class HitResolutionMethods {
       this._spawnSparks(hit.point, 0xfff5b0, 4, 0.7);
       this._flashImpactLight(hit.point, 4, 0xfff5b0, 0.05);
       this.audio.block(hit.point);
+      this._show('block', { point: hit.point });
       attacker.hasHit = true;        // still marks "did something"
       attacker._trumpHaymaker = false; // clean up
       return null;
@@ -654,6 +658,7 @@ class HitResolutionMethods {
         this.phase = 'ko';
         this.phaseT = 0;
         this.timeScale = 0.35;
+        this._show('ko', { winner: ev.winnerTeamId ? Number(ev.winnerTeamId) : 0 });
         // KO is the highest camera priority — escalation always lands.
         this._setCameraMode('ko');
         this.cameraModeT = 0;

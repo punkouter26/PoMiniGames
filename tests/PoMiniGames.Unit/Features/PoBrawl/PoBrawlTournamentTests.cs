@@ -15,6 +15,7 @@ public sealed class PoBrawlTournamentTests
     [InlineData(nameof(Winners_AdvanceIntoTheirSlots_UntilTheFinalCrownsAChampion))]
     [InlineData(nameof(Elo_IsZeroSum_AndAnUpsetPaysMoreThanAFavouriteWinning))]
     [InlineData(nameof(Results_AreRefused_WhenNotASide_OrOnceDecided))]
+    [InlineData(nameof(Expectation_FavoursTheHigherRating_AndOnlyAnUnderdogWinIsAnUpset))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
     private static PoBrawlTournament NewCup(int seed = 7, IReadOnlyDictionary<string, int>? ratings = null) =>
@@ -80,6 +81,24 @@ public sealed class PoBrawlTournamentTests
         var upset = NewCup(ratings: ratings).RecordResult(2, 20, knockout: true).P2Delta;
         upset.Should().BeGreaterThan(favourite);
         (favourite + upset).Should().Be(24, because: "the two expectations sum to one");
+    }
+
+    private void Expectation_FavoursTheHigherRating_AndOnlyAnUnderdogWinIsAnUpset()
+    {
+        var first = NewCup().Current!;
+        var ratings = new Dictionary<string, int> { [first.P1Id!] = 1200, [first.P2Id!] = 1000 };
+        var cup = NewCup(ratings: ratings);
+        cup.ExpectedP1(cup.Current!).Should().BeApproximately(0.76, 0.01, because: "200 points up is a 76% favourite");
+        cup.ExpectedP1(cup.Bouts[4]).Should().Be(0.5, because: "an unpaired bout has no favourite");
+
+        var upset = cup.RecordResult(2, 20, knockout: true);
+        upset.P1Expected.Should().BeApproximately(0.76, 0.01, because: "the expectation is the one going in");
+        upset.IsUpset.Should().BeTrue();
+
+        var chalk = NewCup(ratings: ratings).RecordResult(1, 20, knockout: true);
+        chalk.IsUpset.Should().BeFalse(because: "the favourite winning is no story");
+        NewCup().RecordResult(2, 20, knockout: true).IsUpset.Should().BeFalse(because: "two equal ratings can't upset each other");
+        NewCup().Bouts[0].IsUpset.Should().BeFalse(because: "an undecided bout is no upset yet");
     }
 
     private void Results_AreRefused_WhenNotASide_OrOnceDecided()

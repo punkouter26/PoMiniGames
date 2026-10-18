@@ -230,6 +230,11 @@ class CinematicsMethods {
     let height = 1.55 + sep * 0.06;
     let lookAt = mid.clone();
     lookAt.y += 1 * this._framingHeightBias();
+    // The lens the active branch wants; the shared FOV easing/punch below works around it.
+    let fovAim = this.fovBase;
+    // Broadcast director (director.js): CPU-only modes, 'normal' camera, fighting phase.
+    // Evaluated before the branches so it can let go when KO/super take over.
+    const directed = this._directorLive();
 
     if (this.cameraMode === 'ko') {
       this._camVel.set(0, 0, 0); // hand off cleanly from the spring boom
@@ -286,6 +291,8 @@ class CinematicsMethods {
       // Long lens: narrowing FOV while pushing in compresses the background.
       this.camera.fov = this.fovBase - 12 * k2;
       this.camera.updateProjectionMatrix();
+    } else if (directed) {
+      fovAim = this._directCamera(dt, mid, axis, perp, sep);
     } else {
       // Slightly underdamped spring boom; hit impulses go straight into _camVel (_camImpulse).
       const target = mid.clone().add(perp.multiplyScalar(distance));
@@ -307,11 +314,11 @@ class CinematicsMethods {
     // Calm mode (reduced motion) drops punch and shake outright.
     if (this._calm()) { this.fovPunch = 0; this.shakeT = 0; }
     if (this.fovPunch > 0.01 && this.cameraMode !== 'super') {
-      this.camera.fov = this.fovBase + this.fovPunch;
+      this.camera.fov = fovAim + this.fovPunch;
       this.camera.updateProjectionMatrix();
       this.fovPunch *= Math.max(0, 1 - dt * 9);
     } else if (this.cameraMode !== 'ko' && this.cameraMode !== 'super') {
-      this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, this.fovBase, Math.min(1, dt * 6));
+      this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, fovAim, Math.min(1, dt * 6));
       this.camera.updateProjectionMatrix();
     }
 
@@ -321,6 +328,9 @@ class CinematicsMethods {
       this.camera.position.y += (Math.random() - 0.5) * amp;
       this.shakeT = Math.max(0, this.shakeT - dt);
     }
+
+    // Picture-in-picture iso camera (director.js); drawn after the composer in game.js.
+    this._updateIsoCam(dt);
   }
 }
 

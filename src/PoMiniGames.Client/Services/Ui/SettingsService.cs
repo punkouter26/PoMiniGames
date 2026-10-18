@@ -170,11 +170,16 @@ public sealed class SettingsService : IAsyncDisposable
         await InvokeAsync("applyVolume", Volume / 100.0);
     }
 
-    public void SetHaptics(bool enabled)
+    /// <summary>
+    /// Haptics on or off. The key is read live by every JS haptics path; the interop call tells
+    /// impactBus.js's gate at once, so a rumble already running stops.
+    /// </summary>
+    public async Task SetHapticsAsync(bool enabled)
     {
         Haptics = enabled;
         LocalStorageService.SetItem(HapticsKey, enabled ? "1" : "0");
         Changed?.Invoke();
+        await InvokeAsync("applyHaptics", enabled);
     }
 
     public async Task SetReducedMotionAsync(bool reduce)

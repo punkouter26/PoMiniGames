@@ -1,8 +1,13 @@
 @* The fight HUD: health, energy, body damage and the clock, fed ~4×/sec by the engine
    (game.js _pushHud → PoBrawlPage.OnHud → Update). Its own component so that pump re-renders
-   this subtree alone, not the whole GameShell. The page keeps the danger announcements. *@
+   this subtree alone, not the whole GameShell. The page keeps the danger announcements.
+   The liquid-glass tubes are js/pobrawl/hudLiquid.js: one WebGL2 canvas over this HUD that
+   reads the meters' aria-valuenow (no interop on the pump) and marks the HUD data-liquid while
+   it draws. Without it (no WebGL2, the low tier) the CSS bars below are the HUD. *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
 
-<div class="pb-hud">
+<div class="pb-hud" @ref="_root">
     @* The ghost is the damage chip: a pale bar under the fill that holds the old value for a
        beat and then drains to meet it (a delayed width transition on the same --hp).
        InDanger cracks the plate. *@
@@ -32,6 +37,8 @@
             <div class="pb-en-fill @EnergyClass(_p2Energy)" style="--en: @(_p2Energy)%;"></div>
         </div>
     </div>
+    @* Decoration over the tracks; the meters above stay the accessible truth. *@
+    <canvas class="pb-liquid" aria-hidden="true"></canvas>
 </div>
 
 @code {
@@ -127,4 +134,49 @@
         </svg>;
 
     private static string RegionClass(int dmg) => dmg >= 70 ? "pb-reg-crit" : "";
+
+    // ── Liquid-glass tubes (js/pobrawl/hudLiquid.js) ─────────────────────
+    private ElementReference _root;
+    private IJSObjectReference? _liquid;
+    private bool _disposed;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pobrawl/hudLiquid.js");
+            if (_disposed)
+            {
+                await module.DisposeAsync();
+                return;
+            }
+            _liquid = module;
+            await _liquid.InvokeVoidAsync("mount", _root);
+        }
+        catch (JSException)
+        {
+            // Decoration only: the CSS bars stay the HUD.
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        if (_liquid is null) return;
+        try
+        {
+            await _liquid.InvokeVoidAsync("unmount", _root);
+            await _liquid.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is gone; so is the canvas.
+        }
+        catch (JSException)
+        {
+            // Unmount is best-effort; the module also stops itself once the HUD is detached.
+        }
+        _liquid = null;
+    }
 }

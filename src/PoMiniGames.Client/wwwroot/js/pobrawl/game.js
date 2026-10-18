@@ -33,12 +33,16 @@ import { Training } from './training.js';
 import { SIM_DT, MAX_HP, ATTACKS, HEAVY_HIT_DMG } from './constants.js';
 import { SceneSetup, ENV_INTENSITY } from './sceneSetup.js';
 import { KeyBridge } from '../gamepadBus.js';
+import { BrawlHaptics } from './haptics.js';
 import { MatWear } from './matWear.js';
 import { NewsDesk } from './news.js';
 import { KoClipRecorder } from './clip.js';
 import { NetController, Netplay } from './netplay.js';
 import { Commentary } from './commentary.js';
 import { Spectacle, REWIND_SEC } from './spectacle.js';
+import { Cup } from './cup.js';
+import { Ceremony } from './ceremony.js';
+import { Director } from './director.js';
 
 const MAX_FRAME_DT = 0.05;
 
@@ -362,6 +366,8 @@ export class BrawlGame {
     this._initImpactFrames();
     // Shockwave, comic KO, pyro, light kick, rewind, shatter (spectacle.js).
     this._initSpectacle();
+    // Tournament only: round looks, crowd fill, Elo storyline, the belt (cup.js, ceremony.js).
+    this._initCup();
 
     // Impact light pool: reused PointLights flashed at hit points. A fixed
     // pool keeps the scene's light count constant (adding/removing lights at
@@ -449,6 +455,9 @@ export class BrawlGame {
     if (!cpuOnly) {
       this.gamepads = new KeyBridge(this.options.mode === '2p' ? [1, 2] : [1], (pad, layout) => padCodes(pad, LAYOUTS[layout]));
     }
+    // Rumble and phone buzz for the humans only (haptics.js); CPU-only and spectated fights get
+    // an inert router that still claims the platform haptics, so nothing buzzes on their behalf.
+    this.haptics = new BrawlHaptics(this, { active: !cpuOnly && !spectating });
 
     // The Breaking News result package (news.js).
     this.news = new NewsDesk(this.container, {
@@ -633,6 +642,8 @@ export class BrawlGame {
       // canvas keeps its last frame until the warm-up settles.
       if (this._compiling) return;
       this.composer.render();
+      // The director's iso-cam inset, drawn over the finished frame (director.js).
+      this._renderIsoCam();
       // Same task as the render, or the WebGL canvas is already cleared.
       if (this.clip) this.clip.mirror(now);
       // The result shatter snapshots the frame, so it has the same constraint.
@@ -813,6 +824,8 @@ export class BrawlGame {
     const g = this._jumboCtx;
     if (!g || !this.fighters || !this.combat) return;
     const W = 256, H = 128;
+    // Between tournament bouts the screens carry the bracket (cup.js) until the next count.
+    if (this._drawCupBoard(g, W, H)) { this._jumboTex.needsUpdate = true; return; }
     g.fillStyle = '#08101f';
     g.fillRect(0, 0, W, H);
 
@@ -915,13 +928,15 @@ export class BrawlGame {
     }
 
     // A fresh match starts on a clean canvas — the accumulated blood
-    // stains belong to the fight that produced them.
-    if (this._bloodStains) {
+    // stains belong to the fight that produced them. Not in the tournament:
+    // there the ring keeps all seven bouts' blood, scuffs and sweat (cup.js).
+    const keepWear = this.options.mode === 'tournament';
+    if (this._bloodStains && !keepWear) {
       for (const s of this._bloodStains) this.scene.remove(s);
       this._bloodStains.length = 0;
     }
     // …and so do the scuffs, skids and sweat.
-    if (this.matWear) this.matWear.clear();
+    if (this.matWear && !keepWear) this.matWear.clear();
     this._koDust = null;
 
     // Clear any arms torn off in the previous fight.
@@ -1133,7 +1148,8 @@ export class BrawlGame {
     this.clock = 0;
     this.winner = 0;
     // Rebuild the corner crate stacks so each round opens with an intact ring.
-    if (this.props) resetProps(this.props);
+    // The tournament restacks only what survived: broken crates stay broken all night.
+    if (this.props) resetProps(this.props, { keepBroken: this.options.mode === 'tournament' });
     // Drop the previous round's floating numbers and combo badges.
     this._clearFx();
     this._clearSpectacle();
@@ -1995,6 +2011,8 @@ export class BrawlGame {
         f.energy -= drain;
         f.chargeAmt = Math.min(1, f.chargeAmt + drain);
         f.animator.setCharge(f.chargeName, f.chargeAmt);
+        // The coil in the hand: a pulse train that rises with it (haptics.js).
+        this.haptics?.charge(f, f.chargeAmt);
         // Full-charge cue: one audible snap when the coil tops out.
         if (f.chargeAmt >= 1 && !f.chargeCued) {
           f.chargeCued = true;
@@ -2055,6 +2073,7 @@ export class BrawlGame {
   // released (see the 'charge' case in _tickFighter), then _enterAttack
   // throws the strike scaled by the stored charge.
   _enterCharge(f, name) {
+    this.haptics?.chargeEnd(f);
     f.state = 'charge';
     f.stateT = 0;
     f.chargeName = name;
@@ -2609,6 +2628,8 @@ export class BrawlGame {
     } else if (this._victorHalo) {
       this._victorHalo.intensity = 0;
     }
+    // Tournament: the round's time of day on top of these baselines (cup.js).
+    this._applyCupLook(L, dt);
   }
 
   // Shared radial-gradient texture for the fighters' contact-shadow blobs.
@@ -2843,13 +2864,16 @@ export class BrawlGame {
   }
 
   _updateCrowd(dt) {
+    // Tournament: round baseline + the Elo storyline (cup.js); null in every other mode.
+    this._tickCup(dt);
+    const cup = this._cup;
     animateCrowd(this.arena.crowd, dt, this.clock, this.excited);
     // Phones come up for the last ten seconds, a fighter in the red, and the result.
-    const phonesWanted = this.phase === 'result' ? 0.8
+    const phonesWanted = Math.max(cup ? cup.phones : 0, this.phase === 'result' ? 0.8
       : this.phase === 'fighting' && !this.training
-        && (TIME_LIMIT - (this.clock || 0) <= 10 || (this._dangerPushed || 0) > 0.3) ? 1 : 0;
+        && (TIME_LIMIT - (this.clock || 0) <= 10 || (this._dangerPushed || 0) > 0.3) ? 1 : 0);
     this._phoneLevel += (phonesWanted - this._phoneLevel) * (1 - Math.exp(-dt * 1.5));
-    this.excited = Math.max(0, this.excited - dt * 0.4);
+    this.excited = Math.max(cup ? cup.exciteFloor : 0, this.excited - dt * (cup ? cup.decay : 0.4));
     // The reactive hall shares the crowd's clock because it is driven by
     // the same two signals (excitement and the audio envelope).
     this._updateReactiveArena(dt);
@@ -2861,7 +2885,8 @@ export class BrawlGame {
       const lowest = Math.min(this._hp(this.fighters[0]), this._hp(this.fighters[1])) / MAX_HP;
       const desperation = 1 - lowest;
       const late = Math.min(1, (this.clock || 0) / TIME_LIMIT);
-      const want = Math.min(1, 0.18 + this.excited * 0.45 + desperation * 0.4 + late * 0.15);
+      const want = Math.min(1, (0.18 + (cup ? cup.crowdLift : 0) + this.excited * 0.45 + desperation * 0.4 + late * 0.15)
+        * (cup ? cup.energy : 1));
       // Throttled: each call cancels and rewrites automation on three
       // AudioParams, and at 60 fps that is 180 scheduled ramps a second for a
       // value that moves slowly. Every ramp is 0.6 s long anyway, so pushing
@@ -2929,16 +2954,20 @@ export class BrawlGame {
       this.audio.crowdGasp();
     }
     if (dmg >= HEAVY_HIT_DMG) this._impactFrame(point, power);
+    // Tournament: the crowd reads it against the Elo story (cup.js).
+    this._upsetOnHit(attacker, defender, dmg);
     // Rumble: the one hit carries the full motor, the one landing it a
     // light buzz in the hand.
     this._rumble(defender, 0.3 + 0.6 * power, 0.5, 80 + 140 * power);
     this._rumble(attacker, 0.08, 0.2 + 0.35 * power, 55);
   }
 
-  /** Dual-rumble on the pad driving `f`, if a person is driving it with one. */
-  _rumble(f, strong, weak, ms) {
-    if (!this.gamepads || !f || f.controller?.isHuman !== true) return;
-    this.gamepads.rumble(this.fighters.indexOf(f) + 1, strong, weak, ms);
+  /**
+   * Dual-rumble on the pad (or phone) of the person driving `f`, if a person is — online only the
+   * local corner. haptics.js routes it; impactBus gates it. opts: { priority, phone }.
+   */
+  _rumble(f, strong, weak, ms, opts) {
+    this.haptics?.rumble(f, strong, weak, ms, opts);
   }
 
   _showCombo(f) {
@@ -3069,6 +3098,7 @@ export class BrawlGame {
     // The pads first: releasing their held keys has to
     // reach the controllers before those are disposed below.
     if (this.gamepads) { this.gamepads.dispose(); this.gamepads = null; }
+    if (this.haptics) { this.haptics.dispose(); this.haptics = null; }
     if (this.clip) { this.clip.dispose(); this.clip = null; }
     if (this.news) { this.news.dispose(); this.news = null; }
     if (this.matWear) { this.matWear.dispose(); this.matWear = null; }
@@ -3088,6 +3118,7 @@ export class BrawlGame {
     this._disposeNet();
     this._disposeCommentary();
     this._clearSpectacle();
+    this._disposeCup();
     if (this.touchEl) { this.touchEl.remove(); this.container.classList.remove('pb-has-pad'); }
     if (this.fighters) for (const f of this.fighters) f.controller.dispose();
     if (this.audio) this.audio.close();
@@ -3111,6 +3142,7 @@ export class BrawlGame {
       });
     }
     if (this.composer) this.composer.dispose?.();
+    this._disposeDirector();
     // PMREM output target — a WebGLRenderTarget, invisible to the
     // geometry/material traverse above.
     if (this._envRT) { this._envRT.dispose(); this._envRT = null; }
@@ -3148,4 +3180,4 @@ export class BrawlGame {
 // Must run at module scope, after the class declaration and before any instance
 // is constructed. index.js only ever imports BrawlGame from here, so by the time
 // `new BrawlGame()` can be reached these methods are already on the prototype.
-mixin(BrawlGame.prototype, SceneSetup, PersonalityEffects, Vfx, Cinematics, HitResolution, Training, Netplay, Commentary, Spectacle);
+mixin(BrawlGame.prototype, SceneSetup, PersonalityEffects, Vfx, Cinematics, HitResolution, Training, Netplay, Commentary, Spectacle, Cup, Ceremony, Director);

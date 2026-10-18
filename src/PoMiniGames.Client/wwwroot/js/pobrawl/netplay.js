@@ -22,6 +22,14 @@
 //     the local modes run, and the fight ends only when the server's snapshot says so.
 //   • Personalities, supers and prop chip damage are off: each would move HP the sim never moved.
 //
+// Rollback-aware presentation (never touches the sim or the protocol):
+//   • A correction that moves a fighter more than SMEAR_MIN_MM is not slid out over a quarter
+//     second: the fighter closes the gap in ~3 frames under a directional chromatic smear (the
+//     post pass's uNetSmear), so a re-simulated position reads as a dash, not a pop.
+//   • A swing the server has not confirmed yet (its frame is past session.confirmedFrame, the
+//     newest snapshot) carries a faint cyan ghost trail; it burns off once confirmed.
+//   • The page's signal meter: RTT and rollbacks per second, pushed at 2 Hz (OnNetSignal).
+//
 // Keys (local corner only): A/D walk (held), R or S guard (held), F punch, G kick, H special.
 // The touch pad and gamepads dispatch the same codes, so they need nothing of their own.
 
@@ -39,6 +47,22 @@ import {
 const COUNTDOWN_END = 3.7;
 // A swing a rollback reveals more than this many frames late is not thrown (the HUD still shows what it did).
 const SWING_STALE_FRAMES = 30;
+
+// A correction that moves a corner further than this (sim mm) gets the smear and the quick catch-up.
+const SMEAR_MIN_MM = 120;
+// Rendered frames the smear lasts (it fades over them), and the catch-up's steering per tick.
+const SMEAR_FRAMES = 3;
+const WARP_K = 0.55;
+// The signal meter's push interval (≤ 2 Hz) and its rollback-rate smoothing.
+const SIGNAL_MS = 500;
+// The ghost ribbon: the striking limb's last positions in translucent cyan. Normal blending, not the
+// swing trail's additive: added light washes out on the lit mat, a tint reads on any background.
+const GHOST_POINTS = 10;
+const GHOST_COLOR = new THREE.Color(0x22d3ee);
+const GHOST_OPACITY = 0.5;
+const _gp = new THREE.Vector3();
+const _sa = new THREE.Vector3();
+const _sb = new THREE.Vector3();
 
 const HELD = ['idle', 'forward', 'back', 'block']; // PoBrawlMatchAction 0..3
 const SWING = { [PRESS_PUNCH]: 'punch', [PRESS_KICK]: 'kick', [PRESS_SPECIAL]: 'special' };
@@ -159,8 +183,15 @@ class NetplayMethods {
       send: (frame, held, press, seq) => {
         this.dotnet?.invokeMethodAsync('OnNetInput', frame, held, press, seq).catch(() => {});
       },
+      onCorrection: (c) => this._netCorrection(c),
     });
-    this.online = { localSide, session, final: null, finalAt: 0, thrown: new Map(), raf: 0 };
+    this.online = {
+      localSide, session, final: null, finalAt: 0, thrown: new Map(), raf: 0,
+      smear: null,                     // { side, frames, amp, dir } — the live rollback smear
+      warpUntil: [0, 0],               // per corner: wall-clock ms the quick catch-up runs until
+      ghosts: [null, null],            // per corner: the predicted-swing ghost ribbon
+      signal: { at: 0, count: 0, rate: 0 },
+    };
     const local = localSide ? this.fighters[localSide - 1] : null;
     for (const f of this.fighters) {
       f.controller.fighter = f;
@@ -202,12 +233,132 @@ class NetplayMethods {
     this.online.session.onClock(clockFrame, rttMs, performance.now());
   }
 
+  /**
+   * The session re-simulated to the present (a rollback or a hard correction). A corner it moved
+   * further than SMEAR_MIN_MM catches up in a few frames under a chromatic smear instead of
+   * sliding there; the larger move wins when several land together.
+   */
+  _netCorrection({ dx }) {
+    const o = this.online;
+    if (!o || this.phase !== 'fighting') return;
+    for (let side = 0; side < 2; side++) {
+      const d = dx[side] || 0;
+      if (Math.abs(d) <= SMEAR_MIN_MM) continue;
+      o.warpUntil[side] = performance.now() + 70;
+      if (this._calm()) continue;   // reduced motion: the catch-up, without the smear
+      const amp = Math.min(1, Math.abs(d) / 500);
+      if (!o.smear || amp >= o.smear.amp * (o.smear.frames / SMEAR_FRAMES)) {
+        o.smear = { side, frames: SMEAR_FRAMES, amp, dir: Math.sign(d) };
+      }
+    }
+  }
+
+  /** Per render frame: the smear's uniforms — centred on its fighter, along the move, fading. */
+  _netSmearFrame() {
+    const u = this.fxPass?.uniforms;
+    if (!u || !u.uNetSmear) return;
+    const sm = this.online.smear;
+    const f = sm && this.fighters[sm.side];
+    if (!sm || !f || !this.camera) { u.uNetSmear.value = 0; return; }
+    const torso = f.rig.joints.torso || f.rig.root;
+    torso.getWorldPosition(_sa);
+    _sb.copy(_sa).setX(_sa.x + sm.dir * 0.5);
+    const hy = _sa.y;
+    _sa.project(this.camera);
+    _sb.project(this.camera);
+    let dxu = _sb.x - _sa.x, dyu = _sb.y - _sa.y;
+    const len = Math.hypot(dxu, dyu) || 1;
+    dxu /= len; dyu /= len;
+    // Blob radius: about the body's projected height (torso to a metre above it).
+    _sb.set(f.rig.root.position.x, hy + 0.9, f.rig.root.position.z).project(this.camera);
+    const r = Math.max(0.08, Math.min(0.4, Math.abs(_sb.y - _sa.y) * 0.5 * 1.2));
+    u.uNetSmear.value = sm.amp * (sm.frames / SMEAR_FRAMES);
+    u.uNetSmearC.value[0] = (_sa.x + 1) * 0.5;
+    u.uNetSmearC.value[1] = (_sa.y + 1) * 0.5;
+    u.uNetSmearR.value = r;
+    u.uNetSmearDir.value[0] = dxu;
+    u.uNetSmearDir.value[1] = dyu;
+    if (--sm.frames <= 0) this.online.smear = null;
+  }
+
+  /**
+   * Per render frame: a corner whose last swing is still a prediction (its frame is past the
+   * server's newest snapshot) trails a faint ghost ribbon off the striking limb; once the server
+   * has confirmed it, the ribbon burns off.
+   */
+  _netGhostFrame(side) {
+    const o = this.online;
+    const f = this.fighters[side];
+    const swinging = f && f.attack && (f.state === 'punch' || f.state === 'kick');
+    const predicted = swinging && (f.netSwingFrame ?? -1) > o.session.confirmedFrame;
+    let g = o.ghosts[side];
+    if (!g) {
+      if (!predicted) return;
+      g = o.ghosts[side] = this._makeTrail();
+      g.color.copy(GHOST_COLOR);
+      g.mesh.material.blending = THREE.NormalBlending;
+      g.mesh.material.opacity = GHOST_OPACITY;
+      g.mesh.material.needsUpdate = true;
+    }
+    const joint = predicted ? f.rig.joints[f.state === 'kick' ? 'footR' : 'fistR'] : null;
+    if (joint) {
+      joint.getWorldPosition(_gp);
+      g.points.push({ x: _gp.x, y: _gp.y, z: _gp.z });
+      if (g.points.length > GHOST_POINTS) g.points.shift();
+    } else if (g.points.length) {
+      g.points.shift();
+      if (g.points.length) g.points.shift();
+    }
+    const n = g.points.length;
+    if (n < 2) { g.mesh.visible = false; g.mesh.geometry.setDrawRange(0, 0); return; }
+    const pos = g.mesh.geometry.attributes.position.array;
+    const col = g.mesh.geometry.attributes.color.array;
+    for (let i = 0; i < n; i++) {
+      const p = g.points[i];
+      const a = i / (n - 1);
+      const w = 0.03 + 0.08 * a;
+      const k = i * 6;
+      pos[k] = p.x; pos[k + 1] = p.y - w; pos[k + 2] = p.z;
+      pos[k + 3] = p.x; pos[k + 4] = p.y + w; pos[k + 5] = p.z;
+      const br = 0.45 + 0.55 * a;       // the head brightest, the tail never black
+      col[k] = col[k + 3] = g.color.r * br;
+      col[k + 1] = col[k + 4] = g.color.g * br;
+      col[k + 2] = col[k + 5] = g.color.b * br;
+    }
+    g.mesh.geometry.attributes.position.needsUpdate = true;
+    g.mesh.geometry.attributes.color.needsUpdate = true;
+    g.mesh.geometry.setDrawRange(0, (n - 1) * 6);
+    g.mesh.visible = true;
+  }
+
+  /** At ≤ 2 Hz: the signal meter's numbers to the page (RTT ms, rollbacks/s, deepest rollback). */
+  _netSignal(now) {
+    const o = this.online;
+    const sg = o.signal;
+    if (now - sg.at < SIGNAL_MS) return;
+    const st = o.session.stats;
+    const count = st.rollbacks + st.corrections;
+    if (sg.at) {
+      const inst = (count - sg.count) / ((now - sg.at) / 1000);
+      sg.rate = sg.rate * 0.5 + inst * 0.5;
+    }
+    sg.at = now;
+    sg.count = count;
+    if (!this.dotnet || o.session.clockSource === 'none') return;
+    this.dotnet.invokeMethodAsync('OnNetSignal', Math.round(o.session.rtt), Math.round(sg.rate * 10) / 10, st.maxDepth | 0)
+      .catch(() => {});
+  }
+
   /** Every render frame: advance the rollback sim to the clock, then present its state. */
   _netFrame() {
     const o = this.online;
-    o.session.update(performance.now());
+    const now = performance.now();
+    o.session.update(now);
+    this._netSignal(now);
     const s = o.session.state;
     if (!s || !this.fighters) return;
+    this._netSmearFrame();
+    if (this.phase === 'fighting') { this._netGhostFrame(0); this._netGhostFrame(1); }
 
     // ── Clock and phase: the sim's pre-roll drives the engine's countdown ──
     const elapsed = (s.frame - s.fightStart) / HZ;
@@ -301,6 +452,7 @@ class NetplayMethods {
       this._spawnCallout(new THREE.Vector3(p.x, 2.1, p.z), 'SPECIAL!');
     }
     f.netVerdict = verdict;
+    f.netSwingFrame = verdict.frame;   // predicted until the server's snapshot reaches it (ghost trail)
     // No limb to swing (a torn-off punching arm): land it now rather than never.
     if (f.state !== attackName) this._presentNetVerdict(f, opp, ATTACKS[attackName], verdict, chestHit(opp));
   }
@@ -366,6 +518,8 @@ class NetplayMethods {
       defender.knockback.add(knockDir.clone().multiplyScalar(2.0 / defMass));
       defender.stats.blocks += 1;
       this._hitFeedback(attack, false);
+      // The guard's short high buzz — the local corner's pad only (haptics.js).
+      this._rumble(defender, 0, 0.35, 45);
       if (amount > 0) {
         this.combat.damage({ playerId: defender.playerId, amount, sourceId: attacker.playerId });
         this.hudDirty = true;
@@ -391,11 +545,14 @@ class NetplayMethods {
     const realDt = Math.min(0.25, Math.max(dt, now - (this.online.steerAt || now)));
     this.online.steerAt = now;
     const k = 1 - Math.exp(-realDt * 10);
+    const nowMs = now * 1000;
     for (const f of this.fighters) {
       if (f.state === 'ko') continue;
       const tx = f.controller.targetX();
       const pos = f.rig.root.position;
-      if (tx !== null) pos.x += (tx - pos.x) * k;
+      // A big rollback correction closes in ~3 frames (under the smear) rather than sliding.
+      const kx = nowMs < this.online.warpUntil[f.index - 1] ? Math.max(k, WARP_K) : k;
+      if (tx !== null) pos.x += (tx - pos.x) * kx;
       // The sim's ring is a line; circling and knockback drift come back to it.
       pos.z *= 1 - k;
     }
@@ -428,6 +585,15 @@ class NetplayMethods {
   _disposeNet() {
     if (this.netInput) { this.netInput.dispose(); this.netInput = null; }
     if (this.online?.raf) cancelAnimationFrame(this.online.raf);
+    for (const g of this.online?.ghosts || []) {
+      if (!g) continue;
+      this.scene?.remove(g.mesh);
+      g.mesh.geometry.dispose();
+      g.mesh.material.dispose();
+    }
+    if (this.online) this.online.ghosts = [null, null];
+    const u = this.fxPass?.uniforms;
+    if (u?.uNetSmear) u.uNetSmear.value = 0;
   }
 }
 

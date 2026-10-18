@@ -160,10 +160,26 @@ export function buildProps(world, mats, scene) {
   return props;
 }
 
+// Put one crate back on a stack slot, at rest.
+function restack(e, t) {
+  e.body.position.set(t.x, t.y, t.z);
+  e.body.quaternion.set(0, 0, 0, 1);
+  e.body.velocity.set(0, 0, 0);
+  e.body.angularVelocity.set(0, 0, 0);
+  e.mesh.position.set(t.x, t.y, t.z);
+  e.mesh.quaternion.set(0, 0, 0, 1);
+}
+
 // Restore the corner stacks for a fresh round. REUSES existing crate
 // bodies/meshes to avoid a GC spike (audible/visible stutter) during the intro;
 // only debris is torn down, shattered crates are respawned.
-export function resetProps(props) {
+//
+// opts.keepBroken (the tournament: the arena remembers the night): nothing is
+// respawned or swept. The surviving crates of each corner restack into that corner's
+// lowest slots, still battered (hp and tint kept), so a corner that lost three crates
+// stands three crates shorter for the rest of the bracket; the splinters stay where
+// they fell.
+export function resetProps(props, opts = {}) {
   if (!props) return;
   const targets = [];
   for (const sx of [-1, 1]) {
@@ -172,6 +188,21 @@ export function resetProps(props) {
         targets.push({ x: sx * CORNER + s.x, y: MAT_Y + s.y, z: sz * CORNER + s.z });
       }
     }
+  }
+  if (opts.keepBroken && props.bodies.some((e) => !e.body.userData.isDebris && e.body.userData.slot != null)) {
+    const corners = [[], [], [], []];
+    for (const e of props.bodies) {
+      const ud = e.body.userData;
+      if (!ud.isDebris && ud.slot != null) corners[(ud.slot / STACK.length) | 0].push(e);
+    }
+    corners.forEach((crates, c) => {
+      crates.sort((a, b) => a.body.userData.slot - b.body.userData.slot);
+      crates.forEach((e, k) => {
+        e.body.userData.slot = c * STACK.length + k;
+        restack(e, targets[e.body.userData.slot]);
+      });
+    });
+    return;
   }
   // Drop debris; keep intact crate bodies for reuse.
   const crates = [];
@@ -183,16 +214,12 @@ export function resetProps(props) {
     const t = targets[i];
     if (i < crates.length) {
       const e = crates[i];
-      e.body.position.set(t.x, t.y, t.z);
-      e.body.quaternion.set(0, 0, 0, 1);
-      e.body.velocity.set(0, 0, 0);
-      e.body.angularVelocity.set(0, 0, 0);
+      restack(e, t);
       e.body.userData.hp = CRATE_HP;
+      e.body.userData.slot = i;
       e.mesh.material.color.setRGB(1, 1, 1);
-      e.mesh.position.set(t.x, t.y, t.z);
-      e.mesh.quaternion.set(0, 0, 0, 1);
     } else {
-      spawnBox(props, t, BOX, CRATE_MASS, CRATE_HP, false);
+      spawnBox(props, t, BOX, CRATE_MASS, CRATE_HP, false).body.userData.slot = i;
     }
   }
   for (let i = targets.length; i < crates.length; i++) removeEntry(props, crates[i]);

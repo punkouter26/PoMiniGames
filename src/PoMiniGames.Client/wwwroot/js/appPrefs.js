@@ -121,6 +121,18 @@ export function applyColorSafe(on) {
 }
 
 /**
+ * Haptics (controller rumble and phone vibration), on by default. SettingsService owns the
+ * `pomini_haptics` key; this hands the change to impactBus's live gate, which every rumble in
+ * the app goes through, so switching it off also stops a motor that is already running.
+ * @param {boolean} on
+ */
+export function applyHaptics(on) {
+    try {
+        window.PoImpact?.setHaptics?.(!!on);
+    } catch { /* impactBus not loaded: it reads the key itself when it loads */ }
+}
+
+/**
  * Master volume, 0..1. Delegates to the shared bus, which owns the gain node
  * and the persisted key — duplicating that here is exactly the five-modules
  * problem audioBus.js was created to end.

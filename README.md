@@ -25,7 +25,14 @@ scores, and, only when a player opts in, talks to AI models on the player's beha
   (`matchInput`, echoed to everyone with the frame the server applied them on) and answers
   `Ping` for clock sync. Snapshots (`matchState`, the full sim state plus a checksum) go out
   at 10 Hz. The server decides which frame each input lands on and is the only source of the
-  result.
+  result. Corrections are presented, not hidden: a rollback that moves a fighter plays a
+  2–3 frame chromatic smear, an unconfirmed swing trails a faint ghost, and a signal meter
+  beside the corner pill shows the round trip and rollbacks per second.
+- **Haptics are one platform layer.** `wwwroot/js/impactBus.js` gates every controller rumble
+  and phone vibration in the app: the Haptics setting (`pomini_haptics`, on by default), reduced
+  haptics under reduced motion, and rate and duty caps so nothing holds a motor on. PoBrawl
+  routes rumble to the local human only (`js/pobrawl/haptics.js`): a rising pulse while a strike
+  charges, a tick on a perfect guard, thumps scaled by the hit, a long KO thud.
 - **No database.** Scores, ratings, saves and AI spend ledgers live in Azure Table Storage;
   PoEcosystem world files live in Blob Storage. A player is whoever the sign-in token says
   they are; there is no Player table.
@@ -66,7 +73,7 @@ scores, and, only when a player opts in, talks to AI models on the player's beha
 |---|---|
 | TicTacToe | 4-in-a-row on 6×6 vs AI, hot-seat, or online quick-match (SignalR) |
 | ConnectFive | Five-in-a-row vs AI, hot-seat, or online quick-match (SignalR) |
-| PoBrawl | Physics brawler with a presidents ladder, an 8-fighter CPU tournament (`/pobrawl/tournament`, random draw, Elo after every bout) + fighter Elo demo board |
+| PoBrawl | Physics brawler with a presidents ladder, an 8-fighter CPU tournament (`/pobrawl/tournament`, random draw, Elo after every bout; golden-hour → dusk → night arena, an Elo-upset crowd, an animated bracket and a belt ceremony; a TV-style director camera with a picture-in-picture iso cam in demo and tournament) + fighter Elo demo board |
 | PoCoupleQuiz | Two-player realtime couples quiz (SignalR); curated questions, free answer matching, opt-in AI judge |
 | PoFunQuiz | Multiplayer trivia lobby from a free question bank (opt-in Fresh AI questions) |
 | PoMarbleRace | Physics marble race on baked GLB tracks; online 2-player via host-streamed physics |

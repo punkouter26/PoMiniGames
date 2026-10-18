@@ -5,6 +5,15 @@
 import * as THREE from 'three';
 import { PERSONALITIES } from './personalities.js';
 import { MAX_HP } from './constants.js';
+import * as Quality from './quality.js';
+
+// Super ink (see _startSuperInk): seconds in / held / out, full and calm (reduced motion).
+const INK_FULL = { in: 0.18, hold: 0.5, out: 0.32, peak: 1 };
+const INK_CALM = { in: 0.25, hold: 0.18, out: 0.3, peak: 0.45 };
+const INK_CUT = 0.2;           // an interrupted shift (a KO, a reset) still fades, never snaps
+const _inkProj = new THREE.Vector3();
+const _black = new THREE.Color(0x000000);
+const _paper = new THREE.Color(0xfff4dc);
 
 class PersonalityEffectsMethods {
   // Per fighter tick: trigger-once HP thresholds, timed modes, and expiry.
@@ -182,8 +191,10 @@ class PersonalityEffectsMethods {
   //   EDGE     the ink line spikes to the character's accent colour
   //   SMEAR    the afterimage pass is held on for the whole beat
   //   LINES    speedlines are re-armed every frame so they stay up
+  //   INK      for ~1 s the world prints as a two-tone comic page (_startSuperInk)
   //   SOUND    a dedicated stinger, and the PA calls the move
   _startSuperCinematic(f) {
+    this._startSuperInk(f);
     this._superDur = 1.3;
     this._superT = this._superDur;
     this._superFighter = f;
@@ -220,7 +231,68 @@ class PersonalityEffectsMethods {
       .trim();
   }
 
+  // ── Super ink: the comic-page world shift ────────────────────────────
+  // While the super fires, the post pass (postShader.js uSuperInk) blends in a comic print:
+  // halftone dots, paper grain, thick ink edges, radial speed lines out of the firing fighter,
+  // and a two-tone palette from that president's suit (the shadow plate) and tie (the highlight
+  // plate). Presentation only — wall clock, no RNG, no sim state.
+  //
+  // Flicker rule (spectacle.js): the shader keeps each pixel's brightness, and the blend eases in
+  // over INK_FULL.in (>= 150 ms) and out over INK_FULL.out; an interrupted one fades over INK_CUT.
+  // Reduced motion: INK_CALM — weaker, shorter, lines and grain held still. Low tier: the cheap
+  // variant (no ink-edge taps, no grain) at three-quarter strength.
+  _startSuperInk(f) {
+    const calm = this._calm();
+    const low = Quality.tier() === 'low';
+    const env = calm ? INK_CALM : INK_FULL;
+    const suit = f.rig.baseColors?.suit;
+    const tie = f.rig.baseColors?.tie;
+    this._superInk = {
+      f, t: 0, cutAt: -1, cutFrom: 0,
+      in: env.in, hold: env.hold, out: env.out,
+      peak: env.peak * (low && !calm ? 0.75 : 1),
+      cheap: low ? 1 : 0, motion: calm ? 0 : 1,
+      a: (suit ? suit.clone() : new THREE.Color(0x1a2340)).lerp(_black, 0.55),
+      b: (tie ? tie.clone() : new THREE.Color(0xd04030)).lerp(_paper, 0.4),
+    };
+  }
+
+  /** Per frame (wall clock, from _tickSuperCinematic): the ink envelope into the post pass. */
+  _tickSuperInk(dt) {
+    const s = this._superInk;
+    const u = this.fxPass?.uniforms;
+    if (!s || !u || !u.uSuperInk) return;
+    s.t += dt;
+    const ease = (x) => { const c = Math.max(0, Math.min(1, x)); return c * c * (3 - 2 * c); };
+    let k;
+    if (s.t < s.in) k = ease(s.t / s.in);
+    else if (s.t < s.in + s.hold) k = 1;
+    else k = 1 - ease((s.t - s.in - s.hold) / s.out);
+    // A KO, a reset or a new round took the beat away: fade from where it is, never cut.
+    if (s.cutAt < 0 && (this._superFighter !== s.f || this.phase === 'ko' || this.phase === 'result')) {
+      s.cutAt = s.t;
+      s.cutFrom = k;
+    }
+    if (s.cutAt >= 0) k = Math.min(k, s.cutFrom * (1 - ease((s.t - s.cutAt) / INK_CUT)));
+    const done = s.t >= s.in + s.hold + s.out || (s.cutAt >= 0 && s.t - s.cutAt >= INK_CUT);
+    u.uSuperInk.value = done ? 0 : k * s.peak;
+    u.uInkCheap.value = s.cheap;
+    u.uInkMotion.value = s.motion;
+    s.a.toArray(u.uInkA.value);
+    s.b.toArray(u.uInkB.value);
+    const torso = s.f.rig?.joints?.torso || s.f.rig?.root;
+    if (torso && this.camera) {
+      torso.getWorldPosition(_inkProj).project(this.camera);
+      if (_inkProj.z < 1) {
+        u.uInkC.value[0] = THREE.MathUtils.clamp((_inkProj.x + 1) * 0.5, 0, 1);
+        u.uInkC.value[1] = THREE.MathUtils.clamp((_inkProj.y + 1) * 0.5, 0, 1);
+      }
+    }
+    if (done) this._superInk = null;
+  }
+
   _tickSuperCinematic(dt) {
+    this._tickSuperInk(dt);
     if (!this._superT) return;
     // A KO outranks a super: the KO path owns timeScale and the camera.
     if (this.phase === 'ko' || this.phase === 'result') { this._endSuperCinematic(); return; }

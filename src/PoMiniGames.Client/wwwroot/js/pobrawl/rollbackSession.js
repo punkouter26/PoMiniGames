@@ -43,10 +43,14 @@ export class RollbackSession {
    * @param {object} o
    * @param {number} o.localSide  1 or 2 for a player, 0 to spectate
    * @param {(frame:number, held:number, press:number, seq:number) => void} [o.send]  hub SubmitInput
+   * @param {(c:{depth:number, dx:number[]}) => void} [o.onCorrection]  presentation only: after a
+   *   rollback or hard correction re-simulated to the present, how far it moved each corner's X
+   *   (sim units, mm) and how many frames it re-ran. Never feeds back into the sim.
    */
-  constructor({ localSide = 0, send = null } = {}) {
+  constructor({ localSide = 0, send = null, onCorrection = null } = {}) {
     this.localSide = localSide | 0;
     this.send = send;
+    this.onCorrection = onCorrection;
     this.state = null;                   // the present (predicted) state
     this.history = new Array(HISTORY);   // states by frame % HISTORY
     this.anchor = null;                  // the newest server snapshot state
@@ -68,6 +72,12 @@ export class RollbackSession {
 
   get isSpectator() { return this.localSide === 0; }
   get frame() { return this.state ? this.state.frame : -1; }
+  /**
+   * The newest frame the server's own state has confirmed (the latest snapshot): anything the
+   * sim did after it still rests on a prediction — the remote corner's held input, or our own
+   * input the server may yet re-stamp. -1 before the first snapshot.
+   */
+  get confirmedFrame() { return this.anchor ? this.anchor.frame : -1; }
 
   // ── Clock ───────────────────────────────────────────────────────────
 
@@ -256,13 +266,17 @@ export class RollbackSession {
 
   /** Re-simulate everything after confirmed state `base` up to the present frame. */
   _resimulateFrom(base) {
-    const present = this.state.frame;
+    const before = this.state;
+    const present = before.frame;
     this.state = cloneState(base);
     this.history[base.frame % HISTORY] = this.state;
     const depth = present - base.frame;
     while (this.state.frame < present) this._stepOne();
     this.stats.resimulated += depth;
     if (depth > this.stats.maxDepth) this.stats.maxDepth = depth;
+    if (this.onCorrection && this.state.frame === present) {
+      this.onCorrection({ depth, dx: [this.state.p1.x - before.p1.x, this.state.p2.x - before.p2.x] });
+    }
   }
 
   /** Something changed on frame `f` (≤ the present): restore the state before it and re-simulate. */

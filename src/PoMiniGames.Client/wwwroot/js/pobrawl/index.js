@@ -8,7 +8,9 @@ window.PoBrawl = {
    * options: { mode: '1p'|'2p'|'demo'|'tournament'|'online', p1Character, p2Character, difficulty,
    *            training?: boolean (1P only),
    *            localSide?: 1|2 (online; 0 or absent = spectating), seed?,
-   *            roundLabel? (tournament: the first bout's splash heading) }
+   *            roundLabel? (tournament: the first bout's splash heading),
+   *            round?: 0|1|2, p1Expected?: 0..1 (tournament: see matchup's `opts`),
+   *            director?: boolean, isoCam?: boolean (demo/tournament camera, default on) }
    */
   init(containerId, dotnetRef, options) {
     if (game) { game.dispose(); game = null; }
@@ -38,15 +40,26 @@ window.PoBrawl = {
    * @param {string} p2Character  right corner
    * @param {string|null} roundLabel  splash heading, e.g. 'SEMIFINAL 1 OF 2'
    * @param {string|null} introLine  the PA's ring introduction
+   * @param {{round?: 0|1|2, p1Expected?: number}} [opts]  the bout's round (quarterfinal 0,
+   *   semifinal 1, final 2: the arena's time of day and crowd) and the left corner's Elo
+   *   expectation (the crowd's upset storyline). Optional; absent = round 0, an even bout.
    */
-  matchup(p1Character, p2Character, roundLabel, introLine) {
+  matchup(p1Character, p2Character, roundLabel, introLine, opts) {
     if (!game) return;
     game.options.p1Character = p1Character;
     game.options.p2Character = p2Character;
     game._roundLabel = roundLabel || null;
     game._introLine = introLine || null;
+    game.cupBout(opts || {});
     game.resetMatch(false);
   },
+  /**
+   * Tournament, between bouts: the bracket on the arena's jumbotrons until the next count
+   * starts (cup.js cupBoard has the shape: { bouts: [{ p1, p2, w }] ×7, fresh, next, champ, title }).
+   */
+  jumbotronBracket(data) { if (game) game.cupBoard(data); },
+  /** Tournament, after the final: the belt ceremony for the champion (ceremony.js). */
+  ceremony(championCharId) { if (game) game.ceremony(championCharId); },
   /** Tournament fast-forward: 1, 2 or 4 fixed sim ticks per real one. */
   setSpeed(multiplier) {
     if (!game) return;
@@ -54,6 +67,12 @@ window.PoBrawl = {
     game.speed = m === 2 || m === 4 ? m : 1;
   },
   setMuted(muted) { if (game) game.setMuted(muted); },
+  /** Demo/tournament: the broadcast director camera (director.js). Player modes ignore it. */
+  setDirector(on) { if (game) game.setDirector(!!on); },
+  /** Demo/tournament: the picture-in-picture iso cam (medium/high tier, not on phones). */
+  setIsoCam(on) { if (game) game.setIsoCam(!!on); },
+  /** Diagnostics: the director's live shot and iso state, or null. `force` (a rig name) cuts to it — test hook. */
+  director(force) { return game ? game.directorState(force) : null; },
   /**
    * Engine phase ('intro' | 'countdown' | 'fighting' | 'ko' | 'result') or null. The ladder
    * waits on this because the KO cinematic runs on the render clock, which freezes in a

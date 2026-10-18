@@ -20,6 +20,9 @@
 //   HITSTOP  → a global time scale < 1 for a few dozen ms. Games multiply their
 //              dt by getTimeScale(). Freezing the frame at the moment of impact
 //              is the single cheapest way to make a hit land.
+//   HAPTICS  → controller rumble and phone vibration, scaled by hit weight, behind
+//              one gate (the Haptics setting, reduced haptics, duty caps). See
+//              the HAPTICS section below.
 //
 // HOW THE DOM SIDE APPLIES
 // Shake writes to the CSS `translate` and `rotate` *properties*, not `transform`.
@@ -34,15 +37,16 @@ const HAPTICS_KEY = 'pomini_haptics';
 
 // Per-kind presets. Tuned so `light` is felt-but-not-noticed and `heavy` is
 // unmistakable without being nauseating; anything above 0.7 trauma starts to
-// read as a bug rather than a hit.
+// read as a bug rather than a hit. `haptic` is the phone pattern (navigator.vibrate
+// ms, on/off/on…); `rumble` is the controller's [strong, weak, ms] at scale 1.
 const PRESETS = {
-    tick:   { trauma: 0.00, punch: 0.05, flash: 0.00, stopMs: 0,  haptic: [8] },
-    select: { trauma: 0.05, punch: 0.10, flash: 0.00, stopMs: 0,  haptic: [10] },
-    light:  { trauma: 0.16, punch: 0.18, flash: 0.04, stopMs: 25, haptic: [12] },
-    medium: { trauma: 0.34, punch: 0.38, flash: 0.10, stopMs: 55, haptic: [18, 30, 12] },
-    heavy:  { trauma: 0.62, punch: 0.72, flash: 0.22, stopMs: 90, haptic: [28, 40, 22] },
-    win:    { trauma: 0.30, punch: 0.45, flash: 0.28, stopMs: 60, haptic: [20, 60, 20, 60, 40] },
-    lose:   { trauma: 0.45, punch: 0.30, flash: 0.16, stopMs: 80, haptic: [90] },
+    tick:   { trauma: 0.00, punch: 0.05, flash: 0.00, stopMs: 0,  haptic: [8],                  rumble: [0.00, 0.18, 30] },
+    select: { trauma: 0.05, punch: 0.10, flash: 0.00, stopMs: 0,  haptic: [10],                 rumble: [0.00, 0.25, 35] },
+    light:  { trauma: 0.16, punch: 0.18, flash: 0.04, stopMs: 25, haptic: [12],                 rumble: [0.15, 0.35, 55] },
+    medium: { trauma: 0.34, punch: 0.38, flash: 0.10, stopMs: 55, haptic: [18, 30, 12],         rumble: [0.40, 0.55, 95] },
+    heavy:  { trauma: 0.62, punch: 0.72, flash: 0.22, stopMs: 90, haptic: [28, 40, 22],         rumble: [0.75, 0.70, 170] },
+    win:    { trauma: 0.30, punch: 0.45, flash: 0.28, stopMs: 60, haptic: [20, 60, 20, 60, 40], rumble: [0.30, 0.65, 140] },
+    lose:   { trauma: 0.45, punch: 0.30, flash: 0.16, stopMs: 80, haptic: [90],                 rumble: [0.60, 0.30, 260] },
 };
 
 // Decay rates, per second. Trauma outlives punch on purpose: the colour spike
@@ -342,7 +346,7 @@ export function impact(kind, scale) {
         shockwave(typeof window !== 'undefined' ? window.innerWidth / 2 : 300, typeof window !== 'undefined' ? window.innerHeight / 2 : 300, s);
     }
 
-    if (p.haptic) vibrate(p.haptic);
+    hapticsForImpact(p, s);
     ensureRunning();
 }
 
@@ -373,31 +377,229 @@ export function getShake() { return _trauma * _trauma * tierScale(); }
 /** Multiply your per-frame dt by this. 1 normally, ~0.12 during hitstop. */
 export function getTimeScale() { return _timeScale; }
 
+// ── HAPTICS ─────────────────────────────────────────────────────────────
+// The fifth channel, and the only one that leaves the screen. Two outputs:
+//   • a controller's vibrationActuator — 'dual-rumble', strong (low) + weak (high) motor;
+//   • navigator.vibrate on phones — on/off millisecond patterns, no magnitude.
+//
+// Every rumble in the app goes through one gate (gateRumble), whoever asks:
+//   • the Haptics setting (Settings sheet, `pomini_haptics`, on by default) — off means off,
+//     and switching it off mid-effect stops the motors;
+//   • reduced motion (user toggle or OS) means REDUCED haptics, not none: half the magnitude,
+//     shorter, and "ambient" effects (a charge build-up) are dropped entirely;
+//   • rate and duty caps, so no game can hold a motor on: a weaker effect never cuts off a
+//     stronger one still playing, and each pad gets at most HAPTIC_DUTY_MS of motor time per
+//     trailing second (a KO thud may borrow past it, but still ends by HAPTIC_MAX_MS).
+//
+// Games that call playEffect themselves (PoRacer, PoCabinet, the sandbox, PoEcosystem) are
+// covered too: installActuatorGate() routes GamepadHapticActuator.prototype.playEffect through
+// the same gate, and navigator.vibrate honours the setting.
+//
+// An engine that routes its own haptics per player (PoBrawl: only the local human's pad, never a
+// CPU corner) calls claimHaptics(), so impact() stops buzzing the active pad on its behalf.
+
+const HAPTIC_MAX_MS = 700;        // no single effect longer than this
+const HAPTIC_DUTY_MS = 600;       // motor-on budget per pad per trailing second
+const HAPTIC_MIN_GAP_MS = 45;     // an equal-or-weaker effect closer than this is dropped
+const PHONE_MIN_GAP_MS = 60;
+
+let _hapticsOn = readHapticsPref();
+let _hapticClaims = 0;
+let _gateBypass = false;           // set while our own gated call reaches the patched prototype
+/** @type {Map<object, {until:number, energy:number, last:number, log:number[][]}>} */
+const _rumbleState = new Map();
+let _phoneLast = 0;
+let _phoneUntil = 0;
+
+function readHapticsPref() {
+    try { return localStorage.getItem(HAPTICS_KEY) !== '0'; } catch { return true; }
+}
+
+function clamp01(v) { return Math.max(0, Math.min(1, Number(v) || 0)); }
+
+/** False when the setting is off, on an attract-reel route, or in a hidden tab. */
+function hapticsAllowed() {
+    if (!_hapticsOn) return false;
+    if (isOnKioskRoute()) return false;
+    try { if (document.hidden) return false; } catch { /* no document */ }
+    return true;
+}
+
 /**
- * Haptics. Gated on the Profile opt-out (mute is the wrong lever — "sound yes,
- * buzzing no" is the common case on a phone held in the hand) and on the same
- * reduced-motion preference that suppresses shake.
- * @param {number[]} pattern
+ * The one gate. Returns the effect to actually play ({ strong, weak, ms }), or null to skip it.
+ * `key` identifies the motor (an actuator); `opts.priority` lets a KO thud past the caps;
+ * `opts.ambient` marks a continuous-feeling effect that reduced haptics drops.
  */
-export function vibrate(pattern) {
+export function gateRumble(key, strong, weak, ms, opts = {}) {
+    if (!hapticsAllowed()) return null;
+    let s = clamp01(strong), w = clamp01(weak), d = Math.max(0, Math.min(HAPTIC_MAX_MS, Number(ms) || 0));
+    if (motionReduced()) {
+        if (opts.ambient) return null;
+        s *= 0.5; w *= 0.5; d *= 0.75;
+    }
+    if (s + w < 0.02 || d < 12) return null;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    let st = _rumbleState.get(key);
+    if (!st) { st = { until: 0, energy: 0, last: -1e9, log: [] }; _rumbleState.set(key, st); }
+    const energy = Math.max(s, w);
+    if (!opts.priority) {
+        // A buzz must not cut off a thump that is still ringing (playEffect replaces the effect).
+        if (now < st.until && energy < st.energy * 0.9) return null;
+        if (now - st.last < HAPTIC_MIN_GAP_MS && energy <= st.energy) return null;
+    }
+    // Duty: motor time already spent in the trailing second. A replaced effect stops where it was
+    // cut, so its unplayed tail is not counted.
+    const prev = st.log[st.log.length - 1];
+    if (prev && now < prev[0] + prev[1]) prev[1] = now - prev[0];
+    st.log = st.log.filter((e) => e[0] + e[1] > now - 1000);
+    let used = 0;
+    for (const e of st.log) used += Math.min(e[0] + e[1], now) - Math.max(e[0], now - 1000);
+    if (!opts.priority) {
+        const room = HAPTIC_DUTY_MS - used;
+        if (room < 20) return null;
+        d = Math.min(d, room);
+    }
+    st.log.push([now, d]);
+    st.until = now + d;
+    st.energy = energy;
+    st.last = now;
+    return { strong: s, weak: w, ms: Math.round(d) };
+}
+
+/**
+ * Play a gated dual-rumble on one actuator (gamepadBus.rumble comes through here).
+ * @returns {boolean} whether anything was played
+ */
+export function playRumble(actuator, strong, weak, ms, opts = {}) {
+    if (!actuator || typeof actuator.playEffect !== 'function') return false;
+    const g = gateRumble(actuator, strong, weak, ms, opts);
+    if (!g) return false;
+    _gateBypass = true;
     try {
-        if (localStorage.getItem(HAPTICS_KEY) === '0') return;
-        if (motionReduced()) return;
-        // Kiosk/demo runs without a user gesture, so every browser vibrate call
-        // below would emit a console error. Skip the call entirely on any
-        // /{game}/demo or ?kiosk=N route — the attract reel has no one to vibrate.
-        if (isOnKioskRoute()) return;
+        const r = actuator.playEffect('dual-rumble', {
+            startDelay: Math.max(0, Math.round(opts.delay || 0)),
+            duration: g.ms,
+            strongMagnitude: g.strong,
+            weakMagnitude: g.weak,
+        });
+        r?.catch?.(() => { /* a pad unplugged mid-effect */ });
+    } catch { /* an actuator that throws instead of rejecting */ } finally {
+        _gateBypass = false;
+    }
+    return true;
+}
+
+/**
+ * Haptics on a phone. Gated on the setting, the attract reel and the sticky user gesture;
+ * reduced haptics keeps only a shortened first pulse. Also rumbles the active pad through
+ * gamepadBus unless an engine has claimed haptics (it routes its own pads).
+ * @param {number[]|number} pattern
+ * @param {{priority?: boolean, ambient?: boolean, pad?: boolean}} [opts]
+ */
+export function vibrate(pattern, opts = {}) {
+    try {
+        if (!hapticsAllowed()) return;
+        let pat = Array.isArray(pattern) ? pattern.slice(0, 9) : [Number(pattern) || 0];
+        if (motionReduced()) {
+            if (opts.ambient) return;
+            pat = [Math.round((pat[0] || 0) * 0.6)];
+        }
+        pat = pat.map((ms) => Math.max(0, Math.min(HAPTIC_MAX_MS, Math.round(ms || 0))));
         // A controller in hand rumbles too (gamepadBus.js, published once a pad has connected).
         // Before the gesture gate: a pad's actuator needs no user activation.
-        window.PoGamepad?.rumblePattern?.(pattern);
-        // The kiosk guard above covers the attract reel but not every
-        // gesture-less caller. /login fires a cue while the sign-in gate is
-        // still mounting, and an ungated call logs "Blocked call to
-        // navigator.vibrate because user hasn't tapped on the frame" on the
+        if (opts.pad !== false && !_hapticClaims) window.PoGamepad?.rumblePattern?.(pat);
+        // The kiosk guard covers the attract reel but not every gesture-less caller. /login
+        // fires a cue while the sign-in gate is still mounting, and an ungated call logs
+        // "Blocked call to navigator.vibrate because user hasn't tapped on the frame" on the
         // app's entry page. Same sticky-activation test as uiAudio.js.
         if (!hasUserGestured()) return;
-        if (navigator && typeof navigator.vibrate === 'function') navigator.vibrate(pattern);
+        const now = performance.now();
+        if (!opts.priority) {
+            if (now - _phoneLast < PHONE_MIN_GAP_MS) return;
+            if (now < _phoneUntil && (pat[0] || 0) < 20) return;  // a tick never cuts a long buzz
+        }
+        _phoneLast = now;
+        _phoneUntil = now + pat.reduce((a, b) => a + b, 0);
+        if (navigator && typeof navigator.vibrate === 'function') navigator.vibrate(pat);
     } catch { /* unsupported or storage blocked */ }
+}
+
+/** impact()'s haptics: a dual-rumble on the active pad and a phone pattern, scaled by hit weight. */
+function hapticsForImpact(p, s) {
+    if (_hapticClaims || !hapticsAllowed()) return;
+    const w = Math.max(0.3, Math.min(1.5, s));
+    if (p.rumble) {
+        const pad = window.PoGamepad?.activePad?.();
+        const act = pad && pad.vibrationActuator;
+        if (act) playRumble(act, p.rumble[0] * w, p.rumble[1] * Math.min(1.2, w), p.rumble[2] * (0.7 + 0.3 * w));
+    }
+    if (p.haptic) vibrate(p.haptic.map((ms, i) => (i % 2 ? ms : ms * w)), { pad: false });
+}
+
+/**
+ * An engine that routes haptics to its own players' pads takes them over from impact() while it
+ * runs. Returns the release function (call it on dispose).
+ */
+export function claimHaptics() {
+    _hapticClaims++;
+    let released = false;
+    return () => { if (!released) { released = true; _hapticClaims = Math.max(0, _hapticClaims - 1); } };
+}
+
+/** The Haptics setting, live. Turning it off stops whatever is playing. */
+export function setHaptics(on) {
+    _hapticsOn = !!on;
+    if (_hapticsOn) return;
+    for (const act of _rumbleState.keys()) {
+        try { act.reset?.()?.catch?.(() => {}); } catch { /* gone */ }
+    }
+    _rumbleState.clear();
+    try { _nativeVibrate?.call(navigator, 0); } catch { /* unsupported */ }
+}
+
+export function hapticsEnabled() { return _hapticsOn; }
+
+// Other games' direct calls. The prototype patch gates GamepadHapticActuator.playEffect (a real
+// pad; stubbed actuators in tests are plain objects and go through playRumble instead), and
+// navigator.vibrate honours the setting. Installed once per document.
+let _nativeVibrate = null;
+function installActuatorGate() {
+    try {
+        const P = globalThis.GamepadHapticActuator?.prototype;
+        if (P && typeof P.playEffect === 'function' && !P.__poGated) {
+            const native = P.playEffect;
+            P.playEffect = function (type, params) {
+                if (_gateBypass) return native.call(this, type, params);
+                if (type !== 'dual-rumble' || !params) {
+                    return hapticsAllowed() ? native.call(this, type, params) : Promise.resolve('preempted');
+                }
+                const g = gateRumble(this, params.strongMagnitude, params.weakMagnitude, params.duration);
+                if (!g) return Promise.resolve('preempted');
+                return native.call(this, type, { ...params, duration: g.ms, strongMagnitude: g.strong, weakMagnitude: g.weak });
+            };
+            Object.defineProperty(P, '__poGated', { value: true });
+        }
+        const N = globalThis.Navigator?.prototype;
+        if (N && typeof N.vibrate === 'function' && !N.__poGated) {
+            _nativeVibrate = N.vibrate;
+            N.vibrate = function (pattern) {
+                const stop = pattern === 0 || (Array.isArray(pattern) && pattern.every((v) => !v));
+                if (!stop && !_hapticsOn) return true;
+                return _nativeVibrate.call(this, pattern);
+            };
+            Object.defineProperty(N, '__poGated', { value: true });
+        }
+    } catch { /* locked-down prototypes: the explicit gates above still apply */ }
+}
+if (typeof window !== 'undefined') {
+    installActuatorGate();
+    // Another tab flipped the setting.
+    window.addEventListener('storage', (e) => { if (e.key === HAPTICS_KEY) setHaptics(e.newValue !== '0'); });
+    // A hidden tab never keeps a motor running.
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) return;
+        for (const act of _rumbleState.keys()) { try { act.reset?.()?.catch?.(() => {}); } catch { /* gone */ } }
+    });
 }
 
 /**
@@ -541,6 +743,7 @@ if (typeof window !== 'undefined') {
     window.PoImpact = {
         impact, shockwave, spring, addTrauma, hitstop, getPunch, getShake, getTimeScale,
         registerStage, unregisterStage, vibrate, pop, popSelector, reset, countUp,
+        gateRumble, playRumble, claimHaptics, setHaptics, hapticsEnabled,
     };
 
     // PoImpactFx layer

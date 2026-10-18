@@ -276,8 +276,6 @@ class HitResolutionMethods {
   // and the strike is fully resolved; false when it goes on to the damage roll.
   _resolveBlock(s) {
     const { attacker, defender, attack, hit, phase, knockDir, chargeMul, defMass } = s;
-    // A guard taking a blow is felt as a short high buzz, never the big motor.
-    this._rumble(defender, 0, 0.35, 45);
     // If the defender is blocking, only the guard capsules count — the hurt
     // capsules still register the "near-miss" but the striker must explicitly
     // touch the guard surface to count as blocked.
@@ -332,6 +330,8 @@ class HitResolutionMethods {
         this._flashImpactLight(hit.point, 6, 0xffd257, 0.16);
         this._spawnCallout(hit.point, 'PERFECT!');
         this._commentate('perfect', defender, attacker);
+        // One sharp tick in the hand (haptics.js), distinct from an ordinary guard's buzz.
+        this.haptics?.perfectGuard(defender);
         if (this.audio) {
           this.audio.block(hit.point);
           this.audio.whoosh();
@@ -340,6 +340,8 @@ class HitResolutionMethods {
         this._spawnSparks(hit.point, 0x9ad0ff, 6, 1.0);
         this._flashImpactLight(hit.point, 3, 0x9ad0ff, 0.1);
         this.audio.block(hit.point);
+        // A guard taking a blow is felt as a short high buzz, never the big motor.
+        this._rumble(defender, 0, 0.35, 45);
       }
       // Visible absorb: the attacker's arm bounces off the guard; the
       // defender's guard compresses under the impact.
@@ -717,7 +719,8 @@ class HitResolutionMethods {
         // KO rumble; the clip recorder stops recycling so the lead-up to the
         // finishing blow is kept.
         this._koDust = loser ? { t: 0.55, fighter: loser } : null;
-        for (const f of this.fighters) this._rumble(f, 1, 0.8, 650);
+        // The thud borrows past impactBus's duty cap (priority) — it is the one long effect.
+        for (const f of this.fighters) this._rumble(f, 1, 0.8, 650, { priority: true, phone: [70, 40, 240] });
         this.clip?.freeze();
 
         // The KO limelight stays disarmed: with the house lights up it is

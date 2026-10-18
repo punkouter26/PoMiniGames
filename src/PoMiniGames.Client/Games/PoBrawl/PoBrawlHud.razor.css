@@ -10,6 +10,51 @@
     align-items: center;
     gap: 10px;
     pointer-events: none;
+    position: relative; /* the liquid canvas below covers it */
+}
+
+/* glass.css's low-tier rule gives .pb-hud an opaque --color-surface fill, which is white in
+   the light scheme: a white band across the top of an always-dark arena. The plates carry
+   their own low-tier scrim (below), so the row itself stays transparent. */
+:root[data-gfx="low"] .pb-hud.pb-hud {
+    background: none;
+}
+
+/* ── Liquid-glass tubes ─────────────────────────────────────────────────
+   hudLiquid.js draws health as liquid and energy as plasma on ONE WebGL2 canvas over the
+   whole HUD, at the tracks' measured boxes, and sets data-liquid while it is drawing. Only
+   then are the CSS fills hidden and the tracks emptied to bare slots; the tracks themselves
+   (role="meter") keep their size and place. No data-liquid (no WebGL2, the low tier, the
+   module not loaded) is the CSS HUD, unchanged. */
+.pb-liquid {
+    display: none;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 3;
+    pointer-events: none;
+}
+
+.pb-hud[data-liquid] .pb-liquid {
+    display: block;
+}
+
+.pb-hud[data-liquid] .pb-hp-track,
+.pb-hud[data-liquid] .pb-en-track {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.pb-hud[data-liquid] .pb-hp-fill,
+.pb-hud[data-liquid] .pb-hp-ghost,
+.pb-hud[data-liquid] .pb-en-fill {
+    visibility: hidden;
+}
+
+.pb-hud[data-liquid] .pb-hp-side--danger .pb-hp-track::after {
+    display: none; /* the shader draws the same fractures into the glass */
 }
 
 .pb-hp-side {
@@ -108,8 +153,8 @@
 .pb-hp-track {
     position: relative;
     width: 100%;
-    height: 12px;
-    border-radius: 6px;
+    height: 14px;
+    border-radius: 7px;
     background: rgba(4, 7, 18, 0.62);
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.22);
@@ -207,9 +252,10 @@
    sibling of the HP track; fill turns gold + glows once past the 50% idle
    cap, i.e. when the fighter has blocked/charged their way into bonus power. */
 .pb-en-track {
+    position: relative;
     width: 100%;
-    height: 6px;
-    border-radius: 3px;
+    height: 8px;
+    border-radius: 4px;
     background: rgba(4, 7, 18, 0.62);
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.18);

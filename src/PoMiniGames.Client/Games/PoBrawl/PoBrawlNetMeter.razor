@@ -1,0 +1,59 @@
+@* The online signal meter: a broadcast-style four-bar readout of the connection, beside the
+   corner pill. Fed at 2 Hz by the engine (netplay.js _netSignal → PoBrawlPage.OnNetSignal →
+   Update) — its own component so that pump re-renders this pill alone. The bars fold the round
+   trip and the rollback rate into one level; the tooltip and the accessible name carry the
+   numbers. *@
+
+<span class="pb-net-meter pb-net-meter--@Tone(_level)" role="meter" tabindex="0"
+      aria-valuemin="0" aria-valuemax="4" aria-valuenow="@_level"
+      aria-label="@Label" title="@Label" data-level="@_level">
+    <span class="pb-net-bars" aria-hidden="true">
+        @for (var i = 1; i <= 4; i++)
+        {
+            <span class="pb-net-bar pb-net-bar--@i @(i <= _level ? "pb-net-bar--on" : null)"></span>
+        }
+    </span>
+    <span class="pb-net-ms">@(_rtt is { } ms ? $"{ms} ms" : "— ms")</span>
+</span>
+
+@code {
+    private int? _rtt;
+    private double _rate;
+    private int _depth;
+    private int _level;
+
+    /// <summary>
+    /// One sample from the engine: the round trip (ms), rollbacks plus hard corrections per second
+    /// (smoothed), and the deepest rollback so far (frames). Re-renders only when it shows something new.
+    /// </summary>
+    public void Update(int rttMs, double rollbacksPerSecond, int maxDepth)
+    {
+        var level = Level(rttMs, rollbacksPerSecond);
+        var rate = Math.Round(rollbacksPerSecond, 1);
+        if (_rtt == rttMs && _rate == rate && _depth == maxDepth && _level == level) return;
+        _rtt = rttMs;
+        _rate = rate;
+        _depth = maxDepth;
+        _level = level;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Bars, 1–4. The round trip sets the ceiling (under 60 ms is four bars, under 110 three, under
+    /// 180 two); a fight that keeps rolling back loses one bar past 3 a second and two past 8,
+    /// because that is what the player actually sees. Never below one bar: it is still connected.
+    /// </summary>
+    public static int Level(int rttMs, double rollbacksPerSecond)
+    {
+        var bars = rttMs < 60 ? 4 : rttMs < 110 ? 3 : rttMs < 180 ? 2 : 1;
+        if (rollbacksPerSecond > 8) bars -= 2;
+        else if (rollbacksPerSecond > 3) bars -= 1;
+        return Math.Clamp(bars, 1, 4);
+    }
+
+    private static string Tone(int level) => level >= 3 ? "good" : level == 2 ? "fair" : level == 1 ? "poor" : "none";
+
+    private string Label => _rtt is { } ms
+        ? $"Signal {_level} of 4 — round trip {ms} ms, {_rate.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)} rollbacks a second, deepest rollback {_depth} frames"
+        : "Signal — measuring the connection";
+}

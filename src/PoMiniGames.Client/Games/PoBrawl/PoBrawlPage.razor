@@ -99,6 +99,8 @@
                         <span class="pb-net-pill @(_isSpectator ? "pb-net-pill--watch" : "")">
                             @(_isSpectator ? "👀 Spectating" : $"You: {(_localSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? "left" : "right")} corner")
                         </span>
+                        @* Signal: RTT and rollbacks/s as bars, pushed by the engine at 2 Hz. *@
+                        <PoBrawlNetMeter @ref="_netMeter" />
                         @if (NetNotice is { } notice)
                         {
                             <span class="pb-net-pill pb-net-pill--warn">@notice</span>
@@ -216,6 +218,7 @@
     // The page only forwards the engine's pump to the HUD (OnHud) and keeps the danger
     // milestones for the live region.
     private PoBrawlHud? _hud;
+    private PoBrawlNetMeter? _netMeter;   // online only: the signal pill (OnNetSignal)
     private int _winner;
     private double _lastKo;
     private double _bestKo;
@@ -928,6 +931,14 @@
     [JSInvokable]
     public Task OnNetInput(long frame, int held, int press, long sequence) =>
         _net?.SendInputAsync(frame, held, press, sequence) ?? Task.CompletedTask;
+
+    /// <summary>
+    /// netplay.js → the signal meter's numbers, at 2 Hz: the round trip (ms), rollbacks plus hard
+    /// corrections per second, and the deepest rollback so far (frames). Only the meter re-renders.
+    /// </summary>
+    [JSInvokable]
+    public void OnNetSignal(int rttMs, double rollbacksPerSecond, int maxDepth) =>
+        _netMeter?.Update(rttMs, rollbacksPerSecond, maxDepth);
 
     // The LOCAL side is cached at join (see the field note on _localSide): the Snapshot can
     // be gone while the result screen is still up, and "who is my opponent" must survive it.

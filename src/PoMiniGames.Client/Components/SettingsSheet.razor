@@ -309,7 +309,7 @@
     private async Task ToggleHaptics()
     {
         var enabled = !Settings.Haptics;
-        Settings.SetHaptics(enabled);
+        await Settings.SetHapticsAsync(enabled);
         if (enabled) await Feedback.TapAsync();
     }
 

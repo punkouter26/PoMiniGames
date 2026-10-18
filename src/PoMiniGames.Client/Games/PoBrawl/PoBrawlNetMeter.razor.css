@@ -1,0 +1,49 @@
+/* The online signal meter: a pill like the corner pill beside it (PoBrawlPage.razor.css
+   .pb-net-pill), holding four rising bars and the round trip. The net-status row is
+   pointer-events: none so it never eats a click meant for the arena; the meter opts back in
+   so its tooltip can show. */
+.pb-net-meter {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0, 0, 0, 0.6);
+    color: var(--pb-pill-ink, #e5e7eb);
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+    padding: 3px 10px 3px 8px;
+    border-radius: var(--radius-pill, 999px);
+    white-space: nowrap;
+    pointer-events: auto;
+    cursor: help;
+}
+
+.pb-net-meter:focus-visible {
+    outline: 2px solid #38bdf8;
+    outline-offset: 2px;
+}
+
+.pb-net-bars {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 12px;
+}
+
+.pb-net-bar {
+    width: 3px;
+    border-radius: 1px;
+    background: rgba(255, 255, 255, 0.22);
+    transition: background-color 0.3s ease;
+}
+
+.pb-net-bar--1 { height: 25%; }
+.pb-net-bar--2 { height: 50%; }
+.pb-net-bar--3 { height: 75%; }
+.pb-net-bar--4 { height: 100%; }
+
+.pb-net-meter--good .pb-net-bar--on { background: #4ade80; }
+.pb-net-meter--fair .pb-net-bar--on { background: #fbbf24; }
+.pb-net-meter--poor .pb-net-bar--on { background: #f87171; }
+
+/* data-motion (appPrefs.js) folds the OS preference and the app toggle into one switch. */
+html[data-motion="reduce"] .pb-net-bar { transition: none; }

@@ -163,15 +163,11 @@ export function buildTouchControls(container, online) {
       e.preventDefault();
       b.classList.add('pb-touch-held');
       window.dispatchEvent(new KeyboardEvent('keydown', { code }));
-      // Haptic tick on press, heavier for strikes. Skipped on kiosk/demo routes:
-      // with no user gesture every call would emit a console error.
+      // Haptic tick on press, heavier for strikes, through impactBus's gate (the Haptics
+      // setting, not mute — "sound off, buzz on" is a real choice; reduced haptics; the
+      // kiosk/demo guard; the rate cap). pad: false — a finger on glass is not a controller.
       try {
-        const onKiosk = (location.search || '').indexOf('kiosk=') >= 0
-          || /\/demo(\b|\/|$)/i.test(location.pathname || '');
-        // The Profile haptics opt-out, not mute ("sound off, buzz on" is a real choice).
-        if (!onKiosk && localStorage.getItem('pomini_haptics') !== '0' && navigator.vibrate) {
-          navigator.vibrate((code === K.punch || code === K.kick) ? 16 : 8);
-        }
+        window.PoImpact?.vibrate?.([(code === K.punch || code === K.kick) ? 16 : 8], { pad: false });
       } catch { }
     };
     const up = () => {

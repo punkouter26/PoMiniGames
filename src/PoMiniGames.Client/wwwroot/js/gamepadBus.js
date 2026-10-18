@@ -10,7 +10,8 @@
 //      is Escape / back. It stays out of the canvas games, which read the pad themselves, unless
 //      a modal (the intro card, a menu, the game-over sheet) is open over them.
 //   3. impactBus.js. Once a pad is in use, window.PoGamepad.rumblePattern() plays the haptic
-//      presets as dual-rumble on it, alongside navigator.vibrate.
+//      presets as dual-rumble on it, alongside navigator.vibrate. Every rumble from here goes
+//      through impactBus's haptics gate (the Haptics setting, reduced haptics, duty caps).
 //
 // Loaded lazily: index.html imports this on the first `gamepadconnected`, so a player with no
 // controller never fetches it. Engines that import it directly share the same module instance.
@@ -50,11 +51,15 @@ export function stick(pad, deadzone = 0.25, which = 0) {
 
 /**
  * Dual-rumble on one pad. Magnitudes 0..1. A no-op without a pad, or on a browser without
- * vibrationActuator (Firefox, Safari): rumble is garnish.
+ * vibrationActuator (Firefox, Safari): rumble is garnish. Goes through impactBus's haptics gate
+ * (the Haptics setting, reduced haptics, rate and duty caps) whenever that is loaded — it is, on
+ * every page, from index.html. `opts`: { priority, ambient } (see impactBus.gateRumble).
  */
-export function rumble(pad, strong, weak, ms) {
+export function rumble(pad, strong, weak, ms, opts) {
   const act = pad && pad.vibrationActuator;
   if (!act || typeof act.playEffect !== 'function') return;
+  const bus = typeof window !== 'undefined' ? window.PoImpact : null;
+  if (bus && typeof bus.playRumble === 'function') { bus.playRumble(act, strong, weak, ms, opts); return; }
   try {
     act.playEffect('dual-rumble', {
       startDelay: 0,
@@ -129,13 +134,19 @@ export class KeyBridge {
     }
   }
 
+  /** True when a pad is driving `slot` right now. */
+  hasPad(slot) {
+    const s = this.slots.indexOf(slot);
+    return s >= 0 && this.padIndex[s] >= 0;
+  }
+
   /** Dual-rumble on the pad driving `slot` (a value from `slots`). */
-  rumble(slot, strong, weak, ms) {
+  rumble(slot, strong, weak, ms, opts) {
     const s = this.slots.indexOf(slot);
     if (s < 0 || this.padIndex[s] < 0) return;
     let pad;
     try { pad = navigator.getGamepads()[this.padIndex[s]]; } catch { return; }
-    rumble(pad, strong, weak, ms);
+    rumble(pad, strong, weak, ms, opts);
   }
 
   dispose() {
@@ -315,21 +326,17 @@ export function activePad() {
 }
 
 /**
- * impactBus's haptic presets are navigator.vibrate patterns ([on, off, on, …] ms). Played here as
- * dual-rumble pulses on the active pad: a longer pulse leans on the strong (low) motor.
+ * impactBus's phone patterns ([on, off, on, …] ms) played on the active pad. One effect rather
+ * than a timer chain: the first pulse sets the weight (a longer pulse leans on the strong, low
+ * motor) and the pattern's length the duration, so no queued pulse can outlive a gate check (the
+ * Haptics setting switched off mid-pattern).
  */
 export function rumblePattern(pattern) {
   const pad = activePad();
-  if (!pad || !Array.isArray(pattern)) return;
-  let at = 0;
-  pattern.forEach((ms, i) => {
-    if (i % 2 === 0 && ms > 0) {
-      const strong = Math.min(1, ms / 60), weak = Math.min(1, 0.35 + ms / 80), dur = Math.max(30, ms);
-      if (at === 0) rumble(pad, strong, weak, dur);
-      else setTimeout(() => rumble(activePad(), strong, weak, dur), at);
-    }
-    at += Math.max(0, ms || 0);
-  });
+  if (!pad || !Array.isArray(pattern) || !pattern.length) return;
+  const first = Math.max(0, pattern[0] || 0);
+  const total = pattern.reduce((a, ms) => a + Math.max(0, ms || 0), 0);
+  rumble(pad, Math.min(1, first / 60), Math.min(1, 0.35 + first / 80), Math.max(30, Math.min(total, 400)));
 }
 
 /** Start the DOM navigation and publish window.PoGamepad. Safe to call more than once. */

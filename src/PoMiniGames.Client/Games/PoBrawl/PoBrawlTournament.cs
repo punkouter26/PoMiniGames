@@ -31,6 +31,12 @@ public sealed class PoBrawlTournament
     /// <summary>Rating for a fighter the board has never seen.</summary>
     public static int SeedElo => Elo.SeedElo;
 
+    /// <summary>
+    /// A winner who went in with an Elo expectation at or under this has pulled off an upset
+    /// (about a 35-point underdog or worse). The page names it in the bracket news line.
+    /// </summary>
+    public const double UpsetBelow = 0.45;
+
     private readonly Dictionary<string, int> _startElo;
     private readonly Dictionary<string, int> _elo;
     private readonly Dictionary<string, (int Wins, int Losses)> _record = [];
@@ -84,6 +90,17 @@ public sealed class PoBrawlTournament
 
     public int StartEloOf(string fighterId) => _startElo.TryGetValue(fighterId, out var r) ? r : SeedElo;
 
+    /// <summary>
+    /// The left corner's Elo expectation for <paramref name="bout"/> at the current ratings
+    /// (<see cref="EloMath.ExpectedScore"/>, the board's own curve); 0.5 while the bout is unpaired.
+    /// The engine reads it as the bout's upset potential.
+    /// </summary>
+    public double ExpectedP1(Bout bout)
+    {
+        ArgumentNullException.ThrowIfNull(bout);
+        return bout.P1Id is null || bout.P2Id is null ? 0.5 : EloMath.ExpectedScore(EloOf(bout.P1Id), EloOf(bout.P2Id));
+    }
+
     public (int Wins, int Losses) RecordOf(string fighterId) => _record.TryGetValue(fighterId, out var r) ? r : (0, 0);
 
     /// <summary>Everyone in the draw, best rating now first: the closing standings.</summary>
@@ -105,6 +122,7 @@ public sealed class PoBrawlTournament
         if (bout.P1Id is null || bout.P2Id is null)
             throw new InvalidOperationException($"Bout {bout.Index} has no pairing yet.");
 
+        bout.P1Expected = ExpectedP1(bout);
         var (winner, loser) = winnerSide == 1 ? (bout.P1Id, bout.P2Id) : (bout.P2Id, bout.P1Id);
         var delta = Elo.Delta(_elo[winner], _elo[loser], isDraw: false);
         var winnerBefore = _elo[winner];
@@ -153,6 +171,11 @@ public sealed class PoBrawlTournament
         /// <summary>Elo the left corner gained (+) or lost (−) in this bout.</summary>
         public int P1Delta { get; set; }
         public int P2Delta { get; set; }
+        /// <summary>The left corner's Elo expectation going in, stamped when the result is recorded.</summary>
+        public double P1Expected { get; set; } = 0.5;
+
+        /// <summary>True once decided for the corner the ratings said would lose (see <see cref="UpsetBelow"/>).</summary>
+        public bool IsUpset => WinnerId is not null && (WinnerId == P1Id ? P1Expected : 1 - P1Expected) <= UpsetBelow;
 
         /// <summary>"Quarterfinal 2 of 4", "Semifinal 1 of 2", "Final".</summary>
         public string Label => Round == Round.Final ? "Final" : $"{Round} {Slot + 1} of {BoutsIn(Round)}";

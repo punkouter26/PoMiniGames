@@ -1078,14 +1078,39 @@ class AudioBus {
     chantLfo.connect(chantDepth).connect(chatterG.gain);
     chantLfo.start(now);
 
+    // Layer 4: the murmur — an uneasy low-mid babble that only the tournament's upset
+    // storyline opens (setCrowdMood). Two unrelated slow LFOs on its level make it
+    // surge and settle like a hall talking to itself, not a tremolo.
+    const murmurSrc = loopSource();
+    const murmurBp = ctx.createBiquadFilter();
+    murmurBp.type = 'bandpass';
+    murmurBp.frequency.value = 360;
+    murmurBp.Q.value = 1.3;
+    const murmurAm = ctx.createGain();
+    murmurAm.gain.value = 0.6;
+    const murmurG = ctx.createGain();
+    murmurG.gain.value = 0;
+    murmurSrc.connect(murmurBp).connect(murmurAm).connect(murmurG).connect(swell);
+    const murmurLfos = [0.37, 0.91].map((hz, i) => {
+      const o = ctx.createOscillator();
+      o.frequency.value = hz;
+      const d = ctx.createGain();
+      d.gain.value = i ? 0.18 : 0.3;
+      o.connect(d).connect(murmurAm.gain);
+      o.start(now);
+      return [o, d];
+    });
+
     this._crowdNodes = {
-      sources: [rumbleSrc, chatterSrc, hissSrc],
-      chantLfo, chantDepth, chatterBp, swell,
+      sources: [rumbleSrc, chatterSrc, hissSrc, murmurSrc, ...murmurLfos.map(([o]) => o)],
+      chantLfo, chantDepth, chatterBp, swell, murmurG,
       all: [rumbleSrc, rumbleLp, rumbleG, chatterSrc, chatterBp, chatterG,
             chatterPan, chatterPan.output, hissSrc, hissHp, hissG, hissPan,
-            hissPan.output, chantLfo, chantDepth, swell].filter(Boolean),
+            hissPan.output, chantLfo, chantDepth, swell,
+            murmurSrc, murmurBp, murmurAm, murmurG, ...murmurLfos.flat()].filter(Boolean),
     };
     this.setCrowdIntensity(this._crowdIntensity);
+    this.setCrowdMood(this._crowdMood || 0);
   }
 
   // _spatializer, but taking a pan position directly.
@@ -1169,6 +1194,181 @@ class AudioBus {
     src.connect(bp).connect(g).connect(this.crowdGain);
     src.start(now, src._offset); src.stop(now + dur);
     autoDisconnect(src, [src, bp, g]);
+  }
+
+  // ══ Tournament storyline (cup.js) ════════════════════════════════════
+  // The crowd reading the Elo story: murmurs while the underdog leads, boos while a
+  // heavy favourite cruises, a long roar for an upset, and a stadium slap-back on the
+  // heavy hits of a high-upset moment. All synthesized, all on the crowd/sfx buses.
+
+  /**
+   * The hall's mood, -1..1: above 0 the underdog leads (the murmur layer opens with it),
+   * below 0 the favourite is cruising (nothing continuous: crowdBoo carries that).
+   */
+  setCrowdMood(level) {
+    this._crowdMood = clamp(level, -1, 1);
+    if (!this._crowdNodes?.murmurG || !this._ensure()) return;
+    const now = this.ctx.currentTime;
+    const g = this._crowdNodes.murmurG.gain;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(g.value, now);
+    g.linearRampToValueAtTime(this.muted ? 0 : 0.85 * Math.max(0, this._crowdMood), now + 0.9);
+  }
+
+  /**
+   * A wave of boos: a chorus of detuned sawtooth "oo" voices through two vowel formants,
+   * swelling in and sagging in pitch as it dies. `strength` 0..1.
+   */
+  crowdBoo(strength = 1) {
+    if (!this._ensure() || this.muted || !this.crowdGain) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const s = clamp(strength, 0, 1);
+    const dur = 1.4 + 0.8 * s;
+    const bus = ctx.createGain();
+    bus.gain.setValueAtTime(0.0001, now);
+    bus.gain.linearRampToValueAtTime(0.5 + 0.5 * s, now + 0.35);
+    bus.gain.setValueAtTime(0.5 + 0.5 * s, now + dur - 0.6);
+    bus.gain.exponentialRampToValueAtTime(0.0008, now + dur);
+    const f1 = ctx.createBiquadFilter();
+    f1.type = 'bandpass'; f1.frequency.value = 320; f1.Q.value = 3;
+    const f2 = ctx.createBiquadFilter();
+    f2.type = 'bandpass'; f2.frequency.value = 820; f2.Q.value = 4;
+    const f2g = ctx.createGain();
+    f2g.gain.value = 0.35;
+    bus.connect(f1).connect(this.crowdGain);
+    bus.connect(f2).connect(f2g).connect(this.crowdGain);
+    const voices = 9;
+    const nodes = [bus, f1, f2, f2g];
+    for (let i = 0; i < voices; i++) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      const f0 = rand(105, 175);
+      const t0 = now + rand(0, 0.25);
+      o.frequency.setValueAtTime(f0, t0);
+      o.frequency.linearRampToValueAtTime(f0 * rand(0.86, 0.93), now + dur);
+      o.detune.value = rand(-25, 25);
+      const vg = ctx.createGain();
+      vg.gain.value = 0.11 / Math.sqrt(voices);
+      o.connect(vg).connect(bus);
+      o.start(t0); o.stop(now + dur + 0.05);
+      autoDisconnect(o, i === voices - 1 ? [o, vg, ...nodes] : [o, vg]);
+    }
+  }
+
+  /**
+   * A long, sustained roar (an upset decided, the champion crowned): the swell VCA held
+   * high for `holdSec`, with a bright "hey!" cheer band riding over it.
+   */
+  crowdRoar(power = 1, holdSec = 2.5) {
+    if (!this._crowdNodes || !this._ensure() || this.muted) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const p = clamp(power, 0, 1);
+    const s = this._crowdNodes.swell.gain;
+    s.cancelScheduledValues(now);
+    s.setValueAtTime(s.value, now);
+    s.linearRampToValueAtTime(1 + 3.2 * p, now + 0.3);
+    s.setValueAtTime(1 + 3.2 * p, now + 0.3 + holdSec);
+    s.linearRampToValueAtTime(1, now + 0.3 + holdSec + 2.2);
+    const end = now + 0.3 + holdSec + 1.6;
+    const src = this._noiseSource(Math.min(1.9, end - now));
+    src.loop = true;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 0.8;
+    bp.frequency.setValueAtTime(1300, now);
+    bp.frequency.linearRampToValueAtTime(2100, now + 0.4);
+    bp.frequency.linearRampToValueAtTime(1500, end);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(0.45 * p, now + 0.25);
+    g.gain.setValueAtTime(0.45 * p, end - 1.2);
+    g.gain.exponentialRampToValueAtTime(0.0008, end);
+    src.connect(bp).connect(g).connect(this.crowdGain);
+    src.start(now, src._offset); src.stop(end + 0.05);
+    autoDisconnect(src, [src, bp, g]);
+  }
+
+  // The slap-back: the sfx bus feeds a 140 ms delay with a little feedback, through a
+  // band-limit (the far stands), and a gate that is shut unless slapback() opens it.
+  // Built on first use; the feedback loop idles silently behind the shut gate.
+  _echo() {
+    if (this._echoNodes || !this.sfxFilter) return this._echoNodes;
+    const ctx = this.ctx;
+    const delay = ctx.createDelay(0.5);
+    delay.delayTime.value = 0.14;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 2600;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 160;
+    const fb = ctx.createGain();
+    fb.gain.value = 0.32;
+    const gate = ctx.createGain();
+    gate.gain.value = 0;
+    this.sfxFilter.connect(delay);
+    delay.connect(lp).connect(hp);
+    hp.connect(fb).connect(delay);
+    hp.connect(gate).connect(this.master);
+    this._echoNodes = { gate, all: [delay, lp, hp, fb, gate] };
+    return this._echoNodes;
+  }
+
+  /** Open the stadium slap-back for the hit that just landed. `amount` 0..1. */
+  slapback(amount = 1) {
+    if (!this._ensure() || this.muted) return;
+    const e = this._echo();
+    if (!e) return;
+    const now = this.ctx.currentTime;
+    const g = e.gate.gain;
+    const peak = 0.75 * clamp(amount, 0, 1);
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(g.value, now);
+    g.linearRampToValueAtTime(peak, now + 0.01);
+    g.setValueAtTime(peak, now + 0.5);
+    g.linearRampToValueAtTime(0, now + 1.3);
+  }
+
+  /** A confetti cannon in the rafters: the sub thump, the blast and the paper hiss after it. */
+  cannonBoom(worldPos = null) {
+    if (!this._ensure() || this.muted) return;
+    this._pulse(0.4);
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const spat = this._connectSpat(this._spatializer(worldPos));
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(rand(62, 76), now);
+    o.frequency.exponentialRampToValueAtTime(26, now + 0.45);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, now);
+    og.gain.linearRampToValueAtTime(0.5, now + 0.008);
+    og.gain.exponentialRampToValueAtTime(0.0008, now + 0.6);
+    o.connect(og).connect(spat);
+    o.start(now); o.stop(now + 0.62);
+    autoDisconnect(o, [o, og]);
+    const blast = this._noiseSource(0.5);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(2400, now);
+    lp.frequency.exponentialRampToValueAtTime(260, now + 0.4);
+    const bg = ctx.createGain();
+    bg.gain.setValueAtTime(0.0001, now);
+    bg.gain.linearRampToValueAtTime(0.32, now + 0.004);
+    bg.gain.exponentialRampToValueAtTime(0.0008, now + 0.45);
+    blast.connect(lp).connect(bg).connect(spat);
+    blast.start(now, blast._offset); blast.stop(now + 0.5);
+    autoDisconnect(blast, [blast, lp, bg]);
+    // The paper: a soft high hiss drifting down for a second.
+    const paper = this._noiseSource(1.3);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 4200;
+    const pg = ctx.createGain();
+    pg.gain.setValueAtTime(0.0001, now + 0.08);
+    pg.gain.linearRampToValueAtTime(0.03, now + 0.25);
+    pg.gain.exponentialRampToValueAtTime(0.0006, now + 1.25);
+    paper.connect(hp).connect(pg).connect(spat);
+    paper.start(now + 0.08, paper._offset); paper.stop(now + 1.3);
+    autoDisconnect(paper, [paper, hp, pg, spat, spat.output].filter(Boolean));
   }
 
   stopCrowd() {
@@ -1726,6 +1926,11 @@ class AudioBus {
     this.stopIntroTheme();
     this.stopCrowd();
     this.stopAnnounce();
+    // The slap-back's feedback loop would otherwise idle on the shared context forever.
+    if (this._echoNodes) {
+      for (const n of this._echoNodes.all) { try { n.disconnect(); } catch { /* */ } }
+      this._echoNodes = null;
+    }
     if (this.ctx) {
       // Never close the shared app context (js/audioBus.js); only a private fallback.
       if (this._ownsCtx && this.ctx.state !== 'closed') {

@@ -535,9 +535,12 @@ function buildPhoneLights(scene, spots) {
     color: 0xdfe8ff, transparent: true, opacity: 0, depthWrite: false, fog: false,
   });
   for (let i = 0; i < 36 && spots.length; i++) {
-    const m = spots[(Math.random() * spots.length) | 0];
+    const seat = (Math.random() * spots.length) | 0;
+    const m = spots[seat];
     const s = new THREE.Sprite(mat);
     s.scale.set(0.06, 0.1, 1);
+    // The seat it is held over, so setCrowdFill can put it away with an empty seat.
+    s.userData.seat = seat;
     s.userData.base = new THREE.Vector3(m.x, m.y + 0.32 + Math.random() * 0.12, m.z);
     s.userData.phase = Math.random() * Math.PI * 2;
     s.position.copy(s.userData.base);
@@ -577,7 +580,8 @@ export function updateAtmosphere(arena, dt, t, excited, phones = 0) {
     const rate = 1.2 + excited * 22; // expected flashes per second
     if (Math.random() < rate * dt) {
       const free = flashes.find((f) => f.life <= 0 && !(f.delay > 0));
-      const spots = crowd.userData.spots;
+      // Only occupied seats take pictures (setCrowdFill thins the tournament's early rounds).
+      const spots = crowd.userData.liveSpots || crowd.userData.spots;
       if (free && spots && spots.length) {
         const m = spots[(Math.random() * spots.length) | 0];
         free.sprite.position.set(
@@ -714,6 +718,105 @@ function buildCrowd(scene) {
   group.userData.spots = spots;
   return group;
 }
+
+// ── Tournament: the hall fills in round by round ─────────────────────────
+// `fill` 0..1 is the share of seats taken. Seats fill front rows first (a random
+// order weighted by row), so a thin quarterfinal crowd reads as "doors just opened",
+// not as a rendering hole. Empty seats get a zero matrix (degenerate, never drawn),
+// so the crowd stays two draw calls; phones held over empty seats are put away and
+// the camera flashes only pop over occupied ones (liveSpots). A one-off upload per
+// bout, so every tier gets it.
+const _zeroMat = new THREE.Matrix4().makeScale(0, 0, 0);
+export function setCrowdFill(arena, fill) {
+  const crowd = arena?.crowd;
+  const [torso, head] = crowd?.children || [];
+  if (!torso?.isInstancedMesh || !head?.isInstancedMesh) return;
+  const ud = crowd.userData;
+  const total = torso.count;
+  if (!ud.fillOrder) {
+    ud.torsoBase = torso.instanceMatrix.array.slice();
+    ud.headBase = head.instanceMatrix.array.slice();
+    // Rows are built inner to outer (24, 32, 40, 48 seats), so the row is recoverable
+    // from the index; the bias makes the front rows fill first.
+    const rowOf = (i) => (i < 24 ? 0 : i < 56 ? 1 : i < 96 ? 2 : 3);
+    ud.fillOrder = Array.from({ length: total }, (_, i) => i)
+      .map((i) => ({ i, k: Math.random() + rowOf(i) * 0.45 }))
+      .sort((a, b) => a.k - b.k)
+      .map((e) => e.i);
+  }
+  const taken = Math.round(THREE.MathUtils.clamp(fill, 0, 1) * total);
+  if (ud.fillTaken === taken) return;
+  ud.fillTaken = taken;
+  const on = new Uint8Array(total);
+  for (let n = 0; n < taken; n++) on[ud.fillOrder[n]] = 1;
+  for (let i = 0; i < total; i++) {
+    if (on[i]) {
+      torso.instanceMatrix.array.set(ud.torsoBase.subarray(i * 16, i * 16 + 16), i * 16);
+      head.instanceMatrix.array.set(ud.headBase.subarray(i * 16, i * 16 + 16), i * 16);
+    } else {
+      torso.setMatrixAt(i, _zeroMat);
+      head.setMatrixAt(i, _zeroMat);
+    }
+  }
+  torso.instanceMatrix.needsUpdate = true;
+  head.instanceMatrix.needsUpdate = true;
+  // The culling bounds are derived from the instance matrices: re-derive them.
+  torso.boundingSphere = head.boundingSphere = null;
+  ud.liveSpots = ud.spots.filter((_, i) => on[i]);
+  for (const s of arena.phones?.pool || []) s.visible = !!on[s.userData.seat];
+}
+
+// Camera flashbulbs all over the stands (the champion's ceremony): `n` small HDR
+// sprites from the crowd-flash pool, staggered so it reads as a hundred cameras rather
+// than one strobe. Local sprites only, never whole-frame brightness (the flicker rule).
+export function flashbulbs(arena, n) {
+  const flashes = arena?.flashes;
+  const spots = arena?.crowd?.userData.liveSpots || arena?.crowd?.userData.spots;
+  if (!flashes || !spots?.length) return;
+  for (let i = 0; i < n; i++) {
+    const free = flashes.find((f) => f.life <= 0 && !(f.delay > 0));
+    if (!free) return;
+    const m = spots[(Math.random() * spots.length) | 0];
+    free.sprite.position.set(m.x + (Math.random() - 0.5) * 0.3, m.y + 0.2 + Math.random() * 0.3, m.z + (Math.random() - 0.5) * 0.3);
+    free.sprite.scale.setScalar(0.17 + Math.random() * 0.1);
+    free.sprite.material.color.setScalar(1.8);
+    free.dur = free.life = 0.08 + Math.random() * 0.05;
+    free.delay = 0.0001 + Math.random() * 0.12;
+    free.sprite.visible = false;
+  }
+}
+
+// ── Tournament lighting: golden hour → dusk → night ──────────────────────
+// One look per round, as multipliers on _updateLighting's own baselines plus the
+// colours, key-light angle, haze and hall tint that make the time of day. The engine
+// eases between them under the bout's VS splash (cup.js), so the hall changes over a
+// couple of seconds, never in one frame. Other modes never read this table.
+//   0 quarterfinals — golden hour: a low, warm key raking across the ring, amber fill.
+//   1 semifinals    — dusk: the key cools to rose and sinks, the hall goes violet, more rim.
+//   2 final         — night: a dim moonlit key, a hot tight overhead spot, heavy haze.
+export const ROUND_LOOKS = [
+  {
+    key: 0xffa04a, keyMul: 1.2, keyPos: [10, 6, 7],
+    hemiSky: 0xffc488, hemiGround: 0x3a2414, hemiMul: 1.4,
+    fill: 0xffb060, fillMul: 1.3, rimMul: 0.7, spotMul: 0.85,
+    spotAngle: Math.PI / 4.5, spotPenumbra: 0.45, cornerMul: 0.85, backMul: 0.8, rectMul: 1.0,
+    hall: 0x4a3020, fog: 0.017, haze: 0.08,
+  },
+  {
+    key: 0xf08cb4, keyMul: 0.8, keyPos: [8, 7.5, 1],
+    hemiSky: 0x8f7aff, hemiGround: 0x1c0f34, hemiMul: 1.0,
+    fill: 0xff9a8a, fillMul: 0.85, rimMul: 1.4, spotMul: 1.2,
+    spotAngle: Math.PI / 5.2, spotPenumbra: 0.4, cornerMul: 1.2, backMul: 1.2, rectMul: 0.8,
+    hall: 0x2c1d50, fog: 0.022, haze: 0.12,
+  },
+  {
+    key: 0xb8caff, keyMul: 0.45, keyPos: [4, 14, 3],
+    hemiSky: 0x5a68c8, hemiGround: 0x06050f, hemiMul: 0.6,
+    fill: 0xffd9a8, fillMul: 0.5, rimMul: 1.6, spotMul: 3.0,
+    spotAngle: Math.PI / 8, spotPenumbra: 0.3, cornerMul: 1.3, backMul: 1.4, rectMul: 0.45,
+    hall: 0x0a0e2a, fog: 0.03, haze: 0.22,
+  },
+];
 
 // Feeds the crowd shader's clock and excitement uniforms.
 export function animateCrowd(crowd, dt, t, excited) {

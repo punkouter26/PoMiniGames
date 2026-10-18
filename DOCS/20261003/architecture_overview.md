@@ -540,6 +540,7 @@ at once and must give bit-identical results everywhere.
 | Relay | `PoBrawlMatchHub.cs` | `SubmitInput` → `matchInput` to the whole group, sender included, carrying the frame actually used. `Ping` returns the server's frame clock. The pump sends `matchState` (full sim state, frame, checksum, presence) every 6th frame (10 Hz). |
 | Rollback | `wwwroot/js/pobrawl/rollbackSession.js` | Local input applied 2 frames ahead (`INPUT_DELAY`) and sent. Remote input predicted as "keep holding, press nothing". A late confirmed input rolls back to its frame and re-simulates from a 128-frame state ring (~2 s). A snapshot whose checksum differs from history replaces it and re-simulates. |
 | Presenter | `wwwroot/js/pobrawl/netplay.js` | Shows the session's state every render frame: fighters steer to the sim's X, each (corner, frame) swing is thrown once with the sim's verdict, HP and energy come from the sim, and a predicted KO waits for the server's word before it plays. |
+| Net FX | `netplay.js`, `postShader.js` (`uNetSmear*`), `PoBrawlNetMeter.razor` | Presentation of corrections, never the sim: the session's `onCorrection` hook reports how far a re-simulation moved each corner; past 120 mm that fighter closes the gap in ~3 frames under a directional chromatic smear. A swing whose frame is past `session.confirmedFrame` (the newest snapshot) trails a faint cyan ghost until confirmed. At 2 Hz the engine pushes RTT, rollbacks + corrections per second and the deepest rollback to `PoBrawlPage.OnNetSignal`, shown as four signal bars with the numbers in the tooltip. |
 
 Clock sync: a player runs ahead of the estimated server frame by RTT/2 plus one frame, so its
 inputs arrive before their frame comes up. A spectator runs behind by RTT/2 plus four frames,
@@ -549,3 +550,74 @@ offset comes from the fastest sample and the RTT from the median. A new estimate
 
 Anti-cheat stays where it was: the server pins each connection to its corner at `JoinMatch`, a
 client only ever sends inputs, and the result comes from the server's copy of the sim alone.
+
+### 3.8 Game feel: haptics and the super ink shift
+
+**Haptics.** `wwwroot/js/impactBus.js` is the one gate for every rumble and vibration:
+`gateRumble` / `playRumble` (controller `dual-rumble`) and `vibrate` (phones). It honours the
+Haptics setting (`pomini_haptics`, default on; `SettingsService.SetHapticsAsync` →
+`appPrefs.applyHaptics` stops a running motor at once), treats reduced motion as *reduced*
+haptics (half strength, shorter, "ambient" effects dropped), skips the attract reel and hidden
+tabs, and caps each pad at 600 ms of motor time per second, 700 ms per effect, with a weaker
+effect never cutting off a stronger one (a KO's `priority` thud may borrow past the duty cap).
+Games that call `playEffect` or `navigator.vibrate` themselves are covered by a prototype gate.
+`impact()` maps each preset to a rumble scaled by hit weight unless an engine has called
+`claimHaptics()`; PoBrawl does, and `js/pobrawl/haptics.js` routes its own: only a human
+corner (online: the local one; never demo, tournament or a spectator), on that corner's pad or,
+for player 1, the phone. Charge = a rising pulse train (~8 Hz), perfect guard = a sharp tick,
+landed hits = thumps scaled by damage, KO = a 650 ms thud.
+
+**Super ink.** While a signature super fires, `personalityEffects.js` eases `uSuperInk` in the
+post pass (`postShader.js`) up over 180 ms, holds 0.5 s and eases out over 320 ms: the frame
+prints as a two-tone page in the president's suit and tie colours with Ben-Day dots, paper
+grain, thick ink edges and speed lines out of the firing fighter. Every layer keeps each
+pixel's brightness, per spectacle.js's flicker rule. Reduced motion gets a weaker, shorter,
+motionless version; the low tier skips the edge taps and grain. Wall clock, no match RNG.
+
+**Tournament night.** The CPU bracket (`/pobrawl/tournament`, `PoBrawlTournamentPage`) hands the
+engine each bout's round and Elo expectation (`PoBrawlTournament.ExpectedP1`, the board's
+`EloMath` curve) as `PoBrawl.matchup`'s optional fifth argument `{ round, p1Expected }` (and the
+same keys on `PoBrawl.init`). `js/pobrawl/cup.js` turns them into the night: golden-hour light
+for the quarterfinals, dusk for the semis and a night final under tight spots and haze
+(`arena.js ROUND_LOOKS`, eased over ~2 s; the low tier keeps the base haze), a hall that fills
+round by round (`setCrowdFill`), and a live upset level from the expectation and the HP lead
+that drives the crowd: murmurs and phones while the underdog leads, gasps on their heavy hits,
+boos while a heavy favourite cruises, a roar and an "UPSET!" jumbotron caption for an upset,
+and a stadium slap-back echo (`audio.js slapback`) on heavy hits in high-upset moments. In
+this mode the mat wear, blood and broken crates are not reset between bouts (`resetProps`
+`keepBroken`). Between bouts the page opens an animated bracket (winner's SVG wire burns
+forward with a SMIL spark, Elo odometers, the loser's card cracks) and puts it on the arena
+jumbotrons (`PoBrawl.jumbotronBracket`). After the final, `PoBrawl.ceremony(championId)`
+(`ceremony.js`) lowers a procedural gold belt with an embossed seal plate onto the champion,
+fires confetti cannons from the truss, pops flashbulbs in the stands and has the PA call the
+champion, before the bracket and the result modal. Bracket "UPSET!" lines use
+`PoBrawlTournament.UpsetBelow` (winner's expectation ≤ 0.45). Reduced motion: end states only,
+a third of the confetti, no flashbulbs. No music: crowd, PA and effects only.
+
+**Broadcast director camera.** In the CPU-only modes (demo, tournament) `js/pobrawl/director.js`
+drives the 'normal' camera while the phase is 'fighting' (`cinematics.js _updateCamera` calls
+`_directCamera`; the KO and super branches still win). It cuts between rigs computed from the
+fighters' positions: the house framing, wide establishing, low ringside, over-the-shoulder, a
+crane, a tight two-shot, a push-in on a fighter who drops into the red, and a 1.3-2 s crowd
+cutaway. Shots run 2.5-7 s. A third hit in a run or a heavy hit tightens the shot, and an event
+that lands before the minimum waits up to 1.6 s. About 18% of cuts are 0.24 s whip-pans
+(radial blur + afterimage). Reduced motion uses 4.5-11 s shots with no cutaways and no
+whip-pans. Shot choice uses `Math.random`, never the seeded match RNG. On the medium and high
+tiers, and never on phones, an **iso cam** inset (22% of the width) shows a tight angle on the
+fighter the main shot is not centred on. It is drawn after the composer: the scene renders into
+a half-float target at 0.8x of the inset's pixels, at half rate, with no post and no
+shadow-map re-render, then goes through its own OutputPass into a scissored corner. A drop to
+the low tier pulls the inset until the next round. Toggles: `PoBrawl.setDirector(on)` and
+`PoBrawl.setIsoCam(on)` (the tournament bar's "🎥 Director cam" and "📺 Iso"; the init options
+`director` and `isoCam`), plus `PoBrawl.director()` for diagnostics.
+
+**Liquid-glass HUD.** `js/pobrawl/hudLiquid.js` draws the fight HUD's health as liquid in a
+glass tube and energy as plasma: one WebGL2 canvas over `PoBrawlHud`, one SDF fragment shader,
+four scissored draws per frame. It reads the four meters' `aria-valuenow` and the danger /
+energy-state classes through a MutationObserver, so the engine's 4 Hz pump costs no extra
+interop and the thresholds stay in C#. Between pumps it eases the level, sloshes the front and
+surface in proportion to the damage, and lets the lost slice hold 0.45 s and drain with drips;
+at 25% health or less the liquid boils and the glass cracks, and a full energy tube crackles.
+The CSS bars and `role="meter"` tracks stay in the DOM and are what shows without WebGL2 or on
+the low tier (the HUD carries `data-liquid` only while the canvas draws). Reduced motion gets
+still tubes redrawn on change. The loop pauses off-screen and in hidden tabs.

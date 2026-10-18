@@ -51,6 +51,30 @@ export const CAVignetteShader = {
     uRes: { value: [1280, 720] },
     uComic: { value: 0 },
     uRewind: { value: 0 },
+    // Online rollback smear (netplay.js): when a correction moves a fighter, its channels split
+    // along the move for 2-3 frames, so a re-simulated position reads as a dash, not a pop.
+    // uNetSmear  : strength (0 = off, branch skipped)
+    // uNetSmearC : the fighter's centre (UV); uNetSmearR: blob radius (frame heights)
+    // uNetSmearDir: the move's screen direction (UV, unit)
+    // It moves samples, never brightens them.
+    uNetSmear: { value: 0 },
+    uNetSmearC: { value: [0.5, 0.5] },
+    uNetSmearR: { value: 0.18 },
+    uNetSmearDir: { value: [1, 0] },
+    // Super-move comic-ink world shift (personalityEffects.js): for ~1 s while a signature super
+    // fires, the frame prints as a two-tone comic page in the president's colours — luminance
+    // kept per pixel, Ben-Day dots, paper grain, thick ink edges, radial speed lines.
+    // uSuperInk : 0..1 blend, eased in and out by the caller (never a step)
+    // uInkA/B   : shadow / highlight tones (linear RGB)
+    // uInkC     : speed-line focus (UV) — the firing fighter
+    // uInkCheap : 1 on the low tier — no edge taps, no grain
+    // uInkMotion: 0 under reduced motion — still lines, no grain crawl
+    uSuperInk: { value: 0 },
+    uInkA: { value: [0.05, 0.06, 0.12] },
+    uInkB: { value: [0.9, 0.8, 0.6] },
+    uInkC: { value: [0.5, 0.5] },
+    uInkCheap: { value: 0 },
+    uInkMotion: { value: 1 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -83,6 +107,16 @@ export const CAVignetteShader = {
     uniform vec2 uRes;
     uniform float uComic;
     uniform float uRewind;
+    uniform float uNetSmear;
+    uniform vec2 uNetSmearC;
+    uniform float uNetSmearR;
+    uniform vec2 uNetSmearDir;
+    uniform float uSuperInk;
+    uniform vec3 uInkA;
+    uniform vec3 uInkB;
+    uniform vec2 uInkC;
+    uniform float uInkCheap;
+    uniform float uInkMotion;
     varying vec2 vUv;
     // Cheap hash for the film grain — no texture fetch.
     float hash21(vec2 p) {
@@ -112,10 +146,19 @@ export const CAVignetteShader = {
         uv -= (sd / max(sdist, 1e-4)) * vec2(1.0 / uAspect, 1.0) * ring * 0.035;
         ca += ring * 3.0;
       }
+      // Rollback smear: a gaussian blob around one fighter whose red channel is pulled back
+      // along the correction and blue pushed ahead — the same split the global CA does, but
+      // directional and local. Displacement only, so brightness holds.
+      vec2 smear = vec2(0.0);
+      if (uNetSmear > 0.003) {
+        vec2 nd = (uv - uNetSmearC) * vec2(uAspect, 1.0);
+        float nm = exp(-dot(nd, nd) / max(uNetSmearR * uNetSmearR, 1e-4)) * uNetSmear;
+        smear = uNetSmearDir * nm * 0.022;
+      }
       vec2 off = (uv - 0.5) * ca * 0.012;
-      float r = texture2D(tDiffuse, uv + off).r;
-      float g = texture2D(tDiffuse, uv).g;
-      float b = texture2D(tDiffuse, uv - off).b;
+      float r = texture2D(tDiffuse, uv + off - smear).r;
+      float g = texture2D(tDiffuse, uv - smear * 0.35).g;
+      float b = texture2D(tDiffuse, uv - off + smear * 0.5).b;
       vec3 col = vec3(r, g, b);
 
       // Radial impact blur: a short streak toward the frame center. 4 extra
@@ -220,6 +263,52 @@ export const CAVignetteShader = {
         vec3 comic = poster * mix(0.86, 1.14, inDot);
         comic = mix(comic, vec3(0.1, 0.08, 0.12), ink * 0.85);
         col = mix(col, pow(comic, vec3(2.2)), uComic);
+      }
+
+      // Super ink: the world prints as a two-tone comic page while a signature super fires.
+      // Flicker rule: every layer is brightness-neutral on average — the two-tone map keeps each
+      // pixel's own luminance, the dots lift inside and drop outside by the same amount, the
+      // grain is zero-mean, the speed lines alternate ink and paper lanes — and uSuperInk itself
+      // eases in and out over 150 ms or more (personalityEffects.js). Gamma space, as above.
+      if (uSuperInk > 0.003) {
+        const vec3 LW2 = vec3(0.299, 0.587, 0.114);
+        vec3 gc = pow(max(col, vec3(0.0)), vec3(0.4545));
+        float l = dot(gc, LW2);
+        vec3 ga = pow(max(uInkA, vec3(0.0)), vec3(0.4545));
+        vec3 gb = pow(max(uInkB, vec3(0.0)), vec3(0.4545));
+        // Two tones, stepped like a two-plate print, then rescaled to this pixel's brightness.
+        vec3 tone = mix(ga, gb, smoothstep(0.3, 0.42, l) * 0.6 + smoothstep(0.55, 0.68, l) * 0.4);
+        tone *= l / max(dot(tone, LW2), 0.03);
+        // Ben-Day dots: coarser than the KO panel's, on a 30-degree screen, bigger in the shadows.
+        vec2 cell = mat2(0.866, -0.5, 0.5, 0.866) * (uv * uRes) / 9.0;
+        float dotR = 0.16 + 0.4 * clamp(1.0 - l, 0.0, 1.0);
+        float inDot = 1.0 - smoothstep(dotR - 0.07, dotR + 0.07, length(fract(cell) - 0.5));
+        vec3 page = tone * mix(0.88, 1.12, inDot);
+        vec3 inkCol = ga * 0.22;
+        if (uInkCheap < 0.5) {
+          // Paper grain: a fibre-sized, zero-mean speckle (held still under reduced motion).
+          float pg = hash21(floor(uv * uRes * 0.5) + floor(uTime * 12.0) * uInkMotion);
+          page *= 0.965 + 0.07 * pg;
+          // Thick ink: luminance steps measured 2.5 px out (the KO panel uses 1.5).
+          vec2 px = 2.5 / uRes;
+          float lx = sqrt(max(dot(texture2D(tDiffuse, uv + vec2(px.x, 0.0)).rgb, LW2), 0.0));
+          float ly = sqrt(max(dot(texture2D(tDiffuse, uv + vec2(0.0, px.y)).rgb, LW2), 0.0));
+          float lxm = sqrt(max(dot(texture2D(tDiffuse, uv - vec2(px.x, 0.0)).rgb, LW2), 0.0));
+          float lym = sqrt(max(dot(texture2D(tDiffuse, uv - vec2(0.0, px.y)).rgb, LW2), 0.0));
+          float ink = smoothstep(0.09, 0.22, abs(lx - lxm) + abs(ly - lym));
+          page = mix(page, inkCol, ink * 0.88);
+        }
+        // Radial speed lines out of the firing fighter: thin lanes, ink and paper alternating.
+        vec2 kd = (uv - uInkC) * vec2(uAspect, 1.0);
+        float krad = length(kd);
+        float kang = atan(kd.y, kd.x) * 0.15915494 + 0.5;
+        float klane = floor(kang * 150.0);
+        float kn = hash21(vec2(klane, 11.0));
+        float kstreak = smoothstep(0.7, 0.95, kn) * smoothstep(0.28, 0.75, krad);
+        kstreak *= 0.45 + 0.55 * fract(kn * 7.0 + uTime * 2.6 * uInkMotion - krad * 0.6);
+        vec3 lanes = mod(klane, 2.0) < 1.0 ? inkCol : vec3(1.0, 0.96, 0.88) * max(l * 1.6, 0.35);
+        page = mix(page, lanes, kstreak * 0.6);
+        col = mix(col, pow(max(page, vec3(0.0)), vec3(2.2)), uSuperInk);
       }
 
       float d = distance(vUv, vec2(0.5));

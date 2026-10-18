@@ -615,6 +615,45 @@
     color: var(--pb-gold);
 }
 
+/* Campaign trail: the electoral votes the beaten rungs hold, out of 270. Fixed-width digits,
+   so the row never reflows as the count climbs. */
+.pb-ladder-ev {
+    padding: 1px 7px;
+    border-radius: var(--radius-pill);
+    background: rgba(20, 112, 58, 0.55);
+    border: 1px solid rgba(134, 239, 172, 0.45);
+    color: var(--pb-ink-soft);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.pb-ladder-ev b {
+    display: inline-block;
+    min-width: 3ch;
+    text-align: right;
+    color: var(--pb-white);
+}
+
+/* A 390px phone: tighter pips so count, rail, name and votes stay on one line. */
+@media (max-width: 480px) {
+    .pb-ladder {
+        gap: 5px;
+    }
+
+    .pb-ladder-rail {
+        gap: 2px;
+    }
+
+    .pb-rung {
+        width: 6px;
+        height: 8px;
+    }
+
+    .pb-ladder-ev {
+        padding: 1px 5px;
+    }
+}
+
 /* ── Online: room + corner pills over the arena, and the "no fight here" card. ── */
 .pb-net-status {
     display: flex;
@@ -1409,12 +1448,33 @@
     }
 }
 
-/* ── 2P select: two side cards (the lock toggles) over one shared 4×4 grid ──
-   Theme surface — tokens. P1 is the HUD's green corner, P2 its red one. */
+/* ── 2P select: holo-glass cards (the side lock toggles) over one shared 4×4 grid ──
+   Theme surface — tokens. P1 is the HUD's green corner, P2 its red one.
+   Live portraits (selectStage.js): ONE canvas over this block paints each president into
+   the .pb-select-portrait / .pb-select-hero rects. Paint order inside the isolated block:
+   glass layer (::before, z 0) → canvas (z 1) → names, glare (z 2) → marks, seal (z 3).
+   That only holds while tiles and side cards are NOT stacking contexts themselves — so no
+   transform, opacity, filter or backdrop-filter on the buttons; the glass blur lives on
+   their ::before. Low tier, or no WebGL2 (data-stage="off"), drops the portrait slots and
+   the tiles fall back to plain glass buttons. */
 .pb-select {
+    position: relative;
+    isolation: isolate;
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
+    border-radius: var(--radius-md);
+    /* Corner glows for the frosted cards to blur — glass over a flat card reads as nothing. */
+    background:
+        radial-gradient(55% 40% at 10% 6%, color-mix(in srgb, var(--accent-success) 20%, transparent), transparent 72%),
+        radial-gradient(55% 40% at 90% 6%, color-mix(in srgb, var(--accent-danger, var(--accent-warning)) 20%, transparent), transparent 72%),
+        radial-gradient(70% 45% at 50% 70%, color-mix(in srgb, var(--color-accent) 12%, transparent), transparent 75%);
+}
+
+.pb-select ::deep .pb-select-gl {
+    position: absolute;
+    z-index: 1;
+    pointer-events: none;
 }
 
 .pb-select-sides {
@@ -1426,9 +1486,96 @@
 
 .pb-select-vs {
     font-family: var(--pb-display);
+    font-size: 1.35rem;
     color: var(--color-text-secondary);
+    text-shadow: 0 0 12px color-mix(in srgb, var(--color-accent) 45%, transparent);
 }
 
+/* The glass: shared by the side cards and the tiles. */
+.pb-select-side,
+.pb-select-tile {
+    position: relative;
+    border-radius: var(--radius-md);
+    border: 2px solid var(--color-border);
+    background: transparent;
+    color: var(--color-text-primary);
+    font: inherit;
+    cursor: pointer;
+    touch-action: manipulation;
+    box-shadow: var(--glass-inner), 0 4px 14px rgba(0, 0, 0, 0.16);
+}
+
+.pb-select-side::before,
+.pb-select-tile::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background:
+        linear-gradient(160deg, color-mix(in srgb, var(--color-text-primary) 8%, transparent), transparent 55%),
+        color-mix(in srgb, var(--color-surface-hover) 72%, transparent);
+    backdrop-filter: var(--glass-1);
+    -webkit-backdrop-filter: var(--glass-1);
+}
+
+/* Glare above the render: the pointer's specular (--mx/--my from selectStage.js) and a
+   light sweep across the pane on hover. */
+.pb-select-side::after,
+.pb-select-tile::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border-radius: inherit;
+    pointer-events: none;
+    background:
+        radial-gradient(circle at var(--mx, 50%) var(--my, 25%), rgba(255, 255, 255, 0.24), transparent 46%),
+        linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.3) 50%, transparent 62%);
+    background-size: 100% 100%, 260% 100%;
+    background-position: 0 0, 120% 0;
+    background-repeat: no-repeat;
+    opacity: 0;
+    transition: opacity 0.2s ease, background-position 0s;
+}
+
+.pb-select-side:hover::after,
+.pb-select-tile:hover::after,
+.pb-select-tile:focus-visible::after {
+    opacity: 1;
+    background-position: 0 0, -20% 0;
+    transition: opacity 0.2s ease, background-position 0.7s ease-out;
+}
+
+:root[data-motion='reduce'] .pb-select-side::after,
+:root[data-motion='reduce'] .pb-select-tile::after {
+    background-image: radial-gradient(circle at var(--mx, 50%) var(--my, 25%), rgba(255, 255, 255, 0.2), transparent 46%);
+    transition: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+    .pb-select-side::before,
+    .pb-select-tile::before {
+        background: var(--color-surface-hover);
+    }
+}
+
+.pb-select-side:focus-visible,
+.pb-select-tile:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
+/* Everything inside a card sits on the glass. */
+.pb-select-who,
+.pb-select-plate,
+.pb-select-name {
+    position: relative;
+    z-index: 2;
+}
+
+/* ── Side cards: the lock toggles, and the hero render ── */
 .pb-select-side {
     display: flex;
     flex-direction: column;
@@ -1436,26 +1583,20 @@
     gap: 2px;
     min-height: 44px;
     padding: 0.45rem 0.5rem;
-    border-radius: var(--radius-md);
-    border: 2px solid var(--color-border);
-    background: var(--surface-2);
-    color: var(--color-text-primary);
-    font: inherit;
-    cursor: pointer;
-    touch-action: manipulation;
 }
 
 .pb-select-side--p1 { border-color: var(--accent-success); }
 .pb-select-side--p2 { border-color: var(--accent-danger, var(--accent-warning)); }
 
-.pb-select-side--locked {
-    background: var(--accent-success-soft);
+.pb-select-side--locked::before {
+    background:
+        linear-gradient(160deg, color-mix(in srgb, var(--color-text-primary) 8%, transparent), transparent 55%),
+        var(--accent-success-soft),
+        color-mix(in srgb, var(--color-surface-hover) 72%, transparent);
 }
 
-.pb-select-side:focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 2px;
-}
+.pb-select-side--p1.pb-select-side--locked { box-shadow: var(--glass-inner), 0 0 18px color-mix(in srgb, var(--accent-success) 45%, transparent); }
+.pb-select-side--p2.pb-select-side--locked { box-shadow: var(--glass-inner), 0 0 18px color-mix(in srgb, var(--accent-danger, var(--accent-warning)) 45%, transparent); }
 
 .pb-select-who {
     font-size: var(--text-xs);
@@ -1464,7 +1605,14 @@
     color: var(--color-text-secondary);
 }
 
+/* Without the hero the plate is just its two lines, as before. */
+.pb-select-plate {
+    display: contents;
+}
+
 .pb-select-pick {
+    position: relative;
+    z-index: 2;
     font-family: var(--pb-display);
     font-size: clamp(0.95rem, 3.4vw, 1.15rem);
     max-width: 100%;
@@ -1474,6 +1622,8 @@
 }
 
 .pb-select-state {
+    position: relative;
+    z-index: 2;
     font-size: var(--text-xs);
     font-weight: 700;
     color: var(--color-text-secondary);
@@ -1481,6 +1631,72 @@
 
 .pb-select-side--locked .pb-select-state {
     color: var(--accent-success-ink);
+}
+
+.pb-select-hero,
+.pb-select-portrait {
+    display: none;
+}
+
+/* The presidential seal: stamps down on lock-in. */
+.pb-select-seal {
+    position: absolute;
+    z-index: 3;
+    top: 50%;
+    right: 6px;
+    width: 46px;
+    height: 46px;
+    margin-top: -23px;
+    pointer-events: none;
+    filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.45));
+    transform: rotate(-14deg);
+    animation: pb-seal-stamp 0.42s cubic-bezier(0.3, 1.4, 0.5, 1) both;
+}
+
+.pb-select-side--p2 .pb-select-seal {
+    right: auto;
+    left: 6px;
+    transform: rotate(12deg);
+    animation-name: pb-seal-stamp-p2;
+}
+
+.pb-select-seal ::deep svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* The ink ring the stamp leaves as it lands. */
+.pb-select-seal::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 3px solid var(--pb-gold);
+    opacity: 0;
+    animation: pb-seal-ring 0.5s ease-out 0.16s both;
+}
+
+@keyframes pb-seal-stamp {
+    0% { opacity: 0; transform: scale(2.6) rotate(-40deg); }
+    55% { opacity: 1; transform: scale(0.88) rotate(-12deg); }
+    100% { opacity: 1; transform: scale(1) rotate(-14deg); }
+}
+
+@keyframes pb-seal-stamp-p2 {
+    0% { opacity: 0; transform: scale(2.6) rotate(38deg); }
+    55% { opacity: 1; transform: scale(0.88) rotate(14deg); }
+    100% { opacity: 1; transform: scale(1) rotate(12deg); }
+}
+
+@keyframes pb-seal-ring {
+    0% { opacity: 0.85; transform: scale(0.7); }
+    100% { opacity: 0; transform: scale(1.5); }
+}
+
+:root[data-motion='reduce'] .pb-select-seal,
+:root[data-motion='reduce'] .pb-select-seal::after {
+    animation: none;
 }
 
 .pb-select-prompt {
@@ -1500,29 +1716,17 @@
 }
 
 .pb-select-tile {
-    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     width: 100%;
     min-height: 44px;
     padding: 0.35rem 0.25rem;
-    border-radius: var(--radius-md);
-    /* A visible edge and the hover fill: --surface-2 alone equals the card in light mode,
-       so the tiles read as loose text. */
-    border: 2px solid var(--color-border);
-    background: var(--color-surface-hover);
-    color: var(--color-text-primary);
-    font: inherit;
     font-size: clamp(0.75rem, 2.9vw, 0.9rem);
-    cursor: pointer;
-    touch-action: manipulation;
 }
 
 .pb-select-tile:hover {
     border-color: var(--color-accent);
-}
-
-.pb-select-tile:focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 2px;
 }
 
 .pb-select-name {
@@ -1542,6 +1746,7 @@
 
 .pb-select-mark {
     position: absolute;
+    z-index: 3;
     top: -7px;
     padding: 0 4px;
     border-radius: var(--radius-pill);
@@ -1554,3 +1759,354 @@
 .pb-select-mark--p1 { left: 4px; background: var(--accent-success); }
 .pb-select-mark--p2 { right: 4px; background: var(--accent-danger, var(--accent-warning)); }
 
+/* ── Live portraits (not on the low tier, not when the stage reported no WebGL2) ──
+   The slots are sized up front, so the canvas arriving moves nothing. */
+:root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-portrait,
+:root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-hero {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: calc(var(--radius-md) - 2px);
+    pointer-events: none;
+    /* A floor spotlight under the render (and the placeholder until it paints). */
+    background: radial-gradient(60% 55% at 50% 100%, color-mix(in srgb, var(--color-text-primary) 12%, transparent), transparent 75%);
+}
+
+/* The heroes stand in their corner's light. */
+:root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-side--p1 .pb-select-hero {
+    background:
+        radial-gradient(45% 70% at 30% 45%, color-mix(in srgb, var(--accent-success) 26%, transparent), transparent 75%),
+        radial-gradient(60% 55% at 50% 100%, color-mix(in srgb, var(--color-text-primary) 12%, transparent), transparent 75%);
+}
+
+:root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-side--p2 .pb-select-hero {
+    background:
+        radial-gradient(45% 70% at 70% 45%, color-mix(in srgb, var(--accent-danger, var(--accent-warning)) 26%, transparent), transparent 75%),
+        radial-gradient(60% 55% at 50% 100%, color-mix(in srgb, var(--color-text-primary) 12%, transparent), transparent 75%);
+}
+
+:root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-tile {
+    justify-content: flex-end;
+    min-height: 78px;
+    padding: 0;
+}
+
+:root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-name {
+    padding: 8px 4px 3px;
+    font-weight: 700;
+    border-radius: 0 0 calc(var(--radius-md) - 2px) calc(var(--radius-md) - 2px);
+    background: linear-gradient(to top, color-mix(in srgb, var(--color-surface) 90%, transparent) 50%, transparent);
+}
+
+:root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-side {
+    justify-content: space-between;
+    min-height: 136px;
+    padding: 0;
+    overflow: hidden;
+}
+
+:root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-who {
+    align-self: flex-start;
+    margin: 6px 8px 0;
+    padding: 1px 7px;
+    border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--color-surface) 78%, transparent);
+}
+
+:root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-side--p2 .pb-select-who {
+    align-self: flex-end;
+}
+
+:root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-plate {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    align-self: stretch;
+    padding: 12px 6px 5px;
+    background: linear-gradient(to top, color-mix(in srgb, var(--color-surface) 90%, transparent) 55%, transparent);
+}
+
+@media (max-width: 520px) {
+    :root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-tile {
+        min-height: 68px;
+    }
+
+    :root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-side {
+        min-height: 116px;
+    }
+
+    .pb-select-seal {
+        width: 38px;
+        height: 38px;
+        margin-top: -19px;
+    }
+}
+
+/* ── VS slash: both corners locked (selectStage.js appends it to the overlay, so it
+   crosses the whole screen; DOM-only, reduced motion never creates it). Over the dark
+   overlay scrim in both schemes, hence the arena's own --pb-* colours. */
+.pb-intro ::deep .pb-vs-slash {
+    position: fixed;
+    inset: 0;
+    z-index: 5;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.pb-intro ::deep .pb-vs-slash-band {
+    position: absolute;
+    left: -25%;
+    right: -25%;
+    top: 50%;
+    height: clamp(90px, 18vh, 160px);
+    margin-top: calc(clamp(90px, 18vh, 160px) / -2);
+    background: linear-gradient(90deg, transparent, var(--pb-p1) 18%, var(--pb-white) 50%, var(--pb-p2) 82%, transparent);
+    box-shadow: 0 0 40px rgba(255, 255, 255, 0.45);
+    animation: pb-vs-slash 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.pb-intro ::deep .pb-vs-slash-word {
+    position: relative;
+    font-family: var(--pb-display);
+    font-size: clamp(4rem, 20vw, 9rem);
+    line-height: 1;
+    color: var(--pb-gold);
+    -webkit-text-stroke: 3px #1a1206;
+    paint-order: stroke fill;
+    text-shadow: 0 6px 0 #1a1206, 0 0 30px rgba(255, 209, 102, 0.7);
+    animation: pb-vs-word 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes pb-vs-slash {
+    0% { opacity: 1; transform: rotate(-14deg) translateX(-120%) scaleY(0.25); }
+    38% { opacity: 1; transform: rotate(-14deg) translateX(0) scaleY(1); }
+    72% { opacity: 0.9; transform: rotate(-14deg) translateX(0) scaleY(0.85); }
+    100% { opacity: 0; transform: rotate(-14deg) translateX(18%) scaleY(0.05); }
+}
+
+@keyframes pb-vs-word {
+    0% { opacity: 0; transform: scale(2.4) rotate(-20deg); }
+    32% { opacity: 1; transform: scale(1) rotate(-8deg); }
+    78% { opacity: 1; transform: scale(1.04) rotate(-8deg); }
+    100% { opacity: 0; transform: scale(1.18) rotate(-8deg); }
+}
+
+
+/* ── Instant replay (replay.js) ──────────────────────────────────────
+   Engine DOM over the 3D view between the KO fall and the result: the
+   seal wipe, the broadcast bug, scanlines and the telestrator. Never takes
+   a click (any key or tap skips it, handled on window). */
+.pb-canvas-host ::deep .pb-rp {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    overflow: hidden;
+    pointer-events: none;
+    contain: strict;
+}
+
+.pb-canvas-host ::deep .pb-rp[hidden] {
+    display: none;
+}
+
+.pb-canvas-host ::deep .pb-rp__grade,
+.pb-canvas-host ::deep .pb-rp__bug,
+.pb-canvas-host ::deep .pb-rp__skip {
+    visibility: hidden;
+}
+
+.pb-canvas-host ::deep .pb-rp--on .pb-rp__grade,
+.pb-canvas-host ::deep .pb-rp--on .pb-rp__bug,
+.pb-canvas-host ::deep .pb-rp--on .pb-rp__skip {
+    visibility: visible;
+}
+
+/* Tape look: fine scanlines and a cool edge, toggled under the seal. */
+.pb-canvas-host ::deep .pb-rp__grade {
+    position: absolute;
+    inset: 0;
+    background:
+        repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.13) 0 1px, transparent 1px 3px),
+        radial-gradient(ellipse at center, transparent 58%, rgba(8, 18, 44, 0.42));
+}
+
+.pb-canvas-host ::deep .pb-rp__bug {
+    position: absolute;
+    left: 14px;
+    bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 16px 6px 6px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(14, 28, 66, 0.92), rgba(8, 15, 38, 0.92));
+    border: 2px solid #d4a937;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    color: #f4e3b0;
+    font-family: Impact, 'Arial Black', var(--pb-display, sans-serif);
+    letter-spacing: 0.08em;
+    animation: pb-rp-bug-in 0.4s cubic-bezier(.2, .9, .2, 1) both;
+}
+
+.pb-canvas-host ::deep .pb-rp__bug-seal {
+    display: block;
+    width: 44px;
+    height: 44px;
+    animation: pb-rp-spin 6s linear infinite;
+}
+
+.pb-canvas-host ::deep .pb-rp__bug-seal svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.pb-canvas-host ::deep .pb-rp__bug-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.05;
+}
+
+.pb-canvas-host ::deep .pb-rp__bug-text b {
+    font-size: 1.15rem;
+    font-weight: 400;
+}
+
+.pb-canvas-host ::deep .pb-rp__speed {
+    font-size: 0.72rem;
+    color: #ffd23f;
+    visibility: hidden;
+}
+
+.pb-canvas-host ::deep .pb-rp--slow .pb-rp__speed {
+    visibility: visible;
+}
+
+.pb-canvas-host ::deep .pb-rp__skip {
+    position: absolute;
+    right: 14px;
+    bottom: 18px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: rgba(6, 10, 22, 0.6);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+}
+
+/* Telestrator: a hand-drawn ring and arrow, stroked on around the impact. */
+.pb-canvas-host ::deep .pb-rp__tele-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    visibility: hidden;
+}
+
+.pb-canvas-host ::deep .pb-rp--tele .pb-rp__tele-svg {
+    visibility: visible;
+}
+
+.pb-canvas-host ::deep .pb-rp__tele path {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 1 2;
+    stroke-dashoffset: 1;
+}
+
+.pb-canvas-host ::deep .pb-rp__ink {
+    stroke: rgba(10, 6, 0, 0.55);
+    stroke-width: 10px;
+}
+
+.pb-canvas-host ::deep .pb-rp__pen {
+    stroke: #ffd23f;
+    stroke-width: 5px;
+}
+
+.pb-canvas-host ::deep .pb-rp--tele .pb-rp__ring {
+    animation: pb-rp-draw 0.45s cubic-bezier(.45, 0, .2, 1) forwards;
+}
+
+.pb-canvas-host ::deep .pb-rp--tele .pb-rp__arrow {
+    animation: pb-rp-draw 0.28s cubic-bezier(.45, 0, .2, 1) 0.42s forwards;
+}
+
+.pb-canvas-host ::deep .pb-rp--tele .pb-rp__head {
+    animation: pb-rp-draw 0.16s ease-out 0.68s forwards;
+}
+
+/* Seal wipe: grows out of the centre spinning until it covers the frame,
+   then shrinks away; replay.js swaps the picture while it is covered. */
+.pb-canvas-host ::deep .pb-rp__wipe {
+    position: absolute;
+    inset: 0;
+    visibility: hidden;
+}
+
+.pb-canvas-host ::deep .pb-rp--wipe .pb-rp__wipe {
+    visibility: visible;
+}
+
+.pb-canvas-host ::deep .pb-rp__seal {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 170vmax;
+    height: 170vmax;
+    transform: translate(-50%, -50%) scale(0);
+}
+
+.pb-canvas-host ::deep .pb-rp__seal svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.pb-canvas-host ::deep .pb-rp--wipe .pb-rp__seal {
+    animation: pb-rp-seal 0.6s both;
+}
+
+/* Reduced motion: straight cuts, nothing spins or draws on. */
+.pb-canvas-host ::deep .pb-rp--calm .pb-rp__bug,
+.pb-canvas-host ::deep .pb-rp--calm .pb-rp__bug-seal,
+.pb-canvas-host ::deep .pb-rp--calm .pb-rp__tele path {
+    animation: none;
+}
+
+.pb-canvas-host ::deep .pb-rp--calm .pb-rp__tele path {
+    stroke-dashoffset: 0;
+}
+
+@keyframes pb-rp-seal {
+    0% { transform: translate(-50%, -50%) scale(0.01) rotate(-300deg); animation-timing-function: cubic-bezier(.5, 0, .25, 1); }
+    50% { transform: translate(-50%, -50%) scale(1) rotate(0deg); animation-timing-function: cubic-bezier(.75, 0, .5, 1); }
+    100% { transform: translate(-50%, -50%) scale(0) rotate(300deg); }
+}
+
+@keyframes pb-rp-draw {
+    to { stroke-dashoffset: 0; }
+}
+
+@keyframes pb-rp-spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes pb-rp-bug-in {
+    from { transform: translateX(-120%); }
+    to { transform: none; }
+}
+
+/* Result glass (resultGlass.js): the frozen, frosted frame and the glass slab
+   under the result modal. Inserted straight after the WebGL canvas (under a
+   still-falling shatter), so like .pb-shatter it needs no z-index. */
+.pb-canvas-host ::deep .pb-glass {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}

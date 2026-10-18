@@ -1,9 +1,26 @@
 // index.js — public interop surface for PoBrawl. The Blazor page calls these.
 import { BrawlGame } from './game.js';
+import * as SelectStage from './selectStage.js';
 
 let game = null;
 
 window.PoBrawl = {
+  /**
+   * 2P fighter select: live portraits in the tiles and side cards (selectStage.js), one
+   * shared WebGL context. Ids are fighters.js CHARACTERS keys; primitives only, so the
+   * trimmed WASM client needs no interop DTO.
+   *   mount(hostId, p1, p2, p1Locked, p2Locked) → false when this device gets plain tiles
+   *   update(p1, p2, p1Locked, p2Locked)        cursor/lock changes (cues, poses)
+   *   versus(hostId) → Promise                  both locked: sting + slash, then fight
+   *   unmount()                                 dispose + force the context loss
+   */
+  select: {
+    mount: (hostId, p1, p2, p1Locked, p2Locked) => SelectStage.mount(hostId, { p1, p2, p1Locked, p2Locked }),
+    update: (p1, p2, p1Locked, p2Locked) => SelectStage.update({ p1, p2, p1Locked, p2Locked }),
+    versus: (hostId) => SelectStage.versus(hostId),
+    unmount: () => SelectStage.unmount(),
+    stats: () => SelectStage.stats(),
+  },
   /**
    * options: { mode: '1p'|'2p'|'demo'|'tournament'|'online', p1Character, p2Character, difficulty,
    *            training?: boolean (1P only),
@@ -13,6 +30,8 @@ window.PoBrawl = {
    *            director?: boolean, isoCam?: boolean (demo/tournament camera, default on) }
    */
   init(containerId, dotnetRef, options) {
+    // The select screen's context must be gone before the arena takes its own.
+    SelectStage.unmount();
     if (game) { game.dispose(); game = null; }
     const el = document.getElementById(containerId);
     if (!el) { console.error('[PoBrawl] container not found:', containerId); return; }
@@ -105,6 +124,7 @@ window.PoBrawl = {
   /** Say a line through the PA announcer (the post-fight press conference). */
   say(text) { if (game && text) game.audio?.announce(String(text).slice(0, 280), { rate: 1.0, pitch: 0.9, duckSec: 0.5 }); },
   destroy() {
+    SelectStage.unmount();
     if (game) { game.dispose(); game = null; }
   },
 };

@@ -1,0 +1,262 @@
+@using PoMiniGamesClient.Services.Ui
+@using PoBrawlRoster = PoMiniGames.Domain.Primitives.PoBrawlRoster
+@implements IDisposable
+@inject UiFeedbackService Feedback
+@inject SettingsService Settings
+
+@* The 1P ladder as an election-night tile cartogram (PoBrawlCampaign). Two variants:
+   "interlude" — over the arena between rungs: the beaten president's batch flips to BOB, the
+   electoral counter ticks up with a coin ding per state, and the campaign bus drives to the
+   next opponent's home state. "ending" — in the result modal after the last rung: the final
+   batch and then the rest of the map flip, and the 270 stamp lands. One role="img" with a
+   description of the finished state; nothing inside is interactive. Reduced motion: the
+   final state, no flips, no bus travel, no ticking. *@
+<figure class="pbm pbm--@Variant @(_still ? "pbm--still" : null) @(_elected ? "pbm--elected" : null)"
+        role="img" aria-label="@AriaLabel">
+    <div class="pbm-head">
+        <span class="pbm-kicker">@Kicker</span>
+        <span class="pbm-title">@Title</span>
+        <span class="pbm-count"><b>@_shown</b><span class="pbm-count-of"> / @PoBrawlCampaign.ToWin</span></span>
+    </div>
+    @if (Subtitle is { } sub)
+    {
+        <p class="pbm-sub">@sub</p>
+    }
+    <div class="pbm-board">
+        @foreach (var s in PoBrawlCampaign.States)
+        {
+            var delay = DelayOf(s.Code);
+            <span class="pbm-tile @TileClass(s.Code, delay)"
+                  style="grid-column:@(s.Col + 1);grid-row:@(s.Row + 1);@(delay is { } d ? $"--d:{d}ms" : null)">@s.Code</span>
+        }
+        <svg class="pbm-route" viewBox="0 0 @(PoBrawlCampaign.Columns * 10) @(PoBrawlCampaign.Rows * 10)" aria-hidden="true" focusable="false">
+            @if (Variant == "interlude" && Next is { } next && _ready)
+            {
+                var (x0, y0) = Center(Origin);
+                var (x1, y1) = Center(next);
+                var cx = (x0 + x1) / 2;
+                var cy = Math.Min(y0, y1) - 10 - (Math.Abs(x1 - x0) * 0.12);
+                var flip = x1 < x0 ? "scale(-1 1)" : null;
+                <path class="pbm-route-line" d="@F($"M{x0} {y0} Q{cx} {cy} {x1} {y1}")" />
+                <g transform="@F($"translate({(_still ? x1 : x0)} {(_still ? y1 : y0)})")">
+                    <g class="pbm-bus">
+                        @if (!_still)
+                        {
+                            <animateMotion dur="@(BusMs)ms" begin="@(BusStartMs)ms" fill="freeze" calcMode="spline"
+                                           keyPoints="0;1" keyTimes="0;1" keySplines="0.45 0 0.3 1"
+                                           path="@F($"M0 0 Q{cx - x0} {cy - y0} {x1 - x0} {y1 - y0}")" />
+                        }
+                        @* Parked just above the tile's centre, so the postal code stays readable. *@
+                        <g transform="translate(0 -3.6)">
+                        <g transform="@flip">
+                            @* A little campaign bus, drawn facing right, its wheels on y = 0. *@
+                            <rect class="pbm-bus-body" x="-5" y="-6.2" width="10" height="4.6" rx="1.2" />
+                            <rect class="pbm-bus-stripe" x="-5" y="-3.4" width="10" height="0.9" />
+                            <rect class="pbm-bus-glass" x="-4" y="-5.4" width="1.8" height="1.4" rx="0.3" />
+                            <rect class="pbm-bus-glass" x="-1.6" y="-5.4" width="1.8" height="1.4" rx="0.3" />
+                            <rect class="pbm-bus-glass" x="0.8" y="-5.4" width="1.8" height="1.4" rx="0.3" />
+                            <rect class="pbm-bus-glass" x="3.2" y="-5.4" width="1.3" height="2.2" rx="0.3" />
+                            <circle class="pbm-bus-wheel" cx="-2.8" cy="-1.4" r="1.15" />
+                            <circle class="pbm-bus-wheel" cx="2.8" cy="-1.4" r="1.15" />
+                            <path class="pbm-bus-flag" d="M-3 -6.2 V-9.4 L-0.4 -8.6 L-3 -7.8" />
+                        </g>
+                        </g>
+                    </g>
+                </g>
+            }
+        </svg>
+        @if (Variant == "ending")
+        {
+            <span class="pbm-stamp" aria-hidden="true">270 — Elected</span>
+        }
+    </div>
+    <div class="pbm-meter" aria-hidden="true">
+        <span class="pbm-meter-fill" style="@F($"width:{_shown * 100.0 / PoBrawlCampaign.TotalVotes:0.##}%")"></span>
+        <span class="pbm-meter-mark"></span>
+    </div>
+    @if (Variant == "interlude" && Next is { } dest)
+    {
+        <p class="pbm-next"><span aria-hidden="true">🚌</span> Next stop: <b>@dest.Name</b> — @NextName</p>
+    }
+</figure>
+
+@code {
+    /// <summary>Rungs beaten so far, 1..15. The interlude shows rung <c>Beaten - 1</c> falling.</summary>
+    [Parameter] public int Beaten { get; set; }
+
+    /// <summary>"interlude" (over the arena, between rungs) or "ending" (the result modal).</summary>
+    [Parameter] public string Variant { get; set; } = "interlude";
+
+    // Choreography (ms after first render). The CSS reads the per-tile delay from --d.
+    private const int FlipStartMs = 350;
+    private const int FlipStepMs = 190;
+    private const int SweepStepMs = 28;
+    private const int BusMs = 1700;
+
+    private static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;
+
+    private readonly CancellationTokenSource _cts = new();
+    private int _shown;
+    private bool _still;
+    private bool _ready;
+    private bool _elected;
+
+    private int Count => PoBrawlCampaign.Batches.Count;
+    private int Rung => Math.Clamp(Beaten, 1, Count) - 1;          // the rung that just fell
+    private IReadOnlyList<string> Batch => PoBrawlCampaign.Batches[Rung];
+    private int Before => PoBrawlCampaign.VotesAfter(Rung);
+    private int After => Variant == "ending" ? PoBrawlCampaign.TotalVotes : PoBrawlCampaign.VotesAfter(Rung + 1);
+    private PoBrawlCampaignState Origin => PoBrawlCampaign.HomeOf(Rung);
+    private PoBrawlCampaignState? Next => Variant == "interlude" && Beaten < Count ? PoBrawlCampaign.HomeOf(Beaten) : null;
+    private string NextName => Beaten < Count ? PoBrawlRoster.Fighters[Beaten].Name : "";
+    private string BeatenName => PoBrawlRoster.Fighters[Rung].Name;
+    private bool HomeFlipped => Batch.Contains(Origin.Code);
+    private int BusStartMs => FlipStartMs + (Batch.Count * FlipStepMs) + 350;
+
+    // The rest of the map in the ending: everything the run did not win, swept outward from the
+    // last rung's home state.
+    private List<string>? _sweep;
+    private List<string> Sweep => _sweep ??= PoBrawlCampaign.States
+        .Where(s => PoBrawlCampaign.RungOf(s.Code) < 0)
+        .OrderBy(s => Dist2(s, Origin)).ThenBy(s => s.Code, StringComparer.Ordinal)
+        .Select(s => s.Code).ToList();
+
+    private string Kicker => Variant == "ending"
+        ? $"Election night · all {Count} rungs"
+        : $"Campaign trail · rung {Rung + 1} of {Count}";
+
+    private string Title => Variant == "ending"
+        ? "BOB takes the White House"
+        : HomeFlipped ? $"{Origin.Name} goes BOB" : $"{Origin.Name} holds for BOB";
+
+    private string? Subtitle
+    {
+        get
+        {
+            if (Variant == "ending") return $"{PoBrawlCampaign.TotalVotes} electoral votes — a clean sweep of all 51.";
+            var swing = Batch.Where(c => c != Origin.Code).Select(c => PoBrawlCampaign.State(c).Name).ToList();
+            var gain = $"+{After - Before} electoral votes";
+            return swing.Count == 0
+                ? $"{BeatenName} beaten · {gain}"
+                : $"{BeatenName} beaten · {string.Join(", ", swing)} swing{(swing.Count == 1 ? "s" : "")} · {gain}";
+        }
+    }
+
+    private string AriaLabel
+    {
+        get
+        {
+            if (Variant == "ending")
+                return $"Campaign map: every state won, {PoBrawlCampaign.TotalVotes} electoral votes. 270 — elected.";
+            var won = PoBrawlCampaign.States.Count(s =>
+            {
+                var r = PoBrawlCampaign.RungOf(s.Code);
+                return r >= 0 && r <= Rung;
+            });
+            var next = Next is { } n ? $" Next stop: {n.Name}, home of {NextName}." : "";
+            return $"Campaign map: {Title}. {After} of {PoBrawlCampaign.ToWin} electoral votes, {won} of {PoBrawlCampaign.States.Count} states won.{next}";
+        }
+    }
+
+    /// <summary>Animation delay for a tile that flips in this moment, or null for a settled tile.</summary>
+    private int? DelayOf(string code)
+    {
+        var i = IndexOf(Batch, code);
+        if (i >= 0) return FlipStartMs + (i * FlipStepMs);
+        if (Variant != "ending") return null;
+        var j = PoBrawlCampaign.RungOf(code) >= 0 ? -1 : Sweep.IndexOf(code);
+        return j >= 0 ? SweepStart + (j * SweepStepMs) : null;
+    }
+
+    private int SweepStart => FlipStartMs + (Batch.Count * FlipStepMs) + 500;
+
+    private string TileClass(string code, int? delay)
+    {
+        var rung = PoBrawlCampaign.RungOf(code);
+        var state = delay is not null ? "pbm-tile--flip"
+            : rung >= 0 && rung < Rung ? "pbm-tile--won"
+            : "";
+        // The next opponent's home can already be ours (three Texans): it still pulses.
+        return Next is { } n && n.Code == code ? $"{state} pbm-tile--dest" : state;
+    }
+
+    private static int IndexOf(IReadOnlyList<string> list, string code)
+    {
+        for (var i = 0; i < list.Count; i++) if (list[i] == code) return i;
+        return -1;
+    }
+
+    private static int Dist2(PoBrawlCampaignState a, PoBrawlCampaignState b) =>
+        ((a.Col - b.Col) * (a.Col - b.Col)) + ((a.Row - b.Row) * (a.Row - b.Row));
+
+    private static (double X, double Y) Center(PoBrawlCampaignState s) => ((s.Col * 10) + 5, (s.Row * 10) + 5);
+
+    private static string F(FormattableString s) => s.ToString(Inv);
+
+    protected override void OnInitialized() => _shown = Before;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        var token = _cts.Token;
+        _still = Settings.ReducedMotion || await Settings.OsPrefersReducedMotionAsync();
+        _ready = true;
+        if (_still)
+        {
+            _shown = After;
+            _elected = _shown >= PoBrawlCampaign.ToWin;
+            StateHasChanged();
+            if (_elected) await Feedback.CueAsync("ui", "chime");
+            else await Feedback.CueAsync("ui", "crystalPing");
+            return;
+        }
+        StateHasChanged();
+        try { await RunAsync(token); }
+        catch (OperationCanceledException) { /* left mid-count */ }
+    }
+
+    // The counter and the dings, on the same clock as the CSS flips (each lands mid-flip).
+    private async Task RunAsync(CancellationToken token)
+    {
+        var start = Environment.TickCount64;
+        async Task At(int ms)
+        {
+            var wait = ms - (int)(Environment.TickCount64 - start);
+            if (wait > 0) await Task.Delay(wait, token);
+        }
+
+        for (var i = 0; i < Batch.Count; i++)
+        {
+            await At(FlipStartMs + (i * FlipStepMs) + 220);
+            _shown += PoBrawlCampaign.State(Batch[i]).Votes;
+            await CrossCheckAsync();
+            StateHasChanged();
+            await Feedback.CueAtAsync("ui", "crystalPing", pitch: 0.7 + (i * 0.09), gain: 0.8);
+        }
+        if (Variant != "ending") return;
+
+        // The landslide: the rest of the map, the counter rolling to 538 in a handful of steps.
+        var rest = Sweep;
+        for (var k = 0; k < rest.Count; k += 4)
+        {
+            await At(SweepStart + (k * SweepStepMs) + 220);
+            _shown += rest.Skip(k).Take(4).Sum(c => PoBrawlCampaign.State(c).Votes);
+            await CrossCheckAsync();
+            StateHasChanged();
+        }
+        await Feedback.CueAtAsync("ui", "crystalPing", pitch: 1.4);
+    }
+
+    private async Task CrossCheckAsync()
+    {
+        if (_elected || _shown < PoBrawlCampaign.ToWin) return;
+        _elected = true;
+        await Feedback.CueAsync("ui", "chime");
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

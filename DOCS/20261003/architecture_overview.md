@@ -628,3 +628,32 @@ at 25% health or less the liquid boils and the glass cracks, and a full energy t
 The CSS bars and `role="meter"` tracks stay in the DOM and are what shows without WebGL2 or on
 the low tier (the HUD carries `data-liquid` only while the canvas draws). Reduced motion gets
 still tubes redrawn on change. The loop pauses off-screen and in hidden tabs.
+
+**Showtime layer.** `js/pobrawl/show.js` is an event bus the presentation modules hang off, so
+none of them patches the fight code. The engine emits `countdown`, `fight`, `chargeStart`,
+`release`, `hit`, `block`, `super`, `ko`, `replay`, `result`, `cut` and `reset`. Each module
+registers handlers, a per-frame update, an after-render hook (the frame is still readable there)
+and a dispose. A throwing handler is logged and skipped. Every module uses `Math.random`, never
+the seeded match RNG, builds its materials at boot so `_warmupRender` compiles them, and scales by
+tier and reduced motion. All of them together cost about 0.7 ms a frame on the high tier.
+
+| Module | What it does |
+|---|---|
+| `audioShow.js` + `audio.js` | A silent conductor clock, published as `this.beat` (`bpm`, `phase`, `beatN`, `bar`, `pulse`, `energy`). A per-fighter charge riser with a full-charge glint and a release snap. A 4-7 note motif per president, played at the countdown, on supers and in the winner's fanfare; the belt ceremony gets a flourish. Combo notes and the stab when the lead flips snap to the beat. The mix follows the director's shot (tight, mid, wide, KO). In player modes the AudioListener follows the camera (HRTF on the high tier). The crowd stomps and claps on the beat when energy is high and chants a formant-synth "U-S-A!". `balloonPop()` is the balloon pop. There is still no music bed. |
+| `chargeAura.js` | A fresnel energy shell on the striking fist or shoe while a strike charges, going from white to gold, with heat shimmer, motes from the shared particle pool, a full-charge star glint and a release flare. |
+| `balloons.js` | A convention balloon drop: 60 instanced balloons, sized by tier. Half of them drop on a KO win, all of them on the tournament final or the last ladder rung. Balloons float down buoyantly, collide through a spatial hash, are shoved by fighters and pop on hits. Pleated bunting and pennant strings run on Verlet cloth and kick on hits and the KO. Test hook: `_balloonDrop(n, spread)`. |
+| `ledBoards.js` (+ `arena.js` `uWave`) | Dot-matrix LED ribbon boards on the apron skirt and a ringside barrier. One shader scrolls a canvas marquee that is redrawn only when the text changes. It shows names, the popular-vote split, combos, BLOCKED, super names, KNOCKOUT, COMEBACK!, FINAL 10 SECONDS and UPSET ALERT, in the colour of the momentum leader. The truss and boards pulse on `beat.pulse`. A stadium wave rolls round the stands, lifting seats and phone lights. |
+| `replay.js` | A preallocated ring buffer of every joint and root, about 4 s at 60 Hz. After a KO (not on a TIME decision, online, in training or under tournament fast-forward) a new `replay` phase runs between `ko` and `result`. It opens with a seal wipe and an "INSTANT REPLAY" bug, plays a wide angle at 1x and then the impact at 0.3x under a telestrator circle and arrow, and restores the live pose and camera exactly. Any key, tap or click skips it. `OnMatchEnd`, the news package, the shatter and the KO clip all follow it. |
+| `resultGlass.js` | On the medium and high tiers, when the result modal opens: the captured last frame goes through a dual-Kawase blur on a lazily created WebGL2 canvas. A glass slab under the modal adds refraction, edge dispersion, a specular that follows the pointer and one light sweep. The modal turns translucent (`data-pb-glass`) only once the glass is drawn. The low tier keeps the stock backdrop blur. |
+
+**Fighter select and campaign map.** The 2P select (`selectStage.js`, `PoBrawl.select.*`) draws
+the real fighter rigs live inside frosted-glass tiles: one WebGL canvas, one scissored viewport
+per tile. It adds hero cards for the two picks, a gold seal on lock-in and a diagonal VS slash,
+with cues in `gameCues.js` (`selectTick`, `selectLock`, `selectVs`). The canvas is disposed (and
+`forceContextLoss`) when the fight starts. With the low tier or no WebGL2 the tiles stay plain glass
+buttons. The 1P ladder is an election-night tile cartogram (`PoBrawlCampaignMap.razor`, data in
+`PoBrawlCampaign.cs`: 2024 electoral votes, home states and per-rung swing batches). Each win flips
+the beaten president's home state plus a regional batch, a campaign bus drives to the next
+opponent's state, and the count crosses 270 only on the last rung; a unit scenario pins this. The
+between-rungs hold is 4.2 s so the map can play. The ending card shows the full map stamped
+"270 — ELECTED". Reduced motion shows the final state at once.

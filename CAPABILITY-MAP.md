@@ -54,7 +54,7 @@ for PoMule · **Deferred** = planned after PoMule v1.
 | Gamepad input | Client `wwwroot/js/gamepadBus.js` | Engines, DOM focus navigation and rumble; loaded on first `gamepadconnected` |
 | Ghost runs | Client `wwwroot/js/ghostTrack.js` | Compact best-run paths in localStorage; PoRacer and PoMarbleRace |
 | Share a result | Client `wwwroot/js/shareCard.js`, `Components/GameOverModal.razor` | 1080x1080 PNG card or a text summary |
-| Per-game palettes and cues | Client `wwwroot/js/paletteBus.js`, `gameCues.js` | Each game's colors and sound cues; no background music anywhere |
+| Per-game palettes and cues | Client `wwwroot/js/paletteBus.js`, `gameCues.js` | Each game's colors and sound cues; no background music anywhere (event stingers and jingles only, e.g. Brawl's president motifs) |
 
 ## Existing games
 

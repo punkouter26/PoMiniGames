@@ -1437,6 +1437,8 @@ export class BrawlGame {
   // ── simulation ──────────────────────────────────────────────────────────
 
   _tick(dt) {
+    // The instant replay (replay.js) owns the rigs and the camera: the sim holds still under it.
+    if (this.phase === 'replay') return;
     // The sim clock every timed personality effect is written against.
     this.t += dt;
     this.phaseT += dt;
@@ -1493,10 +1495,9 @@ export class BrawlGame {
       this._tickKoFall(dt);
       if (this.phaseT >= 1.4) {
         this.timeScale = 1;
-        this.phase = 'result';
-        this.phaseT = 0;
-        this._startCelebration(this.pendingCelebration);
-        this._reportResult();
+        // The instant replay (replay.js) runs between the fall and the result when it
+        // can, and calls _koResult itself once it is done.
+        if (!this._replayBegin?.()) this._koResult();
       }
     } else if (this.phase === 'result') {
       this._buildPendingKO();

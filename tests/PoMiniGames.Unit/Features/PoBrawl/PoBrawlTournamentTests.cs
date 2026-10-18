@@ -16,6 +16,7 @@ public sealed class PoBrawlTournamentTests
     [InlineData(nameof(Elo_IsZeroSum_AndAnUpsetPaysMoreThanAFavouriteWinning))]
     [InlineData(nameof(Results_AreRefused_WhenNotASide_OrOnceDecided))]
     [InlineData(nameof(Expectation_FavoursTheHigherRating_AndOnlyAnUnderdogWinIsAnUpset))]
+    [InlineData(nameof(CampaignTrail_Crosses270_OnlyOnTheLastRung))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
     private static PoBrawlTournament NewCup(int seed = 7, IReadOnlyDictionary<string, int>? ratings = null) =>
@@ -110,5 +111,28 @@ public sealed class PoBrawlTournamentTests
         FluentActions.Invoking(() => cup.RecordResult(1, 30, knockout: true)).Should().Throw<InvalidOperationException>();
         FluentActions.Invoking(() => PoBrawlTournament.Draw(PoBrawlRoster.Fighters.Take(5).ToList(), new Random(1)))
             .Should().Throw<ArgumentException>();
+    }
+
+    // The 1P ladder's campaign map (PoBrawlCampaign) shares this theory: one row, no new method.
+    private void CampaignTrail_Crosses270_OnlyOnTheLastRung()
+    {
+        PoBrawlCampaign.States.Should().HaveCount(51).And.OnlyHaveUniqueItems(s => s.Code)
+            .And.OnlyHaveUniqueItems(s => (s.Row * 100) + s.Col);
+        PoBrawlCampaign.States.Sum(s => s.Votes).Should().Be(PoBrawlCampaign.TotalVotes);
+        PoBrawlCampaign.States.Should().OnlyContain(s => s.Col < PoBrawlCampaign.Columns && s.Row < PoBrawlCampaign.Rows);
+
+        var rungs = PoBrawlRoster.Fighters.Count;
+        PoBrawlCampaign.Batches.Should().HaveCount(rungs);
+        PoBrawlCampaign.Batches.Should().OnlyContain(b => b.Count > 0, because: "every win flips something");
+        PoBrawlCampaign.Batches.SelectMany(b => b).Should().OnlyHaveUniqueItems(because: "a state flips once");
+        for (var r = 0; r < rungs; r++)
+        {
+            var home = PoBrawlCampaign.HomeOf(r).Code;
+            PoBrawlCampaign.RungOf(home).Should().BeLessThanOrEqualTo(r, because: "a rung's home state is won by then");
+            PoBrawlCampaign.VotesAfter(r + 1).Should().BeGreaterThan(PoBrawlCampaign.VotesAfter(r));
+        }
+        PoBrawlCampaign.VotesAfter(0).Should().Be(0);
+        PoBrawlCampaign.VotesAfter(rungs - 1).Should().BeLessThan(PoBrawlCampaign.ToWin);
+        PoBrawlCampaign.VotesAfter(rungs).Should().BeGreaterThanOrEqualTo(PoBrawlCampaign.ToWin);
     }
 }

@@ -122,6 +122,15 @@ class CinematicsMethods {
     this._reportResult();
   }
 
+  // The KO fall (and the instant replay, replay.js) is over: on to the result.
+  _koResult() {
+    this.timeScale = 1;
+    this.phase = 'result';
+    this.phaseT = 0;
+    this._startCelebration(this.pendingCelebration);
+    this._reportResult();
+  }
+
   // Victory hops + entrance gesture replay. Cleared in _startCountdown.
   _startCelebration(f) {
     this.celebrant = f || null;

@@ -615,7 +615,9 @@ export function updateAtmosphere(arena, dt, t, excited, phones = 0) {
       ph.mat.opacity = Math.min(1, phones) * 0.9;
       for (const s of ph.pool) {
         const b = s.userData.base, q = s.userData.phase + t * 0.9;
-        s.position.set(b.x + Math.sin(q) * 0.06, b.y + Math.sin(q * 1.3) * 0.03, b.z);
+        // dx/dz/lift: the beat sway and the stadium wave (ledBoards.js), 0 when idle.
+      const u = s.userData;
+      s.position.set(b.x + Math.sin(q) * 0.06 + (u.dx || 0), b.y + Math.sin(q * 1.3) * 0.03 + (u.lift || 0), b.z + (u.dz || 0));
       }
     }
   }
@@ -628,16 +630,27 @@ function crowdBounceMaterial(uniforms) {
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = uniforms.uTime;
     shader.uniforms.uExcited = uniforms.uExcited;
+    shader.uniforms.uWave = uniforms.uWave;
     shader.vertexShader = `
       uniform float uTime;
       uniform float uExcited;
+      uniform vec4 uWave;
       attribute float aPhase;
     ` + shader.vertexShader.replace(
       '#include <begin_vertex>',
       `#include <begin_vertex>
       float crowdPhase = aPhase + uTime * 1.4;
       transformed.y += sin(crowdPhase) * 0.025
-        + sin(crowdPhase * 1.8) * 0.18 * uExcited;`);
+        + sin(crowdPhase * 1.8) * 0.18 * uExcited;
+      // Stadium wave (ledBoards.js): uWave = (front angle, rise m, half-width rad, 0). Seats
+      // stand as the band passes; the rise is divided by the instance's Y scale so torso and
+      // head lift together (an empty seat's zero matrix still collapses it).
+      if (uWave.y > 0.001) {
+        vec2 seatXZ = instanceMatrix[3].xz;
+        float dA = mod(atan(seatXZ.x, seatXZ.y) - uWave.x + 3.14159265, 6.2831853) - 3.14159265;
+        transformed.y += uWave.y * exp(-dA * dA / (uWave.z * uWave.z))
+          / max(length(instanceMatrix[1].xyz), 0.05);
+      }`);
   };
   return mat;
 }
@@ -658,7 +671,7 @@ function buildCrowd(scene) {
   ];
   const total = rows.reduce((n, r) => n + r.count, 0);
 
-  const uniforms = { uTime: { value: 0 }, uExcited: { value: 0 } };
+  const uniforms = { uTime: { value: 0 }, uExcited: { value: 0 }, uWave: { value: new THREE.Vector4(0, 0, 0.4, 0) } };
   const torsoMesh = new THREE.InstancedMesh(
     new THREE.BoxGeometry(0.42, 0.9, 0.28), crowdBounceMaterial(uniforms), total);
   const headMesh = new THREE.InstancedMesh(

@@ -76,7 +76,7 @@
                 @if (_mode == "1p" && !_training)
                 {
                     <div class="pb-ladder" role="img"
-                         aria-label="Ladder progress: @_ladder of @Roster.Length presidents beaten. Now fighting @CharName(_p2Char).">
+                         aria-label="Ladder progress: @_ladder of @Roster.Length presidents beaten. Now fighting @CharName(_p2Char). @PoBrawlCampaign.VotesAfter(_ladder) of @PoBrawlCampaign.ToWin electoral votes.">
                         <span class="pb-ladder-count">@_ladder/@Roster.Length</span>
                         <span class="pb-ladder-rail">
                             @for (var i = 0; i < Roster.Length; i++)
@@ -86,6 +86,8 @@
                             }
                         </span>
                         <span class="pb-ladder-now">@CharName(_p2Char)</span>
+                        @* Campaign trail (PoBrawlCampaign): the electoral count the beaten rungs hold. *@
+                        <span class="pb-ladder-ev"><b>@PoBrawlCampaign.VotesAfter(_ladder)</b>/@PoBrawlCampaign.ToWin</span>
                     </div>
                 }
             }
@@ -113,6 +115,13 @@
                 }
             }
         </div>
+
+        @* Between rungs: the campaign map — the beaten rung's states flip and the bus drives
+           to the next opponent's home state. Shown for the roll's hold (CampaignInterludeMs). *@
+        @if (_campaignBeaten is int beaten)
+        {
+            <PoBrawlCampaignMap @key="beaten" Beaten="beaten" Variant="interlude" />
+        }
 
         @if (_demo)
         {
@@ -266,6 +275,10 @@
     // How long a 1P win holds on the result before rolling into the next rung, so the
     // Breaking News lower third (news.js) is on screen long enough to be read.
     private const int LadderResultHoldMs = 2600;
+    // The between-rungs hold when the campaign map plays: the batch flips, then the bus drives.
+    private const int CampaignInterludeMs = 4200;
+    // Rungs beaten while the campaign interlude is on screen; null otherwise.
+    private int? _campaignBeaten;
 
     // ── Post-fight press conference (scripted, PoBrawlPressLines) ─────────
     private PoBrawlPressLine? _presser;
@@ -421,7 +434,10 @@
     // Two-player fighter select: one shared 4×4 grid with a cursor per player. Each player
     // drives their cursor with their in-game keys (see OnIntroKey) or a tap; the side cards
     // are the lock toggles, and locking in both sides starts the fight.
-    private RenderFragment SelectContent => @<div class="pb-select">
+    // The empty .pb-select-portrait / .pb-select-hero spans are where selectStage.js paints
+    // each president's live rig (one shared canvas over #pb-select-stage); without WebGL2 or
+    // on the low tier they collapse and the tiles stay plain glass buttons.
+    private RenderFragment SelectContent => @<div class="pb-select" id="@SelectStageId">
         <div class="pb-select-sides">
             @SideCard(1)
             <span class="pb-select-vs" aria-hidden="true">VS</span>
@@ -438,6 +454,7 @@
                             class="pb-select-tile @(idx == _p1Sel ? "pb-select-tile--p1" : "") @(idx == _p2Sel ? "pb-select-tile--p2" : "")"
                             aria-label="@TileLabel(idx)"
                             @onclick="() => TapFighter(idx)">
+                        <span class="pb-select-portrait" aria-hidden="true" data-fighter="@f.Id" data-index="@idx"></span>
                         <span class="pb-select-name">@f.Name</span>
                         @if (idx == _p1Sel) { <span class="pb-select-mark pb-select-mark--p1" aria-hidden="true">P1</span> }
                         @if (idx == _p2Sel) { <span class="pb-select-mark pb-select-mark--p2" aria-hidden="true">P2</span> }
@@ -461,14 +478,23 @@
     private RenderFragment SideCard(int side)
     {
         var locked = side == 1 ? _p1Locked : _p2Locked;
-        var pick = PickableRoster[side == 1 ? _p1Sel : _p2Sel].Name;
+        var fighter = PickableRoster[side == 1 ? _p1Sel : _p2Sel];
+        var pick = fighter.Name;
         return @<button type="button" class="pb-select-side pb-select-side--p@(side) @(locked ? "pb-select-side--locked" : "")"
                         aria-pressed="@(locked ? "true" : "false")"
                         aria-label="Player @side: @pick, @(locked ? "locked in — press to change" : "press to lock in")"
                         @onclick="() => ToggleLock(side)">
+            <span class="pb-select-hero" aria-hidden="true" data-fighter="@fighter.Id" data-side="@side"></span>
             <span class="pb-select-who">Player @side</span>
-            <span class="pb-select-pick">@pick</span>
-            <span class="pb-select-state">@(locked ? "✓ Ready" : "Lock in")</span>
+            <span class="pb-select-plate">
+                <span class="pb-select-pick">@pick</span>
+                <span class="pb-select-state">@(locked ? "✓ Ready" : "Lock in")</span>
+            </span>
+            @if (locked)
+            {
+                @* The presidential seal stamps down on lock-in (CSS animation on insert). *@
+                <span class="pb-select-seal" aria-hidden="true">@SealSvg</span>
+            }
         </button>;
     }
 
@@ -538,7 +564,7 @@
     // The ladder ending (full clear): the roll of fifteen KOs, the run's numbers, and the belt
     // going back on the line at rung 1.
     private RenderFragment EndingCard => @<section class="pb-ending" aria-label="Ladder complete">
-        <div class="pb-ending-seal" aria-hidden="true">🏆</div>
+        <PoBrawlCampaignMap Beaten="@Roster.Length" Variant="ending" />
         <h3 class="pb-ending-title">Commander-in-Chief of the Ring</h3>
         <p class="pb-ending-line">Fifteen presidents, fifteen trips to the canvas. BOB loosens his tie, clocks back in at the office, and never mentions it again.</p>
         <ol class="pb-ending-roll">
@@ -642,12 +668,15 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
-
         // The engine boots only once the intro is dismissed (see OnIntroStartAsync)
         // so the fight never runs behind the welcome card. Just create the interop
         // handle here — InitEngine needs it.
-        _ref = DotNetObjectReference.Create(this);
+        if (firstRender) _ref = DotNetObjectReference.Create(this);
+        // 2P select: keep the live portraits (selectStage.js) on the cursors and locks.
+        // After _ref: the first call awaits the engine module's load.
+        if (_mode == "2p" && !_introDone) await SyncSelectStageAsync();
+        if (!firstRender) return;
+
         if (_mode == "online")
         {
             await StartOnlineAsync();
@@ -711,7 +740,7 @@
             default: return;
         }
         // Both locked → straight into the fight (no reaching for the mouse).
-        if (BothLocked) { _ = OnIntroStartAsync(); return; }
+        if (BothLocked) { _ = VersusThenStartAsync(); return; }
         StateHasChanged();
     }
 
@@ -728,7 +757,7 @@
         if (_introDone) return;
         if (!_p1Locked) { _p1Sel = idx; _p1Locked = true; }
         else if (!_p2Locked) { _p2Sel = idx; _p2Locked = true; }
-        if (BothLocked) _ = OnIntroStartAsync();
+        if (BothLocked) _ = VersusThenStartAsync();
     }
 
     /// <summary>Pointer equivalent of the F and K lock-in keys.</summary>
@@ -737,7 +766,99 @@
         if (_introDone) return;
         if (side == 1) _p1Locked = !_p1Locked; else _p2Locked = !_p2Locked;
         // Match the keyboard path: both sides ready starts the fight.
-        if (BothLocked) _ = OnIntroStartAsync();
+        if (BothLocked) _ = VersusThenStartAsync();
+    }
+
+    // ── 2P select presentation (wwwroot/js/pobrawl/selectStage.js) ───────
+    // The select's one WebGL canvas lives inside this element; see SelectContent.
+    private const string SelectStageId = "pb-select-stage";
+    private Task? _selectStageMount;
+    private string? _selectStageSent;   // the cursor/lock state the stage last saw
+    private int _versusGeneration;      // bumped per both-locked moment; an unlock cancels it
+
+    private string SelectStageKey => $"{_p1Sel}|{_p2Sel}|{_p1Locked}|{_p2Locked}";
+
+    /// <summary>
+    /// Mounts the live portraits once (loading the engine module early, which the fight needs
+    /// next anyway), then pushes each cursor/lock change. Primitives only — no interop DTO.
+    /// Presentation: any failure leaves the plain glass tiles, which work on their own.
+    /// </summary>
+    private async Task SyncSelectStageAsync()
+    {
+        _selectStageMount ??= MountSelectStageAsync();
+        await _selectStageMount;
+        if (_introDone || SelectStageKey == _selectStageSent) return;
+        _selectStageSent = SelectStageKey;
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("PoBrawl.select.update",
+                PickableRoster[_p1Sel].Id, PickableRoster[_p2Sel].Id, _p1Locked, _p2Locked);
+        }
+        catch (Exception ex) { Console.Error.WriteLine($"[PoBrawl] select update failed: {ex.Message}"); }
+    }
+
+    private async Task MountSelectStageAsync()
+    {
+        try
+        {
+            if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "pobrawl") || _introDone) return;
+            _selectStageSent = SelectStageKey;
+            await JSRuntime.InvokeAsync<bool>("PoBrawl.select.mount", SelectStageId,
+                PickableRoster[_p1Sel].Id, PickableRoster[_p2Sel].Id, _p1Locked, _p2Locked);
+        }
+        catch (Exception ex) { Console.Error.WriteLine($"[PoBrawl] select stage failed: {ex.Message}"); }
+    }
+
+    /// <summary>
+    /// Both corners locked: the second seal stamps, the VS sting plays and the slash crosses
+    /// the screen (instant under reduced motion), then the fight starts — unless someone
+    /// unlocked in the meantime.
+    /// </summary>
+    private async Task VersusThenStartAsync()
+    {
+        var generation = ++_versusGeneration;
+        StateHasChanged();
+        try { await JSRuntime.InvokeVoidAsync("PoBrawl.select.versus", SelectStageId); }
+        catch { /* no engine module: start straight away */ }
+        if (generation != _versusGeneration || !BothLocked) return;
+        await OnIntroStartAsync();
+    }
+
+    // The presidential seal stamped on a locked-in side card: a scalloped gold disc, a ring
+    // of stars, a centre star. Built once; the colours are the emblem's own, theme-invariant.
+    private static readonly MarkupString SealSvg = new(BuildSealSvg());
+
+    private static string BuildSealSvg()
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var edge = new System.Text.StringBuilder();
+        for (var i = 0; i < 48; i++)
+        {
+            var a = i * Math.PI / 24;
+            var r = i % 2 == 0 ? 48 : 44.5;
+            edge.Append(inv, $"{50 + r * Math.Sin(a):0.##},{50 - r * Math.Cos(a):0.##} ");
+        }
+        var stars = new System.Text.StringBuilder();
+        for (var i = 0; i < 13; i++)
+        {
+            var a = i * 2 * Math.PI / 13;
+            stars.Append(inv, $"<circle cx=\"{50 + 34 * Math.Sin(a):0.##}\" cy=\"{50 - 34 * Math.Cos(a):0.##}\" r=\"2.1\"/>");
+        }
+        var star = new System.Text.StringBuilder();
+        for (var i = 0; i < 10; i++)
+        {
+            var a = i * Math.PI / 5;
+            var r = i % 2 == 0 ? 17 : 7;
+            star.Append(inv, $"{50 + r * Math.Sin(a):0.##},{46 - r * Math.Cos(a):0.##} ");
+        }
+        return "<svg viewBox=\"0 0 100 100\" focusable=\"false\">"
+            + $"<polygon points=\"{edge}\" fill=\"#e9b923\" stroke=\"#8a5a06\" stroke-width=\"2\"/>"
+            + "<circle cx=\"50\" cy=\"50\" r=\"39\" fill=\"#f6cf4a\" stroke=\"#8a5a06\" stroke-width=\"1.6\"/>"
+            + "<circle cx=\"50\" cy=\"50\" r=\"29\" fill=\"none\" stroke=\"#8a5a06\" stroke-width=\"1.2\"/>"
+            + $"<g fill=\"#8a5a06\">{stars}</g>"
+            + $"<polygon points=\"{star}\" fill=\"#fff6cf\" stroke=\"#8a5a06\" stroke-width=\"1.4\"/>"
+            + "<text x=\"50\" y=\"71\" text-anchor=\"middle\" font-size=\"10\" font-weight=\"900\" letter-spacing=\"1\" fill=\"#5c3a02\">READY</text>"
+            + "</svg>";
     }
 
     // Dismisses the intro and boots the engine. Idempotent: the FIGHT button and
@@ -761,6 +882,12 @@
             // still starts a legal, mirror-free fight.
             _p1Char = PickableRoster[_p1Sel].Id;
             _p2Char = PickableRoster[_p2Sel].Id;
+            // Free the select's WebGL context before the arena asks for its own
+            // (PoBrawl.init does it too; this covers an engine that fails to boot).
+            if (_selectStageMount is not null)
+            {
+                try { await JSRuntime.InvokeVoidAsync("PoBrawl.select.unmount"); } catch { }
+            }
         }
         // 1P keeps the ladder matchup chosen in OnInitialized (BOB vs the rung).
         if (_mode == "1p" && _training)
@@ -1234,7 +1361,7 @@
         _announcement = won
             ? _champion
                 ? $"You beat {CharName(_p2Char)} — the whole ladder is down. Champion!"
-                : $"You beat {CharName(_p2Char)}. Next up: {Roster[_ladder].Name}."
+                : $"You beat {CharName(_p2Char)}. Next up: {Roster[_ladder].Name}. {PoBrawlCampaign.VotesAfter(_ladder)} of {PoBrawlCampaign.ToWin} electoral votes."
             : winner == 0
                 ? $"Draw at the bell against {CharName(_p2Char)} — the rung holds."
                 : $"Knocked out by {CharName(_p2Char)} — {_ladder} of {Roster.Length} rungs beaten.";
@@ -1257,8 +1384,16 @@
                 if (enginePhase is null || enginePhase != "ko") break;
                 await Task.Delay(250);
             }
-            await Task.Delay(LadderResultHoldMs);
             if (generation != _ladderRollGeneration || _training) return;
+            _campaignBeaten = _ladder;
+            await InvokeAsync(StateHasChanged);
+            await Task.Delay(Math.Max(LadderResultHoldMs, CampaignInterludeMs));
+            if (_campaignBeaten == _ladder) _campaignBeaten = null;
+            if (generation != _ladderRollGeneration || _training)
+            {
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
 
             // Stay in the fight: reset the HUD and roll the engine into the next president.
             // GameOver stays false, so no modal is shown.

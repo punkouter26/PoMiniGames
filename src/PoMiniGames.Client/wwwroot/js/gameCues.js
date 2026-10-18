@@ -273,6 +273,35 @@ const CUES = {
             ],
             feel: 'heavy', scale: 1.6, fx: { preset: 'impact', scale: 2 }, duck: 0.6,
         },
+        // 2P fighter select (selectStage.js). The engine's AudioBus is not up yet there,
+        // so the select's three sounds live here with the app's other UI cues.
+        // selectTick: a cursor or pointer lands on a fighter — a dull glove tap, no feel.
+        selectTick: {
+            voices: [
+                v('sine', 210, 0.05, 0.10, { freqEnd: 150, sweep: 0.04, decay: 0.045, drive: 0.3 }),
+                v('noise', 0, 0.025, 0.05, { decay: 0.02, cutoff: 2600, q: 2 }),
+            ],
+            feel: null, jitter: 0.6,
+        },
+        // selectLock: the presidential seal stamping down — a thud, then a bright ring.
+        selectLock: {
+            voices: [
+                v('sine', 120, 0.22, 0.30, { freqEnd: 60, sweep: 0.12, decay: 0.2, drive: 0.6 }),
+                v('noise', 0, 0.08, 0.16, { decay: 0.07, cutoff: 1800, cutoffEnd: 600, q: 1.4 }),
+                v('triangle', 988, 0.26, 0.05, { decay: 0.24, delay: 0.05 }),
+                v('triangle', 1480, 0.22, 0.035, { decay: 0.2, delay: 0.08 }),
+            ],
+            feel: 'select', fx: { preset: 'sparks', scale: 0.7 }, jitter: 0.2,
+        },
+        // selectVs: both corners locked — a rising whoosh into a driven low stab.
+        selectVs: {
+            voices: [
+                v('noise', 0, 0.32, 0.12, { decay: 0.3, cutoff: 600, cutoffEnd: 5200, q: 1.8, sweep: 0.28 }),
+                v('sine', 98, 0.45, 0.36, { freqEnd: 44, sweep: 0.4, decay: 0.42, drive: 0.75, delay: 0.26 }),
+                v('square', 196, 0.30, 0.09, { freqEnd: 147, sweep: 0.25, decay: 0.28, cutoff: 1100, drive: 0.6, delay: 0.26 }),
+            ],
+            feel: 'medium', scale: 0.6, jitter: 0, duck: 0.4,
+        },
     },
 
     // ── PoMarbleRace — glass and steel ─────────────────────────────────

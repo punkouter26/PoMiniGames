@@ -611,6 +611,13 @@ the low tier pulls the inset until the next round. Toggles: `PoBrawl.setDirector
 `PoBrawl.setIsoCam(on)` (the tournament bar's "🎥 Director cam" and "📺 Iso"; the init options
 `director` and `isoCam`), plus `PoBrawl.director()` for diagnostics.
 
+**Side view for human modes.** 1P, 2P, online and training keep a plain side view
+(`cinematics.js _sideView`): the boom sits straight out on the audience side of the pair's
+midpoint, slides and zooms with them, and never orbits, springs on a hit or circles a super. The
+circle keys still sidestep in depth, but `game.js` caps the depth offset between the two at
+tan 30° of their side-on spacing, so the fighters can never stack one behind the other. The KO shot
+still plays once the fight is over.
+
 **Liquid-glass HUD.** `js/pobrawl/hudLiquid.js` draws the fight HUD's health as liquid in a
 glass tube and energy as plasma: one WebGL2 canvas over `PoBrawlHud`, one SDF fragment shader,
 four scissored draws per frame. It reads the four meters' `aria-valuenow` and the danger /

@@ -73,7 +73,7 @@ scores, and, only when a player opts in, talks to AI models on the player's beha
 |---|---|
 | TicTacToe | 4-in-a-row on 6×6 vs AI, hot-seat, or online quick-match (SignalR) |
 | ConnectFive | Five-in-a-row vs AI, hot-seat, or online quick-match (SignalR) |
-| PoBrawl | Physics brawler with a presidents ladder, an 8-fighter CPU tournament (`/pobrawl/tournament`, random draw, Elo after every bout; golden-hour → dusk → night arena, an Elo-upset crowd, an animated bracket and a belt ceremony; a TV-style director camera with a picture-in-picture iso cam in demo and tournament) + fighter Elo demo board |
+| PoBrawl | Physics brawler with a presidents ladder, an 8-fighter CPU tournament (`/pobrawl/tournament`, random draw, Elo after every bout; golden-hour → dusk → night arena, an Elo-upset crowd, an animated bracket and a belt ceremony; a TV-style director camera with a picture-in-picture iso cam in demo and tournament; 1P/2P/online keep a plain side view) + fighter Elo demo board |
 | PoCoupleQuiz | Two-player realtime couples quiz (SignalR); curated questions, free answer matching, opt-in AI judge |
 | PoFunQuiz | Multiplayer trivia lobby from a free question bank (opt-in Fresh AI questions) |
 | PoMarbleRace | Physics marble race on baked GLB tracks; online 2-player via host-streamed physics |

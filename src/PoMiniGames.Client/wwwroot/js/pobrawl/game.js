@@ -93,6 +93,10 @@ const HOUSE_LIGHT_HEIGHT = 11;
 const HOUSE_LIGHT_SPEED = (Math.PI * 2) / 12; // rad/s — one lap per ~12 s
 
 const MIN_SEPARATION = 0.95;
+// Side-view modes (cinematics.js _sideView): the camera never orbits, so the pair is held
+// within ~30° of side-on — the circle keys sidestep in depth but can never stack the two
+// fighters one behind the other. tan(30°).
+const SIDE_VIEW_DEPTH_RATIO = 0.577;
 
 const HITSTUN = 0.35;
 
@@ -1761,6 +1765,21 @@ export class BrawlGame {
             fB.knockback.x -= nx * bInto * 0.2;
             fB.knockback.z -= nz * bInto * 0.2;
           }
+        }
+      }
+
+      // 3c. Side view: cap the depth offset between the two at SIDE_VIEW_DEPTH_RATIO of their
+      //    side-on spacing, half the correction each.
+      if (this._sideView() && fA.state !== 'ko' && fB.state !== 'ko'
+          && fA.rigBody && fB.rigBody) {
+        const pa = fA.rigBody.position;
+        const pb = fB.rigBody.position;
+        const dz = pb.z - pa.z;
+        const maxDz = Math.abs(pb.x - pa.x) * SIDE_VIEW_DEPTH_RATIO;
+        if (Math.abs(dz) > maxDz) {
+          const fix = (Math.abs(dz) - maxDz) * 0.5 * Math.sign(dz);
+          pa.z += fix;
+          pb.z -= fix;
         }
       }
 

@@ -27,6 +27,18 @@ const CAMERA_PRIORITY = { normal: 0, super: 1, ko: 2 };
 const CAMERA_MIN_DWELL = 1.2;
 
 class CinematicsMethods {
+  /**
+   * Human-driven modes (1P, 2P, online; training is 1P) keep a plain side view: a fixed boom
+   * on the audience side that slides and zooms with the pair but never orbits, swings on a
+   * hit or circles a super, so each player can always find their fighter. The cinematic
+   * framing (director, super orbit) is for CPU-vs-CPU modes. The KO shot still plays — the
+   * fight is over by then.
+   */
+  _sideView() {
+    const m = this.options?.mode;
+    return m === '1p' || m === '2p' || m === 'online';
+  }
+
   // Single chokepoint for cameraMode writes. Escalations (priority up) and
   // equal-priority re-sets always land; de-escalations (priority down) are
   // deferred by CAMERA_MIN_DWELL so a busy fight can't ping-pong the camera
@@ -200,7 +212,9 @@ class CinematicsMethods {
     // Same perpendicular the spring boom uses, forced onto the +Z side.
     const perp = new THREE.Vector3(axis.z, 0, -axis.x);
     if (perp.z < 0) perp.negate();
+    if (this._sideView()) perp.set(0, 0, 1);
     // Must match the framing maths in _updateCamera's normal branch.
+    // The side-view branch looks at the midpoint at the same height, so the snap fits both.
     const distance = this._framingDistance(sep);
     this.camera.position.copy(mid).addScaledVector(perp, distance);
     this.camera.position.y = 1.55 + sep * 0.06;
@@ -267,7 +281,7 @@ class CinematicsMethods {
         this.camera.fov = this.fovBase + Math.max(0, 4 - this.cameraModeT * 1.4);
       }
       this.camera.updateProjectionMatrix();
-    } else if (this.cameraMode === 'super' && this._superFighter) {
+    } else if (this.cameraMode === 'super' && this._superFighter && !this._sideView()) {
       // Super hero shot: low orbit around the firing fighter (a static close-up reads as stuck).
       this._camVel.set(0, 0, 0);
       this.cameraModeT += dt;
@@ -293,6 +307,17 @@ class CinematicsMethods {
       this.camera.updateProjectionMatrix();
     } else if (directed) {
       fovAim = this._directCamera(dt, mid, axis, perp, sep);
+    } else if (this._sideView()) {
+      // Plain side view: the boom sits straight out on +Z from the pair's midpoint, so the
+      // view never rotates. Critically damped, not the spring — hit impulses (_camImpulse)
+      // are dropped, and only the brief shake below moves it.
+      this._camVel.set(0, 0, 0);
+      const target = new THREE.Vector3(
+        THREE.MathUtils.clamp(mid.x, -(RING_HALF + 1.0), RING_HALF + 1.0),
+        height,
+        mid.z + distance);
+      this.camera.position.lerp(target, 1 - Math.exp(-dt * 6));
+      this.camera.lookAt(this.camera.position.x, lookAt.y, mid.z);
     } else {
       // Slightly underdamped spring boom; hit impulses go straight into _camVel (_camImpulse).
       const target = mid.clone().add(perp.multiplyScalar(distance));

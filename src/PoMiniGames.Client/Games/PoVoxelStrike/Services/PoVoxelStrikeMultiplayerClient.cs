@@ -12,7 +12,7 @@ namespace PoMiniGamesClient.Games.PoVoxelStrike.Services;
 /// Client-side wrapper around the two PoVoxelStrike multiplayer hubs:
 /// <list type="bullet">
 /// <item><c>/povoxelstrike/lobby-hub</c> — single global room; join/ready/start. Mirrors
-/// PoRacer/PoFunQuiz/PoSports lobby hubs exactly.</item>
+/// PoRacer/PoFunQuiz lobby hubs exactly.</item>
 /// <item><c>/povoxelstrike/lockstep-hub</c> — active run; relays inputs from the local
 /// player to the server, surfaces incoming frames from peers, and forwards heartbeats
 /// so the server can flag desync.</item>
@@ -25,8 +25,8 @@ namespace PoMiniGamesClient.Games.PoVoxelStrike.Services;
 /// responsibility; the server-side validation is "did your fingerprint match the
 /// aggregate the server stamped on this frame?".</para>
 ///
-/// <para>The wrapper deliberately keeps the lobby and lockstep connections separate
-/// (mirrors PoSports): the lobby closes before the lockstep opens, the lockstep
+/// <para>The wrapper deliberately keeps the lobby and lockstep connections separate:
+/// the lobby closes before the lockstep opens, the lockstep
 /// closes before the lobby reopens on game-over.</para>
 /// </remarks>
 public sealed class PoVoxelStrikeMultiplayerClient : IAsyncDisposable
@@ -125,7 +125,7 @@ public sealed class PoVoxelStrikeMultiplayerClient : IAsyncDisposable
     /// <summary>Host-only: end the run and broadcast runEnded to every peer.</summary>
     public Task EndRunAsync() => _lockstep?.InvokeAsync("EndRun") ?? Task.CompletedTask;
 
-    /// <summary>Close the lockstep connection when the run ends. Mirrors PoSports.StopRaceAsync.</summary>
+    /// <summary>Close the lockstep connection when the run ends.</summary>
     public async Task StopLockstepAsync()
     {
         var lockstep = _lockstep;

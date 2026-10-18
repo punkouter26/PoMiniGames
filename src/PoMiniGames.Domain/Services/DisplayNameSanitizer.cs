@@ -32,7 +32,7 @@ public readonly record struct DisplayNameResult(DisplayNameVerdict Verdict, stri
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every board on this platform renders a name the client chose — PoSports posts
+/// Every board on this platform renders a name the client chose — the score boards post
 /// <c>PlayerName</c>, the stats PUT carries <c>{playerName}</c> in the route, and match
 /// history carries <c>OpponentName</c>. None of those were normalised or filtered, so a
 /// zero-width-padded or slur-bearing name went straight onto a page anyone can read without
@@ -57,7 +57,7 @@ public readonly record struct DisplayNameResult(DisplayNameVerdict Verdict, stri
 /// </remarks>
 public static class DisplayNameSanitizer
 {
-    /// <summary>Maximum stored length. Matches the check PoSports already enforced inline.</summary>
+    /// <summary>Maximum stored length. The longest name any board stores.</summary>
     public const int MaxLength = 24;
 
     /// <summary>Minimum stored length — a single character is not a name, it is noise.</summary>

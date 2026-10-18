@@ -12,7 +12,7 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 /// one invocation, so it cannot own a timer. Rounds now end on either "everybody answered" or
 /// "the clock ran out", and only one of those arrives as a hub call. This is a singleton
 /// holding a long-lived <see cref="IHubContext{THub,TClient}"/> — the same pattern
-/// <c>PoRacerRaceService</c> and <c>PoSportsRaceRegistry</c> use.</para>
+/// <c>PoRacerRaceService</c> uses.</para>
 ///
 /// <para><b>What it replaces.</b> The host used to press "Next round", gated on a client-side
 /// tally of who had answered (<c>_kingSubmitted</c> / <c>_answersThisRound</c> /

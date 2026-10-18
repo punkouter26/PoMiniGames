@@ -122,7 +122,6 @@ public static class OnlineMmrCalculator
         "pofunquiz" => "Fun Quiz",
         "pocouplequiz" => "Couple Quiz",
         "pomarblerace" => "Marble Race",
-        "posports" => "PoSports",
         "povoxelstrike" => "Voxel Strike",
         _ => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(gameKey ?? "Game")
     };
@@ -136,7 +135,6 @@ public static class OnlineMmrCalculator
         "pofunquiz" => "💡",
         "pocouplequiz" => "❤️",
         "pomarblerace" => "🔮",
-        "posports" => "🏅",
         "povoxelstrike" => "🧱",
         _ => "🎮"
     };

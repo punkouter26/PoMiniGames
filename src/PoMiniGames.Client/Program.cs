@@ -156,8 +156,6 @@ builder.Services.AddSingleton<KioskCoordinator>();
 builder.Services.AddScoped<CoupleQuizHubService>();
 // PoFunQuiz Phase 2 follow-up: SignalR client wrapper for /funquiz/gamehub.
 builder.Services.AddScoped<FunQuizHubService>();
-// PoSports: SignalR client wrapper for /posports/lobby-hub + /posports/race-hub.
-builder.Services.AddScoped<PoMiniGamesClient.Games.PoSports.Services.PoSportsHubService>();
 // PoVoxelStrike co-op: SignalR client wrapper for /povoxelstrike/lobby-hub +
 // /povoxelstrike/lockstep-hub. Scoped like every other hub service so the connection
 // is bound to the user's Blazor session lifetime.

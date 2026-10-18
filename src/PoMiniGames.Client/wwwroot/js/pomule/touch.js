@@ -1,6 +1,6 @@
 // PoMule on-screen controls for touch devices: a stick on the left, Act and Dash on the
 // right. Everything dispatches synthetic key events on window, so the keyboard path in
-// index.js stays the only input path (same approach as js/posports/touch.js).
+// index.js stays the only input path.
 
 /** True when the primary pointer is a finger. */
 export function isTouchDevice() {

@@ -5,7 +5,6 @@ using PoMiniGames.Features.TicTacToe;    // TicTacToeHub (same)
 using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Integrity;
 using PoMiniGames.Features.Invites;       // push subscriptions + game invites (2026-10-01)
-using PoMiniGames.Features.PoSports;
 using PoMiniGames.Features.PoBrawl;        // moved out of Features.HighScores 2026-08-11,
                                            // same correction PoMarbleRace already had
 using PoMiniGames.Features.PoBrawl.Online; // 2026-09-14: lobby hub + match hub + match ingest
@@ -103,7 +102,6 @@ internal static class EndpointRouteExtensions
         gameApi.MapFunQuizEndpoints();
         gameApi.MapPoRacerScoreEndpoints();
         gameApi.MapPoCabinetScoreEndpoints();
-        gameApi.MapPoSportsHighScoresEndpoints();
         gameApi.MapPoVoxelStrikeScoreEndpoints();
         gameApi.MapPoMuleScoreEndpoints();
         // PoBrawl online (lobby + match hub) — match result ingest endpoint. Same
@@ -122,11 +120,9 @@ internal static class EndpointRouteExtensions
         app.MapHub<FunQuizHub>("/funquiz/gamehub").RequireAuthorization();
         app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub").RequireAuthorization();
         app.MapHub<PoRacerRaceHub>("/poracer/race-hub").RequireAuthorization();
-        app.MapHub<PoMiniGames.Features.PoSports.PoSportsLobbyHub>("/posports/lobby-hub").RequireAuthorization();
         // PoCabinet (T6): lobby + race hubs at their own roots (anonymous /negotiate).
         app.MapHub<PoCabinetLobbyHub>("/pocabinet/lobby-hub").RequireAuthorization();
         app.MapHub<PoCabinetRaceHub>("/pocabinet/race-hub").RequireAuthorization();
-        app.MapHub<PoMiniGames.Features.PoSports.PoSportsRaceHub>("/posports/race-hub").RequireAuthorization();
         // PoVoxelStrike co-op: lobby hub for the ready/start room, lockstep hub for the
         // active run. Both follow the platform pattern (auth required, separate from
         // MapGroup because MapHub returns IHubEndpointConventionBuilder).

@@ -97,6 +97,7 @@ public sealed class PlayerDataService(
         new("MarbleRaceHighScores", ["marblerace"], ["PlayerInitials"]),
         new("PoBrawlHighScores", ["pobrawl"], ["PlayerInitials"]),
         new("PoRacerHighScores", ["poracer"], ["PlayerName"]),
+        // Sports was removed, but its rows stay in prod storage; export and delete still cover them.
         new("PoSportsHighScores", ["posports"], ["PlayerName"]),
         // Every partition: the Daily Siege boards are one partition per day beside the main one.
         new("PoVoxelStrikeHighScores", null, ["PlayerName"]),

@@ -38,7 +38,6 @@ source files on disk on the snapshot date.
 | Swarmer / Brute / Spitter | PoVoxelStrike | `wwwroot/js/povoxelstrike/enemies.js` | 14.5 KB | Chase and attack the player | Not measured. | Live in game (solo Survival only) |
 | Fortress wall guns (22) | PoVoxelStrike | `wwwroot/js/povoxelstrike/fortress.js` | 22.2 KB | Aim and fire at the player | Not measured. | Live in game |
 | Kiosk demo bot | PoVoxelStrike | `wwwroot/js/povoxelstrike/game.js` | not sized | Walk to the objective, blast through walls | Not measured. A code comment records one run stuck for 85 s before a fix. | Live in game (demo mode) |
-| CPU runners | PoSports | `wwwroot/js/posports/ai.js` (server twin `PoSportsSim.cs`) | 3.4 KB (12.6 KB) | Sprint and hurdles by timed key presses | Not measured. Design target: every CPU leg takes 9.5 to 14 s. | Live in game |
 | Cabinet officials (4) + field (95) | PoCabinet | `wwwroot/js/pocabinet/physics.js` (server twin `PoCabinetAiDriver.cs`) | 27.6 KB (11.3 KB) | Circuit racing in traffic | Test requires each official to lap in 12 to 60 s. Five recorded 100-car runs are stored as fixtures. | Live in game |
 | Racing bots (99 in solo; 100 in demo) | PoRacer | `API/Features/PoRacer/PoRacerAiDriver.cs` + `PoRacerSim.cs` | 2.3 KB + 42.0 KB | Circuit racing on a centre line | Not measured. Code comments give oval laps of about 27 / 21 / 16 s for easy / medium / hard. Online rooms remain capped at 8 cars. | Live in game |
 | Marble pack (100) | PoMarbleRace | `wwwroot/js/pomarblerace/marbles.js` | 46.2 KB | None. Passive physics bodies with no brain. | Test requires 96 of 101 marbles to finish every map. | Live in game |
@@ -83,7 +82,6 @@ Production model names come from Azure Key Vault and could not be confirmed from
 | PoVoxelStrike spitter | No physics body; a 1.7 m cone | Transform move | Direct position | 1 | Hold 22 to 34 m away and shoot |
 | PoVoxelStrike wall gun | Static mount and barrel, aimed with look-at | Static object with a turret script | None (rotation only) | 1 | Shoot the player while its wall still stands |
 | PoVoxelStrike demo bot | cannon-es sphere (radius 0.45, mass 80), rotation locked | Rigidbody sphere, frozen rotation | Velocity on the ground, gravity in the air | 1 body, 4 visual limb pivots | Reach the chalice |
-| PoSports runner | No physics library; position and speed on a lane | Scripted value, sprite Animator | Impulse per stride, speed decays | 0 (2D sprite, 24 frames per second) | Lowest combined sprint and hurdles time |
 | PoCabinet car | Custom 2D arcade model; capsule hull 39 x 17 | Custom vehicle script | Speed along heading, grip-limited turn | 1 | Best lap; finish in the top 25 to clear a stage |
 | PoRacer car | Custom C# model on the server; circle radius 18 | Custom vehicle script | On-or-off steering and pedals | 1 | Best lap over 3 laps |
 | PoMarbleRace marble | cannon-es sphere (radius 1.0, mass 0.75 to 1.25) | Rigidbody sphere | Physics only (gravity, boost pads, kickers) | 1 | Reach the bottom; top 10 of 101 scores |
@@ -102,8 +100,8 @@ Production model names come from Azure Key Vault and could not be confirmed from
 1. Put the rules next to the game: `wwwroot/js/<game>/ai.js` for a browser game, or
    `Features/<Game>/` for a server-simulated one.
 2. Keep difficulty in one table at the top of the file, as the existing agents do.
-3. If the game is simulated on both client and server (PoCabinet, PoSports), mirror the
-   constants in both and add a sync test like `PoSportsConstantsSyncTests`.
+3. If the game is simulated on both client and server (PoCabinet), mirror the
+   constants in both and add a sync test.
 4. Add a row to both tables above.
 
 ### If a trained model is ever added

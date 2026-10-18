@@ -19,7 +19,6 @@
 //   pobrawl     heavy, driven, low-mid; everything has weight and grit
 //   pomarblerace glass and steel — bright, ringing, clean
 //   poracer     motorised — saws, filter sweeps, no pitched melody at all
-//   posports    rubber and air — bouncy sine blips, whistle
 //   quiz        bright bell-tones, unambiguous right/wrong
 //   pomule      an Atari 800 sound chip — bare square waves, exact pitches, no jitter
 //
@@ -385,50 +384,6 @@ const CUES = {
                 v('saw', 65, 0.35, 0.08, { freqEnd: 45, sweep: 0.30, decay: 0.30, cutoff: 400 }),
             ],
             feel: 'tick',
-        },
-    },
-
-    // ── PoSports — rubber, air & stadium crowd ─────────────────────────
-    posports: {
-        kick: {
-            voices: [
-                v('sine', 420, 0.07, 0.20, { freqEnd: 180, sweep: 0.06, decay: 0.06 }),
-                v('noise', 0, 0.03, 0.08, { decay: 0.025, cutoff: 2600, q: 1.2 }),
-            ],
-            feel: 'light', jitter: 1.2,
-        },
-        stride: {
-            voices: [
-                v('noise', 0, 0.04, 0.06, { decay: 0.035, cutoff: 1400, q: 1.2 }),
-                v('sine', 160, 0.04, 0.08, { decay: 0.035 }),
-            ],
-            feel: null, fx: { preset: 'dust', scale: 0.3 },
-        },
-        crowdCheer: {
-            voices: [
-                v('noise', 0, 0.65, 0.16, { decay: 0.60, cutoff: 1800, cutoffEnd: 3200, q: 1.8, sweep: 0.55 }),
-                v('triangle', 330, 0.40, 0.08, { decay: 0.35, delay: 0.1 }),
-            ],
-            feel: 'select', duck: 0.2,
-        },
-        bounce: {
-            voices: [v('sine', 620, 0.05, 0.12, { freqEnd: 380, sweep: 0.045, decay: 0.045 })],
-            feel: 'tick', jitter: 2,
-        },
-        goal: {
-            voices: [
-                v('square', 523, 0.09, 0.12, { decay: 0.08, cutoff: 3000 }),
-                v('square', 784, 0.09, 0.12, { decay: 0.08, cutoff: 3200, delay: 0.07 }),
-                v('square', 1046, 0.45, 0.14, { decay: 0.42, cutoff: 3600, delay: 0.14 }),
-            ],
-            feel: 'win', fx: { preset: 'confetti', scale: 0.9 }, duck: 0.4,
-        },
-        whistle: {
-            voices: [
-                v('sine', 2100, 0.35, 0.09, { decay: 0.33, lfoRate: 26, lfoDepth: 0.5 }),
-                v('sine', 2640, 0.35, 0.06, { decay: 0.33, lfoRate: 26, lfoDepth: 0.5 }),
-            ],
-            feel: 'select',
         },
     },
 

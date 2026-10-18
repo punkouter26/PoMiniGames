@@ -23,8 +23,6 @@ public sealed record AchievementFacts
     public int Sessions { get; init; }
     /// <summary>Consecutive calendar days with at least one game session.</summary>
     public int DayStreak { get; init; }
-    /// <summary>The Sports daily-meet streak this browser keeps.</summary>
-    public int SportsDailyStreak { get; init; }
     /// <summary>Presidents beaten in the current Brawl ladder run.</summary>
     public int BrawlRung { get; init; }
     /// <summary>Full Brawl ladder clears.</summary>
@@ -43,7 +41,7 @@ public sealed record Achievement(string Id, string Icon, string Title, string Hi
 /// <summary>
 /// A small on-device achievements layer. Nothing new is tracked for it: every rule reads
 /// numbers the games already keep (local W/L records and ratings, session counts, the
-/// Sports daily streak, the Brawl ladder), plus two facts pages report when they have them
+/// the Brawl ladder), plus two facts pages report when they have them
 /// (a leaderboard rank, online wins). An unlock is sticky and lives in localStorage
 /// <c>pomini_achievements</c>, so it outlives the stat that earned it.
 /// </summary>
@@ -75,7 +73,6 @@ public sealed class AchievementService : IDisposable
         new("globetrotter", "🗺️", "Globetrotter", "Play 10 different games", f => f.GamesTried >= 10),
         new("regular", "🎮", "Regular", "Start 25 game sessions", f => f.Sessions >= 25),
         new("three-days", "📅", "Three-day streak", "Play on 3 days in a row", f => f.DayStreak >= 3),
-        new("daily-runner", "🏃", "Daily runner", "Run the Sports daily meet 3 days running", f => f.SportsDailyStreak >= 3),
         new("contender", "🥊", "Contender", "Beat 5 presidents on the Brawl ladder", f => f.BrawlRung >= 5 || f.BrawlClears >= 1),
         new("ladder-champ", "🏆", "Ladder champ", "Beat the whole Brawl ladder", f => f.BrawlClears >= 1),
         new("podium", "🥉", "Podium", "Reach the top 3 on any leaderboard", f => f.BestBoardRank is <= 3),
@@ -218,7 +215,6 @@ public sealed class AchievementService : IDisposable
             GamesTried = tried,
             Sessions = sessions,
             DayStreak = _dayStreak,
-            SportsDailyStreak = ReadSportsDailyStreak(),
             BrawlRung = ReadInt($"pobrawl_ladder_{name}"),
             BrawlClears = ReadInt($"pobrawl_clears_{name}"),
             SimSessions = simSessions,
@@ -229,27 +225,6 @@ public sealed class AchievementService : IDisposable
 
     private static int ReadInt(string key) =>
         int.TryParse(LocalStorageService.GetItem<string>(key), out var n) ? n : 0;
-
-    // posports.records.v1 is the Sports engine's own record (wwwroot/js/posports/records.js).
-    private static int ReadSportsDailyStreak()
-    {
-        try
-        {
-            var raw = LocalStorageService.GetItem<string>("posports.records.v1");
-            if (string.IsNullOrEmpty(raw)) return 0;
-            using var doc = JsonDocument.Parse(raw);
-            return doc.RootElement.TryGetProperty("daily", out var daily)
-                && daily.ValueKind == JsonValueKind.Object
-                && daily.TryGetProperty("streak", out var s)
-                && s.TryGetInt32(out var streak)
-                ? streak
-                : 0;
-        }
-        catch
-        {
-            return 0;
-        }
-    }
 
     private void TouchDay(DateTime today)
     {

@@ -52,7 +52,7 @@
         var segments = uri.AbsolutePath.Trim('/').Split('/');
 
         // Only on a mode's own address (/game or /game/{mode}). A deeper one is a match in
-        // progress (/posports/race/{code}), where Parse would call it "1P" and a switch
+        // progress (/game/race/{code}), where Parse would call it "1P" and a switch
         // would be a way to walk out of the race.
         if (segments.Length > 2
             || (segments.Length == 2 && !ModeSegments.Contains(segments[1], StringComparer.OrdinalIgnoreCase)))

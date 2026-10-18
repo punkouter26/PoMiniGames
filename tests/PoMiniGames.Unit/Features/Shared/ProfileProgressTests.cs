@@ -31,7 +31,6 @@ public sealed class ProfileProgressTests
     [InlineData("rising-star", nameof(AchievementFacts.TopElo), 1399, false)]
     [InlineData("explorer", nameof(AchievementFacts.GamesTried), 5, true)]
     [InlineData("three-days", nameof(AchievementFacts.DayStreak), 3, true)]
-    [InlineData("daily-runner", nameof(AchievementFacts.SportsDailyStreak), 2, false)]
     [InlineData("contender", nameof(AchievementFacts.BrawlClears), 1, true)]
     [InlineData("podium", nameof(AchievementFacts.BestBoardRank), 3, true)]
     [InlineData("number-one", nameof(AchievementFacts.BestBoardRank), 2, false)]
@@ -45,7 +44,6 @@ public sealed class ProfileProgressTests
             nameof(AchievementFacts.TopElo) => new AchievementFacts { TopElo = value },
             nameof(AchievementFacts.GamesTried) => new AchievementFacts { GamesTried = value },
             nameof(AchievementFacts.DayStreak) => new AchievementFacts { DayStreak = value },
-            nameof(AchievementFacts.SportsDailyStreak) => new AchievementFacts { SportsDailyStreak = value },
             nameof(AchievementFacts.BrawlClears) => new AchievementFacts { BrawlClears = value },
             nameof(AchievementFacts.BestBoardRank) => new AchievementFacts { BestBoardRank = value },
             nameof(AchievementFacts.SimSessions) => new AchievementFacts { SimSessions = value },

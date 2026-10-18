@@ -142,7 +142,7 @@ function windNow() {
     return Math.max(-1, Math.min(1, amb * (1 - Math.abs(w)) + w));
 }
 
-// Mulberry32 — same generator PoSports uses for its seeded demo meets.
+// Mulberry32 — a small seeded PRNG.
 function makeRng(seed) {
     let a = seed >>> 0;
     return () => {

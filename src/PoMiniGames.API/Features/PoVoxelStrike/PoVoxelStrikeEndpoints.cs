@@ -68,7 +68,7 @@ internal static class PoVoxelStrikeEndpoints
     /// <summary>
     /// Run submissions + the slice's own board read. Mapped inside the authenticated
     /// <c>gameApi</c> group (the anonymous read surface is the unified
-    /// <c>/api/leaderboards/povoxelstrike</c>), mirroring the PoSports/Marble slices.
+    /// <c>/api/leaderboards/povoxelstrike</c>), mirroring the Marble slice.
     /// </summary>
     public static IEndpointRouteBuilder MapPoVoxelStrikeScoreEndpoints(this IEndpointRouteBuilder app)
     {

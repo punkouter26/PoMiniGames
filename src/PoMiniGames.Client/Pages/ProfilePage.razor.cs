@@ -75,7 +75,7 @@ public partial class ProfilePage
     }
 
     // ── Game definitions (order determines radar axis order) ──
-    // Every game in GameCatalog appears here. Brawl, Sports and Fun Quiz were already
+    // Every game in GameCatalog appears here. Brawl and Fun Quiz were already
     // persisting local stats through GameResultService/GameStatsService long before
     // they were listed — the data existed, the page just never read it, so a player
     // with prior history sees it appear on the first load after this ships.
@@ -90,7 +90,6 @@ public partial class ProfilePage
         ["tictactoe"] = RatingKind.Adaptive,
         ["connectfive"] = RatingKind.Adaptive,
         ["pobrawl"] = RatingKind.Adaptive,
-        ["posports"] = RatingKind.Difficulty,
         ["pofunquiz"] = RatingKind.Difficulty,
         ["poracer"] = RatingKind.Difficulty,
         ["pocouplequiz"] = RatingKind.Difficulty,
@@ -157,7 +156,6 @@ public partial class ProfilePage
     {
         ("pomarblerace", "Marble Race",  "🔮", "marble"),
         ("povoxelstrike", "Voxel Strike", "🧱", "voxel"),
-        ("posports",     "Sports",       "🏃", "sports"),
         ("pobrawl",      "Brawl",        "🥊", "brawl"),
         ("tictactoe",    "Tic-Tac-Toe",   "❌", "ai"),
         ("connectfive",  "Connect Five",  "🔴", "ai"),
@@ -307,20 +305,18 @@ public partial class ProfilePage
         // has never played.
         var marbleTask = ApiService.GetMarbleRaceHighScoresAsync(100);
         var voxelTask = ApiService.GetPoVoxelStrikeHighScoresAsync(100);
-        var sportsTask = ApiService.GetPoSportsHighScoresAsync(100);
         var brawlTask = ApiService.GetPoBrawlHighScoresAsync(100);
-        await Task.WhenAll(marbleTask, voxelTask, sportsTask, brawlTask);
+        await Task.WhenAll(marbleTask, voxelTask, brawlTask);
 
         var marbleResult = marbleTask.Result;
         var voxelResult = voxelTask.Result;
-        var sportsResult = sportsTask.Result;
         var brawlResult = brawlTask.Result;
 
         // Count actually-loaded boards so we can name the failures precisely.
         // The task results have different element types (different DTOs),
         // so the array can't infer a single element type — use object and cast.
-        var loaded = new object?[] { marbleResult, voxelResult, sportsResult, brawlResult }.Count(r => r is not null);
-        if (loaded < 4)
+        var loaded = new object?[] { marbleResult, voxelResult, brawlResult }.Count(r => r is not null);
+        if (loaded < 3)
         {
             _highScoreLoadFailed = true;
         }
@@ -331,9 +327,7 @@ public partial class ProfilePage
                 s => s.UserId, s => s.PlayerInitials, s => s.BestScore.ToString("N0")),
             ["Voxel Strike"] = FindMine(voxelResult, "Voxel Strike", "🧱",
                 s => s.UserId, s => s.PlayerName, s => s.Score.ToString("N0")),
-            ["Sports"] = FindMine(sportsResult, "Sports", "🏃",
-                s => s.UserId, s => s.PlayerName, s => $"{s.TotalTimeSeconds:0.00}s"),
-            // PoBrawlHighScore carries no UserId — unlike the Marble and Sports rows,
+            // PoBrawlHighScore carries no UserId — unlike the Marble and Voxel rows,
             // the server never stamps one on this board. Name matching is all there is.
             ["Brawl"] = FindMine(brawlResult, "Brawl", "🥊",
                 userIdOf: null, s => s.PlayerInitials, s => $"{s.KoTimeSeconds:0.00}s"),

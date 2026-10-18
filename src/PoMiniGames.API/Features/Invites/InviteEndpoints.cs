@@ -53,7 +53,6 @@ public static class InviteEndpoints
             ["pocabinet"] = "Cabinet",
             ["pomarblerace"] = "Marble Race",
             ["poracer"] = "Racer",
-            ["posports"] = "Sports",
             ["povoxelstrike"] = "Voxel Strike",
         };
 

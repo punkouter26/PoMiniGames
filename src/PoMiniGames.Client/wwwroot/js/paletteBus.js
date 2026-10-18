@@ -22,7 +22,6 @@
         tictactoe:     ['#34d399', '#60a5fa'],
         connectfive:   ['#f43f5e', '#38bdf8'],
         poracer:       ['#f0abfc', '#38bdf8'],   // synthwave
-        posports:      ['#4ade80', '#facc15'],
         povoxelstrike: ['#fb923c', '#38bdf8'],
         couplequiz:    ['#f472b6', '#c084fc'],
         funquiz:       ['#fbbf24', '#818cf8'],

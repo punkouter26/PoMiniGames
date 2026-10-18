@@ -94,7 +94,6 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     public static readonly GameKey PoMarbleRace = new("pomarblerace");
     public static readonly GameKey PoRacer = new("poracer");
     public static readonly GameKey PoBrawl = new("pobrawl");
-    public static readonly GameKey PoSports = new("posports");
 
     // PoBrawlDemo is a leaderboard-only key — it has no PlayerStats shadow (demo matches
     // are CPU-vs-CPU, so no player ever submits stats for it). It is in the catalogue
@@ -131,7 +130,7 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     {
         CoupleQuiz, FunQuiz,
         ConnectFive, TicTacToe, PoMarbleRace,
-        PoRacer, PoBrawl, PoBrawlDemo, PoBrawlKo, PoSports,
+        PoRacer, PoBrawl, PoBrawlDemo, PoBrawlKo,
         PoVoxelStrike, PoEcosystem, SandPlayground,
         PoCabinet, PoJevArena, PoMule,
     };
@@ -168,7 +167,6 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
         ["pofunquiz"] = FunQuiz,
         // Bare forms for keys this catalogue stores prefixed — the drift runs both ways.
         ["marblerace"] = PoMarbleRace,
-        ["sports"] = PoSports,
     };
 
     private static readonly Dictionary<string, GameKey> WellKnownLookup =

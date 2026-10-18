@@ -54,7 +54,7 @@ const networkOnlyPaths = [
     /^\/signout/,                // sign-out endpoints
     /^\/health/,                 // liveness — a cached "healthy" is a lie
     /\/hubs?\//,                 // /couplequiz/hubs/game
-    /-hub(\/|$)/,                // /poracer/lobby-hub, /posports/race-hub, …
+    /-hub(\/|$)/,                // /poracer/lobby-hub, /poracer/race-hub, …
     /\/gamehub(\/|$)/,           // /funquiz/gamehub
     /\/negotiate(\/|$|\?)/,      // SignalR negotiate on any hub
 ];

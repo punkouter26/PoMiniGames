@@ -51,8 +51,8 @@ public readonly record struct ScoreBounds(
 ///   plausible-looking number that no human could have produced in the time available.</item>
 /// </list>
 /// <para>
-/// <b>Time boards get the exact check.</b> For a board where the score IS a duration (PoSports,
-/// PoRacer, PoBrawl's KO time), a submission claiming 12.4 seconds of racing from a session
+/// <b>Time boards get the exact check.</b> For a board where the score IS a duration (PoRacer,
+/// PoBrawl's KO time), a submission claiming 12.4 seconds of racing from a session
 /// that has only existed for 6 seconds is definitionally forged — no tuning constant required.
 /// Point boards get the softer <c>MaxPerSecond</c> ceiling, which does need a number, so each
 /// one below is set an order of magnitude above observed play rather than near it: the goal is
@@ -92,9 +92,6 @@ public static class ScoreRules
 
         // Time boards. Max mirrors each endpoint's existing inline range check; MinPlaySeconds
         // is the floor for the whole session, which for a meet or a race is longer than one leg.
-        [GameKey.PoSports] = new ScoreBounds(
-            Min: 0.5, Max: 600, LowerIsBetter: true, MinPlaySeconds: 5, MaxPerSecond: 0),
-
         [GameKey.PoRacer] = new ScoreBounds(
             Min: 1, Max: 3_600, LowerIsBetter: true, MinPlaySeconds: 5, MaxPerSecond: 0),
 

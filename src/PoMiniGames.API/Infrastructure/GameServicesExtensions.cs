@@ -312,12 +312,6 @@ internal static class GameServicesExtensions
         // Shared/Games/PoMarbleRaceShared.cs for why lockstep was not an option).
         services.AddSingleton<PoMiniGames.Features.PoMarbleRace.PoMarbleRaceOnlineService>();
 
-        // PoSports — family track meet. Same single-lobby process-local shape as
-        // PoRacer; the registry owns the meet sim timers and is DI-managed for
-        // graceful-shutdown disposal.
-        services.AddSingleton<PoMiniGames.Features.PoSports.PoSportsLobbyService>();
-        services.AddSingleton<PoMiniGames.Features.PoSports.PoSportsRaceRegistry>();
-
         // PoVoxelStrike — startup GLB → voxel ingestion plus the in-memory asset catalog
         // the manifest/payload endpoints read. See Features/PoVoxelStrike/.
         services.AddOptions<PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeOptions>()

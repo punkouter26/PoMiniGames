@@ -50,13 +50,6 @@
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     },
     {
-      "name": "Sports",
-      "short_name": "Sports",
-      "description": "Sprint, hurdles and field events",
-      "url": "/posports/1player",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
-    },
-    {
       "name": "Mule",
       "short_name": "Mule",
       "description": "Settle a planet, or carry on your saved match",

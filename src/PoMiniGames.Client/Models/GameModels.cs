@@ -111,11 +111,11 @@ public sealed record PoCabinetHighScoreRequest(
     string? Inputs = null,
     bool Wet = false);
 
-// PoSports scores use PoMiniGames.Domain.Models.PoSportsHighScore directly — the client
+// PoVoxelStrike board rows use PoMiniGames.Domain.Models.PoVoxelStrikeHighScore directly — the client
 // references that assembly, so a hand-kept mirror only bought silent drift: a renamed
 // server field still deserialized, just as null.
 
-// PoVoxelStrike board rows likewise use PoMiniGames.Domain.Models.PoVoxelStrikeHighScore
+// Other boards follow the same rule: PoMiniGames.Domain.Models.PoVoxelStrikeHighScore
 // directly. The submission below is a client mirror of the API slice's wire shape
 // (PoVoxelStrikeRunRequest in Features/PoVoxelStrike) — identity and timestamp are
 // server-derived, so there is no field here to forge them in.

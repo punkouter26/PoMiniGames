@@ -5,8 +5,8 @@ namespace PoMiniGames.E2EUI;
 /// <summary>
 /// PoVoxelStrike smoke through a real Chromium browser: the demo route boots the
 /// three.js engine, builds the arena (imported voxel assets or the procedural
-/// fallback), and the debug handle (window.__pvs — same convention as PoSports'
-/// _game) reports a live, populated world.
+/// fallback), and the debug handle (window.__pvs — same convention as the other engines)
+/// reports a live, populated world.
 /// </summary>
 [Collection(KestrelServerCollection.Name)]
 public class PoVoxelStrikeUiTests
@@ -30,7 +30,7 @@ public class PoVoxelStrikeUiTests
         await using var browser = await playwright.Chromium.LaunchAsync(options);
         var context = await browser.NewContextAsync(new BrowserNewContextOptions { ViewportSize = Portrait });
 
-        // Same header-driven FakeAuth identity the PoSports UI smoke uses — but injected
+        // Same header-driven FakeAuth identity the other UI smokes use — but injected
         // per-request for the app origin ONLY. Context-wide ExtraHTTPHeaders ride on every
         // request including the three.js/cannon-es CDN imports, where a custom X-Fake-*
         // header forces a CORS preflight jsdelivr rejects — killing the engine import.

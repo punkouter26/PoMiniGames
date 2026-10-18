@@ -42,7 +42,6 @@ public static class GameKeys
     public static readonly GameKey PoCoupleQuiz = new("pocouplequiz");
     public static readonly GameKey PoFunQuiz = new("pofunquiz");
     public static readonly GameKey PoBrawl = new("pobrawl");
-    public static readonly GameKey PoSports = new("posports");
 
     // "pobrawldemo" is the leaderboard-only key for the Brawl demo-mode
     // fighter ELO board. It mirrors GameKey.PoBrawlDemo on the server so a client that

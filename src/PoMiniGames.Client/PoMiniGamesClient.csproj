@@ -41,11 +41,6 @@
                    PublishedContent="wwwroot\service-worker.published.js" />
   </ItemGroup>
 
-  <!-- Sprite payload. wwwroot/images/ is runtime-only: 32 atlas.json + 32
-       spritesheet.webp pairs, ~8 MB, all of it fetched by js/posports/sprites.js and
-       cached by the service worker on first use. Do not add a Content Remove rule
-       here; delete the unused asset instead. -->
-
   <ItemGroup>
     <!-- Preserve reflectively-instantiated layout constructors from the trimmer
          (see TrimmerRoots.xml — fixes CtorNotLocated for MainLayout in Release). -->

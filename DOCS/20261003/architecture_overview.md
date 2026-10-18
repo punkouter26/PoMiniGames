@@ -26,7 +26,7 @@ There are three kinds of computer player:
 
 | Kind | What it is | Where it runs | Examples |
 |---|---|---|---|
-| **Rule followers** | Fixed rules plus dice rolls. Difficulty is a table of numbers. | Player's browser | PoBrawl boxers, PoVoxelStrike monsters, PoSports runners |
+| **Rule followers** | Fixed rules plus dice rolls. Difficulty is a table of numbers. | Player's browser | PoBrawl boxers, PoVoxelStrike monsters |
 | **Look-ahead thinkers** | Try every move a few turns ahead and pick the best. | Player's browser | TicTacToe and ConnectFive opponents |
 | **Hosted models** | A language or decision model answers a question over the internet. Opt-in only: each has a free default. | Cloud service, called by the server | Jev (battle tactics), the Fresh AI quiz writers, the couple-quiz AI judge |
 
@@ -216,7 +216,6 @@ How movement reaches the engine:
 | PoVoxelStrike monsters | Direct position | No physics body. The mesh is moved each frame and settles onto the terrain height. |
 | PoCabinet racer | Custom arcade car | Speed along the heading; turning limited by grip. |
 | PoRacer bot | Custom arcade car | One circle per car; on-or-off steering and pedals. |
-| PoSports runner | Scalar lane state | Each finished key sequence adds a speed impulse; speed decays between strides. |
 | PoMarbleRace marble | Physics body | A rolling sphere. No brain: gravity and the track do everything. |
 | PoEcosystem creature | Kinematic over a heightmap | Velocity intent with fallback headings when blocked. |
 | PoJevArena unit | Force-based 2D | Leg force limited by grip and stamina. |
@@ -263,10 +262,10 @@ flowchart TB
         vs["Score: 10 per second survived, 25 per kill,<br/>plus 50 brute, plus 40 crush kill,<br/>1 per 20 voxels destroyed"]
         vl["Lose: health reaches 0"]
     end
-    subgraph Race["PoRacer / PoCabinet / PoSports"]
+    subgraph Race["PoRacer / PoCabinet"]
         rw["Win: lowest time or first across the line"]
-        rp["Penalties: hurdle hit plus 1.5 s,<br/>false start 0.5 s hold, wall and sand slow you"]
-        rb["Board: best lap or best meet time"]
+        rp["Penalties: false start 0.5 s hold, wall and sand slow you"]
+        rb["Board: best lap"]
     end
     subgraph Marble["PoMarbleRace"]
         mw["Score: top 10 of 101, 10 for first down to 1 for tenth"]
@@ -320,16 +319,14 @@ world. The middle column is the closest real setting in this project.
 | **Learning pace (generations)** | Mutation rate | How much a newborn island creature's personality differs from its parents. | `TRAIT_MUTATION_SIGMA = 0.08` | `js/poecosystem/sim/core/config.js` |
 | **How far ahead it plans** | Time horizon | Moves searched ahead on the board. | 4 (TicTacToe hard), 1 to 4 (ConnectFive by rating) | `TicTacToeAI.cs`, `ConnectFiveAI.cs` |
 | | | Distance a racer looks down the road. | 25 to 130 units per official (PoCabinet); 9 to 24 track segments (PoRacer) | `js/pocabinet/physics.js`, `PoRacerSim.cs` |
-| | | How early a runner spots a hurdle. | 1.6 / 1.8 / 2.0 m (easy / medium / hard) | `js/posports/ai.js` |
 | **Memory size** | Buffer / memory size | Positions the board search remembers. | 2048 (ConnectFive) | `NegamaxSearch.cs` |
 | | | How long an island creature remembers food and water. | 120 s food, 240 s water | `js/poecosystem/sim/core/config.js` |
 | | | How long a boxer remembers the player's habits. | `HABIT_TAU = 8` s | `js/pobrawl/ai.js` |
 | **Exploration rate** | Epsilon / entropy | Chance the board CPU plays a random move on purpose. | 0.55 down to 0.05 (TicTacToe); 0.60 down to 0.00 (ConnectFive) | `StrengthForElo` in each AI file |
 | | | Chance a PoCabinet racer misjudges a corner. | `wildness` 0.01 to 0.12 for the four officials | `js/pocabinet/physics.js` |
 | | | Steering wobble on a PoRacer bot. | `0.015 x (1.15 - CorneringSkill)` per tick | `PoRacerSim.cs` |
-| | | Typing mistakes by a PoSports runner. | `errorRate` 0.008 to 0.01 | `js/posports/ai.js` |
 | **Reaction time** | Decision period | Delay before a boxer makes a weighted choice. | 560 ms (rung 1) down to 95 ms (rung 15) | `js/pobrawl/ai.js` |
-| **How often it thinks** | Decision frequency | Ticks per second. | PoBrawl 60, PoSports 60, PoJevArena sim 60 (one model call per unit per second), PoRacer 50, PoCabinet 30, PoEcosystem 20 (goals re-scored 4 times a second) | each engine's constants |
+| **How often it thinks** | Decision frequency | Ticks per second. | PoBrawl 60, PoJevArena sim 60 (one model call per unit per second), PoRacer 50, PoCabinet 30, PoEcosystem 20 (goals re-scored 4 times a second) | each engine's constants |
 | **Batch size** | Batch size | Units sent to Jev per request. | `MaxBatch = 8` | `PoJevArenaEndpoints.cs` |
 | **Aggression** | Reward weight | Boxer's attack appetite. | `aggro` 0.72 to 1.50 | `js/pobrawl/ai.js` |
 | | | PoRacer bot's risk on corners. | `Aggression` 0.30 to 0.95; tier `botCaution` 0.58 / 0.42 / 0.20 | `PoRacerAiDriver.cs`, `PoRacerRaceRegistry.cs` |
@@ -364,7 +361,6 @@ There is no inspector panel. Settings are constants in source files; edit, rebui
 | Board-game CPU strength | `StrengthForElo` in `TicTacToeAI.cs` / `ConnectFiveAI.cs` | Rating thresholds map to search depth and blunder chance. |
 | Horde monsters | `ARCHETYPES` in `wwwroot/js/povoxelstrike/enemies.js` | `hp`, `speed`, `meleeDamage`, `spitInterval`. Spawn pacing is in the spawn director below it. |
 | Wall guns | constants at the top of `FortressGuns` in `wwwroot/js/povoxelstrike/fortress.js` | Range 120, reload 2.2 s, spread 0.035 rad. |
-| PoSports CPU runners | `DIFFICULTIES` in `wwwroot/js/posports/ai.js` | The medium row is mirrored in `PoSportsConstants.cs` and pinned by a test; change both. |
 | PoCabinet officials | the roster in `wwwroot/js/pocabinet/physics.js` **and** `PoCabinetSim.cs` | The two files are a line-for-line mirror. Change both or the lap verifier will reject laps. |
 | PoRacer bots | `PoRacerAiDriver.cs` (personalities), `PoRacerRaceRegistry.cs` (tier pace and caution) | Server-side only. |
 | Island creatures | `wwwroot/js/poecosystem/sim/creatures/species.js` and `sim/core/config.js` | PoEcosystem is watch-only by design; tune numbers, do not add player controls. |
@@ -441,7 +437,6 @@ Found while reading the code for this snapshot:
 - PoVoxelStrike monsters and PoRacer steering wobble use unseeded randomness, so their runs
   cannot be replayed exactly.
 - PoBrawl demo mode can pair in BOB, whom the server's rating endpoint rejects.
-- PoSports "hard" has a slightly higher typing error rate (0.01) than "medium" (0.008).
 
 ### 3.6 MarbleRace physics: Rapier migration plan
 

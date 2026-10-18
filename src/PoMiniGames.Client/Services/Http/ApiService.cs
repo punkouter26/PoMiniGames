@@ -2,7 +2,6 @@ using PoMiniGames.Shared.Games;
 using System.Net.Http.Json;
 // Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
 // types by name, so importing the namespace wholesale would make them all ambiguous.
-using PoSportsHighScore = PoMiniGames.Domain.Models.PoSportsHighScore;
 using PoMiniGamesClient.Models;
 
 using PoMiniGamesClient.Services.Auth;
@@ -482,19 +481,6 @@ public class ApiService
         }
     }
 
-    public async Task<PoSportsHighScore[]?> GetPoSportsHighScoresAsync(int count = 10)
-    {
-        try
-        {
-            return await _http.GetFromJsonAsync(
-                $"/api/posports/highscores?count={count}", ApiJsonContext.Default.PoSportsHighScoreArray);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
     public async Task<ScoreSubmitResult<PoMiniGames.Shared.Games.PoRacerScoreDto>> SubmitPoRacerScoreAsync(
         PoMiniGames.Shared.Games.PoRacerScoreDto entry, CancellationToken cancellationToken = default)
     {
@@ -513,49 +499,6 @@ public class ApiService
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
         {
             return ScoreSubmitResult<PoMiniGames.Shared.Games.PoRacerScoreDto>.Unavailable(null);
-        }
-    }
-
-    /// <summary>Today's daily-meet board (the server's UTC day).</summary>
-    public async Task<PoSportsHighScore[]?> GetPoSportsDailyHighScoresAsync(int count = 10)
-    {
-        try
-        {
-            return await _http.GetFromJsonAsync(
-                $"/api/posports/highscores/daily?count={count}", ApiJsonContext.Default.PoSportsHighScoreArray);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    public async Task<ScoreSubmitResult<PoSportsHighScore>> SubmitPoSportsHighScoreAsync(PoSportsHighScore entry)
-    {
-        try
-        {
-            // The caller stamps Date when it builds the entry, so a parked replay carries the same
-            // deterministic RowKey (no duplicates). This only covers an entry queued without one.
-            if (string.IsNullOrEmpty(entry.Date))
-                entry.Date = DateTime.UtcNow.ToString("O");
-            var response = await _http.PostAsJsonAsync("/api/posports/highscores", entry, ApiJsonContext.Default.PoSportsHighScore);
-
-            if (response.IsSuccessStatusCode)
-            {
-                var saved = await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoSportsHighScore);
-                return ScoreSubmitResult<PoSportsHighScore>.Saved(saved);
-            }
-
-            // 4xx: the payload itself is the problem, so replaying it just wedges the queue.
-            if ((int)response.StatusCode is >= 400 and < 500)
-                return ScoreSubmitResult<PoSportsHighScore>.Rejected(response.StatusCode);
-
-            return ScoreSubmitResult<PoSportsHighScore>.Unavailable(response.StatusCode);
-        }
-        catch
-        {
-            // No response at all — genuinely offline/unreachable.
-            return ScoreSubmitResult<PoSportsHighScore>.Unavailable(null);
         }
     }
 

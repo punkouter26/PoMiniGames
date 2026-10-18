@@ -83,7 +83,6 @@ public static class UnifiedLeaderboardEndpoints
                     .Concat(
                     [
                         SafeBuildMarbleAsync(storage, limit, weekly: true),
-                        SafeBuildPoSportsAsync(storage, limit, weekly: true),
                         SafeBuildPoVoxelStrikeAsync(storage, limit, weekly: true),
                         SafeBuildPoMuleAsync(storage, limit, weekly: true),
                     ]));
@@ -107,7 +106,6 @@ public static class UnifiedLeaderboardEndpoints
         var boardTasks = new[]
         {
             SafeBuildMarbleAsync(storage, limit),
-            SafeBuildPoSportsAsync(storage, limit),
             SafeBuildPoBrawlAsync(storage, limit),
             // Dedicated top-3 board for the PoBrawl demo-mode fighter ELO.
             // Ratings characters, not players — see BuildPoBrawlDemoAsync's docstring.
@@ -145,11 +143,6 @@ public static class UnifiedLeaderboardEndpoints
     {
         try { return await BuildPoRacerAsync(storage, limit, trackId, weekly); }
         catch { return EmptyBoard(PoRacerTitle(trackId)); }
-    }
-    private static async Task<GameLeaderboardDto> SafeBuildPoSportsAsync(IStorageService storage, int limit, bool weekly = false)
-    {
-        try { return await BuildPoSportsAsync(storage, limit, weekly); }
-        catch { return EmptyBoard("Sports"); }
     }
     private static async Task<GameLeaderboardDto> SafeBuildPoBrawlAsync(IStorageService storage, int limit)
     {
@@ -214,7 +207,6 @@ public static class UnifiedLeaderboardEndpoints
         {
             "pomarblerace" => await BuildMarbleAsync(storage, limit),
             "poracer" => await BuildPoRacerAsync(storage, limit, PoRacerCatalog.DefaultTrackId),
-            "posports" => await BuildPoSportsAsync(storage, limit),
             "pobrawl" => await BuildPoBrawlAsync(storage, limit),
             // By-id only, not in BuildAllAsync — see BuildPoBrawlKoAsync's remarks. This is
             // the board the 1P end-of-match modal renders.
@@ -249,7 +241,6 @@ public static class UnifiedLeaderboardEndpoints
         {
             "pomarblerace" => await BuildMarbleAsync(storage, limit, weekly: true),
             "poracer" => await BuildPoRacerAsync(storage, limit, PoRacerCatalog.DefaultTrackId, weekly: true),
-            "posports" => await BuildPoSportsAsync(storage, limit, weekly: true),
             "povoxelstrike" => await BuildPoVoxelStrikeAsync(storage, limit, weekly: true),
             "pomule" => await BuildPoMuleAsync(storage, limit, weekly: true),
             _ => null,
@@ -380,21 +371,6 @@ public static class UnifiedLeaderboardEndpoints
             .ToList();
         PadWithPlaceholders(entries, limit, "—");
         return new GameLeaderboardDto(PoRacerBoardKey(trackId), PoRacerTitle(trackId), "Best lap", HigherIsBetter: false, entries);
-    }
-
-    private static async Task<GameLeaderboardDto> BuildPoSportsAsync(IStorageService storage, int limit, bool weekly = false)
-    {
-        // The descriptor keeps one ratcheted row per player, so no re-grouping is
-        // needed here — the read is already one-best-per-player, ranked ascending.
-        var scores = await storage.GetPoSportsHighScoresAsync(limit, weekly: weekly);
-        var entries = scores
-            .Where(s => s.TotalTimeSeconds > 0)
-            .Select((s, i) => new LeaderboardEntryDto(
-                i + 1, s.PlayerName, s.TotalTimeSeconds,
-                s.TotalTimeSeconds.ToString("0.0", CultureInfo.InvariantCulture) + "s"))
-            .ToList();
-        PadWithPlaceholders(entries, limit, "—");
-        return new GameLeaderboardDto("posports", "Sports", "Best time", HigherIsBetter: false, entries);
     }
 
     /// <summary>

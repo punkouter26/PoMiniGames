@@ -59,14 +59,14 @@
      * Fire a cue from a position on the plane, with stereo placement and doppler
      * applied — the 2D game entry point.
      *
-     * panX and dopplerRatio2D are written for PoRacer and PoSports (acoustics.js
+     * panX and dopplerRatio2D are written for PoRacer (acoustics.js
      * names them in its own docs); called separately, a cue lands dead centre at
      * the pitch it was written at unless the game remembers both. Combining them
      * here rather than in the games keeps one interop call per event instead of
      * three, and means a caller cannot apply pan without also applying the doppler
      * that makes it convincing.
      *
-     * @param {string} scope cue scope ('poracer', 'posports', …)
+     * @param {string} scope cue scope ('poracer', 'pobrawl', …)
      * @param {string} name  cue name within that scope
      * @param {object} o
      * @param {number} o.dx  source position relative to the listener, across

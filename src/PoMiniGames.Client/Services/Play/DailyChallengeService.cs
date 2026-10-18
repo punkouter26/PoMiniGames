@@ -23,18 +23,17 @@ public readonly record struct DailyStreak(int LastDay, int Current, int Best);
 /// streak that spans every game, kept in localStorage.
 /// </summary>
 /// <remarks>
-/// The idea is lifted from PoSports' daily meet (js/posports/records.js): a day number as the seed,
-/// and a streak that grows when yesterday was played too. That one is per-game; this one is not.
+/// A day number is the seed, and the streak grows when yesterday was played too.
 /// Public and registered so the Profile page can show the streak.
 /// </remarks>
 public sealed class DailyChallengeService
 {
     private const string StorageKey = "pomini_daily_streak";
 
-    // Games whose solo page turns ?daily= into its own seeded daily run (PoSports' daily meet,
-    // PoVoxelStrike's Daily Siege). Everything else is picked as a plain game. PoRacer needs no
-    // parameter: its weather is already seeded per UTC day.
-    private static readonly HashSet<GameKey> SeededGames = [GameKeys.PoSports, GameKeys.PoVoxelStrike];
+    // Games whose solo page turns ?daily= into its own seeded daily run (PoVoxelStrike's Daily
+    // Siege). Everything else is picked as a plain game. PoRacer needs no parameter: its weather
+    // is already seeded per UTC day.
+    private static readonly HashSet<GameKey> SeededGames = [GameKeys.PoVoxelStrike];
 
     // Solo modes with nothing to beat: a watched island and a sand toy are not a challenge.
     private static readonly HashSet<GameKey> NotAChallenge = [GameKeys.PoEcosystem, GameKeys.SandPlayground];

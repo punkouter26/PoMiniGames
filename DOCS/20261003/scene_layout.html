@@ -65,7 +65,6 @@
       <tr><td><strong>PoBrawl</strong></td><td>12 x 12 m ring, playable 10.4 x 10.4 m</td><td>Two fighters 3.2 m apart at the centre</td><td>Ropes, corner turnbuckles, breakable posts, crates</td><td>Knockout or 60 s</td></tr>
       <tr><td><strong>PoVoxelStrike</strong></td><td>180 x 180 m</td><td>Player at the south edge; monsters on a ring 82 m out</td><td>22 wall guns, falling rubble</td><td>Touch the chalice, or die</td></tr>
       <tr><td><strong>PoJevArena</strong></td><td>20 x 15 m</td><td>Ten per side, 3.25 m in from each end</td><td>Pillars, brush, tar, random walls</td><td>Team wipe or 180 s</td></tr>
-      <tr><td><strong>PoSports</strong></td><td>100 m and 110 m lanes</td><td>All four runners at 0 m</td><td>Eight hurdles</td><td>Both legs run</td></tr>
       <tr><td><strong>PoCabinet</strong></td><td>4 tracks, road 74 to 120 units wide</td><td>100-car grid; the player starts in slot 50</td><td>Grass run-off, barrier, traffic</td><td>3 laps (1 run on Playground)</td></tr>
       <tr><td><strong>PoRacer</strong></td><td>3 tracks, road 210 to 255 units wide</td><td>100 cars in 2 columns (99 AI + player in solo; 100 AI in demo; 8 max online)</td><td>Walls, sand, boost pads</td><td>3 laps or 180 s</td></tr>
       <tr><td><strong>PoMarbleRace</strong></td><td>5 downhill courses</td><td>101 marbles on a grid; the player in the middle</td><td>Plinko pegs, turnstiles, kickers, drops</td><td>All home or 180 s</td></tr>
@@ -126,11 +125,6 @@
   <div class="key"><span style="--k:var(--player)">Blue spawn</span><span style="--k:var(--agent)">Red spawn</span><span style="--k:var(--wall)">Pillar (cover)</span><span style="--k:var(--goal)">Brush (ranged damage x 0.7)</span><span style="--k:var(--hazard)">Tar (slow, 2 damage a second)</span></div>
   <p style="margin-top:10px">Arena 20 x 15 m. Each team spawns on two rings (seven units at radius 1.55 m, three at 0.55 m) centred 3.25 m from its end.
     A panicking unit runs for the nearest edge. Source: <code>js/pojevarena/sim.js</code>.</p>
-
-  <h2>PoSports track</h2>
-  <figure><svg id="sports" role="img" aria-label="Side drawing of the two PoSports legs: a 100 metre sprint and a 110 metre hurdles leg with eight hurdles"></svg>
-    <figcaption>Two legs, run one after the other with an 8 s break. Hitting a hurdle while on the ground multiplies speed by 0.3 and adds 1.5 s.</figcaption></figure>
-  <p style="margin-top:10px">Source: <code>js/posports/physics.js</code>, <code>track.js</code>. Lanes never interact; there is no collision between runners.</p>
 
   <h2>PoMarbleRace: Neon Chute zones</h2>
   <figure><svg id="marble" role="img" aria-label="Strip showing the obstacle zones along the Neon Chute course from start to finish"></svg>
@@ -212,7 +206,6 @@
       <tr><td>PoBrawl spawn distance or ring size</td><td><code>SPAWN_X_BY_SIDE</code> in <code>js/pobrawl/game.js</code>; <code>RING_HALF</code> in <code>arena.js</code></td></tr>
       <tr><td>PoVoxelStrike wall sizes or spawn</td><td>constants at the top of <code>js/povoxelstrike/fortress.js</code></td></tr>
       <tr><td>PoJevArena hazard layouts</td><td><code>ARENAS</code> in <code>js/pojevarena/sim.js</code>. Keep everything between x = 6 and x = 14 so spawns stay clear.</td></tr>
-      <tr><td>PoSports hurdle positions</td><td><code>HURDLE_POSITIONS</code> in <code>js/posports/physics.js</code> and the mirror in <code>PoSportsConstants.cs</code></td></tr>
       <tr><td>Race tracks</td><td><code>Shared/Games/PoCabinetTrackGeometry.cs</code>, <code>API/Features/PoRacer/PoRacerTrackRegistry.cs</code></td></tr>
       <tr><td>Marble maps</td><td><code>js/pomarblerace/maps.js</code>; new models go in <code>wwwroot/models</code></td></tr>
     </tbody></table></div>
@@ -293,24 +286,6 @@ const V = n => `var(--${n})`;
     S(s, "circle", { cx: 16.75, cy: 7.5, r: 1.55, fill: V("agent"), opacity: .25, stroke: V("agent"), "stroke-width": .08 });
     f.appendChild(s); host.appendChild(f);
   });
-})();
-
-// PoSports, metres along the lane.
-(function () {
-  const s = document.getElementById("sports"); s.setAttribute("viewBox", "-14 0 132 38");
-  const lane = (y, len, label, hurdles) => {
-    S(s, "text", { x: -13, y: y + 1.3, "font-size": 3 }, label);
-    S(s, "rect", { x: 0, y: y - 3, width: len, height: 6, fill: V("floor"), stroke: V("wall"), "stroke-width": .25 });
-    S(s, "line", { x1: 0, y1: y - 3, x2: 0, y2: y + 3, stroke: V("player"), "stroke-width": .8 });
-    S(s, "line", { x1: len, y1: y - 3, x2: len, y2: y + 3, stroke: V("goal"), "stroke-width": .8 });
-    (hurdles || []).forEach(h => {
-      S(s, "rect", { x: h - .4, y: y - 3, width: .8, height: 6, fill: V("hazard") });
-      S(s, "text", { x: h, y: y + 6.6, "text-anchor": "middle", "font-size": 2.4, class: "dim" }, h);
-    });
-    S(s, "text", { x: len, y: y - 4.2, "text-anchor": "end", "font-size": 2.6, class: "dim" }, len + " m");
-  };
-  lane(9, 100, "Sprint"); lane(25, 110, "Hurdles", [20, 30, 40, 50, 60, 70, 80, 90]);
-  S(s, "text", { x: 0, y: 36.5, "font-size": 2.6, class: "dim" }, "start (all four runners)   ·   hurdle positions in metres");
 })();
 
 // Neon Chute zones as fractions of the course.

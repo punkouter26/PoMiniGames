@@ -1,9 +1,8 @@
 // ghostTrack.js — a recorded path (your best lap or run), small enough for localStorage.
 //
-// The racing games keep their ghost the way PoSports keeps its records (posports/records.js):
-// per device, per track, in localStorage, trusted by nobody. What differs is the payload. PoSports
-// can replay a key log through its own deterministic stride model; a PoRacer lap is simulated on
-// the server and a PoMarbleRace run by cannon-es, so here the ghost is the path itself: N channels
+// The racing games keep their ghost per device, per track, in localStorage, trusted by nobody.
+// A PoRacer lap is simulated on the server and a PoMarbleRace run by cannon-es, so neither can
+// replay a key log; the ghost is the path itself: N channels
 // (x, y, heading for a car; x, y, z for a marble) sampled at a fixed rate.
 //
 // Wire format v1, little-endian, then base64:

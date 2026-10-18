@@ -2,7 +2,6 @@ using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Models;
 // Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
 // types by name, so importing the namespace wholesale would make them all ambiguous.
-using PoSportsHighScore = PoMiniGames.Domain.Models.PoSportsHighScore;
 
 using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
@@ -216,24 +215,6 @@ public sealed class GameResultService
             });
         }
     }
-
-    /// <summary>Records the PoSports meet locally and submits the combined time together.</summary>
-    /// <remarks>
-    /// Routed through the shared flow so a failed submit parks for replay instead of being
-    /// discarded: the board ratchets to the fastest time, so a personal best dropped on a
-    /// flaky connection is gone for good unless the player beats it again.
-    /// </remarks>
-    public Task<PlayerStats> RecordAndSubmitPoSportsAsync(
-        string playerName, GameResult result, PoSportsHighScore? highScore) =>
-        RecordAndSubmitCoreAsync("posports", playerName, result, highScore is not null,
-            async () =>
-            {
-                var submitted = await _api.SubmitPoSportsHighScoreAsync(highScore!);
-                return submitted.IsSaved ? SubmitOutcome.Saved
-                    : submitted.ShouldRetry ? SubmitOutcome.Park
-                    : SubmitOutcome.Rejected;
-            },
-            () => _sync.EnqueuePoSports(highScore!));
 
     /// <summary>Records the PoVoxelStrike run locally and submits it to the board together.</summary>
     /// <remarks>Every finished run submits — the server descriptor ratchets to the player's

@@ -32,7 +32,6 @@ public partial class StorageService : IStorageService
     // see PoBrawlPlayerRating's remarks for why a single table cannot serve both.
     private const string PoBrawlPlayerEloTable = "PoBrawlPlayerRatings";
     private const string PoRacerTable = "PoRacerHighScores";
-    private const string PoSportsTable = "PoSportsHighScores";
     private const string PoVoxelStrikeTable = "PoVoxelStrikeHighScores";
     private const string PoCabinetTable = "PoCabinetHighScores";
     private const string PoMuleTable = "PoMuleHighScores";
@@ -44,7 +43,6 @@ public partial class StorageService : IStorageService
     private const string PoBrawlEloPartition = "pobrawlelo";
     private const string PoBrawlPlayerEloPartition = "pobrawlplayerelo";
     private const string PoRacerPartition = "poracer";
-    private const string PoSportsPartition = "posports";
     private const string PoVoxelStrikePartition = "povoxelstrike";
     private const string PoCabinetPartition = "pocabinet";
     private const string PoMulePartition = "pomule";
@@ -139,7 +137,7 @@ public partial class StorageService : IStorageService
     public void Initialize()
     {
         Exception? firstFailure = null;
-        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, MarbleRaceRecordsTable, PoBrawlTable, PoBrawlLadderTable, PoBrawlEloTable, PoBrawlPlayerEloTable, PoRacerTable, PoSportsTable, PoVoxelStrikeTable })
+        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, MarbleRaceRecordsTable, PoBrawlTable, PoBrawlLadderTable, PoBrawlEloTable, PoBrawlPlayerEloTable, PoRacerTable, PoVoxelStrikeTable })
         {
             try { Table(table); }
             catch (Exception ex)

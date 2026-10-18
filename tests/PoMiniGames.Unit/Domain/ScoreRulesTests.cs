@@ -13,11 +13,11 @@ public sealed class ScoreRulesTests
 {
     [Theory]
     // Time boards: the claimed duration cannot exceed the session that produced it.
-    [InlineData("posports", 12.4, 60, ScoreVerdict.Plausible)]
-    [InlineData("posports", 12.4, 6, ScoreVerdict.Impossible)]
-    [InlineData("posports", 0.2, 60, ScoreVerdict.OutOfRange)]
-    [InlineData("posports", 700, 800, ScoreVerdict.OutOfRange)]
-    [InlineData("posports", 1.0, 1, ScoreVerdict.TooFast)]
+    [InlineData("pobrawl", 12.4, 60, ScoreVerdict.Plausible)]
+    [InlineData("pobrawl", 12.4, 6, ScoreVerdict.Impossible)]
+    [InlineData("pobrawl", 0.2, 60, ScoreVerdict.OutOfRange)]
+    [InlineData("pobrawl", 700, 800, ScoreVerdict.OutOfRange)]
+    [InlineData("poracer", 1.0, 1, ScoreVerdict.TooFast)]
     // Point boards: a rate ceiling, plus the absolute range.
     [InlineData("pomarblerace", 100, 60, ScoreVerdict.Plausible)]
     [InlineData("pomarblerace", 100_001, 2, ScoreVerdict.Impossible)]

@@ -101,7 +101,6 @@
       <tr><td><strong>PoJevArena units</strong></td><td>Leg force limited by grip; one order held for a second at a time</td><td><span class="st" style="--k:var(--good)">Smooth</span></td><td>A late model answer leaves a unit on a stale order</td><td>Yes: a stamina reserve. Winded below 15%, with power cut to 40%.</td></tr>
       <tr><td><strong>PoEcosystem creatures</strong></td><td>Walk or run velocity toward a goal</td><td><span class="st" style="--k:var(--good)">Smooth</span></td><td>Goal switching, damped by a small "stickiness" margin</td><td>Yes: hunger and thirst drive what they do</td></tr>
       <tr><td><strong>PoMarbleRace marbles</strong></td><td>Not steered; rolling physics</td><td><span class="st" style="--k:var(--good)">Natural</span></td><td>Pile-ups at junctions, cleared by a stall nudge</td><td>None</td></tr>
-      <tr><td><strong>PoSports runners</strong></td><td>A speed kick per finished key sequence</td><td><span class="st" style="--k:var(--warn)">Pulsed</span></td><td>By design: it copies how a human mashes keys</td><td>None</td></tr>
       <tr><td><strong>PoRacer bots</strong></td><td>Full left or full right; full throttle, coast or brake</td><td><span class="st" style="--k:var(--crit)">Twitchy</span></td><td>On-or-off steering inside a small dead zone, plus a random wobble</td><td>None</td></tr>
       <tr><td><strong>PoVoxelStrike monsters</strong></td><td>Position moved directly along one of seven fixed headings</td><td><span class="st" style="--k:var(--crit)">Jerky</span></td><td>Heading snaps in big steps; speed depends on frame rate</td><td>None</td></tr>
       <tr><td><strong>PoVoxelStrike wall guns</strong></td><td>Barrel snaps to aim</td><td><span class="st" style="--k:var(--warn)">Snappy</span></td><td>No turn speed limit</td><td>None</td></tr>
@@ -138,7 +137,6 @@
     <tbody>
       <tr><td>PoBrawl</td><td class="n">60 per second (physics 120)</td><td>Browser</td><td>Three quality tiers</td></tr>
       <tr><td>PoVoxelStrike</td><td class="n">Physics 60; agents per frame</td><td>Browser</td><td>Four quality tiers; resolution scales down to 60%; rubble capped at 0 / 48 / 90 / 140 bodies</td></tr>
-      <tr><td>PoSports</td><td class="n">60 per second</td><td>Browser (server for online)</td><td>Nothing needed</td></tr>
       <tr><td>PoCabinet</td><td class="n">30 per second</td><td>Browser (server for online)</td><td>Steps down a tier after about 3 s under 45 fps; only 10 cars drawn in full</td></tr>
       <tr><td>PoRacer</td><td class="n">50 per second, 20 snapshots sent</td><td>Server</td><td>Client smooths between snapshots</td></tr>
       <tr><td>PoMarbleRace</td><td class="n">60 per second</td><td>Browser</td><td>100 rivals drawn in one draw call</td></tr>
@@ -231,17 +229,17 @@ lineChart("c3", bands, [
   { name: "TicTacToe", color: "var(--s1)", values: ttt, dy: -4 },
   { name: "ConnectFive", color: "var(--s2)", values: c5, dy: 8 }], .6, [0, .2, .4, .6], pct, "Player rating");
 hbars("c4", [["Easy", 27], ["Medium", 21], ["Hard", 16]], 30, v => v + " s");
-hbars("c5", [["PoBrawl boxer", 60, "browser"], ["PoSports runner", 60, "browser"], ["PoRacer bot", 50, "server"],
+hbars("c5", [["PoBrawl boxer", 60, "browser"], ["PoRacer bot", 50, "server"],
   ["PoCabinet racer", 30, "browser"], ["PoEcosystem creature", 20, "goals re-scored 4 times a second"], ["Jev (PoJevArena)", 1, "hosted model"]], 60, v => v + " / s");
 hbars("c6", [["PoEcosystem creatures", 400], ["PoMarbleRace marbles", 100, "no brain"], ["PoCabinet rivals", 99], ["PoVoxelStrike monsters", 40, "plus 22 wall guns"],
-  ["PoJevArena units", 20], ["PoRacer cars", 100, "100 AI demo; 99 AI + player solo; 8-car online cap"], ["PoSports runners", 4, "demo; 3 with a player"], ["PoBrawl boxers", 2, "demo; 1 with a player"]], 400, v => String(v));
+  ["PoJevArena units", 20], ["PoRacer cars", 100, "100 AI demo; 99 AI + player solo; 8-car online cap"], ["PoBrawl boxers", 2, "demo; 1 with a player"]], 400, v => String(v));
 
 document.getElementById("t1").innerHTML = "<thead><tr><th>PoBrawl rung</th><th>Reaction (ms)</th><th>Block</th><th>Punish</th><th>Combo</th></tr></thead><tbody>"
   + rungs.map((r, i) => `<tr><td class="n">${r}</td><td class="n">${react[i]}</td><td class="n">${pct(block[i])}</td><td class="n">${pct(punish[i])}</td><td class="n">${pct(combo[i])}</td></tr>`).join("")
   + "</tbody><thead><tr><th>Rating band</th><th>TicTacToe blunder</th><th>ConnectFive blunder</th><th>ConnectFive depth</th><th></th></tr></thead><tbody>"
   + bands.map((b, i) => `<tr><td class="n">${b}</td><td class="n">${pct(ttt[i])}</td><td class="n">${pct(c5[i])}</td><td class="n">${[1, 1, 2, 2, 3, 4, 4][i]}</td><td></td></tr>`).join("") + "</tbody>";
 document.getElementById("t2").innerHTML = "<thead><tr><th>Agent</th><th>Decisions per second</th><th>Most alive at once</th></tr></thead><tbody>"
-  + [["PoBrawl boxer", 60, 2], ["PoSports runner", 60, 4], ["PoRacer bot", 50, 8], ["PoCabinet racer", 30, 99], ["PoEcosystem creature", 20, 400],
+  + [["PoBrawl boxer", 60, 2], ["PoRacer bot", 50, 8], ["PoCabinet racer", 30, 99], ["PoEcosystem creature", 20, 400],
      ["PoJevArena unit (Jev)", 1, 20], ["PoVoxelStrike monster", "per frame", 40], ["PoVoxelStrike wall gun", "per frame", 22], ["PoMarbleRace marble", "none", 100]]
     .map(r => `<tr><td>${r[0]}</td><td class="n">${r[1]}</td><td class="n">${r[2]}</td></tr>`).join("") + "</tbody>";
 </script>

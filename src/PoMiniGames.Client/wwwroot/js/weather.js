@@ -1,6 +1,6 @@
 // weather.js — seed-derived weather for outdoor games.
 //
-// One system, three consumers (Marble Race, Sports, Racer): the match seed
+// One system, shared by the outdoor games (Marble Race, Racer): the match seed
 // hashes to clear / rain / snow / fog, so every client in a multiplayer match
 // computes identical weather with zero network traffic. Visuals are a 2D
 // canvas overlay (rain streaks / drifting flakes / fog banding) — deliberately

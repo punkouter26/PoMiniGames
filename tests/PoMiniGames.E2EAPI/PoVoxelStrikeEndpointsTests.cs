@@ -7,7 +7,7 @@ namespace PoMiniGames.E2EAPI;
 
 /// <summary>
 /// BFF contract for the PoVoxelStrike slice at the anonymous surface this tier covers
-/// (authed ratchet semantics follow the Marble/PoSports descriptor pattern; the descriptor
+/// (authed ratchet semantics follow the Marble descriptor pattern; the descriptor
 /// itself is structurally guarded by the Unit tier's reflective HighScoreDescriptorTests):
 /// the asset routes are anonymous and content-addressed, the run routes are auth-gated,
 /// and the unified leaderboard exposes the Voxel Strike board anonymously.

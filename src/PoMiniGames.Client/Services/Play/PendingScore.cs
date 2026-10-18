@@ -7,6 +7,7 @@ public enum PendingScoreKind
     PoBrawl,
     /// <summary>A PlayerStats PUT (adaptive-ELO games mirror their rating into it).</summary>
     PlayerStats,
+    /// <summary>Retired with the Sports game. Kept so an old parked entry still parses; the flusher drops it.</summary>
     PoSports,
     PoVoxelStrike,
     PoRacer,

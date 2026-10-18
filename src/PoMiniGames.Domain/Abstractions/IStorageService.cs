@@ -97,11 +97,6 @@ public interface IStorageService
     /// </summary>
     bool IsStorageHealthy();
 
-    // PoSports High Scores (lowest combined meet time wins, one row per player)
-    // `day` (yyyyMMdd, UTC) addresses that day's daily-meet board instead of the all-time one.
-    Task<List<PoSportsHighScore>> GetPoSportsHighScoresAsync(int limit = 10, string? day = null, bool weekly = false);
-    Task<PoSportsHighScore> SavePoSportsHighScoreAsync(PoSportsHighScore entry, string? day = null);
-
     // PoVoxelStrike High Scores (highest run score wins, one ratcheted row per player)
     // `day` (yyyy-MM-dd, server-formatted) selects that day's Daily Siege board instead.
     Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10, string? day = null, bool weekly = false);

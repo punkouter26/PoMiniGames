@@ -123,13 +123,6 @@ public static class GameCatalog
             new(GameMode.Demo, "/pobrawl/demo?autoGuest=1"),
         ]),
 
-        new(GameKeys.PoSports, "Sports", "🏃",
-        [
-            new(GameMode.OnePlayer, "/posports/1player"),
-            new(GameMode.Multiplayer, "/posports/multi", RequiresNetwork: true),
-            new(GameMode.Demo, "/posports/demo"),
-        ]),
-
         new(GameKeys.PoRacer, "Racer", "🏎️",
         [
             new(GameMode.OnePlayer, "/poracer/1player"),
@@ -255,7 +248,7 @@ public static class GameCatalog
         .. new[]
         {
             GameKeys.TicTacToe, GameKeys.ConnectFive, GameKeys.PoRacer, GameKeys.PoMarbleRace,
-            GameKeys.PoVoxelStrike, GameKeys.PoBrawl, GameKeys.PoSports,
+            GameKeys.PoVoxelStrike, GameKeys.PoBrawl,
             GameKeys.PoCabinet, GameKeys.PoMule, GameKeys.PoEcosystem, GameKeys.SandPlayground,
         }
         .Select(key => All.First(g => g.Key == key))

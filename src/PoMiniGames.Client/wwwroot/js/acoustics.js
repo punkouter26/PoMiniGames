@@ -243,7 +243,6 @@ const GAME_SPACES = {
     pobrawl: 'arena',
     pomarblerace: 'tunnel',
     poracer: 'outdoor',
-    posports: 'outdoor',
     tictactoe: 'tabletop',
     connectfive: 'tabletop',
     funquiz: 'hall',
@@ -346,7 +345,7 @@ export function dopplerRatio(sourcePos, sourceVel, listenerPos, listenerVel) {
 }
 
 /**
- * Convenience for the 2D games (PoRacer, PoSports), where everything happens on
+ * Convenience for the 2D games (PoRacer), where everything happens on
  * a plane and the listener is stationary at the origin.
  * @param {number} dx  source position relative to listener
  * @param {number} dy

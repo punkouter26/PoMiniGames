@@ -57,8 +57,8 @@ public sealed class PlaySessionService : IDisposable
     private bool _started;
 
     /// <summary>
-    /// Game-route prefixes, longest first. Built once from the catalogue so "/posports/lobby"
-    /// resolves to PoSports via the "/posports" prefix even though no mode declares that exact
+    /// Game-route prefixes, longest first. Built once from the catalogue so "/game/lobby"
+    /// resolves to that game via the "/game" prefix even though no mode declares that exact
     /// URL — a game's own sub-routes belong to that game.
     /// </summary>
     private static readonly (string Prefix, string GameKey)[] RoutePrefixes = BuildRoutePrefixes();

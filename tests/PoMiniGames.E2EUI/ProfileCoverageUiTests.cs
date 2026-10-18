@@ -73,7 +73,7 @@ public class ProfileCoverageUiTests
 
         // The whole point of the change: the profile used to report three of ten
         // games, so several games recorded stats no one could ever see.
-        names.Should().Contain(["Tic-Tac-Toe", "Connect Five", "Brawl", "Sports",
+        names.Should().Contain(["Tic-Tac-Toe", "Connect Five", "Brawl",
             "Fun Quiz", "Racer", "Couple Quiz", "Marble Race", "Ecosystem", "Voxel Strike"]);
 
         // Ecosystem carries a session count, not a win rate.

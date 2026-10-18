@@ -69,7 +69,6 @@ time.
 | PoBrawl | 60 s cap | Shorter (a quick knockout) |
 | PoJevArena | 180 s cap | Shorter (a team wipe) |
 | PoVoxelStrike | No cap | Shorter for the monsters, longer for the player |
-| PoSports | 9.5 to 14 s per leg by design | Shorter |
 | PoRacer | 3 laps, 180 s cap | Shorter |
 | PoEcosystem | Until the animals die out | Longer |
 
@@ -91,7 +90,7 @@ strategy, so their "confusion" is permanently zero. The nearest observable is *c
 
 - **Fully repeatable:** ConnectFive at top strength, PoCabinet racers, PoEcosystem per world
   seed. Same situation, same answer, every time.
-- **Dice involved but seeded:** PoBrawl, PoSports. Repeatable if you fix the seed.
+- **Dice involved but seeded:** PoBrawl. Repeatable if you fix the seed.
 - **Not repeatable:** PoVoxelStrike monsters and PoRacer steering wobble use unseeded dice.
 
 ### Entropy: "Curiosity / Exploration"
@@ -113,7 +112,6 @@ designer chose the number instead of training lowering it.
 | TicTacToe CPU | Chance of a deliberately random move | 55% at the lowest rating, 5% at the highest |
 | ConnectFive CPU | Chance of a deliberately random move | 60% at the lowest rating, 0% at the highest |
 | PoBrawl boxer | Dice on block, punish, bait and combo | Block chance 16% (rung 1) to 97% (rung 15) |
-| PoSports runner | Typing error rate, jump timing wobble | 0.8% to 1% errors; wobble 40% down to 15% |
 | PoCabinet official | "Wildness": chance of misjudging a corner | 1% to 12% |
 | PoRacer bot | Steering wobble | About 0.3% to 0.8% of ticks |
 | PoEcosystem creature | Personality mutation between generations | 0.08 standard deviation per trait |
@@ -135,7 +133,6 @@ end in a healthy way. **Confusion** = how consistent the behaviour is (Low is go
 | PoBrawl boxers | Medium: live rating board, none stored in repo | Healthy: 60 s cap with a draw band | Low | High at low rungs, Low at top rungs | Yes, already live |
 | PoVoxelStrike monsters | Low | Healthy: escalates until the player wins or dies | Medium: frame-rate dependent, unseeded | Medium | Yes, already live |
 | PoVoxelStrike wall guns | Low | Healthy: a gun dies when its wall falls | Low | Low: small aim spread | Yes, already live |
-| PoSports runners | Medium: design target of 9.5 to 14 s per leg | Healthy | Low | Low | Yes, already live |
 | PoCabinet racers | High: five recorded laps, lap-time test bounds | Healthy: 15 s grace after the winner | Low: fully repeatable | Low: 1% to 12% | Yes, already live |
 | PoRacer bots | Medium: lap times noted in code comments | Healthy: 180 s cap, rescue after 2 s stuck | Medium: unseeded wobble | Low | Yes, already live |
 | PoMarbleRace marbles | High: every map must finish 96 of 101 in tests | Healthy: 180 s cap, nudge when stalled | Low | None: no brain | Yes, already live |

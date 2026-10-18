@@ -56,80 +56,79 @@
                 <PoBrawlHud @ref="_hud"
                             P1Name="@HudName(_p1Char)" P2Name="@HudName(_p2Char)"
                             P1Fighter="@Name(_p1Char)" P2Fighter="@Name(_p2Char)"
-                            Training="false" />
-
-                @if (_cup?.Current is { } now)
-                {
-                    <div class="pt-rail" role="status">
-                        <span class="pt-rail-round">@now.Label</span>
-                        <span class="pt-rail-pips" aria-hidden="true">
-                            @foreach (var b in _cup.Bouts)
-                            {
-                                <span class="pt-pip @(b.WinnerId is not null ? "pt-pip--done" : b == now ? "pt-pip--now" : "")"></span>
-                            }
-                        </span>
-                        <span class="pt-rail-count">Bout @(now.Index + 1) of @_cup.Bouts.Count</span>
-                    </div>
-                }
+                            Training="false"
+                            Below="@BoutChip" />
             }
         </div>
 
         @if (_introDone)
         {
-            @* mousedown:preventDefault keeps a clicked button from taking focus (see PoBrawlPage's trainbar). *@
-            <div class="pt-bar" role="group" aria-label="Tournament controls" @onmousedown:preventDefault="true">
-                <span class="pt-bar-label">Speed</span>
-                @foreach (var s in Speeds)
-                {
-                    var speed = s;
-                    <button type="button" class="pb-seg @(speed == _speed ? "pt-seg--on" : "")"
-                            aria-pressed="@(speed == _speed ? "true" : "false")"
-                            title="@($"Play the bouts at {speed}× speed")"
-                            @onclick="() => SetSpeedAsync(speed)">@(speed)×</button>
-                }
-                <button type="button" class="pb-seg pt-seg-bracket" aria-expanded="@(_bracketOpen ? "true" : "false")"
+            @* One compact bar: the speed segment, the bracket drawer, and one camera button that
+               steps through the broadcast set-ups. mousedown:preventDefault keeps a clicked button
+               from taking focus (see PoBrawlPage's trainbar). *@
+            <div class="pt-bar" role="toolbar" aria-label="Tournament controls" @onmousedown:preventDefault="true">
+                <span class="pt-speed" role="group" aria-label="Bout speed">
+                    @foreach (var s in Speeds)
+                    {
+                        var speed = s;
+                        <button type="button" class="pt-speed-btn"
+                                aria-pressed="@(speed == _speed ? "true" : "false")"
+                                title="@($"Play the bouts at {speed}× speed")"
+                                @onclick="() => SetSpeedAsync(speed)">@(speed)×</button>
+                    }
+                </span>
+                <button type="button" class="pb-seg pt-btn @(_bracketOpen ? "pt-seg--on" : "")"
+                        aria-expanded="@(_bracketOpen ? "true" : "false")" aria-controls="pt-drawer"
                         @onclick="ToggleBracket">🗂 Bracket</button>
-                @* Camera: the broadcast director (engine director.js) and its picture-in-picture iso cam. *@
-                <button type="button" class="pb-seg @(_director ? "pt-seg--on" : "")"
-                        aria-pressed="@(_director ? "true" : "false")"
-                        title="Cut between camera angles like a TV broadcast"
-                        @onclick="ToggleDirectorAsync">🎥 Director cam</button>
-                <button type="button" class="pb-seg pt-seg-iso @(_isoCam ? "pt-seg--on" : "")"
-                        aria-pressed="@(_isoCam ? "true" : "false")"
-                        title="Picture-in-picture close-up on the other fighter (medium and high graphics only)"
-                        @onclick="ToggleIsoCamAsync">📺 Iso</button>
+                <button type="button" class="pb-seg pt-btn"
+                        title="@CameraHint"
+                        aria-label="@($"Camera: {CameraName}. Press for {NextCameraName}.")"
+                        @onclick="CycleCameraAsync">🎥 @CameraName</button>
             </div>
         }
 
         @if (_introDone && _bracketOpen && _cup is not null)
         {
-            <div class="pt-overlay" @onclick="ToggleBracket">
-                <section class="pt-panel" aria-label="Tournament bracket" @onclick:stopPropagation="true">
-                    @if (_lastDecided is { } last)
-                    {
-                        <p class="pt-panel-news @(last.IsUpset ? "pt-panel-news--upset" : "")" role="status">
-                            @if (last.IsUpset)
-                            {
-                                <span class="pt-upset-tag">UPSET!</span>
-                            }
-                            @ResultSentence(last, tagged: false)
-                        </p>
-                    }
-                    @Bracket
-                    @if (_cup.Current is { } next)
-                    {
-                        <p class="pt-panel-next">Next: <b>@Name(next.P1Id)</b> vs <b>@Name(next.P2Id)</b> — @next.Label</p>
-                        @if (next.P1Id is not null && next.P2Id is not null)
+            @* A drawer, not a modal: the arena stays in view beside it (under it on a phone). *@
+            <aside class="pt-drawer" id="pt-drawer" aria-label="Tournament">
+                <div class="pt-drawer-head">
+                    <div class="pt-tabs" role="tablist" aria-label="Tournament views">
+                        @foreach (var t in DrawerTabs)
                         {
-                            <div class="pt-dossiers">
-                                <PoBrawlDossierCard FighterId="@next.P1Id" Compact="true" />
-                                <PoBrawlDossierCard FighterId="@next.P2Id" Compact="true" />
-                            </div>
+                            var tab = t;
+                            <button type="button" role="tab" id="pt-tab-@tab" class="pt-tab"
+                                    aria-selected="@(tab == _drawerTab ? "true" : "false")" aria-controls="pt-tabpanel"
+                                    tabindex="@(tab == _drawerTab ? 0 : -1)"
+                                    @onclick="() => _drawerTab = tab">@DrawerTabLabel(tab)</button>
                         }
+                    </div>
+                    <button type="button" class="pt-drawer-close" aria-label="Close the bracket" @onclick="ToggleBracket">✕</button>
+                </div>
+                @if (_lastDecided is { } last)
+                {
+                    <p class="pt-panel-news @(last.IsUpset ? "pt-panel-news--upset" : "")" role="status">
+                        @if (last.IsUpset)
+                        {
+                            <span class="pt-upset-tag">UPSET!</span>
+                        }
+                        @ResultSentence(last, tagged: false)
+                    </p>
+                }
+                <div class="pt-tabpanel" id="pt-tabpanel" role="tabpanel" aria-labelledby="pt-tab-@_drawerTab">
+                    @if (_drawerTab == "next")
+                    {
+                        @NextBout
                     }
-                    <button type="button" class="app-btn app-btn--sm pt-panel-close" @onclick="ToggleBracket">Close</button>
-                </section>
-            </div>
+                    else if (_drawerTab == "titles")
+                    {
+                        @TitlesList
+                    }
+                    else
+                    {
+                        @Bracket
+                    }
+                </div>
+            </aside>
         }
     </div>
 </GameShell>
@@ -184,13 +183,105 @@
 
     private string HudName(string id) => _cup is null || string.IsNullOrEmpty(id) ? Name(id) : $"{Name(id)} · {_cup.EloOf(id)}";
 
+    // ── Under the HUD clock: the round and one pip per bout ──
+    private RenderFragment? BoutChip => _cup?.Current is { } now
+        ? @<span class="pb-chip" role="img" aria-label="@now.Label — bout @(now.Index + 1) of @_cup.Bouts.Count">
+            <b>@RoundShort(now.Round)</b>
+            <span class="pb-chip-pips">
+                @foreach (var b in _cup.Bouts)
+                {
+                    <span class="pb-chip-pip @(b.WinnerId is not null ? "pb-chip-pip--done" : b == now ? "pb-chip-pip--now" : "")"></span>
+                }
+            </span>
+            <span>@(now.Index + 1)/@_cup.Bouts.Count</span>
+        </span>
+        : null;
+
+    private static string RoundShort(PoBrawlTournament.Round round) => round switch
+    {
+        PoBrawlTournament.Round.Quarterfinal => "QF",
+        PoBrawlTournament.Round.Semifinal => "SF",
+        _ => "Final",
+    };
+
+    // ── Camera: one button through the director's set-ups (director.js + its iso PiP) ──
+    // Broadcast = the director cutting angles with the picture-in-picture close-up; Director =
+    // the cuts alone; Ringside = the fixed side view.
+    private string CameraName => _director ? (_isoCam ? "Broadcast" : "Director") : "Ringside";
+    private string NextCameraName => _director ? (_isoCam ? "Director" : "Ringside") : "Broadcast";
+    private string CameraHint => _director
+        ? _isoCam ? "TV cuts with a picture-in-picture close-up (the close-up needs medium or high graphics)" : "TV cuts between camera angles"
+        : "The fixed ringside view";
+
+    private async Task CycleCameraAsync()
+    {
+        (_director, _isoCam) = (_director, _isoCam) switch
+        {
+            (true, true) => (true, false),
+            (true, false) => (false, false),
+            _ => (true, true),
+        };
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("PoBrawl.setDirector", _director);
+            await JSRuntime.InvokeVoidAsync("PoBrawl.setIsoCam", _isoCam);
+        }
+        catch { }
+    }
+
+    // ── The drawer's tabs ──
+    private static readonly string[] DrawerTabs = ["bracket", "next", "titles"];
+    private string _drawerTab = "bracket";
+
+    private static string DrawerTabLabel(string tab) => tab switch
+    {
+        "next" => "Next bout",
+        "titles" => "Titles",
+        _ => "Bracket",
+    };
+
+    private RenderFragment NextBout => @<div class="pt-next">
+        @if (_cup?.Current is { } next)
+        {
+            <p class="pt-panel-next"><b>@Name(next.P1Id)</b> vs <b>@Name(next.P2Id)</b> — @next.Label</p>
+            @if (next.P1Id is not null && next.P2Id is not null)
+            {
+                <div class="pt-dossiers">
+                    <PoBrawlDossierCard FighterId="@next.P1Id" Compact="true" />
+                    <PoBrawlDossierCard FighterId="@next.P2Id" Compact="true" />
+                </div>
+            }
+        }
+        else
+        {
+            <p class="pt-panel-next">The belt has a new owner: <b>@Name(_cup?.ChampionId)</b>.</p>
+        }
+    </div>;
+
+    // Tournaments won in this browser, the same count the final standings show.
+    private RenderFragment TitlesList => @<div class="pt-titles">
+        @if (_titles.Count == 0)
+        {
+            <p class="pt-panel-next">No titles yet. This belt will be the first.</p>
+        }
+        else
+        {
+            <ol class="pt-titles-list">
+                @foreach (var (id, n) in _titles.OrderByDescending(kv => kv.Value).ThenBy(kv => Name(kv.Key)))
+                {
+                    <li><span class="pt-titles-name">@Name(id)</span><span class="pt-titles-n">@n @(n == 1 ? "title" : "titles")</span></li>
+                }
+            </ol>
+        }
+        <a class="pt-hq-link" href="/pobrawl/hq">📊 Every board on Brawl HQ</a>
+    </div>;
+
     private RenderFragment HowItWorks => @<div>
         <ul>
-            <li>🎲 Eight of the fifteen presidents are drawn into a random bracket</li>
-            <li>🥊 Quarterfinals, semifinals, final — one 60-second round each, CPU against CPU</li>
-            <li>⏱️ No draws: a level bell goes to more health, then more hits landed</li>
-            <li>📈 Every result moves both fighters' Elo (K 24, the fighter board's own maths)</li>
-            <li>⏩ Speed 2× or 4× fast-forwards the bouts; 🗂 Bracket shows the draw any time</li>
+            <li>🎲 Eight of the fifteen presidents, drawn into a random bracket</li>
+            <li>🥊 Three rounds of 60-second CPU bouts; a level bell goes to health, then hits</li>
+            <li>📈 Every result moves both fighters' Elo (K 24, the fighter board's maths)</li>
+            <li>⏩ 2× or 4× fast-forwards; 🗂 Bracket opens beside the ring any time</li>
         </ul>
     </div>;
 
@@ -563,18 +654,6 @@
 
     private void ToggleBracket() => _bracketOpen = !_bracketOpen;
 
-    private async Task ToggleDirectorAsync()
-    {
-        _director = !_director;
-        try { await JSRuntime.InvokeVoidAsync("PoBrawl.setDirector", _director); } catch { }
-    }
-
-    private async Task ToggleIsoCamAsync()
-    {
-        _isoCam = !_isoCam;
-        try { await JSRuntime.InvokeVoidAsync("PoBrawl.setIsoCam", _isoCam); } catch { }
-    }
-
     // ── Engine callbacks (the same contract PoBrawlPage implements) ─────────
 
     /// <summary>HUD pump — exact arity contract with game.js _pushHud (see PoBrawlPage.OnHud).</summary>
@@ -643,11 +722,13 @@
             await Task.Delay(CeremonyMs);
             if (generation != _generation) return;
             _bracketOpen = true;
+            _drawerTab = "bracket";
             _showFinal = true;   // GameShell holds FinalHoldMs, then the modal
             await InvokeAsync(StateHasChanged);
             return;
         }
         _bracketOpen = true;
+        _drawerTab = "bracket";
         await InvokeAsync(StateHasChanged);
 
         await Task.Delay(BetweenBoutsMs);

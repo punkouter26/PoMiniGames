@@ -61,8 +61,8 @@
         <div id="pobrawl-container" class="pb-canvas-host"
              role="img" aria-label="Brawl arena — the fight renders here"></div>
 
-        @* Top of the arena, one flow column (HUD → ladder rail → online pills), so a taller
-           HUD pushes the rail down instead of overlapping it. *@
+        @* Top of the arena: the HUD, whose centre plate carries the mode's readout (ladder
+           rung and votes, online signal), and under it only what has to be said in words. *@
         <div class="pb-top">
             @if (_phase == "fighting" || _demo)
             {
@@ -70,49 +70,17 @@
                 <PoBrawlHud @ref="_hud"
                             P1Name="@HudName(1)" P2Name="@HudName(2)"
                             P1Fighter="@CharName(_p1Char)" P2Fighter="@CharName(_p2Char)"
-                            Training="_training" />
-
-                @* 1-player ladder rail: how far through the fifteen presidents this run is. *@
-                @if (_mode == "1p" && !_training)
-                {
-                    <div class="pb-ladder" role="img"
-                         aria-label="Ladder progress: @_ladder of @Roster.Length presidents beaten. Now fighting @CharName(_p2Char). @PoBrawlCampaign.VotesAfter(_ladder) of @PoBrawlCampaign.ToWin electoral votes.">
-                        <span class="pb-ladder-count">@_ladder/@Roster.Length</span>
-                        <span class="pb-ladder-rail">
-                            @for (var i = 0; i < Roster.Length; i++)
-                            {
-                                <span class="pb-rung @(i < _ladder ? "pb-rung--done" : i == _ladder ? "pb-rung--now" : "")"
-                                      title="@Roster[i].Name"></span>
-                            }
-                        </span>
-                        <span class="pb-ladder-now">@CharName(_p2Char)</span>
-                        @* Campaign trail (PoBrawlCampaign): the electoral count the beaten rungs hold. *@
-                        <span class="pb-ladder-ev"><b>@PoBrawlCampaign.VotesAfter(_ladder)</b>/@PoBrawlCampaign.ToWin</span>
-                    </div>
-                }
+                            Training="_training"
+                            LocalSide="@HudLocalSide"
+                            Below="@HudBelow" />
             }
 
-            @* Online: your corner, and anything the network is doing to the fight. *@
-            @if (_mode == "online" && !_netMissing)
+            @* Online: joining, and anything the network is doing to the fight. *@
+            @if (_mode == "online" && !_netMissing && (!_everJoined || NetNotice is not null))
             {
-                @if (_everJoined)
-                {
-                    <div class="pb-net-status" role="status">
-                        <span class="pb-net-pill @(_isSpectator ? "pb-net-pill--watch" : "")">
-                            @(_isSpectator ? "👀 Spectating" : $"You: {(_localSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? "left" : "right")} corner")
-                        </span>
-                        @* Signal: RTT and rollbacks/s as bars, pushed by the engine at 2 Hz. *@
-                        <PoBrawlNetMeter @ref="_netMeter" />
-                        @if (NetNotice is { } notice)
-                        {
-                            <span class="pb-net-pill pb-net-pill--warn">@notice</span>
-                        }
-                    </div>
-                }
-                else
-                {
-                    <div class="pb-net-status" role="status"><span class="pb-net-pill">Joining the fight…</span></div>
-                }
+                <div class="pb-net-status" role="status">
+                    <span class="pb-net-pill @(_everJoined ? "pb-net-pill--warn" : "")">@(_everJoined ? NetNotice : "Joining the fight…")</span>
+                </div>
             }
         </div>
 
@@ -363,48 +331,8 @@
         : !_p2Locked ? "Player 2 — tap your fighter (or ← / →, then K)"
         : "Both locked in — fight!";
 
-    private RenderFragment IntroControlsContent => _mode switch
-    {
-        "2p" => TwoPlayerQuickControls,
-        "demo" => DemoQuickControls,
-        _ => HowToPlayContent,
-    };
-
-    private RenderFragment DemoQuickControls => @<div>
-        <p>Two CPU presidents fight a 60-second exhibition — sit back and watch.</p>
-        <ul>
-            <li>No controls — both corners are driven by the CPU</li>
-            <li>⚡ Energy still rules the exchanges — swings drain it, blocking refills it</li>
-        </ul>
-    </div>;
-
-    private RenderFragment TwoPlayerQuickControls => @<div>
-        <p>One round, 60 seconds. Pick fighters, lock in, then fight.</p>
-        <ul>
-            <li>Player 1: <kbd>A</kbd>/<kbd>D</kbd> choose, <kbd>F</kbd> lock · <kbd>W</kbd>/<kbd>S</kbd> circle, <kbd>R</kbd> block</li>
-            <li>Player 2: <kbd>←</kbd>/<kbd>→</kbd> choose, <kbd>K</kbd> lock · <kbd>↑</kbd>/<kbd>↓</kbd> circle, <kbd>;</kbd> block</li>
-            <li>Attacks: P1 <kbd>F</kbd>/<kbd>G</kbd>, P2 <kbd>K</kbd>/<kbd>L</kbd> (hold to charge)</li>
-            <li>Guard as they wind up, not before — a PERFECT guard freezes them and arms your counter</li>
-            <li>Take enough punishment and your president's signature move fires itself</li>
-            <li class="pb-touch-keys">On a phone the touch pad drives Player 1 — Player 2 needs the keyboard or a gamepad</li>
-        </ul>
-    </div>;
-
-    // The guard bullet is last so it is the line in view when the card closes: the PERFECT
-    // guard window (game.js PERFECT_GUARD_WINDOW) is invisible on the HUD, so only this card
-    // teaches it. The energy line matters because the bar is a hard gate on attacking.
-    private RenderFragment HowToPlayContent => @<div>
-        <ul>
-            @* The first two lines are keyboard-only; a touch screen gets the pad's own
-               glyphs instead (CSS swaps them on a coarse pointer — see .pb-keys). *@
-            <li class="pb-keys"><kbd>A</kbd>/<kbd>D</kbd> move · <kbd>W</kbd>/<kbd>S</kbd> circle · <b>hold</b> <kbd>R</kbd> to block</li>
-            <li class="pb-keys"><kbd>F</kbd> punch · <kbd>G</kbd> kick — hold to charge, release to strike</li>
-            <li class="pb-touch-keys">◀ ▶ move · ↺ ↻ circle · <b>hold</b> 🛡 to block · 👊 punch · 🦵 kick — hold to charge, release to strike</li>
-            <li>👊 Punch is <b>speed</b>: fast, cheap, small damage. 🦵 Kick is the <b>power</b> hit — slower, and it costs twice the energy</li>
-            <li>⚡ Energy is hit power <b>and</b> stamina — every swing spends it. Run it dry and you cannot strike at all</li>
-            <li>🛡 Guard <b>as they wind up</b>, not before — that's a PERFECT guard: big energy back, they freeze, your answer hits harder</li>
-        </ul>
-    </div>;
+    // One legend for every mode (PoBrawlControls): 2P's split keys, demo's "no controls".
+    private RenderFragment IntroControlsContent => @<PoBrawlControls Mode="@_mode" />;
 
     // 2P gets the fighter select, 1P the training choice and its rung; demo gets neither.
     private RenderFragment? IntroOptions => _mode switch
@@ -414,21 +342,29 @@
         _ => null,
     };
 
-    // 1P: the start-mode choice and who the rung is.
+    // 1P: the start-mode choice, where the campaign stands, and who the rung is. The rung
+    // number rides the dossier's summary (the card itself names the president).
     private RenderFragment ScoutingContent => @<div class="pb-scout">
         <label class="pb-intro-train">
             <input type="checkbox" @bind="_training" />
             <span><b>🥋 Training first</b> — no clock, no KO; the room's bar has the exit.</span>
         </label>
-        <div class="pb-scout-head">
-            <span class="pb-scout-rung">Rung @(_ladder + 1) of @Roster.Length</span>
-            <span class="pb-scout-name">@CharName(_p2Char)</span>
+        <div class="pb-scout-grid">
+            <div class="pb-scout-map">
+                <PoBrawlCampaignMap Beaten="@_ladder" Variant="status" />
+                <a class="pb-hq-link" href="/pobrawl/hq">📊 Brawl HQ: your record, boards and titles</a>
+            </div>
+            @* Open on a desktop, folded on a phone, where it would push Start off the card. Two
+               copies rather than JS: CSS shows the one that fits (.pb-dossier-disclosure--wide). *@
+            <details class="pb-dossier-disclosure pb-dossier-disclosure--wide" open>
+                <summary>📁 Rung @(_ladder + 1) of @Roster.Length · Dossier</summary>
+                <PoBrawlDossierCard FighterId="@_p2Char" />
+            </details>
+            <details class="pb-dossier-disclosure pb-dossier-disclosure--narrow">
+                <summary>📁 Rung @(_ladder + 1) of @Roster.Length · Dossier</summary>
+                <PoBrawlDossierCard FighterId="@_p2Char" Compact="true" />
+            </details>
         </div>
-        @* Scouting report on the rung's president. Open by default: the 1P card has the room. *@
-        <details class="pb-dossier-disclosure" open>
-            <summary>📁 Dossier</summary>
-            <PoBrawlDossierCard FighterId="@_p2Char" />
-        </details>
     </div>;
 
     // Two-player fighter select: one shared 4×4 grid with a cursor per player. Each player
@@ -444,24 +380,7 @@
             @SideCard(2)
         </div>
         <p class="pb-select-prompt">@SelectPrompt</p>
-        <ul class="pb-select-grid" aria-label="Fighters">
-            @for (int i = 0; i < PickableRoster.Length; i++)
-            {
-                var idx = i;
-                var f = PickableRoster[idx];
-                <li>
-                    <button type="button"
-                            class="pb-select-tile @(idx == _p1Sel ? "pb-select-tile--p1" : "") @(idx == _p2Sel ? "pb-select-tile--p2" : "")"
-                            aria-label="@TileLabel(idx)"
-                            @onclick="() => TapFighter(idx)">
-                        <span class="pb-select-portrait" aria-hidden="true" data-fighter="@f.Id" data-index="@idx"></span>
-                        <span class="pb-select-name">@f.Name</span>
-                        @if (idx == _p1Sel) { <span class="pb-select-mark pb-select-mark--p1" aria-hidden="true">P1</span> }
-                        @if (idx == _p2Sel) { <span class="pb-select-mark pb-select-mark--p2" aria-hidden="true">P2</span> }
-                    </button>
-                </li>
-            }
-        </ul>
+        <PoBrawlFighterGrid Fighters="@PickableRoster" P1Index="@_p1Sel" P2Index="@_p2Sel" OnPick="TapFighter" />
         @* Each corner's highlighted fighter. Collapsed by default: the 2P card is already long. *@
         <details class="pb-dossier-disclosure">
             <summary>📁 Dossiers</summary>
@@ -471,9 +390,6 @@
             </div>
         </details>
     </div>;
-
-    private string TileLabel(int idx) =>
-        PickableRoster[idx].Name + (idx == _p1Sel ? ", Player 1" : "") + (idx == _p2Sel ? ", Player 2" : "");
 
     private RenderFragment SideCard(int side)
     {
@@ -498,68 +414,156 @@
         </button>;
     }
 
-    private RenderFragment GameSummaryContent => @<div>
-        <div>@ResultLine()</div>
-        @if (_winner != 0 && _mode == "1p" && _winner == 1)
+    // ── Under the HUD clock (PoBrawlHud.Below) ──────────────────────────────
+    private int HudLocalSide => _mode != "online" || _isSpectator || _localSide is null ? 0
+        : _localSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? 1 : 2;
+
+    private RenderFragment? HudBelow => _mode switch
+    {
+        "1p" when !_training => LadderChip,
+        "online" when _everJoined => NetChip,
+        _ => null,
+    };
+
+    // The 1P run: presidents beaten and the electoral votes they hold (PoBrawlCampaign).
+    private RenderFragment LadderChip => @<span class="pb-chip" role="img"
+        aria-label="Ladder: @_ladder of @Roster.Length presidents beaten. @PoBrawlCampaign.VotesAfter(_ladder) of @PoBrawlCampaign.ToWin electoral votes."
+        title="Presidents beaten · electoral votes">
+        <span><b>@_ladder</b>/@Roster.Length</span>
+        <span class="pb-chip-ev"><b>@PoBrawlCampaign.VotesAfter(_ladder)</b> EV</span>
+    </span>;
+
+    // Online: the signal meter (pushed at 2 Hz, its own component), and a spectator's badge.
+    private RenderFragment NetChip => @<span class="pb-chip-stack">
+        @if (_isSpectator)
         {
-            <div>KO in @_lastKo.ToString("0.00")s@(_newRecord ? " — 🏆 New record!" : "")</div>
+            <span class="pb-chip">👀 Watching</span>
         }
+        <PoBrawlNetMeter @ref="_netMeter" />
+    </span>;
+
+    // The result: one headline, the numbers that changed, then the detail behind tabs
+    // (recap, the press conference, the ladder ending) so the shared modal stays short.
+    // GameOverModal renders the board (1P: "pobrawlko", top 3 by fastest KO) below this.
+    private RenderFragment GameSummaryContent => @<div class="pb-result">
+        <div class="pb-result-line">@ResultLine()</div>
         @if (_mode == "1p")
         {
-            <div>Elo @_rating.Elo (@(_lastEloDelta >= 0 ? "+" : "")@_lastEloDelta) vs @CharName(_p2Char) @PresidentElo(LadderRungOf(_p2Char))</div>
-            @if (_champion)
+            <div class="pb-result-facts">
+                @if (_winner == 1)
+                {
+                    <span>KO <b>@_lastKo.ToString("0.00")s</b>@(_newRecord ? " 🏆 record" : "")</span>
+                }
+                <span>Elo <b>@_rating.Elo</b> (@(_lastEloDelta >= 0 ? "+" : "")@_lastEloDelta) vs @CharName(_p2Char) @PresidentElo(LadderRungOf(_p2Char))</span>
+                @if (!_champion)
+                {
+                    <span>Next: <b>@Roster[_ladder].Name</b> (@(_ladder + 1)/@Roster.Length)</span>
+                }
+            </div>
+        }
+
+        @if (ResultTabs().Count > 1)
+        {
+            <div class="pb-tabs" role="tablist" aria-label="Fight details">
+                @foreach (var t in ResultTabs())
+                {
+                    var tab = t;
+                    <button type="button" role="tab" id="pb-tab-@tab" class="pb-tab"
+                            aria-selected="@(tab == ActiveTab ? "true" : "false")" aria-controls="pb-tabpanel"
+                            tabindex="@(tab == ActiveTab ? 0 : -1)"
+                            @onclick="() => _resultTab = tab">@TabLabel(tab)</button>
+                }
+            </div>
+        }
+        @if (ActiveTab is not null)
+        {
+            <div class="pb-tabpanel" id="pb-tabpanel" role="@(ResultTabs().Count > 1 ? "tabpanel" : null)"
+                 aria-labelledby="@(ResultTabs().Count > 1 ? $"pb-tab-{ActiveTab}" : null)">
+                @if (ActiveTab == "ending")
+                {
+                    @EndingCard
+                }
+                else if (ActiveTab == "recap" && _recap is { } rc)
+                {
+                    @RecapBars(rc)
+                }
+                else if (_presser is { } pp)
+                {
+                    @PressLine(pp)
+                }
+            </div>
+        }
+
+        <div class="pb-result-actions">
+            @* The engine records the fight on a rolling buffer and reports OnClipReady once the
+               result's clip is closed; nothing is kept or sent unless the player presses this. *@
+            @if (_clipReady)
             {
-                @EndingCard
+                <button type="button" class="pb-clip-btn" @onclick="SaveClipAsync">🎬 Save the KO clip</button>
             }
-            else
-            {
-                <div>Next: BOB vs @Roster[_ladder].Name (match @(_ladder + 1) of @Roster.Length)</div>
-            }
-        }
-
-        @* The engine records the fight on a rolling buffer and reports OnClipReady once the
-           result's clip is closed; nothing is kept or sent unless the player presses this. *@
-        @if (_clipReady)
-        {
-            <button type="button" class="pb-clip-btn" @onclick="SaveClipAsync">🎬 Save the KO clip</button>
-        }
-
-        @if (_recap is { } r)
-        {
-            <table class="pb-recap">
-                <caption>Fight recap</caption>
-                <thead>
-                    <tr>
-                        <th scope="col" class="pb-recap-stat">Stat</th>
-                        <th scope="col">@HudName(1)</th>
-                        @* In 1P the run walks several presidents, so the right-hand
-                           column is every opponent it faced, not the last one. *@
-                        <th scope="col">@(_mode == "1p" ? "Presidents" : HudName(2))</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr><th scope="row">Hits landed</th><td>@r.P1Hits</td><td>@r.P2Hits</td></tr>
-                    <tr><th scope="row">Blocks</th><td>@r.P1Blocks</td><td>@r.P2Blocks</td></tr>
-                    <tr><th scope="row">Best combo</th><td>@r.P1BestCombo</td><td>@r.P2BestCombo</td></tr>
-                    <tr><th scope="row">Biggest hit</th><td>@r.P1BiggestHit</td><td>@r.P2BiggestHit</td></tr>
-                </tbody>
-            </table>
-        }
-
-        @* One line from the podium, read out by the PA. Flavour only — the result above is
-           already final. *@
-        @if (_presser is { } p)
-        {
-            <figure class="pb-presser">
-                <figcaption class="pb-presser-head"><span aria-hidden="true">🎤</span> Post-fight press conference</figcaption>
-                <blockquote class="pb-presser-line">“@p.Text”</blockquote>
-                <div class="pb-presser-who">— @p.Speaker</div>
-            </figure>
-        }
-
-        @* No board markup here on purpose: GameOverModal already renders one from the shell's
-           GameKey (1P: "pobrawlko", top 3 by fastest KO). *@
+            <a class="pb-hq-link" href="/pobrawl/hq">📊 Brawl HQ</a>
+        </div>
     </div>;
+
+    private string? _resultTab;
+    private string? ActiveTab
+    {
+        get
+        {
+            var tabs = ResultTabs();
+            return _resultTab is { } t && tabs.Contains(t) ? t : tabs.FirstOrDefault();
+        }
+    }
+
+    private List<string> ResultTabs()
+    {
+        var tabs = new List<string>(3);
+        if (_mode == "1p" && _champion) tabs.Add("ending");
+        if (_recap is not null) tabs.Add("recap");
+        if (_presser is not null) tabs.Add("press");
+        return tabs;
+    }
+
+    private static string TabLabel(string tab) => tab switch
+    {
+        "ending" => "🏆 Ending",
+        "recap" => "📊 Recap",
+        _ => "🎤 Press",
+    };
+
+    // The scorecard as mirrored bars: each stat's two values share one track, so who won the
+    // exchange reads at a glance. In 1P the right column is every president the run faced.
+    private RenderFragment RecapBars(PoBrawlMatchRecap r) => @<div class="pb-rc">
+        <div class="pb-rc-names" aria-hidden="true">
+            <span class="pb-rc-p1">@HudName(1)</span>
+            <span class="pb-rc-p2">@(_mode == "1p" ? "Presidents" : HudName(2))</span>
+        </div>
+        <ul class="pb-rc-rows">
+            @RecapRow("Hits landed", r.P1Hits, r.P2Hits)
+            @RecapRow("Blocks", r.P1Blocks, r.P2Blocks)
+            @RecapRow("Best combo", r.P1BestCombo, r.P2BestCombo)
+            @RecapRow("Biggest hit", r.P1BiggestHit, r.P2BiggestHit)
+        </ul>
+    </div>;
+
+    private RenderFragment RecapRow(string label, int a, int b)
+    {
+        // Nothing on either side (a quiet round) splits the track evenly.
+        var left = a + b == 0 ? 50 : (int)Math.Round(100.0 * a / (a + b));
+        var who2 = _mode == "1p" ? "the presidents" : HudName(2);
+        return @<li class="pb-rc-row" aria-label="@label: @HudName(1) @a, @who2 @b">
+            <span class="pb-rc-label" aria-hidden="true">@label</span>
+            <span class="pb-rc-v pb-rc-v--p1 @(a > b ? "pb-rc-v--lead" : "")" aria-hidden="true">@a</span>
+            <span class="pb-rc-track" aria-hidden="true" style="--left: @(left)%"></span>
+            <span class="pb-rc-v pb-rc-v--p2 @(b > a ? "pb-rc-v--lead" : "")" aria-hidden="true">@b</span>
+        </li>;
+    }
+
+    // One line from the podium, read out by the PA. Flavour only — the result above is final.
+    private static RenderFragment PressLine(PoBrawlPressLine p) => @<figure class="pb-presser">
+        <blockquote class="pb-presser-line">“@p.Text”</blockquote>
+        <figcaption class="pb-presser-who">— @p.Speaker, at the post-fight press conference</figcaption>
+    </figure>;
 
     // The ladder ending (full clear): the roll of fifteen KOs, the run's numbers, and the belt
     // going back on the line at rung 1.
@@ -826,7 +830,8 @@
 
     // The presidential seal stamped on a locked-in side card: a scalloped gold disc, a ring
     // of stars, a centre star. Built once; the colours are the emblem's own, theme-invariant.
-    private static readonly MarkupString SealSvg = new(BuildSealSvg());
+    // Also stamped on a readied card in the online lobby.
+    internal static readonly MarkupString SealSvg = new(BuildSealSvg());
 
     private static string BuildSealSvg()
     {

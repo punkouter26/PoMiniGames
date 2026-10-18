@@ -48,13 +48,15 @@ public class OnlineModesUiTests
     }
 
     [Theory]
-    [InlineData("/pobrawl/multi", "Start Fight", "/pobrawl/online", "#pobrawl-container canvas")]
+    // Brawl has no Start button: each player readies from their own fighter card and the
+    // host's client starts the fight once both seats are ready.
+    [InlineData("/pobrawl/multi", null, "/pobrawl/online", "#pobrawl-container canvas")]
     [InlineData("/poracer/multi", "Start Race", "/poracer/multi?code=", ".race-hud")]
     // Voxel Strike's lobby is the Online tab of the game page itself: the run starts
     // in place, so the URL does not move and the engine canvas — which only exists once the
     // host has started and the squad's arena is built — is what proves both arrived.
     [InlineData("/povoxelstrike/multi", "Start the Run", "/povoxelstrike/multi", "#povoxelstrike-container canvas")]
-    public async Task LobbyGame_TwoPlayersReady_HostStarts_AndBothReachTheMatch(string lobby, string startLabel, string matchPath, string marker)
+    public async Task LobbyGame_TwoPlayersReady_HostStarts_AndBothReachTheMatch(string lobby, string? startLabel, string matchPath, string marker)
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await LaunchAsync(playwright);
@@ -68,23 +70,36 @@ public class OnlineModesUiTests
                 .ToBeVisibleAsync(new() { Timeout = 30_000 });
         }
 
-        // Whoever the server made host owns the Start button; everyone with a Ready button presses it
-        // (the host has one in Brawl and not in Racer/Voxel Strike — the gates differ per lobby).
-        var host = await first.GetByRole(AriaRole.Button, new() { Name = startLabel }).CountAsync() > 0 ? first : second;
-        var guest = host == first ? second : first;
-        foreach (var page in new[] { guest, host })
+        if (startLabel is null)
         {
-            var ready = page.GetByRole(AriaRole.Button, new() { Name = "Ready!" });
-            if (await ready.CountAsync() == 0) continue;
-            await Assertions.Expect(ready.First).ToBeEnabledAsync(new() { Timeout = 20_000 });
-            await ready.First.ClickAsync();
+            // Ready is each player's own fighter card; both ready starts the fight by itself.
+            foreach (var page in new[] { first, second })
+            {
+                var ready = page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("press to ready up") });
+                await Assertions.Expect(ready.First).ToBeEnabledAsync(new() { Timeout = 20_000 });
+                await ready.First.ClickAsync();
+            }
+        }
+        else
+        {
+            // Whoever the server made host owns the Start button; everyone with a Ready button presses
+            // it (Racer and Voxel Strike readies are guest-only; the gates differ per lobby).
+            var hostPage = await first.GetByRole(AriaRole.Button, new() { Name = startLabel }).CountAsync() > 0 ? first : second;
+            var guestPage = hostPage == first ? second : first;
+            foreach (var page in new[] { guestPage, hostPage })
+            {
+                var ready = page.GetByRole(AriaRole.Button, new() { Name = "Ready!" });
+                if (await ready.CountAsync() == 0) continue;
+                await Assertions.Expect(ready.First).ToBeEnabledAsync(new() { Timeout = 20_000 });
+                await ready.First.ClickAsync();
+            }
+
+            var start = hostPage.GetByRole(AriaRole.Button, new() { Name = startLabel });
+            await Assertions.Expect(start).ToBeEnabledAsync(new() { Timeout = 30_000 });
+            await start.ClickAsync();
         }
 
-        var start = host.GetByRole(AriaRole.Button, new() { Name = startLabel });
-        await Assertions.Expect(start).ToBeEnabledAsync(new() { Timeout = 30_000 });
-        await start.ClickAsync();
-
-        foreach (var page in new[] { host, guest })
+        foreach (var page in new[] { first, second })
         {
             await page.WaitForURLAsync(url => url.Contains(matchPath, StringComparison.Ordinal), new() { Timeout = 30_000 });
             // A match page that opens on a card of its own gets it dismissed; most do not.

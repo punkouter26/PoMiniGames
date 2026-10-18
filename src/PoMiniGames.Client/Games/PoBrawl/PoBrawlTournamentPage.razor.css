@@ -1,57 +1,11 @@
 /* Brawl tournament. Shares PoBrawlPage's CSS scope (CssScope in PoMiniGamesClient.csproj), so
    .pb-wrap, .pb-canvas-host, .pb-top, .pb-seg, .pb-recap, .pb-ending and every --pb-* token come
-   from PoBrawlPage.razor.css. Only the tournament's own pieces live here: the bout rail under
-   the HUD, the speed bar, the bracket overlay (over the arena — scheme-invariant --pb-*
-   colours) and the draw preview / standings (theme surfaces — app tokens). */
+   from PoBrawlPage.razor.css (the bout chip under the HUD clock too: .pb-chip). Only the
+   tournament's own pieces live here: the control bar, the bracket drawer (over the arena —
+   scheme-invariant --pb-* colours) and the draw preview / standings (theme surfaces — app
+   tokens). */
 
-/* ── Bout rail: which round, and seven pips for the seven bouts ── */
-.pt-rail {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    align-self: center;
-    padding: 4px 12px;
-    border-radius: var(--radius-pill);
-    background: rgba(8, 12, 28, 0.72);
-    color: var(--pb-ink-muted);
-    font-size: 0.78rem;
-}
-
-.pt-rail-round {
-    font-family: var(--pb-display);
-    color: var(--pb-gold);
-    letter-spacing: 0.04em;
-}
-
-.pt-rail-pips {
-    display: flex;
-    gap: 4px;
-}
-
-.pt-pip {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.35);
-}
-
-.pt-pip--done {
-    background: var(--pb-go);
-    border-color: var(--pb-go);
-}
-
-.pt-pip--now {
-    background: var(--pb-gold);
-    border-color: var(--pb-gold);
-    box-shadow: 0 0 6px var(--pb-gold);
-}
-
-.pt-rail-count {
-    font-variant-numeric: tabular-nums;
-}
-
-/* ── Speed + bracket bar, bottom-right of the arena ── */
+/* ── Control bar, bottom-right of the arena: speed segment, Bracket, Camera ── */
 .pt-bar {
     position: absolute;
     right: calc(var(--pb-gutter) + 12px);
@@ -59,14 +13,48 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    z-index: 6;
+    z-index: 8;
 }
 
-.pt-bar-label {
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--pb-ink-dim);
+/* The three speeds as one segmented pill. */
+.pt-speed {
+    display: inline-flex;
+    padding: 3px;
+    gap: 2px;
+    border-radius: var(--radius-pill);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(8, 12, 28, 0.72);
+    backdrop-filter: blur(var(--gfx-blur, 6px));
+}
+
+.pt-speed-btn {
+    min-width: 40px;
+    min-height: 34px;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 700;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: none;
+    color: var(--pb-seg-ink);
+    cursor: pointer;
+}
+
+.pt-speed-btn[aria-pressed="true"] {
+    background: var(--pb-gold);
+    color: var(--pb-versus-ink);
+}
+
+.pt-speed-btn:focus-visible {
+    outline: 2px solid var(--pb-gold);
+    outline-offset: 2px;
+}
+
+/* Bracket and Camera: the shared .pb-seg glass, at a 40px target. */
+.pt-btn {
+    min-height: 40px;
+    padding: 0 14px;
+    font-size: 0.85rem;
 }
 
 .pt-seg--on {
@@ -74,41 +62,133 @@
     color: var(--pb-gold);
 }
 
-/* ── Bracket overlay ── */
-.pt-overlay {
+/* ── Bracket drawer: docked right over the arena (a bottom sheet on a phone). No backdrop:
+   the fight stays in view beside it. A size container, so the bracket can stack itself
+   when the drawer is narrow (see the @container rule at the end). ── */
+.pt-drawer {
     position: absolute;
-    inset: var(--pb-gutter);
-    display: grid;
-    place-items: center;
-    padding: 12px;
-    background: rgba(5, 7, 16, 0.55);
-    z-index: 7;
-    animation: pt-fade 0.25s ease-out;
-}
-
-@keyframes pt-fade {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .pt-overlay { animation: none; }
-}
-
-.pt-panel {
-    width: min(100%, 58rem);
-    max-height: 100%;
+    top: var(--pb-gutter);
+    right: var(--pb-gutter);
+    /* As tall as its content, and never under the control bar docked below it. */
+    max-height: calc(100% - 2 * var(--pb-gutter) - 64px);
+    width: min(48rem, 64%);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
     overflow: auto;
-    padding: 14px 16px;
+    overscroll-behavior: contain;
+    container-type: inline-size;
     border-radius: var(--radius-lg, 14px);
     border: 1px solid rgba(255, 209, 102, 0.35);
     background: rgba(11, 19, 48, 0.94);
     color: var(--pb-card-ink);
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+    box-shadow: -18px 0 48px rgba(0, 0, 0, 0.45);
+    z-index: 7;
+    animation: pt-drawer-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes pt-drawer-in {
+    from { transform: translateX(24px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pt-drawer { animation: none; }
+}
+
+.pt-drawer-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pt-tabs {
+    flex: 1;
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    border-radius: var(--radius-pill);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.pt-tab {
+    flex: 1;
+    min-height: 36px;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: none;
+    color: var(--pb-ink-dim);
+    cursor: pointer;
+}
+
+.pt-tab[aria-selected="true"] {
+    background: var(--pb-gold);
+    color: var(--pb-versus-ink);
+}
+
+.pt-tab:focus-visible,
+.pt-drawer-close:focus-visible {
+    outline: 2px solid var(--pb-gold);
+    outline-offset: 2px;
+}
+
+.pt-drawer-close {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 auto;
+    font: inherit;
+    font-size: 1rem;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--pb-ink);
+    cursor: pointer;
+}
+
+.pt-titles-list {
+    list-style: none;
+    margin: 0 0 10px;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+}
+
+.pt-titles-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.pt-titles-name {
+    font-weight: 600;
+}
+
+.pt-titles-n {
+    color: var(--pb-gold);
+    font-variant-numeric: tabular-nums;
+}
+
+.pt-hq-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    color: var(--pb-gold);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.pt-hq-link:hover {
+    text-decoration: underline;
 }
 
 .pt-panel-news {
-    margin: 0 0 10px;
+    margin: 0;
     font-weight: 700;
     color: var(--pb-gold);
     text-align: center;
@@ -138,7 +218,7 @@
 }
 
 .pt-panel-next {
-    margin: 10px 0 0;
+    margin: 0;
     text-align: center;
     color: var(--pb-ink-soft);
 }
@@ -149,11 +229,6 @@
     grid-template-columns: 1fr 1fr;
     gap: 10px;
     margin-top: 10px;
-}
-
-.pt-panel-close {
-    display: block;
-    margin: 10px auto 0;
 }
 
 /* The board: four bout columns on a fixed grid, with a 1.6rem wire column between each.
@@ -176,7 +251,7 @@
 .pt-col-head {
     grid-row: 1;
     margin: 0;
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: var(--pb-ink-dim);
@@ -390,12 +465,12 @@
     font-variant-numeric: tabular-nums;
 }
 
-.pt-panel .pt-delta--up { color: var(--pb-p1-light); }
-.pt-panel .pt-delta--down { color: var(--pb-p2-light); }
+.pt-drawer .pt-delta--up { color: var(--pb-p1-light); }
+.pt-drawer .pt-delta--down { color: var(--pb-p2-light); }
 
 .pt-bout-how {
     padding: 2px 8px 4px;
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     color: var(--pb-ink-dim);
     text-align: right;
 }
@@ -480,6 +555,7 @@
 }
 
 .pt-draw-who small {
+    font-size: 0.75rem;
     color: var(--color-text-secondary);
     font-variant-numeric: tabular-nums;
 }
@@ -527,30 +603,40 @@
     text-align: center;
 }
 
+/* A phone: the bar spans the bottom, and the drawer becomes a bottom sheet over the lower
+   arena, so the HUD and the fighters' heads stay in view above it. */
 @media (max-width: 640px) {
     .pt-bar {
         left: calc(var(--pb-gutter) + 8px);
         right: calc(var(--pb-gutter) + 8px);
         justify-content: center;
-        flex-wrap: wrap;
     }
 
-    /* The iso cam never runs on a phone-sized arena (director.js), so neither does its toggle. */
-    .pt-seg-iso {
-        display: none;
+    .pt-btn {
+        padding: 0 10px;
     }
 
-    .pt-rail {
-        flex-wrap: wrap;
-        font-size: 0.72rem;
+    .pt-drawer {
+        top: auto;
+        bottom: calc(var(--pb-gutter) + 64px);
+        left: var(--pb-gutter);
+        width: auto;
+        max-height: 66%;
+        box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.45);
     }
 
+    @keyframes pt-drawer-in {
+        from { transform: translateY(24px); opacity: 0; }
+    }
+}
+
+/* A narrow drawer (a phone, or a small desktop window): one column — the rounds stack in
+   play order and the wires go (the cracks, the odometer and the arriving name still play). */
+@container (max-width: 640px) {
     .pt-dossiers {
         grid-template-columns: 1fr;
     }
 
-    /* One column: the rounds stack in play order and the wires go (the cracks, the
-       odometer and the arriving name still play). */
     .pt-bracket {
         display: flex;
         flex-direction: column;

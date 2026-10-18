@@ -12,7 +12,7 @@
        beat and then drains to meet it (a delayed width transition on the same --hp).
        InDanger cracks the plate. *@
     <div class="pb-hp-side @(InDanger(_p1Hp) ? "pb-hp-side--danger" : "")">
-        <span class="pb-hp-name" title="@P1Name">@P1Name</span>
+        <span class="pb-hp-name" title="@P1Name">@if (LocalSide == 1) { <b class="pb-hp-you">YOU</b> }@P1Name</span>
         @* Real meters: a screen reader can query either bar between the sparse announcements. *@
         <div class="pb-hp-track" role="meter" aria-valuemin="0" aria-valuemax="100"
              aria-valuenow="@_p1Hp" aria-label="@P1Fighter — health">
@@ -24,10 +24,15 @@
         </div>
     </div>
     @BodyDiagram(_p1Regions)
-    <div class="pb-clock" title="@(Training ? "Training — no clock" : "Seconds remaining — the round ends at 0")">@(Training ? "∞" : _elapsed.ToString("0"))</div>
+    @* The clock and, under it, whatever the mode keeps track of (the ladder rung and votes,
+       the tournament bout, the online signal): one centre plate instead of extra rows. *@
+    <div class="pb-center">
+        <div class="pb-clock" title="@(Training ? "Training — no clock" : "Seconds remaining — the round ends at 0")">@(Training ? "∞" : _elapsed.ToString("0"))</div>
+        @Below
+    </div>
     @BodyDiagram(_p2Regions)
     <div class="pb-hp-side pb-hp-right @(InDanger(_p2Hp) ? "pb-hp-side--danger" : "")">
-        <span class="pb-hp-name" title="@P2Name">@P2Name</span>
+        <span class="pb-hp-name" title="@P2Name">@P2Name@if (LocalSide == 2) { <b class="pb-hp-you">YOU</b> }</span>
         <div class="pb-hp-track" role="meter" aria-valuemin="0" aria-valuemax="100"
              aria-valuenow="@_p2Hp" aria-label="@P2Fighter — health">
             <div class="pb-hp-ghost" style="--hp: @(_p2Hp)%;"></div><div class="pb-hp-fill pb-hp-p2" style="--hp: @(_p2Hp)%;"></div>
@@ -50,6 +55,10 @@
     [Parameter] public string P2Fighter { get; set; } = "";
     /// <summary>The training room has no clock.</summary>
     [Parameter] public bool Training { get; set; }
+    /// <summary>Online: the local player's corner (1 or 2) gets a YOU tag; 0 for none.</summary>
+    [Parameter] public int LocalSide { get; set; }
+    /// <summary>A small readout under the clock. It must not re-render on the HUD pump.</summary>
+    [Parameter] public RenderFragment? Below { get; set; }
 
     // Mirrors game.js ENERGY_RECOVER_TO (0.40): below it a fighter is gassed and the engine
     // refuses to start a punch or kick, so the bar says so (.pb-en-spent). Display only — the

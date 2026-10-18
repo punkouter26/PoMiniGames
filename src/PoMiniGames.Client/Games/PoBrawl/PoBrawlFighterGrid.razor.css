@@ -1,0 +1,6 @@
+/* PoBrawlFighterGrid shares PoBrawlPage's CSS scope (CssScope in PoMiniGamesClient.csproj):
+   the tiles are styled by the .pb-select-* rules in PoBrawlPage.razor.css. This file exists
+   so the component carries that scope attribute at all. */
+.pb-select-grid > li {
+    min-width: 0;
+}

@@ -1,0 +1,128 @@
+/* PoBrawlControls: a theme surface (the intro card, the lobby's how-to), so app tokens. */
+.pbc-keys {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(6.25rem, 1fr));
+    gap: 6px;
+    margin: 0 0 8px;
+    text-align: left;
+}
+
+.pbc-keys > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-height: 36px;
+    padding: 4px 8px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+}
+
+.pbc-keys dt {
+    min-width: 0;
+    line-height: 1.2;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+.pbc-keys dd {
+    flex: 0 0 auto;
+    margin: 0;
+    white-space: nowrap;
+    color: var(--color-text-primary);
+}
+
+.pbc-keys small,
+.pbc-table small {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+}
+
+.pbc-keys kbd + kbd,
+.pbc-table kbd + kbd {
+    margin-left: 3px;
+}
+
+/* Keyboard keys vs the touch pad's glyphs: a phone gets the pad. */
+.pbc-touch {
+    display: none;
+    font-size: 1.05rem;
+}
+
+@media (hover: none) and (pointer: coarse) {
+    .pbc-kb {
+        display: none;
+    }
+
+    .pbc-touch {
+        display: inline;
+    }
+}
+
+.pbc-table {
+    width: 100%;
+    margin: 0 0 6px;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+    text-align: left;
+}
+
+.pbc-table th,
+.pbc-table td {
+    padding: 3px 6px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.pbc-table thead th {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-secondary);
+}
+
+.pbc-table tbody th {
+    font-weight: 500;
+    color: var(--color-text-secondary);
+}
+
+.pbc-touch-note {
+    display: none;
+    margin: 0 0 6px;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+@media (hover: none) and (pointer: coarse) {
+    .pbc-touch-note {
+        display: block;
+    }
+
+    .pbc-table {
+        display: none;
+    }
+}
+
+.pbc-lead {
+    margin: 0 0 6px;
+    text-align: left;
+}
+
+.pbc-tips {
+    margin: 0;
+    padding-left: 1.1rem;
+    display: grid;
+    gap: 4px;
+    text-align: left;
+    font-size: var(--text-sm);
+    line-height: 1.4;
+}
+
+.pbc-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}

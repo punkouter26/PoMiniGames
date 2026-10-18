@@ -1,0 +1,72 @@
+@* The one controls legend for every Brawl entry point (1P, 2P, demo, the online lobby): an
+   action → keys grid instead of a bullet list per mode, then the few rules the HUD cannot
+   teach. Keys follow the engine: input.js for the local modes (circle on W/S, the signature
+   move fires by itself) and netplay.js online (no circling, H is the special). On a touch
+   screen the key column shows the pad's glyphs instead (CSS, .pbc-touch). *@
+
+@if (Mode == "demo")
+{
+    <p class="pbc-lead">No controls: both corners are CPU. Sit back and watch the 60 seconds.</p>
+}
+else if (Mode == "2p")
+{
+    <table class="pbc-table">
+        <thead>
+            <tr><th scope="col"><span class="pbc-visually-hidden">Action</span></th><th scope="col">Player 1</th><th scope="col">Player 2</th></tr>
+        </thead>
+        <tbody>
+            @* On the select the move keys pick and the punch key locks in. *@
+            <tr><th scope="row">Move <small>· pick</small></th><td><kbd>A</kbd><kbd>D</kbd></td><td><kbd>←</kbd><kbd>→</kbd></td></tr>
+            <tr><th scope="row">Circle</th><td><kbd>W</kbd><kbd>S</kbd></td><td><kbd>↑</kbd><kbd>↓</kbd></td></tr>
+            <tr><th scope="row">Block <small>(hold)</small></th><td><kbd>R</kbd></td><td><kbd>;</kbd></td></tr>
+            <tr><th scope="row">Punch · kick <small>· lock</small></th><td><kbd>F</kbd> · <kbd>G</kbd></td><td><kbd>K</kbd> · <kbd>L</kbd></td></tr>
+        </tbody>
+    </table>
+    <p class="pbc-touch-note">On a phone the touch pad drives Player 1; Player 2 needs the keyboard or a gamepad.</p>
+}
+else
+{
+    <dl class="pbc-keys">
+        <div><dt>Move</dt><dd><span class="pbc-kb"><kbd>A</kbd><kbd>D</kbd></span><span class="pbc-touch">◀ ▶</span></dd></div>
+        @if (Mode != "online")
+        {
+            <div><dt>Circle</dt><dd><span class="pbc-kb"><kbd>W</kbd><kbd>S</kbd></span><span class="pbc-touch">↺ ↻</span></dd></div>
+        }
+        <div><dt>Block <small>(hold)</small></dt><dd><span class="pbc-kb"><kbd>R</kbd></span><span class="pbc-touch">🛡</span></dd></div>
+        <div><dt>Punch</dt><dd><span class="pbc-kb"><kbd>F</kbd></span><span class="pbc-touch">👊</span></dd></div>
+        <div><dt>Kick</dt><dd><span class="pbc-kb"><kbd>G</kbd></span><span class="pbc-touch">🦵</span></dd></div>
+        @if (Mode == "online")
+        {
+            <div><dt>Special</dt><dd><span class="pbc-kb"><kbd>H</kbd></span><span class="pbc-touch">⚡</span></dd></div>
+        }
+    </dl>
+}
+
+@* 2P keeps to the guard line: its card is the fighter select, and the HUD's energy bar is in
+   front of both players. *@
+<ul class="pbc-tips">
+    @if (Mode is "1p" or "online")
+    {
+        <li>👊 Punch: <b>fast, cheap</b>. 🦵 Kick: <b>power</b>, twice the energy. Hold to charge.</li>
+    }
+    @if (Mode != "2p")
+    {
+        <li>⚡ Every swing spends <b>energy</b>; run dry and you cannot strike. Blocking refills it.</li>
+    }
+    @if (Mode == "online")
+    {
+        <li>📏 A punch reaches 1.5 m, a kick 1.75 m. The special needs a full bar.</li>
+        <li>📶 Drop out and you have 15 s to get back before it is a forfeit.</li>
+    }
+    else if (Mode != "demo")
+    {
+        @* Last on purpose: the PERFECT window is invisible on the HUD, so this card is the only
+           place it is taught, and the last line is the one in view when the card closes. *@
+        <li>🛡 Guard <b>as they wind up</b> for a PERFECT: they freeze and your answer hits harder.@(Mode == "2p" ? " Take enough punishment and your signature move fires itself." : "")</li>
+    }
+</ul>
+
+@code {
+    /// <summary>"1p", "2p", "demo" or "online".</summary>
+    [Parameter] public string Mode { get; set; } = "1p";
+}

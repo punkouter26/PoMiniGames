@@ -3,7 +3,8 @@
    contents). The arena is dark in both schemes, so everything drawn over it reads these
    scheme-invariant --pb-* colours; theme surfaces (intro card, result modal) use app tokens. */
 .pb-wrap,
-.pb-intro {
+.pb-intro,
+.pb-lobby {
     --pb-display: 'Bungee', 'Russo One', 'Impact', sans-serif;
     --pb-arena: #0d0f1a;
     --pb-white: #fff;
@@ -24,7 +25,6 @@
     --pb-seg-ink: #e8eeff;
     --pb-touch-ink: #e8ecff;
     --pb-pill-ink: #cbd5e1;
-    --pb-pill-watch: #bfdbfe;
     --pb-pill-warn-ink: #fff7ed;
     --pb-card-ink: #e2e8f0;
     --pb-card-muted: #94a3b8;
@@ -560,97 +560,69 @@
     z-index: 5;
 }
 
-/* ── 1P ladder rail: fifteen pips under the HUD — cleared, current, to come. ── */
-
-.pb-ladder {
-    display: flex;
+/* ── The HUD's centre readout (PoBrawlHud.Below): ladder rung + votes, the tournament
+   bout, the online signal. Rendered by the page, so it is styled here. ── */
+.pb-chip {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
-    pointer-events: none;
-    /* The count stays tabular so digits don't shuffle as it climbs. */
-    font-size: 0.75rem;
-    letter-spacing: 0.06em;
-    color: var(--pb-ink-muted);
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
-}
-
-.pb-ladder-count {
-    font-variant-numeric: tabular-nums;
-    font-weight: 700;
-    color: var(--pb-ink);
-}
-
-.pb-ladder-rail {
-    display: flex;
-    gap: 3px;
-    align-items: center;
-}
-
-.pb-rung {
-    width: 8px;
-    height: 8px;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.18);
-    border: 1px solid rgba(0, 0, 0, 0.5);
-}
-
-.pb-rung--done {
-    background: linear-gradient(180deg, var(--pb-p1), var(--pb-p1-deep));
-}
-
-@keyframes pb-rung-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.55; }
-}
-
-.pb-rung--now {
-    background: var(--pb-gold);
-    box-shadow: 0 0 7px rgba(255, 209, 102, 0.9);
-    animation: pb-rung-pulse 1.4s ease-in-out infinite;
-}
-
-.pb-ladder-now {
-    font-family: var(--pb-display);
-    color: var(--pb-gold);
-}
-
-/* Campaign trail: the electoral votes the beaten rungs hold, out of 270. Fixed-width digits,
-   so the row never reflows as the count climbs. */
-.pb-ladder-ev {
-    padding: 1px 7px;
+    gap: 6px;
+    padding: 2px 8px;
     border-radius: var(--radius-pill);
-    background: rgba(20, 112, 58, 0.55);
-    border: 1px solid rgba(134, 239, 172, 0.45);
-    color: var(--pb-ink-soft);
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: var(--pb-ink-muted);
+    font-size: 0.75rem;
+    line-height: 1.35;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
-.pb-ladder-ev b {
-    display: inline-block;
-    min-width: 3ch;
-    text-align: right;
+.pb-chip b {
     color: var(--pb-white);
 }
 
-/* A 390px phone: tighter pips so count, rail, name and votes stay on one line. */
+/* Campaign trail: the electoral votes, in BOB's green. */
+.pb-chip-ev {
+    padding-left: 6px;
+    border-left: 1px solid rgba(255, 255, 255, 0.2);
+    color: var(--pb-p1-light);
+}
+
+.pb-chip-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+
+/* Tournament: one pip per bout — decided, on now, to come. */
+.pb-chip-pips {
+    display: inline-flex;
+    gap: 3px;
+}
+
+.pb-chip-pip {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.pb-chip-pip--done {
+    background: var(--pb-p1);
+}
+
+.pb-chip-pip--now {
+    background: var(--pb-gold);
+    box-shadow: 0 0 6px rgba(255, 209, 102, 0.9);
+}
+
+/* A 390px phone: the plates need every pixel, so the votes wait for the campaign map. */
 @media (max-width: 480px) {
-    .pb-ladder {
-        gap: 5px;
-    }
-
-    .pb-ladder-rail {
-        gap: 2px;
-    }
-
-    .pb-rung {
-        width: 6px;
-        height: 8px;
-    }
-
-    .pb-ladder-ev {
-        padding: 1px 5px;
+    .pb-chip-ev,
+    .pb-chip-pips {
+        display: none;
     }
 }
 
@@ -671,10 +643,6 @@
     padding: 3px 10px;
     border-radius: var(--radius-pill);
     white-space: nowrap;
-}
-
-.pb-net-pill--watch {
-    color: var(--pb-pill-watch);
 }
 
 .pb-net-pill--warn {
@@ -853,24 +821,61 @@
     border-radius: var(--radius-lg);
 }
 
-.pb-scout-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 10px;
+/* The campaign status (with the HQ link) beside the rung's dossier; stacked on a phone. */
+.pb-scout-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
 }
 
-.pb-scout-rung {
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--color-text-secondary);
+@media (min-width: 1024px) {
+    .pb-scout-grid {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .pb-scout-grid .pb-dossier-disclosure {
+        margin-top: 0;
+    }
 }
 
-.pb-scout-name {
-    font-family: var(--pb-display);
-    font-size: 1.15rem;
+.pb-scout-map {
+    display: grid;
+    gap: 6px;
+}
+
+.pb-hq-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    font-size: var(--text-sm);
+    font-weight: 600;
     color: var(--accent-ink);
+    text-decoration: none;
+}
+
+.pb-hq-link:hover {
+    text-decoration: underline;
+}
+
+.pb-hq-link:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm, 4px);
+}
+
+.pb-dossier-disclosure--narrow {
+    display: none;
+}
+
+@media (max-width: 520px) {
+    .pb-dossier-disclosure--wide {
+        display: none;
+    }
+
+    .pb-dossier-disclosure--narrow {
+        display: block;
+    }
 }
 
 /* "📁 Dossier" disclosure (1P scouting card, 2P select): PoBrawlDossierCard behind a
@@ -1114,24 +1119,164 @@
     .pb-canvas-host ::deep .pb-train { top: 74px; max-width: 58%; font-size: 0.75rem; }
 }
 
-/* ── Post-fight press conference (result modal) ───────────────────── */
+/* ── Result (the shared modal's summary slot) — theme surface, tokens. ── */
+.pb-result {
+    display: grid;
+    gap: 8px;
+    width: 100%;
+    max-width: 30rem;
+    margin: 0 auto;
+}
 
+.pb-result-line {
+    font-weight: 700;
+}
+
+.pb-result-facts {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px 12px;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+.pb-result-facts b {
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.pb-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-2);
+    border: 1px solid var(--color-border);
+}
+
+.pb-tab {
+    flex: 1;
+    min-height: 36px;
+    font: inherit;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: none;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+}
+
+.pb-tab:hover {
+    color: var(--color-text-primary);
+}
+
+.pb-tab[aria-selected="true"] {
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.pb-tab:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
+.pb-tabpanel {
+    text-align: left;
+}
+
+/* Recap: mirrored bars, P1 green from the left, the other corner red from the right. */
+.pb-rc-names {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 4px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+/* The modal is outside .pb-wrap, so no --pb-* tokens here: the corner colours, darkened in
+   the light scheme to hold 4.5:1 on the card. */
+.pb-rc-p1 {
+    color: light-dark(#15803d, #86efac);
+}
+
+.pb-rc-p2 {
+    color: light-dark(#b91c1c, #fca5a5);
+    text-align: right;
+}
+
+.pb-rc-rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+}
+
+.pb-rc-row {
+    display: grid;
+    grid-template-columns: 3ch minmax(0, 1fr) 3ch;
+    grid-template-areas: "label label label" "v1 track v2";
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 1px;
+}
+
+.pb-rc-label {
+    grid-area: label;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+}
+
+.pb-rc-v {
+    font-variant-numeric: tabular-nums;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+.pb-rc-v--p1 {
+    grid-area: v1;
+}
+
+.pb-rc-v--p2 {
+    grid-area: v2;
+    text-align: right;
+}
+
+.pb-rc-v--lead {
+    font-weight: 800;
+    color: var(--color-text-primary);
+}
+
+.pb-rc-track {
+    grid-area: track;
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #22c55e var(--left, 50%), #ef4444 var(--left, 50%));
+}
+
+.pb-result-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 6px 14px;
+}
+
+/* ── Post-fight press conference (a result tab) ── */
 .pb-presser {
-    margin: 12px auto 0;
-    max-width: 26rem;
+    margin: 0;
     padding: 10px 12px;
     border-radius: var(--radius-lg);
     background: var(--surface-2);
     border: 1px solid var(--color-border);
     text-align: left;
-}
-
-.pb-presser-head {
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--color-text-secondary);
-    margin-bottom: 4px;
 }
 
 .pb-presser-line {
@@ -1368,8 +1513,7 @@
 
 /* The result modal's copy of the clip button — a real theme surface, so tokens. */
 .pb-clip-btn {
-    display: block;
-    margin: 10px auto 0;
+    min-height: 36px;
     font: inherit;
     font-size: var(--text-sm);
     padding: 8px 14px;
@@ -1392,12 +1536,24 @@
 
 /* Start stays on screen however long the card is: on a phone the 1P card is taller than
    the viewport and scrolls inside itself. */
+/* --pb-card-pad tracks the shared card's side padding (game-shell.css: 1.5rem, 1.25rem
+   under 520px), so the bar spans the card edge to edge without overflowing it. */
+.pb-intro ::deep .gps-intro-card--oneplayer {
+    --pb-card-pad: 1.5rem;
+}
+
+@media (max-width: 520px) {
+    .pb-intro ::deep .gps-intro-card--oneplayer {
+        --pb-card-pad: 1.25rem;
+    }
+}
+
 .pb-intro ::deep .gps-intro-card--oneplayer .gps-intro-actions {
     position: sticky;
     bottom: calc(-1 * (1.25rem + env(safe-area-inset-bottom)));
-    width: calc(100% + 3rem);
-    margin: 0 -1.5rem calc(-1 * (1.25rem + env(safe-area-inset-bottom)));
-    padding: 0.6rem 1.5rem calc(0.9rem + env(safe-area-inset-bottom));
+    width: calc(100% + 2 * var(--pb-card-pad));
+    margin: 0 calc(-1 * var(--pb-card-pad)) calc(-1 * (1.25rem + env(safe-area-inset-bottom)));
+    padding: 0.6rem var(--pb-card-pad) calc(0.9rem + env(safe-area-inset-bottom));
     background: var(--color-surface);
     border-top: 1px solid var(--color-border);
     z-index: 2;
@@ -1410,6 +1566,7 @@
         grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
         grid-template-areas:
             "title    title"
+            "modes    modes"
             "obj      obj"
             "controls options"
             "actions  actions";
@@ -1418,6 +1575,7 @@
     }
 
     .pb-intro ::deep .gps-intro-card--oneplayer .gps-intro-title { grid-area: title; }
+    .pb-intro ::deep .gps-intro-card--oneplayer .gps-intro-modes { grid-area: modes; justify-self: center; }
     .pb-intro ::deep .gps-intro-card--oneplayer .gps-intro-objective { grid-area: obj; }
     .pb-intro ::deep .gps-intro-card--oneplayer .gps-intro-controls { grid-area: controls; }
     .pb-intro ::deep .gps-intro-card--oneplayer .gps-intro-options { grid-area: options; }
@@ -1433,19 +1591,29 @@
     }
 }
 
-/* Keyboard lines vs the touch pad's glyphs (1P controls): a phone gets the pad. */
-.pb-touch-keys {
-    display: none;
-}
-
-@media (hover: none) and (pointer: coarse) {
-    .pb-keys {
-        display: none;
+/* 2P on a desktop: the same two columns as 1P — the key table beside the select — so the
+   portraits' grid fits the screen instead of scrolling inside the card. */
+@media (min-width: 1024px) {
+    .pb-intro ::deep .gps-intro-card--twoplayer {
+        width: min(94vw, 1180px);
+        display: grid;
+        grid-template-columns: minmax(0, 0.85fr) minmax(0, 2fr);
+        grid-template-areas:
+            "title    title"
+            "modes    modes"
+            "obj      obj"
+            "controls options"
+            "actions  actions";
+        column-gap: 1.5rem;
+        align-items: start;
     }
 
-    .pb-touch-keys {
-        display: list-item;
-    }
+    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-title { grid-area: title; }
+    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-modes { grid-area: modes; justify-self: center; }
+    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-objective { grid-area: obj; }
+    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-controls { grid-area: controls; }
+    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-options { grid-area: options; }
+    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-actions { grid-area: actions; }
 }
 
 /* ── 2P select: holo-glass cards (the side lock toggles) over one shared 4×4 grid ──

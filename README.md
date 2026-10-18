@@ -73,7 +73,7 @@ scores, and, only when a player opts in, talks to AI models on the player's beha
 |---|---|
 | TicTacToe | 4-in-a-row on 6×6 vs AI, hot-seat, or online quick-match (SignalR) |
 | ConnectFive | Five-in-a-row vs AI, hot-seat, or online quick-match (SignalR) |
-| PoBrawl | Physics brawler with a presidents ladder, an 8-fighter CPU tournament (`/pobrawl/tournament`, random draw, Elo after every bout; golden-hour → dusk → night arena, an Elo-upset crowd, an animated bracket and a belt ceremony; a TV-style director camera with a picture-in-picture iso cam in demo and tournament; 1P/2P/online keep a plain side view); a showtime layer of charge auras, convention balloon drops, LED ribbon boards, a stadium wave, an instant replay, a glass result screen and president motifs over a crowd that stomps and chants; live 3D fighter select; an election-night campaign map for the ladder + fighter Elo demo board |
+| PoBrawl | Physics brawler with a presidents ladder, an 8-fighter CPU tournament (`/pobrawl/tournament`, random draw, Elo after every bout; golden-hour → dusk → night arena, an Elo-upset crowd, an animated bracket and a belt ceremony; a TV-style director camera with a picture-in-picture iso cam in demo and tournament; 1P/2P/online keep a plain side view); a showtime layer of charge auras, convention balloon drops, LED ribbon boards, a stadium wave, an instant replay, a glass result screen and president motifs over a crowd that stomps and chants; live 3D fighter select; an election-night campaign map for the ladder + fighter Elo demo board; **Brawl HQ** (`/pobrawl/hq`) puts the ladder, campaign map, local record, the ladder / fastest-KO / fighter-Elo boards and Cup titles on one page |
 | PoCoupleQuiz | Two-player realtime couples quiz (SignalR); curated questions, free answer matching, opt-in AI judge |
 | PoFunQuiz | Multiplayer trivia lobby from a free question bank (opt-in Fresh AI questions) |
 | PoMarbleRace | Physics marble race on baked GLB tracks; online 2-player via host-streamed physics |
@@ -121,10 +121,11 @@ scripts/                        Working scripts only — see scripts/README.md
   Guest login exists only in Development/Test and only from loopback. The whole app sits
   behind the sign-in gate; leaderboard reads are anonymous at the API, and all game-data
   writes require auth + antiforgery.
-- UI is native Blazor + plain CSS for thirteen of the games. PoMule is the first screen built
-  on Radzen (Material Dark); the hub, settings, leaderboards and the other games move to
-  Radzen next. Until then PoMule's page loads the Radzen stylesheet itself and removes it on
-  the way out.
+- UI is native Blazor + plain CSS for thirteen of the games. PoMule was the first screen built
+  on Radzen (Material Dark), and Brawl HQ (`/pobrawl/hq`) is the second; the hub, settings,
+  leaderboards and the other games move to Radzen next. Until then each of those pages loads
+  the Radzen stylesheet itself and removes it on the way out (`wwwroot/js/radzenTheme.js`,
+  sharing PoMule's element id). In-game HUDs stay custom CSS.
 - **Each game is a Razor page plus a JavaScript engine, except PoMule**, whose rules are C# in
   `PoMiniGames.Shared/Games/PoMule` (unit-tested, seeded, deterministic) with JavaScript only
   drawing and moving the avatars. The server replays a submitted match from its seed and
@@ -172,6 +173,7 @@ CI validates Bicep and deploys application code; use `azd up` for resource provi
 | `POST /api/pobrawl/presser`, `POST /api/pobrawl/intro` | Removed; Brawl's press lines are scripted |
 | `GET /api/leaderboards` and `/api/leaderboards/{game}` | New `period=week` query for this ISO week's boards |
 | `GET /api/pobrawl/dossier` | New, anonymous: every Brawl fighter's dossier (number, term, party, fighting style, Wikipedia summary, portrait, article link) in one call |
+| `/pobrawl/hq` (client route) | New (2026-10-18): Brawl HQ, one page over the existing reads (`GET /api/pobrawl/progress`, `/api/leaderboards/pobrawl`, `pobrawlko`, `pobrawldemo`) and this browser's ladder and Cup titles. No new endpoint |
 | `/pobrawl/match-hub` (SignalR) | Rollback protocol: `SubmitInput` takes `{ frame, held, press, sequence }`; new `matchInput` event (each accepted input with the frame the server used) and `Ping` method (clock sync); `matchState` now carries `frame`, `sim` (26 packed ints) and `checksum` in place of the per-tick swing fields |
 
 Trivia questions in PoFunQuiz come in part from the [Open Trivia Database](https://opentdb.com/),

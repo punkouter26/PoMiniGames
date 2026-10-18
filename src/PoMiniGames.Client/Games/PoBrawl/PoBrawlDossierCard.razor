@@ -18,7 +18,9 @@
                 <span class="pbd-portrait pbd-portrait--blank" aria-hidden="true">@(d.IsFictional ? "🧑‍💼" : Initials(d.FullName))</span>
             }
             <div class="pbd-id">
-                <h3 class="pbd-name">@d.FullName</h3>
+                @* Not a heading: the card sits under whatever heading its host has (or none, in the
+                   intro dialog), and the article's label already names it. *@
+                <p class="pbd-name">@d.FullName</p>
                 <p class="pbd-office">@d.Office · @d.Term</p>
                 <p class="pbd-party"><span class="pbd-party-dot pbd-party-dot--@PartyKey(d.Party)" aria-hidden="true"></span>@d.Party</p>
             </div>

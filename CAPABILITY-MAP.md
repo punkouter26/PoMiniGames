@@ -34,8 +34,8 @@ for PoMule · **Deferred** = planned after PoMule v1.
 | Server score verification | API `Features/PoCabinet`, `PoMule` | Yes: the client sends seed + action log, `PoMuleRunVerifier` replays it through the Shared engine; no log = range check only | Extended |
 | AI text (Azure AI Foundry), opt-in only | API `AI/`, quiz slices; free banks and matching by default | No | Retained |
 | Cloud saves and gallery | API `Features/PoEcosystem`, Blob storage | No | Retained |
-| Radzen component library | Client | Yes: all PoMule non-canvas UI | New |
-| Radzen in the hub, settings sheet, leaderboards and the other 13 games | Client | No | Deferred |
+| Radzen component library | Client | Yes: all PoMule non-canvas UI; Brawl HQ's select bar, grid and chart | New |
+| Radzen in the hub, settings sheet, leaderboards and the other games' screens | Client | No (in-game HUDs stay custom CSS) | Deferred |
 
 ## Shared services (added 2026-10-17)
 

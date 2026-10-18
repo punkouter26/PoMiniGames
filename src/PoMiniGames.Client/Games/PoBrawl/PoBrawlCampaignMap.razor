@@ -4,11 +4,13 @@
 @inject UiFeedbackService Feedback
 @inject SettingsService Settings
 
-@* The 1P ladder as an election-night tile cartogram (PoBrawlCampaign). Two variants:
+@* The 1P ladder as an election-night tile cartogram (PoBrawlCampaign). Three variants:
    "interlude" — over the arena between rungs: the beaten president's batch flips to BOB, the
    electoral counter ticks up with a coin ding per state, and the campaign bus drives to the
    next opponent's home state. "ending" — in the result modal after the last rung: the final
-   batch and then the rest of the map flip, and the 270 stamp lands. One role="img" with a
+   batch and then the rest of the map flip, and the 270 stamp lands. "status" — where the run
+   stands right now (the 1P intro, Brawl HQ): settled tiles, the next stop marked, no motion
+   and no sound. One role="img" with a
    description of the finished state; nothing inside is interactive. Reduced motion: the
    final state, no flips, no bus travel, no ticking. *@
 <figure class="pbm pbm--@Variant @(_still ? "pbm--still" : null) @(_elected ? "pbm--elected" : null)"
@@ -84,7 +86,8 @@
     /// <summary>Rungs beaten so far, 1..15. The interlude shows rung <c>Beaten - 1</c> falling.</summary>
     [Parameter] public int Beaten { get; set; }
 
-    /// <summary>"interlude" (over the arena, between rungs) or "ending" (the result modal).</summary>
+    /// <summary>"interlude" (over the arena, between rungs), "ending" (the result modal) or
+    /// "status" (a still picture of the run so far; <see cref="Beaten"/> may be 0).</summary>
     [Parameter] public string Variant { get; set; } = "interlude";
 
     // Choreography (ms after first render). The CSS reads the per-tile delay from --d.
@@ -121,11 +124,18 @@
         .OrderBy(s => Dist2(s, Origin)).ThenBy(s => s.Code, StringComparer.Ordinal)
         .Select(s => s.Code).ToList();
 
-    private string Kicker => Variant == "ending"
+    private bool IsStatus => Variant == "status";
+    private PoBrawlCampaignState? StatusNext => IsStatus && Beaten < Count ? PoBrawlCampaign.HomeOf(Beaten) : null;
+
+    private string Kicker => IsStatus
+        ? Beaten < Count ? $"Campaign trail · rung {Beaten + 1} of {Count}" : "Campaign trail · complete"
+        : Variant == "ending"
         ? $"Election night · all {Count} rungs"
         : $"Campaign trail · rung {Rung + 1} of {Count}";
 
-    private string Title => Variant == "ending"
+    private string Title => IsStatus
+        ? StatusNext is { } stop ? $"Next stop: {stop.Name}" : "Every state is BOB's"
+        : Variant == "ending"
         ? "BOB takes the White House"
         : HomeFlipped ? $"{Origin.Name} goes BOB" : $"{Origin.Name} holds for BOB";
 
@@ -133,6 +143,7 @@
     {
         get
         {
+            if (IsStatus) return null;
             if (Variant == "ending") return $"{PoBrawlCampaign.TotalVotes} electoral votes — a clean sweep of all 51.";
             var swing = Batch.Where(c => c != Origin.Code).Select(c => PoBrawlCampaign.State(c).Name).ToList();
             var gain = $"+{After - Before} electoral votes";
@@ -146,6 +157,12 @@
     {
         get
         {
+            if (IsStatus)
+            {
+                var held = PoBrawlCampaign.States.Count(s => PoBrawlCampaign.RungOf(s.Code) is var r && r >= 0 && r < Beaten);
+                var stop = StatusNext is { } n2 ? $" Next stop: {n2.Name}, home of {PoBrawlRoster.Fighters[Beaten].Name}." : "";
+                return $"Campaign map: {held} of {PoBrawlCampaign.States.Count} states won, {_shown} of {PoBrawlCampaign.ToWin} electoral votes.{stop}";
+            }
             if (Variant == "ending")
                 return $"Campaign map: every state won, {PoBrawlCampaign.TotalVotes} electoral votes. 270 — elected.";
             var won = PoBrawlCampaign.States.Count(s =>
@@ -161,6 +178,7 @@
     /// <summary>Animation delay for a tile that flips in this moment, or null for a settled tile.</summary>
     private int? DelayOf(string code)
     {
+        if (IsStatus) return null;
         var i = IndexOf(Batch, code);
         if (i >= 0) return FlipStartMs + (i * FlipStepMs);
         if (Variant != "ending") return null;
@@ -172,6 +190,12 @@
 
     private string TileClass(string code, int? delay)
     {
+        if (IsStatus)
+        {
+            var r = PoBrawlCampaign.RungOf(code);
+            var won = r >= 0 && r < Beaten ? "pbm-tile--won" : "";
+            return StatusNext is { } stop && stop.Code == code ? $"{won} pbm-tile--dest" : won;
+        }
         var rung = PoBrawlCampaign.RungOf(code);
         var state = delay is not null ? "pbm-tile--flip"
             : rung >= 0 && rung < Rung ? "pbm-tile--won"
@@ -193,11 +217,17 @@
 
     private static string F(FormattableString s) => s.ToString(Inv);
 
-    protected override void OnInitialized() => _shown = Before;
+    protected override void OnInitialized() => _shown = IsStatus ? PoBrawlCampaign.VotesAfter(Math.Clamp(Beaten, 0, Count)) : Before;
+
+    // A status map follows the run without replaying anything.
+    protected override void OnParametersSet()
+    {
+        if (IsStatus) _shown = PoBrawlCampaign.VotesAfter(Math.Clamp(Beaten, 0, Count));
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        if (!firstRender || IsStatus) return;
         var token = _cts.Token;
         _still = Settings.ReducedMotion || await Settings.OsPrefersReducedMotionAsync();
         _ready = true;

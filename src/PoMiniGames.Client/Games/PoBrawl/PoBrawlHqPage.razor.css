@@ -1,0 +1,202 @@
+/* Brawl HQ — a theme surface, so app tokens. Radzen ships one dark theme here (the one PoMule
+   loads); its --rz-* variables are re-pointed at the app's tokens on .hq, so the select bar,
+   grid and chart follow the light and dark schemes like the rest of the page. */
+.hq {
+    --rz-text-color: var(--color-text-primary);
+    --rz-text-secondary-color: var(--color-text-secondary);
+    --rz-text-title-color: var(--color-text-primary);
+    --rz-base-background-color: var(--color-surface);
+    --rz-primary: var(--color-accent);
+    --rz-on-primary: #fff;
+    --rz-grid-background-color: transparent;
+    --rz-grid-header-background-color: var(--surface-2);
+    --rz-grid-header-color: var(--color-text-secondary);
+    --rz-grid-cell-color: var(--color-text-primary);
+    --rz-grid-cell-border: 1px solid var(--color-border);
+    --rz-grid-header-cell-border: 1px solid var(--color-border);
+    --rz-grid-header-cell-border-bottom: 1px solid var(--color-border);
+    --rz-grid-border: 1px solid var(--color-border);
+    --rz-grid-bottom-cell-border: 1px solid var(--color-border);
+    --rz-grid-data-border-shadow: none;
+    --rz-grid-stripe-background-color: transparent;
+    --rz-grid-stripe-odd-background-color: transparent;
+    --rz-grid-hover-background-color: var(--color-surface-hover);
+    --rz-grid-hover-color: var(--color-text-primary);
+    --rz-selectbar-background-color: var(--surface-2);
+    --rz-selectbar-color: var(--color-text-secondary);
+    --rz-selectbar-border: 1px solid var(--color-border);
+    --rz-selectbar-selected-background-color: var(--color-accent);
+    --rz-selectbar-selected-color: #fff;
+    --rz-selectbar-selected-border: 1px solid var(--color-accent);
+    --rz-chart-axis-color: var(--color-border);
+    --rz-chart-axis-label-color: var(--color-text-secondary);
+    --rz-chart-tooltip-background: var(--color-surface);
+    --rz-chart-tooltip-color: var(--color-text-primary);
+    width: min(100%, 72rem);
+    margin: 0 auto;
+    padding: 0 0 0.25rem;
+    display: grid;
+    gap: 10px;
+    color: var(--color-text-primary);
+}
+
+/* ── Play strip: the ladder first, the other modes one tap away ── */
+.hq-play {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.hq-continue {
+    min-height: 44px;
+}
+
+.hq-modes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.hq-modes .app-btn {
+    min-height: 40px;
+    min-width: 56px;
+}
+
+/* Two columns on a desktop: the player's record and the map, then the boards. */
+.hq-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+}
+
+@media (min-width: 960px) {
+    .hq-grid {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    }
+}
+
+.hq-col {
+    display: grid;
+    gap: 12px;
+}
+
+.hq-stats {
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.hq-stats > div {
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+}
+
+.hq-stats dt {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+.hq-stats dd {
+    margin: 2px 0 0;
+    font-family: 'Bungee', 'Russo One', var(--font-display, sans-serif);
+    font-size: 1.35rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-primary);
+}
+
+.hq-stats small {
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+}
+
+/* ── Boards card ── */
+.hq-boards {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+}
+
+.hq-boards ::deep .hq-select {
+    width: 100%;
+    display: flex;
+}
+
+.hq-boards ::deep .hq-select .rz-button {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 40px;
+    padding-inline: 6px;
+    white-space: normal;
+    line-height: 1.15;
+}
+
+.hq-board-note {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+.hq-boards ::deep .hq-row-me td {
+    background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+    font-weight: 700;
+}
+
+.hq-empty {
+    margin: 8px 0;
+    color: var(--color-text-secondary);
+}
+
+.hq-titles {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+}
+
+.hq-titles li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+}
+
+.hq-titles b {
+    font-variant-numeric: tabular-nums;
+}
+
+/* A phone: two stat tiles a row are still one glance. */
+@media (max-width: 480px) {
+    .hq-stats > div {
+        padding: 8px;
+    }
+
+    .hq-stats dd {
+        font-size: 1.1rem;
+    }
+
+    .hq-play {
+        justify-content: center;
+    }
+
+    .hq-continue {
+        width: 100%;
+        justify-content: center;
+    }
+}

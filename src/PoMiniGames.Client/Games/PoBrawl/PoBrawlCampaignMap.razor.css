@@ -69,6 +69,35 @@
     text-align: left;
 }
 
+/* ── Status: a still picture of the run (1P intro, Brawl HQ). Theme surface, no motion. ── */
+.pbm--status {
+    padding: 8px 10px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--pbm-edge);
+    background: var(--pbm-panel);
+    text-align: left;
+}
+
+.pbm--status .pbm-tile--dest {
+    animation: none;
+}
+
+.pbm--status .pbm-title {
+    font-size: 1rem;
+}
+
+.pbm--status .pbm-count b {
+    font-size: 1.35rem;
+}
+
+/* A phone: the heading and the meter say where the run stands; the board would push the
+   intro card's Start button off the screen. */
+@media (max-width: 520px) {
+    .pbm--status .pbm-board {
+        display: none;
+    }
+}
+
 .pbm-head {
     display: grid;
     grid-template-columns: 1fr auto;

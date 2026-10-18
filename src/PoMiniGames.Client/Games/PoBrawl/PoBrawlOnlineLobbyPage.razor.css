@@ -14,24 +14,22 @@
     color: var(--color-text-primary);
 }
 
-/* Sixteen fighters, four across and one line each: the shared picker's 7.5rem cards put
-   Brawl's roster in two tall columns on a phone, ~500px of the page's scroll. The chained
-   selectors outrank LobbyPanel's ::deep defaults (both are rendered by this page). */
-.lobby__hint + .lobby-pick-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.35rem;
+.pbl-room {
+    display: contents;
 }
 
-.lobby__hint + .lobby-pick-grid .lobby-pick-card {
-    min-height: 44px;
-    padding: 0.35rem 0.25rem;
-    justify-content: center;
-    font-size: clamp(0.75rem, 2.9vw, 0.9rem);
+/* The two side cards are the roster here (name, pick, ready), so the shared list of seats
+   would only say it twice. Its heading ("Players · 2/2") and the hub status stay. */
+.pbl-room ::deep .lobby__list {
+    display: none;
 }
 
-.lobby__hint + .lobby-pick-grid .lobby-pick-card__name {
-    max-width: 100%;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+/* The picker reuses the 2P select (PoBrawlPage.razor.css, the same CSS scope): your card is
+   your Ready toggle; your opponent's is a read-out, so it takes no pointer. */
+.pb-lobby .pb-select-side--static {
+    cursor: default;
+}
+
+.pb-lobby .pb-select-side:disabled {
+    cursor: progress;
 }

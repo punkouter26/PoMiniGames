@@ -47,6 +47,8 @@ public static class TestBudgetGuard
         ["PoMiniGames:Jev:UseStub"] = "true",
         ["PoMiniGames:Jev:ApiKey"] = "",
         ["PoMiniGames:Jev:Brain"] = "Local",
+        // PoBrawl dossiers: free, but a live call to en.wikipedia.org. Tests serve the static facts.
+        ["PoMiniGames:PoBrawl:Dossier:FetchWikipedia"] = "false",
         ["KeyVault:Uri"] = "",
     };
 

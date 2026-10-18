@@ -42,9 +42,9 @@
     private CatalogGame? _game;
     private GameMode _current;
 
-    // What may follow the game in an address that is one of its modes: the four slugs.
+    // What may follow the game in an address that is one of its modes: the mode slugs.
     private static readonly string[] ModeSegments =
-        [GameModes.OnePlayerSlug, GameModes.TwoPlayerSlug, GameModes.MultiplayerSlug, GameModes.DemoSlug];
+        [GameModes.OnePlayerSlug, GameModes.TwoPlayerSlug, GameModes.MultiplayerSlug, GameModes.DemoSlug, GameModes.TournamentSlug];
 
     protected override void OnParametersSet()
     {

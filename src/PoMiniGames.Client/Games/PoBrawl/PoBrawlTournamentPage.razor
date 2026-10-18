@@ -1,0 +1,488 @@
+@page "/pobrawl/tournament"
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@* Aliases, not namespace imports — same reason as PoBrawlPage (Models mirrors Domain names). *@
+@using PoBrawlFighter = PoMiniGames.Domain.Primitives.PoBrawlFighter
+@using PoBrawlRoster = PoMiniGames.Domain.Primitives.PoBrawlRoster
+@using PoBrawlDemoResultRequest = PoMiniGames.Domain.Models.PoBrawlDemoResultRequest
+@implements IAsyncDisposable
+@inject PlayerNameService PlayerNameService
+@inject ApiService ApiService
+@inject IJSRuntime JSRuntime
+@inject SettingsService Settings
+@inject AuthStateService Auth
+
+@* The CPU-only knockout bracket. Eight presidents are drawn at random, the seven bouts play out
+   in the same arena the other modes use (engine mode 'tournament': both corners CPU, the page
+   picks every pairing through PoBrawl.matchup), and each result moves both fighters' Elo.
+   This component shares PoBrawlPage's CSS scope (CssScope in the csproj), so the engine's DOM —
+   splash, banner, captions, news desk — and the fight chrome are styled exactly as there. *@
+
+<PageTitle>Brawl Tournament · PoMiniGames</PageTitle>
+
+<GameShell Title=@TitleContent
+           Player="@_playerName"
+           BackTo="/"
+           GameOver="@_showFinal"
+           GameOverDelayMs="@FinalHoldMs"
+           Fullscreen="true"
+           GameKey="pobrawldemo"
+           RequiresWebGl="true"
+           GameSummary="@FinalSummary"
+           Announcement="@_announcement">
+    @if (!_introDone)
+    {
+        <div class="pb-intro">
+            <GameIntro CueScope="pobrawl-cup"
+                       Title="@TitleContent"
+                       Objective="Eight presidents, seven bouts, one belt. The CPU fights every bout — you watch the bracket play out."
+                       Controls="@HowItWorks"
+                       Mode="GameIntro.IntroMode.OnePlayer"
+                       Options="@DrawPreview"
+                       StartLabel="🏆 Start the tournament"
+                       DialogLabel="Brawl tournament setup"
+                       CaptureKeys="false"
+                       OnStart="StartAsync" />
+        </div>
+    }
+    <div class="pb-wrap">
+        <div id="pobrawl-container" class="pb-canvas-host"
+             role="img" aria-label="Brawl arena — the tournament bout renders here"></div>
+
+        <div class="pb-top">
+            @if (_introDone)
+            {
+                <PoBrawlHud @ref="_hud"
+                            P1Name="@HudName(_p1Char)" P2Name="@HudName(_p2Char)"
+                            P1Fighter="@Name(_p1Char)" P2Fighter="@Name(_p2Char)"
+                            Training="false" />
+
+                @if (_cup?.Current is { } now)
+                {
+                    <div class="pt-rail" role="status">
+                        <span class="pt-rail-round">@now.Label</span>
+                        <span class="pt-rail-pips" aria-hidden="true">
+                            @foreach (var b in _cup.Bouts)
+                            {
+                                <span class="pt-pip @(b.WinnerId is not null ? "pt-pip--done" : b == now ? "pt-pip--now" : "")"></span>
+                            }
+                        </span>
+                        <span class="pt-rail-count">Bout @(now.Index + 1) of @_cup.Bouts.Count</span>
+                    </div>
+                }
+            }
+        </div>
+
+        @if (_introDone)
+        {
+            @* mousedown:preventDefault keeps a clicked button from taking focus (see PoBrawlPage's trainbar). *@
+            <div class="pt-bar" role="group" aria-label="Tournament controls" @onmousedown:preventDefault="true">
+                <span class="pt-bar-label">Speed</span>
+                @foreach (var s in Speeds)
+                {
+                    var speed = s;
+                    <button type="button" class="pb-seg @(speed == _speed ? "pt-seg--on" : "")"
+                            aria-pressed="@(speed == _speed ? "true" : "false")"
+                            title="@($"Play the bouts at {speed}× speed")"
+                            @onclick="() => SetSpeedAsync(speed)">@(speed)×</button>
+                }
+                <button type="button" class="pb-seg pt-seg-bracket" aria-expanded="@(_bracketOpen ? "true" : "false")"
+                        @onclick="ToggleBracket">🗂 Bracket</button>
+            </div>
+        }
+
+        @if (_introDone && _bracketOpen && _cup is not null)
+        {
+            <div class="pt-overlay" @onclick="ToggleBracket">
+                <section class="pt-panel" aria-label="Tournament bracket" @onclick:stopPropagation="true">
+                    @if (_lastDecided is { } last && _cup.Current is not null)
+                    {
+                        <p class="pt-panel-news" role="status">@ResultSentence(last)</p>
+                    }
+                    @Bracket
+                    @if (_cup.Current is { } next)
+                    {
+                        <p class="pt-panel-next">Next: <b>@Name(next.P1Id)</b> vs <b>@Name(next.P2Id)</b> — @next.Label</p>
+                        @if (next.P1Id is not null && next.P2Id is not null)
+                        {
+                            <div class="pt-dossiers">
+                                <PoBrawlDossierCard FighterId="@next.P1Id" Compact="true" />
+                                <PoBrawlDossierCard FighterId="@next.P2Id" Compact="true" />
+                            </div>
+                        }
+                    }
+                    <button type="button" class="app-btn app-btn--sm pt-panel-close" @onclick="ToggleBracket">Close</button>
+                </section>
+            </div>
+        }
+    </div>
+</GameShell>
+
+@code {
+    private static readonly PoBrawlFighter[] Roster = [.. PoBrawlRoster.Fighters];
+    private static readonly int[] Speeds = [1, 2, 4];
+
+    // Between bouts the bracket shows for this long before the next pairing. Fast-forward trims
+    // it only a little: the bracket is the part of a tournament worth reading.
+    private int BetweenBoutsMs => _speed switch { 4 => 2600, 2 => 3400, _ => 4200 };
+    // After the final, the bracket holds this long before the result modal covers it.
+    private const int FinalHoldMs = 3500;
+
+    private string _playerName = "";
+    private PoBrawlTournament? _cup;
+    private IReadOnlyDictionary<string, int> _ratings = new Dictionary<string, int>();
+    // The draw is rebuilt from this seed when the board's ratings arrive, so the same eight
+    // fighters keep their places and only the numbers change.
+    private int _drawSeed = Random.Shared.Next();
+    private bool _ratingsLoaded;
+    private bool _report = true;
+    private int _speed = 1;
+
+    private bool _introDone;
+    private bool _bracketOpen;
+    private bool _showFinal;
+    private string _p1Char = "";
+    private string _p2Char = "";
+    private PoBrawlTournament.Bout? _lastDecided;
+    private string _announcement = "";
+    private PoBrawlHud? _hud;
+    private DotNetObjectReference<PoBrawlTournamentPage>? _ref;
+    // Bumped on dispose and on every new bout, so a pending between-bouts roll can tell it is stale.
+    private int _generation;
+
+    // Tournament titles per fighter, kept in this browser across tournaments: "titles" in the standings.
+    private const string TitlesKey = "pobrawl_cup_titles";
+    private Dictionary<string, int> _titles = [];
+
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoBrawl);
+
+    private static string Name(string? id) => id is null ? "TBD" : PoBrawlRoster.NameOf(id) ?? id;
+
+    private string HudName(string id) => _cup is null || string.IsNullOrEmpty(id) ? Name(id) : $"{Name(id)} · {_cup.EloOf(id)}";
+
+    private RenderFragment HowItWorks => @<div>
+        <ul>
+            <li>🎲 Eight of the fifteen presidents are drawn into a random bracket</li>
+            <li>🥊 Quarterfinals, semifinals, final — one 60-second round each, CPU against CPU</li>
+            <li>⏱️ No draws: a level bell goes to more health, then more hits landed</li>
+            <li>📈 Every result moves both fighters' Elo (K 24, the fighter board's own maths)</li>
+            <li>⏩ Speed 2× or 4× fast-forwards the bouts; 🗂 Bracket shows the draw any time</li>
+        </ul>
+    </div>;
+
+    private RenderFragment DrawPreview => @<div class="pt-draw">
+        <div class="pt-draw-head">
+            <span class="pt-draw-title">The draw</span>
+            <button type="button" class="app-btn app-btn--sm" @onclick="Redraw" title="Draw eight new fighters into new places">🎲 Redraw</button>
+        </div>
+        @if (_cup is not null)
+        {
+            <ol class="pt-draw-list" aria-label="Quarterfinal pairings">
+                @foreach (var b in _cup.Bouts.Where(b => b.Round == PoBrawlTournament.Round.Quarterfinal))
+                {
+                    <li>
+                        <span class="pt-draw-who">@Name(b.P1Id) <small>@_cup.EloOf(b.P1Id!)</small></span>
+                        <span class="pt-draw-vs" aria-label="versus">vs</span>
+                        <span class="pt-draw-who">@Name(b.P2Id) <small>@_cup.EloOf(b.P2Id!)</small></span>
+                    </li>
+                }
+            </ol>
+            <p class="pt-draw-note">@(_ratingsLoaded ? "Starting Elo from the global Brawl fighter board." : "Loading ratings from the fighter board…")</p>
+        }
+        <div class="pt-draw-opts">
+            <span class="pt-draw-optlabel">Speed</span>
+            <span class="app-seg" role="group" aria-label="Bout speed">
+                @foreach (var s in Speeds)
+                {
+                    var speed = s;
+                    <button type="button" class="app-seg__btn" aria-pressed="@(speed == _speed ? "true" : "false")"
+                            @onclick="() => _speed = speed">@(speed)×</button>
+                }
+            </span>
+        </div>
+        <label class="pt-draw-report">
+            <input type="checkbox" @bind="_report" />
+            <span>Report each bout to the global fighter Elo board</span>
+        </label>
+    </div>;
+
+    // Three columns: quarterfinals, semifinals, final. Each bout lists its two corners with the
+    // Elo they carry now and what this bout moved it by once it is decided.
+    private RenderFragment Bracket => @<div class="pt-bracket">
+        @foreach (var round in new[] { PoBrawlTournament.Round.Quarterfinal, PoBrawlTournament.Round.Semifinal, PoBrawlTournament.Round.Final })
+        {
+            <div class="pt-col">
+                <h3 class="pt-col-head">@(round == PoBrawlTournament.Round.Final ? "Final" : round + "s")</h3>
+                @foreach (var b in _cup!.Bouts.Where(x => x.Round == round))
+                {
+                    <div class="pt-bout @(b == _cup.Current ? "pt-bout--now" : "") @(b.WinnerId is not null ? "pt-bout--done" : "")">
+                        @Corner(b, b.P1Id, b.P1Delta)
+                        @Corner(b, b.P2Id, b.P2Delta)
+                        @if (b.WinnerId is not null)
+                        {
+                            <div class="pt-bout-how">@(b.Knockout ? $"KO {b.ElapsedSeconds:0}s" : "Decision")</div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        @if (_cup!.ChampionId is { } champ)
+        {
+            <div class="pt-col pt-col--champ">
+                <h3 class="pt-col-head">Champion</h3>
+                <div class="pt-champ"><span aria-hidden="true">🏆</span> @Name(champ)</div>
+            </div>
+        }
+    </div>;
+
+    private RenderFragment Corner(PoBrawlTournament.Bout b, string? id, int delta) => @<div class="pt-corner @(id is not null && b.WinnerId == id ? "pt-corner--win" : id is not null && b.LoserId == id ? "pt-corner--out" : "")">
+        <span class="pt-corner-name">@Name(id)</span>
+        @if (id is not null)
+        {
+            <span class="pt-corner-elo">@_cup!.EloOf(id)</span>
+            @if (b.WinnerId is not null)
+            {
+                <span class="pt-delta @(delta >= 0 ? "pt-delta--up" : "pt-delta--down")">@(delta >= 0 ? "+" : "")@delta</span>
+            }
+        }
+    </div>;
+
+    private RenderFragment FinalSummary => @<div>
+        @if (_cup?.ChampionId is { } champ)
+        {
+            <section class="pb-ending" aria-label="Tournament champion">
+                <div class="pb-ending-seal" aria-hidden="true">🏆</div>
+                <h3 class="pb-ending-title">@Name(champ) wins the belt</h3>
+                <p class="pb-ending-line">Three bouts, three wins. @Name(champ) leaves at @_cup.EloOf(champ) Elo (@Signed(_cup.EloOf(champ) - _cup.StartEloOf(champ))).</p>
+            </section>
+            <table class="pb-recap pt-standings">
+                <caption>Elo after the tournament</caption>
+                <thead>
+                    <tr>
+                        <th scope="col" class="pb-recap-stat">Fighter</th>
+                        <th scope="col">W–L</th>
+                        <th scope="col">Elo</th>
+                        <th scope="col">±</th>
+                        <th scope="col" title="Tournaments won in this browser">Titles</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var f in _cup.Standings)
+                    {
+                        var (w, l) = _cup.RecordOf(f.Id);
+                        var d = _cup.EloOf(f.Id) - _cup.StartEloOf(f.Id);
+                        <tr>
+                            <th scope="row">@(f.Id == champ ? "🏆 " : "")@f.Name</th>
+                            <td>@w–@l</td>
+                            <td>@_cup.EloOf(f.Id)</td>
+                            <td class="@(d >= 0 ? "pt-delta--up" : "pt-delta--down")">@Signed(d)</td>
+                            <td>@(_titles.TryGetValue(f.Id, out var t) ? t : 0)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <p class="pt-final-note">@(_report && Auth.IsAuthenticated ? "All seven bouts were reported to the global fighter Elo board." : "These bouts were not reported to the global board.")</p>
+        }
+    </div>;
+
+    private static string Signed(int n) => n >= 0 ? $"+{n}" : n.ToString();
+
+    private string ResultSentence(PoBrawlTournament.Bout b)
+    {
+        var winner = Name(b.WinnerId);
+        var loser = Name(b.LoserId);
+        var gain = b.WinnerId == b.P1Id ? b.P1Delta : b.P2Delta;
+        var how = b.Knockout ? $"by KO in {b.ElapsedSeconds:0} seconds" : "on the cards";
+        return $"{winner} beats {loser} {how} and advances (Elo {Signed(gain)}).";
+    }
+
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        _titles = LoadTitles();
+        _cup = PoBrawlTournament.Draw(Roster, new Random(_drawSeed), _ratings);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Starting ratings from the global fighter board (anonymous read). Offline or empty, every
+        // fighter simply starts at the seed rating.
+        var board = await ApiService.GetGameLeaderboardAsync("pobrawldemo", PoBrawlRoster.Count);
+        var ratings = new Dictionary<string, int>();
+        foreach (var e in board?.Entries ?? [])
+        {
+            // The board carries display names (resolved server-side from the roster), not ids.
+            if (Roster.FirstOrDefault(f => f.Name == e.Name) is { } f && e.Value > 0) ratings[f.Id] = (int)Math.Round(e.Value);
+        }
+        _ratings = ratings;
+        _ratingsLoaded = true;
+        if (!_introDone) _cup = PoBrawlTournament.Draw(Roster, new Random(_drawSeed), _ratings);
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) _ref = DotNetObjectReference.Create(this);
+    }
+
+    private void Redraw()
+    {
+        if (_introDone) return;
+        _drawSeed = Random.Shared.Next();
+        _cup = PoBrawlTournament.Draw(Roster, new Random(_drawSeed), _ratings);
+    }
+
+    private async Task StartAsync()
+    {
+        if (_introDone || _cup?.Current is not { } first) return;
+        _introDone = true;
+        _p1Char = first.P1Id!;
+        _p2Char = first.P2Id!;
+        _announcement = $"Tournament on. {first.Label}: {Name(_p1Char)} versus {Name(_p2Char)}.";
+        StateHasChanged();
+        try
+        {
+            if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "pobrawl"))
+            {
+                Console.Error.WriteLine("[pobrawl-cup] engine failed to load");
+                return;
+            }
+            _ref ??= DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("PoBrawl.init", "pobrawl-container", _ref, new
+            {
+                mode = "tournament",
+                p1Character = _p1Char,
+                p2Character = _p2Char,
+                // Both corners on the same mid-tier CPU, so the presidents' own patterns decide it.
+                difficulty = "medium",
+                roundLabel = first.Label.ToUpperInvariant(),
+                introLine = PoBrawlPressLines.Intro(_p1Char, _p2Char)?.Text,
+            });
+            await JSRuntime.InvokeVoidAsync("PoBrawl.setSpeed", _speed);
+            if (Settings.Muted) await JSRuntime.InvokeVoidAsync("PoBrawl.setMuted", true);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[pobrawl-cup] JS init failed: {ex.Message}");
+        }
+    }
+
+    private async Task SetSpeedAsync(int speed)
+    {
+        _speed = speed;
+        try { await JSRuntime.InvokeVoidAsync("PoBrawl.setSpeed", speed); } catch { }
+    }
+
+    private void ToggleBracket() => _bracketOpen = !_bracketOpen;
+
+    // ── Engine callbacks (the same contract PoBrawlPage implements) ─────────
+
+    /// <summary>HUD pump — exact arity contract with game.js _pushHud (see PoBrawlPage.OnHud).</summary>
+    [JSInvokable]
+    public void OnHud(int p1Hp, int p2Hp, double elapsed, int[]? p1Regions, int[]? p2Regions, int p1Energy, int p2Energy) =>
+        _hud?.Update(p1Hp, p2Hp, elapsed, p1Regions, p2Regions, p1Energy, p2Energy);
+
+    [JSInvokable]
+    public void OnMatchStart(string p1Char, string p2Char)
+    {
+        if (!string.IsNullOrEmpty(p1Char)) _p1Char = p1Char;
+        if (!string.IsNullOrEmpty(p2Char)) _p2Char = p2Char;
+        InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>No training room here; the engine still reports it on every spawn.</summary>
+    [JSInvokable]
+    public void OnTrainingState(bool active) { }
+
+    /// <summary>The KO clip is off in tournament mode; kept so the engine's call always binds.</summary>
+    [JSInvokable]
+    public void OnClipReady() { }
+
+    /// <param name="winner">1 = left corner, 2 = right; tournament mode never reports a draw.</param>
+    [JSInvokable]
+    public async Task OnMatchEnd(int winner, double elapsedSeconds, PoBrawlPage.PoBrawlMatchRecap? recap = null)
+    {
+        if (_cup?.Current is not { } bout || bout.P1Id is null || bout.P2Id is null) return;
+        // Belt and braces: an older cached engine without the tournament decision could still say 0.
+        if (winner is not (1 or 2)) winner = recap is { } r && r.P2Hits > r.P1Hits ? 2 : 1;
+        var decided = _cup.RecordResult(winner, elapsedSeconds, knockout: elapsedSeconds < 59.9);
+        _lastDecided = decided;
+        _announcement = ResultSentence(decided);
+
+        if (_report && Auth.IsAuthenticated)
+        {
+            _ = ApiService.SubmitPoBrawlDemoResultAsync(new PoBrawlDemoResultRequest(decided.WinnerId!, decided.LoserId!, IsDraw: false));
+        }
+
+        var generation = ++_generation;
+        await InvokeAsync(StateHasChanged);
+
+        // Let the KO cinematic finish (render clock, frozen in a background tab) before the
+        // bracket covers the ring — the same wait the 1P ladder makes.
+        for (var waits = 0; waits < 40; waits++)
+        {
+            string? phase;
+            try { phase = await JSRuntime.InvokeAsync<string?>("PoBrawl.phase"); }
+            catch { break; }
+            if (phase != "ko") break;
+            await Task.Delay(250);
+        }
+        if (generation != _generation) return;
+
+        _bracketOpen = true;
+        if (_cup.IsComplete)
+        {
+            SaveTitle(_cup.ChampionId!);
+            _announcement = $"{Name(_cup.ChampionId)} wins the tournament.";
+            _showFinal = true;   // GameShell holds FinalHoldMs, then the modal
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        await InvokeAsync(StateHasChanged);
+
+        await Task.Delay(BetweenBoutsMs);
+        if (generation != _generation || _cup.Current is not { } next) return;
+
+        _bracketOpen = false;
+        _p1Char = next.P1Id!;
+        _p2Char = next.P2Id!;
+        _hud?.Reset();
+        _announcement = $"{next.Label}: {Name(_p1Char)} versus {Name(_p2Char)}.";
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("PoBrawl.matchup", _p1Char, _p2Char, next.Label.ToUpperInvariant(),
+                PoBrawlPressLines.Intro(_p1Char, _p2Char)?.Text);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[pobrawl-cup] next bout failed: {ex.Message}");
+        }
+    }
+
+    private static Dictionary<string, int> LoadTitles()
+    {
+        var raw = LocalStorageService.GetItem<string>(TitlesKey) ?? "";
+        var titles = new Dictionary<string, int>();
+        // "trump:2,obama:1" — a flat string, so no reflection-based JSON in the trimmed build.
+        foreach (var pair in raw.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = pair.Split(':');
+            if (parts.Length == 2 && PoBrawlRoster.IsRateable(parts[0]) && int.TryParse(parts[1], out var n) && n > 0) titles[parts[0]] = n;
+        }
+        return titles;
+    }
+
+    private void SaveTitle(string championId)
+    {
+        _titles[championId] = (_titles.TryGetValue(championId, out var n) ? n : 0) + 1;
+        LocalStorageService.SetItem(TitlesKey, string.Join(',', _titles.Select(kv => $"{kv.Key}:{kv.Value}")));
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        ++_generation;
+        try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
+        _ref?.Dispose();
+    }
+}

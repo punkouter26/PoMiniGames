@@ -60,6 +60,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- One CSS scope for both Brawl pages: the tournament hosts the same engine, whose DOM
+         (splash, banner, captions, news desk) is styled by PoBrawlPage.razor.css through ::deep
+         under .pb-canvas-host. A shared scope id applies those rules to both components. -->
+    <None Update="Games\PoBrawl\PoBrawlPage.razor.css" CssScope="b-pobrawl-arena" />
+    <None Update="Games\PoBrawl\PoBrawlTournamentPage.razor.css" CssScope="b-pobrawl-arena" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\PoMiniGames.Shared\PoMiniGames.Shared.csproj" />
     <!-- Domain models only: the board rows the leaderboard endpoints return are
          deserialized straight into PoMiniGames.Domain.Models types rather than mirrored

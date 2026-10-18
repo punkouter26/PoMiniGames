@@ -256,6 +256,7 @@ flowchart TB
         pw["Win: opponent's health reaches 0"]
         pt["60 s timer: higher health wins,<br/>within 10 health is a draw"]
         pl["Board: fastest KO, ladder rungs cleared"]
+        pc["Tournament (CPU only): no draws, a level bell goes to<br/>more health, then hits; every bout moves fighter Elo"]
     end
     subgraph Voxel["PoVoxelStrike"]
         vw["Win: touch the chalice<br/>bonus 25000 minus 40 per second, at least 5000"]
@@ -404,6 +405,22 @@ Both quizzes and their answer-similarity scoring point at `gpt-5.4-nano`, the ch
 model in `ModelPricing.cs`. The process-local usage, cost and caller-budget read-model is
 `GET /api/diag/ai` (the AI half of `/api/diag`).
 
+#### Free external content: PoBrawl fighter dossiers
+
+`GET /api/pobrawl/dossier` (anonymous, like the leaderboard reads) returns one dossier per
+fighter: the fifteen presidents in ladder order, then BOB. The static facts (number, term,
+party, a fighting-style line restating `personalities.js`, and BOB's made-up dossier) live in
+`Shared/Games/PoBrawlDossier.cs`. `PoBrawlDossierService` adds each president's summary
+(two sentences, at most 300 characters), portrait thumbnail and article link from the free
+Wikimedia REST API (`/api/rest_v1/page/summary/{title}`). It sends a descriptive User-Agent,
+uses the standard resilience handler, and caches the list in memory for
+`PoMiniGames:PoBrawl:Dossier:CacheHours` (24). A partial fetch is cached for 15 minutes.
+`PoMiniGames:PoBrawl:Dossier:FetchWikipedia` (default true) switches the call off. Off, or on
+any failure, the static facts are served, never a 500. Every test host pins it to false in
+`TestBudgetGuard`. Wikipedia text is CC BY-SA 4.0, so `PoBrawlDossierCard` shows a
+"From Wikipedia" link and the licence next to it. The card appears on the 1P scouting card
+and the 2P fighter select, behind a "Dossier" disclosure.
+
 #### AI provider recipes
 
 The quizzes play from their free banks by default. Development also sets the mock AI flags, so
@@ -507,3 +524,28 @@ cannon bodies directly.
 **Online today, unchanged by any of this until step 6:** the host's `_netSend` streams Float32
 positions plus a flag byte per marble through `PoMarbleRaceOnlineHub`; the guest eases toward
 them in `_guestRacingFrame` and runs no physics at all.
+
+### 3.7 PoBrawl online: rollback netcode
+
+The online 1v1 is GGPO-style rollback with the server as input relay and referee. The fight
+the result depends on (HP, energy, spacing on a one-dimensional ring, swings that hit, are
+blocked or whiff, the KO and the bell) is a small integer simulation that runs in three places
+at once and must give bit-identical results everywhere.
+
+| Piece | Where | What it does |
+|---|---|---|
+| Sim (C#) | `Shared/Games/PoBrawlRollbackSim.cs` | 60 Hz frame step over a 26-int state: millimetres, energy in sixths of a point, a mulberry32 damage roll seeded by FNV-1a of the match id. No floats. |
+| Sim (JS) | `wwwroot/js/pobrawl/rollbackSim.js` | The same rules, line for line. A golden input script pins the final checksum in both test suites (`PoBrawlMatchServiceTests`, `tests/pobrawl-rollback.test.mjs`). |
+| Referee | `Features/PoBrawl/Online/PoBrawlMatchService.cs`, `PoBrawlMatchPump.cs` | Runs the C# sim on a Stopwatch clock (a catch-up loop, because Windows timers tick at ~15.6 ms). An input stamped for frame f is applied at max(f, server frame + 1) and never earlier than that side's previous input; the server never rewrites its own past. Owns presence, forfeits, rematches and the result. |
+| Relay | `PoBrawlMatchHub.cs` | `SubmitInput` → `matchInput` to the whole group, sender included, carrying the frame actually used. `Ping` returns the server's frame clock. The pump sends `matchState` (full sim state, frame, checksum, presence) every 6th frame (10 Hz). |
+| Rollback | `wwwroot/js/pobrawl/rollbackSession.js` | Local input applied 2 frames ahead (`INPUT_DELAY`) and sent. Remote input predicted as "keep holding, press nothing". A late confirmed input rolls back to its frame and re-simulates from a 128-frame state ring (~2 s). A snapshot whose checksum differs from history replaces it and re-simulates. |
+| Presenter | `wwwroot/js/pobrawl/netplay.js` | Shows the session's state every render frame: fighters steer to the sim's X, each (corner, frame) swing is thrown once with the sim's verdict, HP and energy come from the sim, and a predicted KO waits for the server's word before it plays. |
+
+Clock sync: a player runs ahead of the estimated server frame by RTT/2 plus one frame, so its
+inputs arrive before their frame comes up. A spectator runs behind by RTT/2 plus four frames,
+so it almost never predicts. Ping samples come in every 200 ms at first, then every second. The
+offset comes from the fastest sample and the RTT from the median. A new estimate is slewed in at
+2 frames a second (an occasional doubled or skipped frame), and an error above 30 frames jumps.
+
+Anti-cheat stays where it was: the server pins each connection to its corner at `JoinMatch`, a
+client only ever sends inputs, and the result comes from the server's copy of the sim alone.

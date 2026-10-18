@@ -1,0 +1,95 @@
+using FluentAssertions;
+using PoMiniGames.Domain.Primitives;
+using PoMiniGamesClient.Games.PoBrawl;
+
+namespace PoMiniGames.Unit.Features.PoBrawl;
+
+/// <summary>
+/// The CPU tournament's bracket: a random draw of eight distinct presidents, winners walking
+/// quarterfinal → semifinal → final in the right corners, and Elo moving like the fighter board.
+/// </summary>
+public sealed class PoBrawlTournamentTests
+{
+    [Theory]
+    [InlineData(nameof(Draw_PicksEightDistinctPresidents_AndSeedsUnratedAtTheBoardSeed))]
+    [InlineData(nameof(Winners_AdvanceIntoTheirSlots_UntilTheFinalCrownsAChampion))]
+    [InlineData(nameof(Elo_IsZeroSum_AndAnUpsetPaysMoreThanAFavouriteWinning))]
+    [InlineData(nameof(Results_AreRefused_WhenNotASide_OrOnceDecided))]
+    public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    private static PoBrawlTournament NewCup(int seed = 7, IReadOnlyDictionary<string, int>? ratings = null) =>
+        PoBrawlTournament.Draw(PoBrawlRoster.Fighters, new Random(seed), ratings);
+
+    private void Draw_PicksEightDistinctPresidents_AndSeedsUnratedAtTheBoardSeed()
+    {
+        var cup = NewCup(ratings: new Dictionary<string, int> { ["fdr"] = 1400 });
+        cup.Field.Should().HaveCount(PoBrawlTournament.Size).And.OnlyHaveUniqueItems(f => f.Id);
+        cup.Field.Should().OnlyContain(f => PoBrawlRoster.IsRateable(f.Id), because: "BOB is never in a CPU bracket");
+        cup.Bouts.Should().HaveCount(7);
+        cup.Bouts.Take(4).Should().OnlyContain(b => b.P1Id != null && b.P2Id != null);
+        cup.Bouts.Skip(4).Should().OnlyContain(b => b.P1Id == null && b.P2Id == null);
+        foreach (var f in cup.Field)
+            cup.EloOf(f.Id).Should().Be(f.Id == "fdr" ? 1400 : PoBrawlTournament.SeedElo);
+
+        // Same seed, same draw — the page rebuilds the draw when the board's ratings arrive.
+        NewCup().Field.Select(f => f.Id).Should().Equal(NewCup().Field.Select(f => f.Id));
+        NewCup(seed: 8).Field.Select(f => f.Id).Should().NotEqual(NewCup().Field.Select(f => f.Id));
+    }
+
+    private void Winners_AdvanceIntoTheirSlots_UntilTheFinalCrownsAChampion()
+    {
+        var cup = NewCup();
+        var qf = cup.Bouts.Take(4).ToArray();
+        // Left corner wins QF1 and QF3, right corner QF2 and QF4.
+        foreach (var (bout, side) in qf.Zip(new[] { 1, 2, 1, 2 }))
+        {
+            cup.Current.Should().BeSameAs(bout);
+            cup.RecordResult(side, 30, knockout: true).WinnerId.Should().Be(side == 1 ? bout.P1Id : bout.P2Id);
+        }
+        cup.Bouts[4].P1Id.Should().Be(qf[0].P1Id);
+        cup.Bouts[4].P2Id.Should().Be(qf[1].P2Id);
+        cup.Bouts[5].P1Id.Should().Be(qf[2].P1Id);
+        cup.Bouts[5].P2Id.Should().Be(qf[3].P2Id);
+        cup.Bouts[4].Label.Should().Be("Semifinal 1 of 2");
+
+        cup.RecordResult(2, 60, knockout: false);
+        cup.RecordResult(1, 12, knockout: true);
+        cup.Bouts[6].P1Id.Should().Be(qf[1].P2Id);
+        cup.Bouts[6].P2Id.Should().Be(qf[2].P1Id);
+        cup.IsComplete.Should().BeFalse();
+
+        cup.RecordResult(2, 40, knockout: true);
+        cup.ChampionId.Should().Be(qf[2].P1Id);
+        cup.Current.Should().BeNull();
+        cup.RecordOf(qf[2].P1Id!).Should().Be((3, 0));
+        cup.Standings[0].Id.Should().Be(qf[2].P1Id);
+    }
+
+    private void Elo_IsZeroSum_AndAnUpsetPaysMoreThanAFavouriteWinning()
+    {
+        var even = NewCup();
+        var b = even.Current!;
+        var decided = even.RecordResult(1, 20, knockout: true);
+        decided.P1Delta.Should().Be(12, because: "K 24 between two 1000s is ±12");
+        decided.P2Delta.Should().Be(-12);
+        (even.EloOf(b.P1Id!) + even.EloOf(b.P2Id!)).Should().Be(2 * PoBrawlTournament.SeedElo);
+
+        var first = NewCup().Current!;
+        var ratings = new Dictionary<string, int> { [first.P1Id!] = 1400, [first.P2Id!] = 1000 };
+        var favourite = NewCup(ratings: ratings).RecordResult(1, 20, knockout: true).P1Delta;
+        var upset = NewCup(ratings: ratings).RecordResult(2, 20, knockout: true).P2Delta;
+        upset.Should().BeGreaterThan(favourite);
+        (favourite + upset).Should().Be(24, because: "the two expectations sum to one");
+    }
+
+    private void Results_AreRefused_WhenNotASide_OrOnceDecided()
+    {
+        var cup = NewCup();
+        FluentActions.Invoking(() => cup.RecordResult(0, 60, knockout: false))
+            .Should().Throw<ArgumentOutOfRangeException>(because: "a knockout bracket cannot advance a draw");
+        for (var i = 0; i < 7; i++) cup.RecordResult(1, 30, knockout: true);
+        FluentActions.Invoking(() => cup.RecordResult(1, 30, knockout: true)).Should().Throw<InvalidOperationException>();
+        FluentActions.Invoking(() => PoBrawlTournament.Draw(PoBrawlRoster.Fighters.Take(5).ToList(), new Random(1)))
+            .Should().Throw<ArgumentException>();
+    }
+}

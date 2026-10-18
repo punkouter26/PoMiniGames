@@ -542,6 +542,21 @@ public class ApiService
         }
     }
 
+    // ─── PoBrawl fighter dossiers ─────────────────────────────────────────
+
+    /// <summary>Every fighter's dossier (anonymous), or null when the API is unreachable.</summary>
+    public async Task<List<PoMiniGames.Shared.Games.PoBrawlDossierDto>?> GetPoBrawlDossiersAsync()
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync("/api/pobrawl/dossier", ApiJsonContext.Default.ListPoBrawlDossierDto);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     // ─── PoBrawl 1P ladder progress (cross-device) ───────────────────────
 
     /// <summary>The caller's saved ladder progress, or null (none saved, signed out, offline).</summary>

@@ -5,9 +5,10 @@ let game = null;
 
 window.PoBrawl = {
   /**
-   * options: { mode: '1p'|'2p'|'demo'|'online', p1Character, p2Character, difficulty,
+   * options: { mode: '1p'|'2p'|'demo'|'tournament'|'online', p1Character, p2Character, difficulty,
    *            training?: boolean (1P only),
-   *            localSide?: 1|2 (online; 0 or absent = spectating), seed? }
+   *            localSide?: 1|2 (online; 0 or absent = spectating), seed?,
+   *            roundLabel? (tournament: the first bout's splash heading) }
    */
   init(containerId, dotnetRef, options) {
     if (game) { game.dispose(); game = null; }
@@ -30,6 +31,28 @@ window.PoBrawl = {
     game._introLine = introLine || null;
     game.resetMatch(false);
   },
+  /**
+   * Tournament: the next bout, both corners chosen by the page. Same re-use path as `next`
+   * (no re-init), with the splash heading naming the round.
+   * @param {string} p1Character  left corner
+   * @param {string} p2Character  right corner
+   * @param {string|null} roundLabel  splash heading, e.g. 'SEMIFINAL 1 OF 2'
+   * @param {string|null} introLine  the PA's ring introduction
+   */
+  matchup(p1Character, p2Character, roundLabel, introLine) {
+    if (!game) return;
+    game.options.p1Character = p1Character;
+    game.options.p2Character = p2Character;
+    game._roundLabel = roundLabel || null;
+    game._introLine = introLine || null;
+    game.resetMatch(false);
+  },
+  /** Tournament fast-forward: 1, 2 or 4 fixed sim ticks per real one. */
+  setSpeed(multiplier) {
+    if (!game) return;
+    const m = Number(multiplier);
+    game.speed = m === 2 || m === 4 ? m : 1;
+  },
   setMuted(muted) { if (game) game.setMuted(muted); },
   /**
    * Engine phase ('intro' | 'countdown' | 'fighting' | 'ko' | 'result') or null. The ladder
@@ -37,8 +60,20 @@ window.PoBrawl = {
    * hidden tab, while the page's hold delay is wall-clock.
    */
   phase() { return game ? game.phase : null; },
-  /** Online: one server snapshot (PoBrawlMatchState) for the puppet fight (netplay.js). */
+  /** Online: one server snapshot (PoBrawlMatchState, ~10 Hz) — desync check and sync point (netplay.js). */
   net(state) { if (game) game.applyNet(state); },
+  /** Online: one confirmed input (PoBrawlMatchInputEvent) — may roll the fight back (netplay.js). */
+  netInput(ev) { if (game) game.applyNetInput(ev); },
+  /** Online: one clock-sync sample (the server's frame clock, the round trip in ms). */
+  netClock(clockFrame, rttMs) { if (game) game.applyNetClock(clockFrame, rttMs); },
+  /** Online diagnostics: the rollback session's frame, clock, HP and counters, or null. */
+  netStats() {
+    const s = game?.online?.session;
+    if (!s) return null;
+    const st = s.state;
+    return { frame: s.frame, anchor: s.anchor?.frame ?? -1, rtt: s.rtt, clock: s.clockSource,
+      hp: st ? [st.p1.hp, st.p2.hp] : null, x: st ? [st.p1.x, st.p2.x] : null, ...s.stats };
+  },
   /** Save or share the last KO clip. Resolves false when there is none. */
   saveClip() { return game ? game.saveClip() : Promise.resolve(false); },
   /** Training-room controls (training.js). key: 'reset'. No-op outside a training session. */

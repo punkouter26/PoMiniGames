@@ -1,0 +1,346 @@
+/* Brawl tournament. Shares PoBrawlPage's CSS scope (CssScope in PoMiniGamesClient.csproj), so
+   .pb-wrap, .pb-canvas-host, .pb-top, .pb-seg, .pb-recap, .pb-ending and every --pb-* token come
+   from PoBrawlPage.razor.css. Only the tournament's own pieces live here: the bout rail under
+   the HUD, the speed bar, the bracket overlay (over the arena — scheme-invariant --pb-*
+   colours) and the draw preview / standings (theme surfaces — app tokens). */
+
+/* ── Bout rail: which round, and seven pips for the seven bouts ── */
+.pt-rail {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    align-self: center;
+    padding: 4px 12px;
+    border-radius: var(--radius-pill);
+    background: rgba(8, 12, 28, 0.72);
+    color: var(--pb-ink-muted);
+    font-size: 0.78rem;
+}
+
+.pt-rail-round {
+    font-family: var(--pb-display);
+    color: var(--pb-gold);
+    letter-spacing: 0.04em;
+}
+
+.pt-rail-pips {
+    display: flex;
+    gap: 4px;
+}
+
+.pt-pip {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.pt-pip--done {
+    background: var(--pb-go);
+    border-color: var(--pb-go);
+}
+
+.pt-pip--now {
+    background: var(--pb-gold);
+    border-color: var(--pb-gold);
+    box-shadow: 0 0 6px var(--pb-gold);
+}
+
+.pt-rail-count {
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Speed + bracket bar, bottom-right of the arena ── */
+.pt-bar {
+    position: absolute;
+    right: calc(var(--pb-gutter) + 12px);
+    bottom: calc(var(--pb-gutter) + 12px);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 6;
+}
+
+.pt-bar-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--pb-ink-dim);
+}
+
+.pt-seg--on {
+    border-color: var(--pb-gold);
+    color: var(--pb-gold);
+}
+
+/* ── Bracket overlay ── */
+.pt-overlay {
+    position: absolute;
+    inset: var(--pb-gutter);
+    display: grid;
+    place-items: center;
+    padding: 12px;
+    background: rgba(5, 7, 16, 0.55);
+    z-index: 7;
+    animation: pt-fade 0.25s ease-out;
+}
+
+@keyframes pt-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pt-overlay { animation: none; }
+}
+
+.pt-panel {
+    width: min(100%, 58rem);
+    max-height: 100%;
+    overflow: auto;
+    padding: 14px 16px;
+    border-radius: var(--radius-lg, 14px);
+    border: 1px solid rgba(255, 209, 102, 0.35);
+    background: rgba(11, 19, 48, 0.94);
+    color: var(--pb-card-ink);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+
+.pt-panel-news {
+    margin: 0 0 10px;
+    font-weight: 700;
+    color: var(--pb-gold);
+    text-align: center;
+}
+
+.pt-panel-next {
+    margin: 10px 0 0;
+    text-align: center;
+    color: var(--pb-ink-soft);
+}
+
+/* The next bout's two dossiers (PoBrawlDossierCard, compact) under the bracket. */
+.pt-dossiers {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.pt-panel-close {
+    display: block;
+    margin: 10px auto 0;
+}
+
+.pt-bracket {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+    gap: 12px;
+    align-items: center;
+}
+
+.pt-col {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    gap: 8px;
+    height: 100%;
+}
+
+.pt-col-head {
+    margin: 0;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--pb-ink-dim);
+    text-align: center;
+}
+
+.pt-bout {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    overflow: hidden;
+}
+
+.pt-bout--now {
+    border-color: var(--pb-gold);
+    box-shadow: 0 0 0 1px var(--pb-gold), 0 0 14px rgba(255, 209, 102, 0.35);
+}
+
+.pt-corner {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 5px 8px;
+    font-size: 0.85rem;
+}
+
+.pt-corner + .pt-corner {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pt-corner-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.pt-corner-elo {
+    font-variant-numeric: tabular-nums;
+    color: var(--pb-ink-muted);
+}
+
+.pt-corner--win .pt-corner-name {
+    color: var(--pb-gold);
+}
+
+.pt-corner--out {
+    opacity: 0.6;
+}
+
+.pt-corner--out .pt-corner-name {
+    text-decoration: line-through;
+}
+
+.pt-delta {
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.pt-panel .pt-delta--up { color: var(--pb-p1-light); }
+.pt-panel .pt-delta--down { color: var(--pb-p2-light); }
+
+.pt-bout-how {
+    padding: 2px 8px 4px;
+    font-size: 0.7rem;
+    color: var(--pb-ink-dim);
+    text-align: right;
+}
+
+.pt-champ {
+    padding: 12px 8px;
+    border-radius: 10px;
+    text-align: center;
+    font-family: var(--pb-display);
+    font-size: 1.1rem;
+    color: var(--pb-versus-ink);
+    background: linear-gradient(135deg, var(--pb-seal-hi), var(--pb-gold) 55%, var(--pb-seal-lo));
+}
+
+/* ── Intro: the draw preview (theme surface — app tokens) ── */
+.pt-draw {
+    text-align: left;
+    padding: 10px 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md, 10px);
+}
+
+.pt-draw-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.pt-draw-title {
+    font-family: var(--pb-display);
+    font-size: 1.05rem;
+    color: var(--accent-ink);
+}
+
+.pt-draw-list {
+    list-style: none;
+    margin: 8px 0 4px;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+}
+
+.pt-draw-list li {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    background: var(--surface-1);
+    font-size: var(--text-sm);
+}
+
+.pt-draw-list li .pt-draw-who:last-child {
+    text-align: right;
+}
+
+.pt-draw-who small {
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.pt-draw-vs {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+.pt-draw-note,
+.pt-final-note {
+    margin: 4px 0 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+}
+
+.pt-draw-opts {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.pt-draw-optlabel {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-secondary);
+}
+
+.pt-draw-report {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: var(--text-sm);
+}
+
+/* ── Result modal standings (theme surface) ── */
+.pt-standings td.pt-delta--up { color: var(--accent-success-ink); }
+.pt-standings td.pt-delta--down { color: var(--accent-danger-ink); }
+
+.pt-final-note {
+    text-align: center;
+}
+
+@media (max-width: 640px) {
+    .pt-bar {
+        left: calc(var(--pb-gutter) + 8px);
+        right: calc(var(--pb-gutter) + 8px);
+        justify-content: center;
+    }
+
+    .pt-rail {
+        flex-wrap: wrap;
+        font-size: 0.72rem;
+    }
+
+    .pt-bracket,
+    .pt-dossiers {
+        grid-template-columns: 1fr;
+    }
+}

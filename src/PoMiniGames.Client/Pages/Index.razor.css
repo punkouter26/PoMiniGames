@@ -458,6 +458,7 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
 .home-mode-chip--twoplayer:hover   { background: rgba(34, 197, 94, 0.18); }
 .home-mode-chip--multiplayer:hover { background: rgba(236, 72, 153, 0.18); }
 .home-mode-chip--demo:hover        { background: rgba(245, 158, 11, 0.18); }
+.home-mode-chip--tournament:hover  { background: rgba(234, 179, 8, 0.2); }
 
 /* Hub-backed or API-backed mode while the browser is offline. Rendered as a
    <span> rather than an <a>, so this only has to communicate the state. */

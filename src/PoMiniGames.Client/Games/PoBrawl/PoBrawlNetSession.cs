@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.SignalR.Client;
 using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Services.Http;
@@ -6,9 +7,10 @@ namespace PoMiniGamesClient.Games.PoBrawl;
 
 /// <summary>
 /// The client half of one online PoBrawl fight on the match hub: join (or re-join) the fight on a
-/// code, stream the local corner's inputs, and surface the snapshots and the result.
-/// <see cref="PoBrawlPage"/> hosts it in online mode and hands each snapshot to the arena engine,
-/// which plays the fight as a puppet of them (wwwroot/js/pobrawl/netplay.js).
+/// code, send the local corner's frame-stamped inputs, keep the fight clock in sync, and surface
+/// the confirmed inputs, the snapshots and the result. <see cref="PoBrawlPage"/> hosts it in online
+/// mode and hands everything to the arena engine, whose rollback session
+/// (wwwroot/js/pobrawl/rollbackSession.js) predicts the fight and re-simulates when the server disagrees.
 /// </summary>
 /// <remarks>
 /// A reconnect — SignalR's automatic one, or a page refresh on <c>/pobrawl/online?code=…</c> —
@@ -17,10 +19,16 @@ namespace PoMiniGamesClient.Games.PoBrawl;
 /// </remarks>
 public sealed class PoBrawlNetSession : IAsyncDisposable
 {
+    /// <summary>Ping cadence: quick samples while the clock estimate settles, then one a second.</summary>
+    private static readonly TimeSpan FastPing = TimeSpan.FromMilliseconds(200);
+    private static readonly TimeSpan SlowPing = TimeSpan.FromSeconds(1);
+    private const int FastPings = 8;
+
     private readonly ApiEndpoints _endpoints;
     private readonly List<IDisposable> _subs = [];
+    private readonly CancellationTokenSource _cts = new();
     private HubConnection? _hub;
-    private long _sequence;
+    private Task? _pingLoop;
 
     public PoBrawlNetSession(ApiEndpoints endpoints) => _endpoints = endpoints;
 
@@ -33,6 +41,10 @@ public sealed class PoBrawlNetSession : IAsyncDisposable
     /// <summary>A (re-)join answered: a new snapshot, or null when no fight is on the code.</summary>
     public event Action<PoBrawlMatchSnapshot?>? Joined;
     public event Action<PoBrawlMatchState>? StateReceived;
+    /// <summary>An input the server accepted (either corner's, ours included), with the frame it used.</summary>
+    public event Action<PoBrawlMatchInputEvent>? InputReceived;
+    /// <summary>A clock sample: the server's frame clock, and the round trip (ms) it took to learn it.</summary>
+    public event Action<double, double>? ClockSampled;
     public event Action<PoBrawlMatchResult>? Finished;
     public event Action<HubConnectionState>? ConnectionChanged;
 
@@ -42,10 +54,14 @@ public sealed class PoBrawlNetSession : IAsyncDisposable
         _hub = HubConnectionFactory.Create(_endpoints.Hub("pobrawl/match-hub"));
         _subs.Add(_hub.On<PoBrawlMatchState>("matchState", s =>
         {
-            // Snapshots of the fight we joined only: a rematch's first ticks can race its "rematch" call.
+            // Snapshots of the fight we joined only: a rematch's first frames can race its "rematch" call.
             if (Snapshot is not null && s.MatchId != Snapshot.MatchId) return;
             State = s;
             StateReceived?.Invoke(s);
+        }));
+        _subs.Add(_hub.On<PoBrawlMatchInputEvent>("matchInput", e =>
+        {
+            if (Snapshot is not null && e.MatchId == Snapshot.MatchId) InputReceived?.Invoke(e);
         }));
         _subs.Add(_hub.On<PoBrawlMatchResult>("matchFinished", r =>
         {
@@ -60,7 +76,9 @@ public sealed class PoBrawlNetSession : IAsyncDisposable
         _hub.Closed += _ => { ConnectionChanged?.Invoke(HubConnectionState.Disconnected); return Task.CompletedTask; };
         await _hub.StartAsync();
         ConnectionChanged?.Invoke(_hub.State);
-        return await JoinAsync();
+        var joined = await JoinAsync();
+        _pingLoop ??= PingLoopAsync(_cts.Token);
+        return joined;
     }
 
     /// <summary>Join (or re-join) the fight on <see cref="Code"/>.</summary>
@@ -69,51 +87,59 @@ public sealed class PoBrawlNetSession : IAsyncDisposable
         if (_hub is null) return null;
         var snapshot = await _hub.InvokeAsync<PoBrawlMatchSnapshot?>("JoinMatch", Code);
         Snapshot = snapshot;
-        _sequence = 0;
         Joined?.Invoke(snapshot);
         return snapshot;
     }
 
     /// <summary>
-    /// A held-key change from the arena ('left' | 'right' | 'block' | 'idle'). Screen-relative:
-    /// 'right' walks the left corner (P1) in and the right corner out.
+    /// One local input from the arena's rollback session: the frame it applied it at, the held state
+    /// (PoBrawlMatchAction 0–3, corner-relative), an attack press (0 or 4–6) and its sequence number.
+    /// Fire-and-forget: the server answers everyone with a <c>matchInput</c>.
     /// </summary>
-    public Task SendHeldAsync(string state)
-    {
-        var towardRight = Snapshot?.LocalSide != PoBrawlSide.Player2;
-        return SendAsync(state switch
-        {
-            "block" => PoBrawlMatchAction.Block,
-            "right" => towardRight ? PoBrawlMatchAction.MoveForward : PoBrawlMatchAction.MoveBack,
-            "left" => towardRight ? PoBrawlMatchAction.MoveBack : PoBrawlMatchAction.MoveForward,
-            _ => PoBrawlMatchAction.Idle,
-        });
-    }
-
-    /// <summary>An attack press ('punch' | 'kick' | 'special'); the server buffers one behind the cooldown.</summary>
-    public Task SendPressAsync(string attack) => attack switch
-    {
-        "punch" => SendAsync(PoBrawlMatchAction.Punch),
-        "kick" => SendAsync(PoBrawlMatchAction.Kick),
-        "special" => SendAsync(PoBrawlMatchAction.Special),
-        _ => Task.CompletedTask,
-    };
-
-    private async Task SendAsync(PoBrawlMatchAction action)
+    public async Task SendInputAsync(long frame, int held, int press, long sequence)
     {
         if (_hub is not { State: HubConnectionState.Connected } || Snapshot is not { IsSpectator: false }) return;
         try
         {
-            await _hub.InvokeAsync("SubmitInput", new PoBrawlMatchInput
+            await _hub.SendAsync("SubmitInput", new PoBrawlMatchInput
             {
                 ActorSide = Snapshot.LocalSide,
-                Action = action,
-                Sequence = ++_sequence,
+                Frame = frame,
+                Held = (PoBrawlMatchAction)held,
+                Press = (PoBrawlMatchAction)press,
+                Sequence = sequence,
             });
         }
         catch
         {
             // Dropped mid-fight: the reconnect re-joins, and the server let go of the held keys.
+        }
+    }
+
+    /// <summary>Clock sync: ping the hub, time the round trip, report both.</summary>
+    private async Task PingLoopAsync(CancellationToken ct)
+    {
+        var sent = 0;
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(sent < FastPings ? FastPing : SlowPing, ct);
+                if (_hub is not { State: HubConnectionState.Connected } hub || Snapshot is null) continue;
+                var started = Stopwatch.GetTimestamp();
+                var clock = await hub.InvokeAsync<PoBrawlMatchClock?>("Ping", ct);
+                var rttMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                sent++;
+                if (clock is not null && clock.MatchId == Snapshot?.MatchId) ClockSampled?.Invoke(clock.ClockFrame, rttMs);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch
+            {
+                // A ping lost to a reconnect: the next one carries on.
+            }
         }
     }
 
@@ -132,6 +158,12 @@ public sealed class PoBrawlNetSession : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        await _cts.CancelAsync();
+        if (_pingLoop is not null)
+        {
+            try { await _pingLoop; } catch { /* cancelled */ }
+        }
+        _cts.Dispose();
         var hub = _hub;
         _hub = null;
         foreach (var s in _subs) s.Dispose();

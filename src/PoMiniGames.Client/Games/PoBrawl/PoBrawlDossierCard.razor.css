@@ -1,0 +1,140 @@
+/* Fighter dossier card. A theme surface (intro card, tournament page), so app tokens only;
+   --pb-display is inherited from PoBrawlPage's .pb-intro when it is there. */
+.pbd-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    padding: 10px 12px;
+    text-align: left;
+    color: var(--color-text-primary);
+    background: var(--surface-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.pbd-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.pbd-portrait {
+    flex: 0 0 auto;
+    width: 64px;
+    height: 64px;
+    border-radius: var(--radius-md);
+    object-fit: cover;
+    object-position: 50% 20%;
+    background: var(--surface-2);
+    border: 1px solid var(--color-border);
+}
+
+.pbd-portrait--blank {
+    display: grid;
+    place-items: center;
+    font-family: var(--pb-display, var(--font-display));
+    font-size: 1.2rem;
+    color: var(--accent-ink);
+}
+
+.pbd-id {
+    min-width: 0;
+}
+
+.pbd-name {
+    margin: 0;
+    font-family: var(--pb-display, var(--font-display));
+    font-size: 1rem;
+    font-weight: 400;
+    line-height: 1.2;
+    color: var(--accent-ink);
+    overflow-wrap: anywhere;
+}
+
+.pbd-office,
+.pbd-party {
+    margin: 2px 0 0;
+    font-size: var(--text-xs);
+    line-height: 1.35;
+    color: var(--color-text-secondary);
+}
+
+.pbd-party {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+/* Decorative only: the party name is always written next to it. */
+.pbd-party-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #94a3b8;
+}
+
+.pbd-party-dot--dem { background: #3b82f6; }
+.pbd-party-dot--rep { background: #ef4444; }
+
+.pbd-style,
+.pbd-summary {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: 1.45;
+}
+
+.pbd-style b {
+    color: var(--color-text-primary);
+}
+
+.pbd-summary {
+    color: var(--color-text-secondary);
+}
+
+.pbd-source {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+}
+
+.pbd-source a {
+    color: var(--accent-ink);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.pbd-source a:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+/* Compact: the 2P select shows two side by side, so the summary is clamped. */
+.pbd-card--compact {
+    gap: 4px;
+    padding: 8px 10px;
+}
+
+.pbd-card--compact .pbd-portrait {
+    width: 44px;
+    height: 44px;
+}
+
+.pbd-card--compact .pbd-name {
+    font-size: 0.9rem;
+}
+
+.pbd-card--compact .pbd-style,
+.pbd-card--compact .pbd-summary {
+    font-size: var(--text-xs);
+}
+
+.pbd-card--compact .pbd-summary {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+}

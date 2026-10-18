@@ -273,7 +273,7 @@
     // so a press line still on its way out can tell its fight is gone.
     private int _fightGeneration;
 
-    // ── Online (PoBrawlNetSession; the arena is a puppet of the server's fight) ──
+    // ── Online (PoBrawlNetSession; the arena predicts the server's fight and rolls back) ──
     private PoBrawlNetSession? _net;
     private string _code = "";
     private string? _engineMatchId;   // the fight the running engine is showing
@@ -408,6 +408,11 @@
             <span class="pb-scout-rung">Rung @(_ladder + 1) of @Roster.Length</span>
             <span class="pb-scout-name">@CharName(_p2Char)</span>
         </div>
+        @* Scouting report on the rung's president. Open by default: the 1P card has the room. *@
+        <details class="pb-dossier-disclosure" open>
+            <summary>📁 Dossier</summary>
+            <PoBrawlDossierCard FighterId="@_p2Char" />
+        </details>
     </div>;
 
     // Two-player fighter select: one shared 4×4 grid with a cursor per player. Each player
@@ -437,6 +442,14 @@
                 </li>
             }
         </ul>
+        @* Each corner's highlighted fighter. Collapsed by default: the 2P card is already long. *@
+        <details class="pb-dossier-disclosure">
+            <summary>📁 Dossiers</summary>
+            <div class="pb-dossier-pair">
+                <PoBrawlDossierCard FighterId="@PickableRoster[_p1Sel].Id" Compact="true" />
+                <PoBrawlDossierCard FighterId="@PickableRoster[_p2Sel].Id" Compact="true" />
+            </div>
+        </details>
     </div>;
 
     private string TileLabel(int idx) =>
@@ -770,8 +783,8 @@
         // 1P difficulty is the ladder rung (1 = pushover Trump … 15 = brutal
         // FDR); demo keeps the balanced mid-tier CPU-vs-CPU fight.
         object difficulty = _mode == "1p" ? _ladder + 1 : "medium";
-        // Online: which corner is ours (0 = watching). The engine drives both as puppets of the
-        // server's snapshots and only reads the local keys for corner `localSide`.
+        // Online: which corner is ours (0 = watching). The engine's rollback session drives both
+        // corners and only reads the local keys for corner `localSide`.
         var localSide = _net?.Snapshot is { IsSpectator: false } snap
             ? (snap.LocalSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? 1 : 2)
             : 0;
@@ -820,6 +833,8 @@
         _net = new PoBrawlNetSession(Endpoints);
         _net.Joined += snap => InvokeAsync(() => OnNetJoinedAsync(snap));
         _net.StateReceived += OnNetState;
+        _net.InputReceived += OnNetInputEvent;
+        _net.ClockSampled += OnNetClock;
         _net.Finished += r => InvokeAsync(() => OnNetFinishedAsync(r));
         _net.ConnectionChanged += _ => InvokeAsync(StateHasChanged);
         try
@@ -872,7 +887,15 @@
         await InitEngine();
     }
 
-    /// <summary>Every server tick: straight to the arena, off the render path.</summary>
+    /// <summary>A confirmed input (either corner's, ours echoed): straight to the arena's rollback session.</summary>
+    private void OnNetInputEvent(PoMiniGames.Shared.Games.PoBrawlMatchInputEvent e) =>
+        _ = JSRuntime.InvokeVoidAsync("PoBrawl.netInput", e).AsTask().ContinueWith(_ => { }, TaskScheduler.Default);
+
+    /// <summary>A clock-sync sample: the server's frame clock and the round trip that measured it.</summary>
+    private void OnNetClock(double clockFrame, double rttMs) =>
+        _ = JSRuntime.InvokeVoidAsync("PoBrawl.netClock", clockFrame, rttMs).AsTask().ContinueWith(_ => { }, TaskScheduler.Default);
+
+    /// <summary>Every server snapshot (~10 Hz): straight to the arena, off the render path.</summary>
     private void OnNetState(PoMiniGames.Shared.Games.PoBrawlMatchState s)
     {
         _ = JSRuntime.InvokeVoidAsync("PoBrawl.net", s).AsTask().ContinueWith(_ => { }, TaskScheduler.Default);
@@ -898,13 +921,13 @@
         }
     }
 
-    /// <summary>netplay.js → the local corner's held keys changed ('left' | 'right' | 'block' | 'idle').</summary>
+    /// <summary>
+    /// netplay.js → one local input, already applied by the arena's rollback session on
+    /// <paramref name="frame"/>: the held state (0–3, corner-relative) and an attack press (0 or 4–6).
+    /// </summary>
     [JSInvokable]
-    public Task OnNetHeld(string state) => _net?.SendHeldAsync(state) ?? Task.CompletedTask;
-
-    /// <summary>netplay.js → an attack key ('punch' | 'kick' | 'special').</summary>
-    [JSInvokable]
-    public Task OnNetPress(string attack) => _net?.SendPressAsync(attack) ?? Task.CompletedTask;
+    public Task OnNetInput(long frame, int held, int press, long sequence) =>
+        _net?.SendInputAsync(frame, held, press, sequence) ?? Task.CompletedTask;
 
     // The LOCAL side is cached at join (see the field note on _localSide): the Snapshot can
     // be gone while the result screen is still up, and "who is my opponent" must survive it.

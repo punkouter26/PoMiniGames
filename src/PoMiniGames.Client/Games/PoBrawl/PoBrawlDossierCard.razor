@@ -1,0 +1,82 @@
+@using PoMiniGames.Shared.Games
+@inject PoBrawlDossierService Dossiers
+
+@* One fighter's dossier: portrait, office, term, party, fighting style and a short summary.
+   Wikipedia text is CC BY-SA, so a card showing it always carries the "From Wikipedia" link.
+   Reused outside PoBrawlPage, so it reads only app tokens (with fallbacks for --pb-display). *@
+@if (_dossier is { } d)
+{
+    <article class="pbd-card @(Compact ? "pbd-card--compact" : "")" aria-label="Dossier: @d.FullName">
+        <div class="pbd-head">
+            @if (d.ThumbnailUrl is { Length: > 0 } src && !_imageFailed)
+            {
+                <img class="pbd-portrait" src="@src" alt="Portrait of @d.FullName" loading="lazy"
+                     referrerpolicy="no-referrer" decoding="async" @onerror="OnImageError" />
+            }
+            else
+            {
+                <span class="pbd-portrait pbd-portrait--blank" aria-hidden="true">@(d.IsFictional ? "🧑‍💼" : Initials(d.FullName))</span>
+            }
+            <div class="pbd-id">
+                <h3 class="pbd-name">@d.FullName</h3>
+                <p class="pbd-office">@d.Office · @d.Term</p>
+                <p class="pbd-party"><span class="pbd-party-dot pbd-party-dot--@PartyKey(d.Party)" aria-hidden="true"></span>@d.Party</p>
+            </div>
+        </div>
+        <p class="pbd-style"><b>🥊 Fighting style</b> @d.FightingStyle</p>
+        <p class="pbd-summary">@d.Summary</p>
+        <p class="pbd-source">
+            @if (d.FromWikipedia && d.ArticleUrl is { } article)
+            {
+                <a href="@article" target="_blank" rel="noopener noreferrer">From Wikipedia</a>
+                <span> · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer license">CC BY-SA 4.0</a></span>
+            }
+            else if (d.ArticleUrl is { } link)
+            {
+                <a href="@link" target="_blank" rel="noopener noreferrer">Read on Wikipedia</a>
+            }
+            else
+            {
+                <span>Fictional dossier</span>
+            }
+        </p>
+    </article>
+}
+
+@code {
+    /// <summary>Roster id (PoBrawlRoster), BOB included.</summary>
+    [Parameter] public string FighterId { get; set; } = "";
+
+    /// <summary>A smaller card: thumbnail portrait, summary clamped to a few lines.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    private PoBrawlDossierDto? _dossier;
+    private bool _imageFailed;
+    private string? _shownId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!string.Equals(_shownId, FighterId, StringComparison.OrdinalIgnoreCase))
+        {
+            _shownId = FighterId;
+            _imageFailed = false;
+        }
+
+        _dossier = Dossiers.Peek(FighterId);
+        if (await Dossiers.EnsureLoadedAsync())
+            _dossier = Dossiers.Peek(FighterId);
+    }
+
+    private void OnImageError() => _imageFailed = true;
+
+    private static string Initials(string fullName) =>
+        string.Concat(fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => char.IsLetter(w[0]) && w.Length > 2)
+            .Select(w => w[0])
+            .Take(2));
+
+    private static string PartyKey(string party) =>
+        party.StartsWith("Rep", StringComparison.OrdinalIgnoreCase) ? "rep"
+        : party.StartsWith("Dem", StringComparison.OrdinalIgnoreCase) ? "dem"
+        : "ind";
+}

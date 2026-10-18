@@ -293,6 +293,28 @@ internal static class GameServicesExtensions
         services.AddHostedService<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchPump>();
         services.AddSingleton<PoMiniGames.Features.PoBrawl.PoBrawlProgressStore>();
 
+        // PoBrawl fighter dossiers — static facts enriched once a day from the free Wikimedia
+        // REST API. Wikimedia asks for a descriptive User-Agent; the standard resilience handler
+        // retries a blip, and short timeouts keep a slow Wikipedia from holding the request
+        // (the service falls back to static text on any failure).
+        services.AddMemoryCache();
+        services.AddOptions<PoMiniGames.Features.PoBrawl.PoBrawlDossierOptions>()
+            .BindConfiguration(PoMiniGames.Features.PoBrawl.PoBrawlDossierOptions.SectionName);
+        services.AddHttpClient(PoMiniGames.Features.PoBrawl.PoBrawlDossierService.HttpClientName, client =>
+            {
+                client.BaseAddress = new Uri("https://en.wikipedia.org/api/rest_v1/");
+                client.Timeout = TimeSpan.FromSeconds(15);
+                client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PoMiniGames.Features.PoBrawl.PoBrawlDossierService.UserAgent);
+                client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+            })
+            .AddStandardResilienceHandler(options =>
+            {
+                options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(4);
+                options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(10);
+                options.Retry.MaxRetryAttempts = 2;
+            });
+        services.AddSingleton<PoMiniGames.Features.PoBrawl.PoBrawlDossierService>();
+
         // ConnectFive + TicTacToe online — turn-based 1v1 over SignalR. One shared
         // TurnMatchService<THub> per hub holds that game's quick-match queue and every
         // authoritative board; there is no lobby service because a two-seat turn game

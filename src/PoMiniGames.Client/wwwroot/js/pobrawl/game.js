@@ -221,6 +221,10 @@ export class BrawlGame {
     this.accumulator = 0;
     this.lastFrame = 0;
     this.timeScale = 1;
+    // Fast-forward multiplier (tournament only, see PoBrawl.setSpeed); 1 everywhere else.
+    this.speed = 1;
+    // Splash heading override for the rounds after the first (tournament bouts).
+    this._roundLabel = null;
     // Effects list — sparks, debris, post chunks. Updated each render tick.
     this.effects = [];
     // Renderer-level feedback: hit-pause, screen shake, FOV punch.
@@ -434,20 +438,22 @@ export class BrawlGame {
     // tap-vs-hold block key — works unchanged. Demo mode is CPU vs CPU,
     // so no controls there.
     const spectating = this.options.mode === 'online' && !this.options.localSide;
-    if (this.options.mode !== 'demo' && !spectating) {
+    // Demo and the tournament are CPU vs CPU: nobody to hand a pad or touch controls to.
+    const cpuOnly = this.options.mode === 'demo' || this.options.mode === 'tournament';
+    if (!cpuOnly && !spectating) {
       this.touchEl = buildTouchControls(this.container, this.options.mode === 'online');
     }
 
     // Controllers drive the same key codes as the keyboard (gamepadBus.js KeyBridge + padCodes).
     // 1P: the first pad is player 1. 2P: first pad P1, second P2. Demo: none.
-    if (this.options.mode !== 'demo') {
+    if (!cpuOnly) {
       this.gamepads = new KeyBridge(this.options.mode === '2p' ? [1, 2] : [1], (pad, layout) => padCodes(pad, LAYOUTS[layout]));
     }
 
     // The Breaking News result package (news.js).
     this.news = new NewsDesk(this.container, {
       onSaveClip: () => this.saveClip(),
-      demo: this.options.mode === 'demo',
+      demo: cpuOnly,
     });
 
     // Rolling KO clip (clip.js). Not in demo (nobody to hand it to), not
@@ -543,6 +549,7 @@ export class BrawlGame {
       this._beginWithSplash(this.fighters[0].charId, this.fighters[1].charId,
         this.options.mode === '2p' ? 'ONE ROUND · 60 SECONDS'
           : this.options.mode === 'demo' ? 'EXHIBITION'
+          : this.options.mode === 'tournament' ? (this.options.roundLabel || 'TOURNAMENT')
           : this.options.mode === 'online' ? (spectating ? 'LIVE · SPECTATING' : 'ONLINE · 60 SECONDS')
           : 'MAIN EVENT');
     }
@@ -589,7 +596,9 @@ export class BrawlGame {
 
       // Sample the pads before the sim so a press lands on this frame's tick.
       if (this.gamepads) this.gamepads.poll();
-      this.accumulator += dt * this.timeScale;
+      // `speed` is the tournament's fast-forward (PoBrawl.setSpeed): more fixed ticks per frame,
+      // never a longer tick, so the fight resolves exactly as it would at 1x.
+      this.accumulator += dt * this.timeScale * this.speed;
       while (this.accumulator >= SIM_DT) {
         this.accumulator -= SIM_DT;
         this._tick(SIM_DT);
@@ -870,10 +879,10 @@ export class BrawlGame {
     // The training room (1P) claims the dummy's slot. Null means "not a training slot".
     const trainingController = this._trainingController(playerIndex);
     if (trainingController) return trainingController;
-    // Online both corners are puppets of the server's snapshots (netplay.js).
+    // Online both corners are driven by the local rollback sim (netplay.js / rollbackSession.js).
     if (mode === 'online') return new NetController(playerIndex === this.options.localSide);
     const keys = (layout) => new KeyboardController(layout);
-    if (mode === 'demo') return new AiController(difficulty, this.rng, charIdForIndex);
+    if (mode === 'demo' || mode === 'tournament') return new AiController(difficulty, this.rng, charIdForIndex);
     if (mode === '2p') return keys(playerIndex);
     return playerIndex === 1
       ? keys(1)
@@ -1205,6 +1214,18 @@ export class BrawlGame {
    * Speak the ring introduction, if one is waiting, and return how long the VS splash should
    * hold so the line finishes before "3" (the count cancels whatever the PA is saying).
    */
+  /**
+   * A knockout bracket cannot advance a draw, so a tournament bout always has a winner at the
+   * bell: more health, then more hits landed, then the bigger single hit, then a seeded coin.
+   */
+  _tournamentDecision(h1, h2) {
+    if (h1 !== h2) return h1 > h2 ? 1 : 2;
+    const [a, b] = this.fighters.map((f) => f.stats);
+    if (a.hits !== b.hits) return a.hits > b.hits ? 1 : 2;
+    if (a.biggestHit !== b.biggestHit) return a.biggestHit > b.biggestHit ? 1 : 2;
+    return this.rng.random() < 0.5 ? 1 : 2;
+  }
+
   _introHold() {
     const line = this._introLine;
     this._introLine = null;
@@ -1328,7 +1349,9 @@ export class BrawlGame {
     const p1 = CHARACTERS[p1Char]?.name ?? p1Char;
     const p2 = CHARACTERS[p2Char]?.name ?? p2Char;
     // `label` is the first match's heading (_beginWithSplash); rounds after it get the generic one.
+    // The tournament page names every bout ('QUARTERFINAL 2 OF 4') through PoBrawl.matchup.
     label ||= this.training ? 'TRAINING'
+      : this._roundLabel ? this._roundLabel
       : this.options.mode === 'demo' ? 'DEMO' : 'NEXT ROUND';
     this.splash.querySelector('.pb-splash__round').textContent = label;
     this.splash.querySelector('.pb-splash__p1').textContent = p1;
@@ -1424,7 +1447,8 @@ export class BrawlGame {
         // of each other is a DRAW.
         const margin = Math.abs(h1 - h2);
         let winner;
-        if (margin <= DRAW_HP_BAND) winner = 0;   // too close to call
+        if (this.options.mode === 'tournament') winner = this._tournamentDecision(h1, h2);
+        else if (margin <= DRAW_HP_BAND) winner = 0;   // too close to call
         else winner = h1 > h2 ? 1 : 2;
         // 'TIME!' is the flash on the way out, not the final word: _endMatch
         // calls _reportResult synchronously and that sets the real banner —

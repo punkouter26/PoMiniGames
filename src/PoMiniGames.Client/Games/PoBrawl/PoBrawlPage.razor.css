@@ -834,6 +834,76 @@
     color: var(--accent-ink);
 }
 
+/* "📁 Dossier" disclosure (1P scouting card, 2P select): PoBrawlDossierCard behind a
+   summary row, so the long intro card only grows when the player asks. */
+.pb-dossier-disclosure {
+    margin-top: 8px;
+    text-align: left;
+}
+
+.pb-dossier-disclosure > summary {
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    border-radius: var(--radius-md);
+}
+
+/* display:flex drops the native marker, so the open/closed chevron is drawn here. */
+.pb-dossier-disclosure > summary {
+    list-style: none;
+}
+
+.pb-dossier-disclosure > summary::-webkit-details-marker {
+    display: none;
+}
+
+.pb-dossier-disclosure > summary::before {
+    content: "▸";
+    display: inline-block;
+    width: 1em;
+    transition: transform 0.15s ease;
+}
+
+.pb-dossier-disclosure[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pb-dossier-disclosure > summary::before {
+        transition: none;
+    }
+}
+
+.pb-dossier-disclosure > summary:hover {
+    color: var(--color-text-primary);
+}
+
+.pb-dossier-disclosure > summary:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
+.pb-dossier-disclosure[open] > summary {
+    margin-bottom: 6px;
+}
+
+.pb-dossier-pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+@media (max-width: 560px) {
+    .pb-dossier-pair {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 /* "Training first" — the start-mode checkbox on the 1P intro card, first thing
    in the options so it never scrolls below the fold. Theme surface, so tokens. */
 .pb-intro-train {

@@ -5,10 +5,12 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Features.PoBrawl.Online;
 
 /// <summary>
-/// Match hub for live PoBrawl 1v1. Each connection joins its match code's group and
-/// streams <see cref="PoBrawlMatchInput"/>s to the server; the server broadcasts
-/// <see cref="PoBrawlMatchState"/>s from the pump and a single
-/// <see cref="PoBrawlMatchResult"/> per corner on finish.
+/// Match hub for live PoBrawl 1v1 — the input relay of a rollback fight. Each connection joins its
+/// match code's group and sends frame-stamped <see cref="PoBrawlMatchInput"/>s; the server stamps
+/// each with the frame it actually applies it at and echoes it to the whole group at once as a
+/// <c>matchInput</c> (<see cref="PoBrawlMatchInputEvent"/>). The pump adds 10 Hz <c>matchState</c>
+/// snapshots (<see cref="PoBrawlMatchState"/>) and a single <see cref="PoBrawlMatchResult"/> per
+/// corner on finish; <see cref="Ping"/> is the clients' clock sync.
 /// </summary>
 /// <remarks>
 /// The group is keyed by the match CODE, not the match id, so a rematch (a new match on the same
@@ -33,7 +35,7 @@ public sealed class PoBrawlMatchHub : Hub
     /// </summary>
     public override async Task OnDisconnectedAsync(Exception? ex)
     {
-        _registry.MatchFor(Context.ConnectionId)?.UnregisterConnection(Context.ConnectionId);
+        await ReleaseAsync(_registry.MatchFor(Context.ConnectionId));
         _registry.UnbindConnection(Context.ConnectionId);
         await base.OnDisconnectedAsync(ex);
     }
@@ -52,7 +54,7 @@ public sealed class PoBrawlMatchHub : Hub
 
         var identity = RequestIdentity.Resolve(Context.User);
         // A reconnect on a live socket (or a rematch) re-pins: drop the old binding first.
-        _registry.MatchFor(Context.ConnectionId)?.UnregisterConnection(Context.ConnectionId);
+        await ReleaseAsync(_registry.MatchFor(Context.ConnectionId));
         var seated = match.RegisterConnectionByPrincipal(identity.UserId, Context.ConnectionId);
         _registry.BindConnection(Context.ConnectionId, match.GameCode);
         await Groups.AddToGroupAsync(Context.ConnectionId, MatchGroup(match.GameCode));
@@ -73,12 +75,19 @@ public sealed class PoBrawlMatchHub : Hub
         };
     }
 
-    public Task SubmitInput(PoBrawlMatchInput input)
+    /// <summary>
+    /// One input from the caller's corner. The match pins the side (a spectator's input is refused
+    /// there) and picks the frame; the accepted input goes straight back out to the whole group.
+    /// </summary>
+    public async Task SubmitInput(PoBrawlMatchInput input)
     {
-        // The match pins the connection's own corner; a spectator's input is refused there.
-        _registry.MatchFor(Context.ConnectionId)?.SubmitInput(Context.ConnectionId, input);
-        return Task.CompletedTask;
+        var match = _registry.MatchFor(Context.ConnectionId);
+        if (match?.SubmitInput(Context.ConnectionId, input) is not { } accepted) return;
+        await Clients.Group(MatchGroup(match.GameCode)).SendAsync("matchInput", accepted);
     }
+
+    /// <summary>Clock sync: where the caller's fight clock is. Null when the caller is in no fight.</summary>
+    public PoBrawlMatchClock? Ping() => _registry.MatchFor(Context.ConnectionId)?.Clock();
 
     /// <summary>
     /// After the bell: this corner wants another round. The vote count goes out to the match group, and
@@ -112,9 +121,17 @@ public sealed class PoBrawlMatchHub : Hub
     /// </summary>
     public async Task LeaveMatch()
     {
-        var match = _registry.MatchFor(Context.ConnectionId);
-        match?.UnregisterConnection(Context.ConnectionId);
+        await ReleaseAsync(_registry.MatchFor(Context.ConnectionId));
         var code = _registry.UnbindConnection(Context.ConnectionId);
         if (code is not null) await Groups.RemoveFromGroupAsync(Context.ConnectionId, MatchGroup(code));
+    }
+
+    /// <summary>Unpin this connection; if its corner is now empty, tell the match it let go of its keys.</summary>
+    private async Task ReleaseAsync(PoBrawlMatchService? match)
+    {
+        if (match?.UnregisterConnection(Context.ConnectionId) is { } released)
+        {
+            await Clients.Group(MatchGroup(match.GameCode)).SendAsync("matchInput", released);
+        }
     }
 }

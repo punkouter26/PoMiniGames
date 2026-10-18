@@ -95,6 +95,8 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlMatchResultDto))]
 // PoBrawl cross-device ladder progress.
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlProgressDto))]
+// PoBrawl fighter dossiers (anonymous read).
+[JsonSerializable(typeof(List<PoMiniGames.Shared.Games.PoBrawlDossierDto>))]
 // Player Card & Online MMR
 [JsonSerializable(typeof(PoMiniGames.Domain.Models.PlayerCardDto))]
 internal partial class ApiJsonContext : JsonSerializerContext

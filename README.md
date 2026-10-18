@@ -17,6 +17,15 @@ scores, and, only when a player opts in, talks to AI models on the player's beha
   demand and wired together with JS interop callbacks.
 - **Online play runs over 15 SignalR hubs.** Match, lobby and race state is held in server
   memory and is lost on restart.
+- **PoBrawl's online 1v1 uses rollback netcode.** Both browsers and the server run the same
+  integer, 60 Hz fight sim, written twice to give bit-identical results
+  (`Shared/Games/PoBrawlRollbackSim.cs` and `wwwroot/js/pobrawl/rollbackSim.js`). Your own
+  keys apply at once, two frames ahead; the opponent is predicted and the fight is
+  re-simulated when their real input arrives. The match hub relays frame-stamped inputs
+  (`matchInput`, echoed to everyone with the frame the server applied them on) and answers
+  `Ping` for clock sync. Snapshots (`matchState`, the full sim state plus a checksum) go out
+  at 10 Hz. The server decides which frame each input lands on and is the only source of the
+  result.
 - **No database.** Scores, ratings, saves and AI spend ledgers live in Azure Table Storage;
   PoEcosystem world files live in Blob Storage. A player is whoever the sign-in token says
   they are; there is no Player table.
@@ -57,7 +66,7 @@ scores, and, only when a player opts in, talks to AI models on the player's beha
 |---|---|
 | TicTacToe | 4-in-a-row on 6×6 vs AI, hot-seat, or online quick-match (SignalR) |
 | ConnectFive | Five-in-a-row vs AI, hot-seat, or online quick-match (SignalR) |
-| PoBrawl | Physics brawler with a presidents ladder + fighter Elo demo board |
+| PoBrawl | Physics brawler with a presidents ladder, an 8-fighter CPU tournament (`/pobrawl/tournament`, random draw, Elo after every bout) + fighter Elo demo board |
 | PoCoupleQuiz | Two-player realtime couples quiz (SignalR); curated questions, free answer matching, opt-in AI judge |
 | PoFunQuiz | Multiplayer trivia lobby from a free question bank (opt-in Fresh AI questions) |
 | PoMarbleRace | Physics marble race on baked GLB tracks; online 2-player via host-streamed physics |
@@ -144,6 +153,7 @@ CI validates Bicep and deploys application code; use `azd up` for resource provi
 | `PoMiniGames:AI:QuizPrebake:*` | Background bank filler: `Enabled` (on), `Interval`, `DelayBetweenCategories`, `Categories`, `AllowAiTopUp` (off, the only part that spends) |
 | `PoMiniGames:Jev:Brain` | `Local` (free rules, default) or `Jev` (paid; also needs `ApiKey` and the player's choice) |
 | `PoMiniGames:AI:Deployments` | `funquiz`, `couplequiz` and `couplequiz.similarity` all run on `gpt-5.4-nano` |
+| `PoMiniGames:PoBrawl:Dossier:FetchWikipedia`, `CacheHours` | Fighter dossiers: enrich the static facts from the free Wikimedia REST API (default `true`), cached 24 h; off or failing, static facts are served. Tests pin it to `false` |
 
 | Endpoint | Change |
 |---|---|
@@ -154,6 +164,10 @@ CI validates Bicep and deploys application code; use `azd up` for resource provi
 | `GET /api/pocabinet/banter`, `POST /api/pocabinet/debrief` | Removed; Cabinet's radio lines are scripted in the browser |
 | `POST /api/pobrawl/presser`, `POST /api/pobrawl/intro` | Removed; Brawl's press lines are scripted |
 | `GET /api/leaderboards` and `/api/leaderboards/{game}` | New `period=week` query for this ISO week's boards |
+| `GET /api/pobrawl/dossier` | New, anonymous: every Brawl fighter's dossier (number, term, party, fighting style, Wikipedia summary, portrait, article link) in one call |
+| `/pobrawl/match-hub` (SignalR) | Rollback protocol: `SubmitInput` takes `{ frame, held, press, sequence }`; new `matchInput` event (each accepted input with the frame the server used) and `Ping` method (clock sync); `matchState` now carries `frame`, `sim` (26 packed ints) and `checksum` in place of the per-tick swing fields |
 
 Trivia questions in PoFunQuiz come in part from the [Open Trivia Database](https://opentdb.com/),
 licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+PoBrawl's fighter dossiers quote summaries and portraits from [Wikipedia](https://en.wikipedia.org/)
+(text CC BY-SA 4.0); each card links its article with a "From Wikipedia" attribution.

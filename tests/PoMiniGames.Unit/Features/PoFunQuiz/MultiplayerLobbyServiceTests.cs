@@ -31,20 +31,6 @@ public sealed class MultiplayerLobbyServiceTests
         lobby.JoinOrCreateAsync(conn, name, category, questions, default);
 
     [Theory]
-    [InlineData("conn1", "Alice", 1)]
-    [InlineData("conn7", "Eve", 1)]
-    public async Task FirstPlayer_OpensLobby_AndIsHostPlayerOne(string hostConn, string hostName, int expectedPlayerNumber)
-    {
-        var lobby = NewLobby();
-        var (game, created) = await JoinAsync(lobby, hostConn, hostName);
-        created.Should().BeTrue(because: "an empty lobby is opened by whoever arrives first");
-        game.GameId.Should().NotBeNullOrEmpty();
-        game.HostConnectionId.Should().Be(hostConn);
-        game.Players.Should().ContainSingle(p => p.Name == hostName && p.PlayerNumber == expectedPlayerNumber);
-        game.State.Should().Be(GameState.Waiting);
-    }
-
-    [Theory]
     [InlineData("conn2", "Bob", 2)]
     [InlineData("conn5", "Dan", 2)]
     public async Task SecondPlayer_JoinsTheOpenLobby_AsPlayerNumberTwo(string conn, string name, int expectedNumber)
@@ -120,10 +106,25 @@ public sealed class MultiplayerLobbyServiceTests
     /// Each row runs one scenario: a private method below, named after what it checks.
     /// </summary>
     [Theory]
+    [InlineData(nameof(FirstPlayer_OpensLobby_AndIsHostPlayerOne))]
     [InlineData(nameof(ThirdPlayer_OpensAFreshLobby_RatherThanOverfillingAFullOne))]
     [InlineData(nameof(RemoveLastPlayer_DeletesSession))]
     [InlineData(nameof(Survivor_Rejoin_And_ClientBonuses_AreAllBounded))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    private async Task FirstPlayer_OpensLobby_AndIsHostPlayerOne()
+    {
+        foreach (var (hostConn, hostName) in new[] { ("conn1", "Alice"), ("conn7", "Eve") })
+        {
+            var lobby = NewLobby();
+            var (game, created) = await JoinAsync(lobby, hostConn, hostName);
+            created.Should().BeTrue(because: "an empty lobby is opened by whoever arrives first");
+            game.GameId.Should().NotBeNullOrEmpty();
+            game.HostConnectionId.Should().Be(hostConn);
+            game.Players.Should().ContainSingle(p => p.Name == hostName && p.PlayerNumber == 1);
+            game.State.Should().Be(GameState.Waiting);
+        }
+    }
 
     private async Task ThirdPlayer_OpensAFreshLobby_RatherThanOverfillingAFullOne()
     {

@@ -2,62 +2,79 @@ using FluentAssertions;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.PoBrawl.Online;
 using PoMiniGames.Shared.Games;
+using Sim = PoMiniGames.Shared.Games.PoBrawlRollbackSim;
 
 namespace PoMiniGames.Unit.Features.PoBrawl;
 
 /// <summary>
-/// Server-side simulation tests for the live 1v1 match service. Side pinning,
-/// range-gated damage resolution, deterministic damage rolls, finish conditions,
-/// and the result payload shape per recipient.
+/// The live 1v1 referee and its shared rollback sim: side pinning, the input timeline (re-stamping,
+/// never into the past), range-gated damage, deterministic rolls, finish conditions, presence,
+/// the result payload, and the cross-language golden script.
 /// </summary>
 /// <remarks>
-/// Bundled into a handful of <c>[Fact]</c>s so the Unit tier stays under its
-/// 100-method ceiling. Each test covers one observable behaviour of the resolver.
-/// The ring has spacing: the corners open 3.2 m apart, out of every
-/// attack's reach, so each test that wants a hit walks in first (<see cref="CloseIn"/>).
+/// One <c>[Theory]</c> of named scenarios so the Unit tier stays under its 100-method ceiling.
+/// The ring has spacing: the corners open 3.2 m apart, out of every attack's reach, so each
+/// scenario that wants a hit walks in first (<see cref="CloseIn"/>).
 /// </remarks>
 public class PoBrawlMatchServiceTests
 {
+    // ── The golden script — must match tests/pobrawl-rollback.test.mjs (GOLDEN) ──
+    private const string GoldenMatchId = "golden-0f8a3c";
+    private const uint GoldenSeed = 382267504;
+    private const int GoldenFrame = 739;
+    private const uint GoldenChecksum = 2463409506;
+    private static readonly int[] GoldenHeldPick = [0, 1, 1, 1, 2, 3];
+    private static readonly int[] GoldenPressPick = [0, 0, 0, 0, 0, 4, 5, 6];
+
     private long _seq;
 
     private static PoBrawlLobbyPlayer NewPlayer(string connId, string principal, string name, PoBrawlFighter fighter) =>
         new(connId, principal, name, IsGuest: false, IsReady: true, fighter);
 
-    private static PoBrawlMatchService StartedMatch(string matchId = "test-match")
+    private static PoBrawlMatchService StartedMatch(string matchId = "test-match", double countdownSeconds = 0)
     {
         var alice = NewPlayer("conn-1", "alice", "Alice", PoBrawlRoster.Bob);
         var bob = NewPlayer("conn-2", "bob", "Bob", PoBrawlRoster.Bob);
-        var match = new PoBrawlMatchService(matchId, "BRAWL", new[] { alice, bob });
+        var match = new PoBrawlMatchService(matchId, "BRAWL", new[] { alice, bob }, countdownSeconds);
         match.RegisterConnection("conn-1", PoBrawlSide.Player1);
         match.RegisterConnection("conn-2", PoBrawlSide.Player2);
         return match;
     }
 
-    private void Send(PoBrawlMatchService match, string conn, PoBrawlMatchAction action, PoBrawlSide claimed = PoBrawlSide.Player1) =>
-        match.SubmitInput(conn, new PoBrawlMatchInput { ActorSide = claimed, Action = action, Sequence = ++_seq });
+    /// <summary>One input for the next frame (or <paramref name="frame"/>): a held state and an optional press.</summary>
+    private PoBrawlMatchInputEvent? Send(PoBrawlMatchService match, string conn, PoBrawlMatchAction held,
+        PoBrawlMatchAction press = PoBrawlMatchAction.Idle, PoBrawlSide claimed = PoBrawlSide.Player1, long? frame = null) =>
+        match.SubmitInput(conn, new PoBrawlMatchInput
+        {
+            ActorSide = claimed,
+            Frame = frame ?? match.Frame + 1,
+            Held = held,
+            Press = press,
+            Sequence = ++_seq,
+        });
+
+    private static int Gap(PoBrawlMatchService match) => match.SimState.P2.X - match.SimState.P1.X;
 
     /// <summary>Walk <paramref name="conn"/> forward until the gap is inside punch reach, then stop.</summary>
-    private PoBrawlMatchState CloseIn(PoBrawlMatchService match, string conn)
+    private void CloseIn(PoBrawlMatchService match, string conn)
     {
         Send(match, conn, PoBrawlMatchAction.MoveForward);
-        PoBrawlMatchState snap = match.Tick()!;
-        for (var i = 0; i < 40 && snap.Player2X - snap.Player1X > PoBrawlOnlineRules.PunchReach - 0.1; i++)
-            snap = match.Tick()!;
+        match.Step();
+        for (var i = 0; i < 400 && Gap(match) > Sim.PunchReachMm - 100; i++) match.Step();
         Send(match, conn, PoBrawlMatchAction.Idle);
-        return snap;
+        match.Step();
     }
 
-    /// <summary>Close in, then press <paramref name="attack"/> every tick until the match ends.</summary>
+    /// <summary>Close in, then walk in and press <paramref name="attack"/> every frame until the match ends.</summary>
     private PoBrawlMatchState? FightToKo(PoBrawlMatchService match, string conn, PoBrawlMatchAction attack)
     {
         CloseIn(match, conn);
         PoBrawlMatchState? snap = null;
-        for (var tick = 0; tick < 600; tick++)
+        for (var frame = 0; frame < 6000; frame++)
         {
             // Knockback opens the gap, so keep walking back into range between swings.
-            Send(match, conn, PoBrawlMatchAction.MoveForward);
-            Send(match, conn, attack);
-            snap = match.Tick();
+            Send(match, conn, PoBrawlMatchAction.MoveForward, attack);
+            snap = match.Step();
             if (snap is { Finished: true }) break;
         }
         return snap;
@@ -67,43 +84,43 @@ public class PoBrawlMatchServiceTests
     /// Each row runs one scenario: a private method below, named after what it checks.
     /// </summary>
     [Theory]
-    [InlineData(nameof(Tick_LandsOnlyInRange_OncePerPress_AndBlockNegatesPunch))]
+    [InlineData(nameof(Step_LandsOnlyInRange_OncePerPress_AndBlockNegatesPunch))]
     [InlineData(nameof(SubmitInput_OverridesActorWithPinnedSide))]
-    [InlineData(nameof(Tick_AppliesDamageDeterministically_PerMatchId))]
-    [InlineData(nameof(Tick_FinishesByKo_ThenReturnsNull_AndRejectsFurtherInputs))]
+    [InlineData(nameof(Step_AppliesDamageDeterministically_PerMatchId))]
+    [InlineData(nameof(Step_FinishesByKo_ThenReturnsNull_AndRejectsFurtherInputs))]
     [InlineData(nameof(Lifecycle_PreRoll_SwingReport_Forfeit_AndRematchVotes))]
     [InlineData(nameof(BuildResultFor_ShapesOutcomePerConnection))]
+    [InlineData(nameof(Timeline_RestampsLateInputs_NeverRewritesThePast_AndKeepsEachSideInOrder))]
+    [InlineData(nameof(Snapshot_CarriesThePackedSimAndItsChecksum))]
+    [InlineData(nameof(GoldenScript_MatchesTheJavaScriptSim_AndTheRefereeAppliesIt))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private void Tick_LandsOnlyInRange_OncePerPress_AndBlockNegatesPunch()
+    private void Step_LandsOnlyInRange_OncePerPress_AndBlockNegatesPunch()
     {
-        // Three behaviours in one test (would be three Facts without the ceiling pressure).
         // 1. Out of range: the fight opens 3.2 m apart, so a punch from spawn whiffs.
         var far = StartedMatch("far");
-        Send(far, "conn-1", PoBrawlMatchAction.Punch);
-        var whiff = far.Tick()!;
+        Send(far, "conn-1", PoBrawlMatchAction.Idle, PoBrawlMatchAction.Punch);
+        var whiff = far.Step()!;
         whiff.Player2Hp.Should().Be(100, "a jab thrown from across the ring must not land");
-        whiff.LastEvent.Should().Be("p1-whiff");
+        far.SimState.P1.Outcome.Should().Be(Sim.OutcomeWhiff);
 
-        // 2. In range, a single press lands exactly once — the old model kept the last
-        //    action live and punched ten times a second off one key-down.
+        // 2. In range, a single press lands exactly once.
         var near = StartedMatch("near");
         CloseIn(near, "conn-1");
-        Send(near, "conn-1", PoBrawlMatchAction.Punch);
-        var landed = near.Tick()!;
+        Send(near, "conn-1", PoBrawlMatchAction.Idle, PoBrawlMatchAction.Punch);
+        var landed = near.Step()!;
         landed.Player2Hp.Should().BeLessThan(100);
-        var afterOne = landed.Player2Hp;
-        for (var i = 0; i < 10; i++) near.Tick();
-        near.Tick()!.Player2Hp.Should().Be(afterOne, "one press is one swing");
+        for (var i = 0; i < 60; i++) near.Step();
+        near.Step()!.Player2Hp.Should().Be(landed.Player2Hp, "one press is one swing");
 
         // 3. A held guard negates a punch in range.
         var guard = StartedMatch("guard");
         CloseIn(guard, "conn-1");
         Send(guard, "conn-2", PoBrawlMatchAction.Block);
-        Send(guard, "conn-1", PoBrawlMatchAction.Punch);
-        var blocked = guard.Tick()!;
+        Send(guard, "conn-1", PoBrawlMatchAction.Idle, PoBrawlMatchAction.Punch);
+        var blocked = guard.Step()!;
         blocked.Player2Hp.Should().Be(100, "punch is fully negated by a block");
-        blocked.LastEvent.Should().Be("p1-blocked");
+        guard.SimState.P1.Outcome.Should().Be(Sim.OutcomeBlocked);
     }
 
     private void SubmitInput_OverridesActorWithPinnedSide()
@@ -111,32 +128,34 @@ public class PoBrawlMatchServiceTests
         var match = StartedMatch();
         // Malicious: conn-1 (P1) claims to be P2 and walks. The server pins it to P1, so
         // it is P1's corner that moves — P2's must not budge.
-        Send(match, "conn-1", PoBrawlMatchAction.MoveForward, claimed: PoBrawlSide.Player2);
-        var snap = match.Tick()!;
+        var accepted = Send(match, "conn-1", PoBrawlMatchAction.MoveForward, claimed: PoBrawlSide.Player2);
+        accepted!.Side.Should().Be(PoBrawlSide.Player1, "the echo names the pinned side");
+        var snap = match.Step()!;
         snap.Player1X.Should().BeGreaterThan(-1.6, "the pinned side (P1) walked");
         snap.Player2X.Should().Be(1.6, "the claimed side (P2) must be untouched");
+        // Someone with no seat (a spectator) moves nobody.
+        match.SubmitInput("spectator", new PoBrawlMatchInput { Held = PoBrawlMatchAction.MoveForward, Frame = match.Frame + 1, Sequence = ++_seq })
+            .Should().BeNull();
     }
 
-    private void Tick_AppliesDamageDeterministically_PerMatchId()
+    private void Step_AppliesDamageDeterministically_PerMatchId()
     {
-        var first = StartedMatch("dup-match");
-        var second = StartedMatch("dup-match");
         var hp = new List<int>();
-        foreach (var m in new[] { first, second })
+        foreach (var m in new[] { StartedMatch("dup-match"), StartedMatch("dup-match") })
         {
             CloseIn(m, "conn-1");
             for (var i = 0; i < 5; i++)
             {
-                Send(m, "conn-1", PoBrawlMatchAction.Punch);
-                for (var t = 0; t < PoBrawlMatchService.PunchCooldownTicks; t++) m.Tick();
+                Send(m, "conn-1", PoBrawlMatchAction.Idle, PoBrawlMatchAction.Punch);
+                for (var t = 0; t < Sim.PunchCooldown; t++) m.Step();
             }
-            hp.Add(m.Tick()!.Player2Hp);
+            hp.Add(m.Step()!.Player2Hp);
         }
         hp[0].Should().BeLessThan(100);
         hp[0].Should().Be(hp[1], "same match id + same inputs must roll the same damage");
     }
 
-    private void Tick_FinishesByKo_ThenReturnsNull_AndRejectsFurtherInputs()
+    private void Step_FinishesByKo_ThenReturnsNull_AndRejectsFurtherInputs()
     {
         var match = StartedMatch();
         var final = FightToKo(match, "conn-2", PoBrawlMatchAction.Kick);
@@ -144,54 +163,58 @@ public class PoBrawlMatchServiceTests
         final!.Finished.Should().BeTrue();
         final.Winner.Should().Be(PoBrawlSide.Player2);
         final.LastEvent.Should().Be("ko");
-        // Once finished, subsequent ticks must report null so the pump stops broadcasting.
-        match.Tick().Should().BeNull();
-        // Post-finish: SubmitInput is a no-op so a stale client cannot keep firing hits.
-        var accepted = match.SubmitInput("conn-1", new PoBrawlMatchInput { ActorSide = PoBrawlSide.Player1, Action = PoBrawlMatchAction.Special, Sequence = 999 });
-        accepted.Should().BeFalse();
+        // Once finished, further steps report null so the pump stops broadcasting.
+        match.Step().Should().BeNull();
+        match.AdvanceTo(match.Frame + 100).Should().Be(0);
+        // Post-finish: SubmitInput is refused so a stale client cannot keep firing hits.
+        Send(match, "conn-1", PoBrawlMatchAction.Idle, PoBrawlMatchAction.Special).Should().BeNull();
     }
 
     /// <summary>
-    /// The match lifecycle in one fact (Unit ceiling): the pre-roll holds the fight, each tick
-    /// reports what each corner's swing did (the 3D view lands exactly that), a corner that stays
-    /// away forfeits, and the rematch needs both corners' votes.
+    /// The match lifecycle in one scenario: the pre-roll holds the fight, each swing is recorded in
+    /// the sim (the 3D view throws exactly that), a corner that stays away forfeits — the server
+    /// letting go of its keys on the way — and the rematch needs both corners' votes.
     /// </summary>
     private void Lifecycle_PreRoll_SwingReport_Forfeit_AndRematchVotes()
     {
-        // Pre-roll: nothing moves and a press made during the count is dropped.
-        var alice = NewPlayer("conn-1", "alice", "Alice", PoBrawlRoster.Bob);
-        var bob = NewPlayer("conn-2", "bob", "Bob", PoBrawlRoster.Bob);
-        var counted = new PoBrawlMatchService("count", "ROOM1", new[] { alice, bob }, countdownSeconds: 1);
-        counted.RegisterConnection("conn-1", PoBrawlSide.Player1);
-        counted.RegisterConnection("conn-2", PoBrawlSide.Player2);
-        Send(counted, "conn-1", PoBrawlMatchAction.MoveForward);
-        Send(counted, "conn-1", PoBrawlMatchAction.Kick);
-        var pre = counted.Tick()!;
+        // Pre-roll (1 s = 60 frames): nothing moves and a press made during the count is dropped.
+        var counted = StartedMatch("count", countdownSeconds: 1);
+        Send(counted, "conn-1", PoBrawlMatchAction.MoveForward, PoBrawlMatchAction.Kick);
+        var pre = counted.Step()!;
         pre.ElapsedSeconds.Should().BeLessThan(0);
         pre.Player1X.Should().Be(-1.6, "the count holds everyone on their marks");
-        for (var i = 0; i < 10; i++) counted.Tick();
-        var live = counted.Tick()!;
+        counted.AdvanceTo(Sim.Hz + 1).Should().Be(Sim.Hz);
+        var live = counted.Snapshot();
         live.Player1X.Should().BeGreaterThan(-1.6, "a key held through the count walks on the bell");
-        live.Player1Swing.Should().BeNull("the kick pressed during the count was dropped");
+        counted.SimState.P1.SwingFrame.Should().Be(-1, "the kick pressed during the count was dropped");
 
         // Swing report: the corner, the attack, the outcome and the exact damage dealt.
         var match = StartedMatch("report");
         CloseIn(match, "conn-1");
-        Send(match, "conn-1", PoBrawlMatchAction.Punch);
-        var hit = match.Tick()!;
-        hit.Player1Swing.Should().Be(PoBrawlMatchAction.Punch);
-        hit.Player1Outcome.Should().Be("hit");
-        hit.Player1Damage.Should().Be(100 - hit.Player2Hp);
-        hit.Player2Swing.Should().BeNull();
+        Send(match, "conn-1", PoBrawlMatchAction.Idle, PoBrawlMatchAction.Punch);
+        var hit = match.Step()!;
+        var p1 = match.SimState.P1;
+        p1.Swing.Should().Be((int)PoBrawlMatchAction.Punch);
+        p1.SwingFrame.Should().Be((int)hit.Frame);
+        p1.Outcome.Should().Be(Sim.OutcomeHit);
+        p1.Damage.Should().Be(100 - hit.Player2Hp);
+        match.SimState.P2.SwingFrame.Should().Be(-1);
 
-        // Forfeit: P2 drops and never comes back.
-        match.UnregisterConnection("conn-2");
+        // Forfeit: P2 (walking) drops and never comes back. The server lets go of its keys with an
+        // input of its own, which the hub broadcasts like any other.
+        Send(match, "conn-2", PoBrawlMatchAction.MoveBack);
+        var released = match.UnregisterConnection("conn-2");
+        released.Should().NotBeNull();
+        released!.Side.Should().Be(PoBrawlSide.Player2);
+        released.Held.Should().Be(PoBrawlMatchAction.Idle);
+        released.Sequence.Should().Be(0, "a server-made input carries no client sequence");
         PoBrawlMatchState? end = null;
-        for (var i = 0; i < (PoBrawlMatchService.ReconnectGraceSeconds + 1) * PoBrawlMatchService.TickHz && end is not { Finished: true }; i++)
-            end = match.Tick();
+        for (var i = 0; i < (PoBrawlMatchService.ReconnectGraceSeconds + 1) * Sim.Hz && end is not { Finished: true }; i++)
+            end = match.Step();
         end!.Finished.Should().BeTrue();
         end.LastEvent.Should().Be("forfeit");
         end.Winner.Should().Be(PoBrawlSide.Player1);
+        end.Player2Held.Should().Be(PoBrawlMatchAction.Idle, "the dropped corner stopped walking");
         match.BuildResultFor("conn-1").Forfeit.Should().BeTrue();
 
         // Rematch: P2 comes back after the bell; one vote is not enough, two start it.
@@ -215,5 +238,113 @@ public class PoBrawlMatchServiceTests
         p2Result.OpponentId.Should().Be("alice");
         // The pump sends results to these, not to the lobby roster's connection ids.
         match.ConnectionIds.Should().BeEquivalentTo(new[] { "conn-1", "conn-2" });
+    }
+
+    /// <summary>
+    /// The server is the timeline authority: an input stamped for a frame it has already simulated
+    /// lands on the next one (and the echo says so), a future stamp is honoured exactly, a side's
+    /// inputs never reorder, an absurd lead is pulled in, and stale or malformed inputs are refused.
+    /// </summary>
+    private void Timeline_RestampsLateInputs_NeverRewritesThePast_AndKeepsEachSideInOrder()
+    {
+        var match = StartedMatch("timeline");
+        match.AdvanceTo(5).Should().Be(5);
+
+        var late = Send(match, "conn-1", PoBrawlMatchAction.MoveForward, frame: 2)!;
+        late.Frame.Should().Be(6, "frame 2 is the server's past: it lands on serverFrame + 1");
+        late.Sequence.Should().Be(_seq, "the echo carries the sender's sequence so it can find its own input");
+        late.MatchId.Should().Be("timeline");
+
+        var future = Send(match, "conn-2", PoBrawlMatchAction.MoveBack, frame: 20)!;
+        future.Frame.Should().Be(20, "a future stamp is honoured exactly");
+        var reordered = Send(match, "conn-2", PoBrawlMatchAction.Block, PoBrawlMatchAction.Kick, frame: 10)!;
+        reordered.Frame.Should().Be(20, "a side's later input never lands before its earlier one");
+
+        match.Step();
+        match.SimState.P1.Held.Should().Be(Sim.HeldForward, "the re-stamped input applied on frame 6");
+        match.AdvanceTo(19);
+        match.SimState.P2.Held.Should().Be(Sim.HeldIdle, "nothing of P2's has happened before frame 20");
+        match.Step();
+        match.SimState.P2.Held.Should().Be(Sim.HeldBlock, "two inputs on one frame merge: the later held wins");
+        match.SimState.P2.SwingFrame.Should().Be(20, "and its press fires (a whiff from across the ring)");
+
+        Send(match, "conn-1", PoBrawlMatchAction.Idle, frame: 1_000_000)!.Frame
+            .Should().Be(match.Frame + PoBrawlMatchService.MaxInputLeadFrames, "a stamp far in the future is pulled in");
+        match.SubmitInput("conn-1", new PoBrawlMatchInput { Held = PoBrawlMatchAction.Idle, Frame = match.Frame + 1, Sequence = 1 })
+            .Should().BeNull("a sequence number that is not newer is stale");
+        match.SubmitInput("conn-2", new PoBrawlMatchInput { Held = PoBrawlMatchAction.Punch, Frame = match.Frame + 1, Sequence = ++_seq })
+            .Should().BeNull("an attack is not a held state");
+        match.SubmitInput("conn-2", new PoBrawlMatchInput { Held = PoBrawlMatchAction.Idle, Press = PoBrawlMatchAction.MoveBack, Frame = match.Frame + 1, Sequence = ++_seq })
+            .Should().BeNull("walking is not a press");
+
+        // A refresh is a new connection with its own sequence numbers: they start over and are accepted.
+        match.RegisterConnection("conn-1b", PoBrawlSide.Player1);
+        match.SubmitInput("conn-1b", new PoBrawlMatchInput { Held = PoBrawlMatchAction.Idle, Frame = match.Frame + 1, Sequence = 1 })
+            .Should().NotBeNull();
+    }
+
+    private void Snapshot_CarriesThePackedSimAndItsChecksum()
+    {
+        var match = StartedMatch("snap");
+        CloseIn(match, "conn-1");
+        Send(match, "conn-1", PoBrawlMatchAction.Idle, PoBrawlMatchAction.Kick);
+        var snap = match.Step()!;
+        snap.Sim.Should().HaveCount(Sim.PackedLength);
+        var unpacked = Sim.Unpack(snap.Sim);
+        unpacked.Should().Be(match.SimState);
+        (unpacked == match.SimState).Should().BeTrue();
+        snap.Frame.Should().Be(unpacked.Frame);
+        snap.Checksum.Should().Be(Sim.Checksum(unpacked));
+        snap.Player2Hp.Should().Be(unpacked.P2.Hp);
+        snap.Player1Energy.Should().Be(unpacked.P1.Energy / Sim.EnergyScale);
+        var copy = unpacked;
+        copy.P2.Cooldown++;
+        (copy != unpacked).Should().BeTrue("a struct copy is a clone");
+        Sim.Checksum(copy).Should().NotBe(snap.Checksum, "the checksum sees every field");
+    }
+
+    private static int GoldenEvent(ref int script)
+    {
+        var r = Sim.NextRandom(ref script);
+        if (r % 11 != 0) return 0;
+        return Sim.EncodeInput(GoldenHeldPick[(r >> 3) % 6], GoldenPressPick[(r >> 11) % 8]);
+    }
+
+    /// <summary>
+    /// Cross-language determinism: the golden input script gives exactly the final state the JS sim
+    /// gives (tests/pobrawl-rollback.test.mjs asserts the same numbers), and the referee fed the same
+    /// script as frame-stamped inputs arrives at the very same state.
+    /// </summary>
+    private void GoldenScript_MatchesTheJavaScriptSim_AndTheRefereeAppliesIt()
+    {
+        Sim.SeedFromMatchId(GoldenMatchId).Should().Be(GoldenSeed);
+        var s = Sim.Create(Sim.SeedFromMatchId(GoldenMatchId), 30);
+        var script = 12345;
+        var events = new List<(int Frame, int P1, int P2)>();
+        while (s.Over == 0 && s.Frame < 30 + Sim.RoundFrames + 10)
+        {
+            var e1 = GoldenEvent(ref script);
+            var e2 = GoldenEvent(ref script);
+            events.Add((s.Frame + 1, e1, e2));
+            Sim.Step(ref s, e1, e2);
+        }
+        s.Frame.Should().Be(GoldenFrame);
+        Sim.Checksum(s).Should().Be(GoldenChecksum);
+        (s.P1.Hp, s.P2.Hp, s.Reason, s.Winner).Should().Be((0, 7, Sim.ReasonKo, 2));
+
+        // The referee: the same script, sent as inputs stamped for their frames, half a second of pre-roll.
+        var match = StartedMatch(GoldenMatchId, countdownSeconds: 0.5);
+        foreach (var (frame, p1, p2) in events)
+        {
+            foreach (var (conn, input) in new[] { ("conn-1", p1), ("conn-2", p2) })
+            {
+                if (input == 0) continue;
+                Send(match, conn, (PoBrawlMatchAction)Sim.HeldOf(input), (PoBrawlMatchAction)Sim.PressOf(input), frame: frame)!
+                    .Frame.Should().Be(frame);
+            }
+            match.Step();
+        }
+        Sim.Checksum(match.SimState).Should().Be(GoldenChecksum);
+        match.Snapshot().LastEvent.Should().Be("ko");
     }
 }

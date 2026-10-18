@@ -121,6 +121,8 @@ public static class GameCatalog
             // see Features/PoBrawl/Online.
             new(GameMode.Multiplayer, "/pobrawl/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/pobrawl/demo?autoGuest=1"),
+            // CPU-only 8-fighter knockout bracket; every bout feeds the fighter Elo board.
+            new(GameMode.Tournament, "/pobrawl/tournament?autoGuest=1"),
         ]),
 
         new(GameKeys.PoRacer, "Racer", "🏎️",

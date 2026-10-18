@@ -1,17 +1,27 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.SignalR;
-using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoBrawl.Online;
 
 /// <summary>
-/// Drives every running match's simulation tick. Hosted as a singleton service so the
-/// tick survives the wiring hub connection leaving. When a match finishes the pump
-/// broadcasts each corner its own result once, then leaves the match in the registry for
-/// <see cref="PoBrawlMatchRegistry.FinishedLinger"/> (rematch votes, a late reconnect) before
-/// sweeping it.
+/// Runs every live match's frame clock. Hosted as a singleton service so the fight survives the
+/// hub connection that started it leaving. Each wake it catches every match's sim up to its
+/// real-time clock, broadcasts a snapshot whenever a match crosses a snapshot frame (10 Hz), and
+/// when a match finishes sends each corner its own result once, then leaves the match in the
+/// registry for <see cref="PoBrawlMatchRegistry.FinishedLinger"/> (rematch votes, a late
+/// reconnect) before sweeping it.
 /// </summary>
+/// <remarks>
+/// A Stopwatch catch-up loop, not a 16.7 ms PeriodicTimer: Windows timers tick at ~15.6 ms, so a
+/// timer per frame would drift and bunch. Instead the loop wakes often, and the number of frames
+/// to run comes from each match's Stopwatch clock (<see cref="PoBrawlMatchService.ClockFrame"/>) —
+/// a late wake just runs two frames. Inputs are never late on the server's account: the frame
+/// they land on is chosen against the frames actually simulated.
+/// </remarks>
 public sealed class PoBrawlMatchPump : BackgroundService
 {
+    private static readonly TimeSpan WakeInterval = TimeSpan.FromMilliseconds(4);
+
     private readonly PoBrawlMatchRegistry _registry;
     private readonly IHubContext<PoBrawlMatchHub> _hubContext;
     private readonly ILogger<PoBrawlMatchPump> _log;
@@ -28,22 +38,21 @@ public sealed class PoBrawlMatchPump : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // PeriodicTimer rather than Delay-then-work: the tick rate no longer drifts by however
-        // long the broadcasts took, which matters now that the client paces its puppets on it.
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(1000 / PoBrawlMatchService.TickHz));
+        using var timer = new PeriodicTimer(WakeInterval);
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
+                var now = Stopwatch.GetTimestamp();
                 foreach (var match in _registry.All)
                 {
                     try
                     {
-                        await TickOnceAsync(match, stoppingToken);
+                        await PumpOnceAsync(match, now, stoppingToken);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        _log.LogError(ex, "PoBrawl match pump tick failed for {Code}; continuing.", match.GameCode);
+                        _log.LogError(ex, "PoBrawl match pump failed for {Code}; continuing.", match.GameCode);
                     }
                 }
             }
@@ -54,18 +63,22 @@ public sealed class PoBrawlMatchPump : BackgroundService
         }
     }
 
-    private async Task TickOnceAsync(PoBrawlMatchService match, CancellationToken ct)
+    private async Task PumpOnceAsync(PoBrawlMatchService match, long now, CancellationToken ct)
     {
         if (match.FinishedAtUtc is { } finishedAt)
         {
             if (DateTimeOffset.UtcNow - finishedAt > PoBrawlMatchRegistry.FinishedLinger) _registry.Remove(match);
             return;
         }
-        var snap = match.Tick();
-        if (snap is null) return;
-        await _hubContext.Clients.Group(PoBrawlMatchHub.MatchGroup(match.GameCode))
-            .SendAsync("matchState", snap, ct);
-        if (snap.Finished)
+        var before = match.Frame;
+        var ran = match.AdvanceTo((long)Math.Floor(match.ClockFrame(now)));
+        if (ran == 0) return;
+        var finished = match.FinishedAtUtc is not null;
+        var crossed = before / PoBrawlMatchService.SnapshotEveryFrames != (before + ran) / PoBrawlMatchService.SnapshotEveryFrames;
+        if (!crossed && !finished) return;
+        var snap = match.Snapshot();
+        await _hubContext.Clients.Group(PoBrawlMatchHub.MatchGroup(match.GameCode)).SendAsync("matchState", snap, ct);
+        if (finished)
         {
             _log.LogInformation("PoBrawl match {Code} finished: {Event}, winner {Winner}", match.GameCode, snap.LastEvent, snap.Winner);
             await BroadcastFinalResultsAsync(match, ct);

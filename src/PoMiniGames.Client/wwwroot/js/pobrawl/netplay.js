@@ -1,20 +1,26 @@
-// netplay.js — the online 1v1 in the arena.
+// netplay.js — the online 1v1 in the arena: the PRESENTER of a rollback fight.
 //
-// The server (PoBrawlMatchService) is authoritative for everything the result depends on:
-// HP, energy, each corner's X on a one-dimensional ring, and whether every swing hit, was
-// blocked or whiffed. This engine runs the fight as a PUPPET of its 10 Hz snapshots:
+// The fight itself is rollbackSim.js — a 60 Hz integer sim, bit-identical to the server's
+// PoBrawlRollbackSim — run by a RollbackSession (rollbackSession.js) that applies the local
+// keys at once (two frames ahead), predicts the remote corner, and re-simulates whenever the
+// server's confirmed inputs or snapshots disagree. The server (PoBrawlMatchService) referees:
+// it decides which frame every input landed on and is the only source of the result.
 //
-//   • Both fighters are driven by a NetController. It walks its fighter to the server's X —
-//     the remote one 100 ms behind (interpolated between snapshots), the local one ahead of
-//     the last snapshot by the keys held right now, so your own feet answer at once.
-//   • A swing is thrown when the SERVER fires it (never on the key press — the server may
-//     buffer it behind a cooldown or refuse a special), carrying the server's verdict. The
-//     verdict lands when the limb actually connects (the ordinary hit pipeline, with the
-//     server's damage in place of the engine's roll), or at the end of the active window if
-//     the two rigs never quite touch. So every point of HP the HUD shows is the server's.
-//   • Personalities, supers and prop chip damage are off: each would move HP the server never
-//     moved. The KO, the ragdoll, the news desk — all the presentation — is the
-//     same code the local modes run.
+// This file shows `session.state` every render frame:
+//
+//   • Both fighters are driven by a NetController that walks its fighter to the sim's X. A
+//     rollback that moves a fighter is smoothed by the same steering (no teleport).
+//   • A swing is thrown when the SIM fires it, carrying the sim's verdict (hit / blocked / whiff,
+//     damage). Each (corner, frame) is thrown once, so a re-simulation never re-throws it; a
+//     rollback that changes what an airborne swing did corrects its verdict, and one that erased
+//     the swing turns it into a whiff. The verdict lands when the limb actually connects (the
+//     ordinary hit pipeline, with the sim's damage in place of the engine's roll), or at the end
+//     of the active window if the two rigs never quite touch.
+//   • HP and energy on the HUD are the sim's. A predicted KO waits for the server's word: until
+//     the server says "ko" nobody drops below 1 HP, so a misprediction never plays a KO it must
+//     take back. The KO, the ragdoll, the result flow — all the presentation — is the same code
+//     the local modes run, and the fight ends only when the server's snapshot says so.
+//   • Personalities, supers and prop chip damage are off: each would move HP the sim never moved.
 //
 // Keys (local corner only): A/D walk (held), R or S guard (held), F punch, G kick, H special.
 // The touch pad and gamepads dispatch the same codes, so they need nothing of their own.
@@ -23,74 +29,48 @@ import * as THREE from 'three';
 import { ATTACKS } from './constants.js';
 import { testAttackHit, regionForHurtBone } from './hitboxes.js';
 import { regionEffect } from './combat.js';
+import { RollbackSession, HISTORY } from './rollbackSession.js';
+import {
+  HZ, ENERGY_MAX, HELD_IDLE, HELD_FORWARD, HELD_BACK, HELD_BLOCK,
+  PRESS_PUNCH, PRESS_KICK, PRESS_SPECIAL, PRESS_NONE,
+} from './rollbackSim.js';
 
-// Server walk speeds (PoBrawlMatchService.WalkInPerSecond / WalkOutPerSecond) — used only to
-// lead the local fighter; the server's X always wins within a snapshot or two.
-const WALK_IN = 2.4;
-const WALK_OUT = 1.9;
-// How far behind real time the remote fighter is drawn: one server tick, so there is always a
-// later snapshot to interpolate toward.
-const REMOTE_DELAY = 0.1;
-// Cap on how far the local fighter is led past its last snapshot.
-const MAX_LEAD = 0.2;
 // The engine's countdown ends ("FIGHT!") at phaseT 3.7 — see game.js _tick.
 const COUNTDOWN_END = 3.7;
+// A swing a rollback reveals more than this many frames late is not thrown (the HUD still shows what it did).
+const SWING_STALE_FRAMES = 30;
 
 const HELD = ['idle', 'forward', 'back', 'block']; // PoBrawlMatchAction 0..3
-const SWING = { 4: 'punch', 5: 'kick', 6: 'special' };
+const SWING = { [PRESS_PUNCH]: 'punch', [PRESS_KICK]: 'kick', [PRESS_SPECIAL]: 'special' };
+const OUTCOME = { 1: 'hit', 2: 'blocked', 3: 'whiff' };
 
-/** Drives one fighter toward the server's view of it. */
+/** Drives one fighter toward the sim's view of it. */
 export class NetController {
   isHuman = false;
 
   constructor(isLocal) {
     this.isLocal = isLocal;
-    this.fighter = null;       // bound after spawn
-    this.samples = [];         // [{ t, x }] recent snapshots, oldest first
-    this.held = 'idle';        // the server's held state for this corner
-    this.localDir = 0;         // local corner only: screen direction held right now (-1/0/+1)
-    this.localBlock = false;
+    this.fighter = null;   // bound after spawn
+    this.simX = null;      // metres, from the sim every render frame
+    this.held = 'idle';    // the sim's held state for this corner
+    this.localBlock = false; // local corner only: the guard key is down right now
   }
 
-  push(t, x, held) {
-    this.samples.push({ t, x });
-    if (this.samples.length > 8) this.samples.shift();
-    this.held = held;
-  }
-
-  /** Where this fighter should stand now, or null before the first snapshot. */
-  targetX(now) {
-    const s = this.samples;
-    if (!s.length) return null;
-    if (this.isLocal) {
-      const last = s[s.length - 1];
-      const lead = Math.min(MAX_LEAD, Math.max(0, now - last.t) + 0.05);
-      // localDir is screen-relative (+1 = right). Which of in/out that is depends on the corner.
-      const speed = this.localDir === 0 ? 0 : (this.localDir === this.inwardDir ? WALK_IN : WALK_OUT);
-      return last.x + this.localDir * speed * lead;
-    }
-    const at = now - REMOTE_DELAY;
-    for (let i = s.length - 1; i > 0; i--) {
-      const a = s[i - 1], b = s[i];
-      if (at >= a.t) {
-        const k = b.t > a.t ? Math.min(1, (at - a.t) / (b.t - a.t)) : 1;
-        return a.x + (b.x - a.x) * k;
-      }
-    }
-    return s[0].x;
-  }
+  /** Where this fighter should stand now, or null before the sim has a state. */
+  targetX() { return this.simX; }
 
   update(ctx) {
     const f = this.fighter;
     const intent = { move: 0, side: 0, punch: false, kick: false, punchHeld: false, kickHeld: false, block: false, super: false };
     if (!f) return intent;
-    const tx = this.targetX(performance.now() / 1000);
+    const tx = this.targetX();
     if (tx !== null) {
       const err = tx - f.rig.root.position.x;
       // `move` is opponent-relative (+1 = toward them). The deadband stops a fighter standing on
-      // its mark from shuffling on every snapshot's rounding.
-      if (Math.abs(err) > 0.06) intent.move = Math.sign(err) * ((ctx && ctx.towardX) || 1);
+      // its mark from shuffling.
+      if (Math.abs(err) > 0.04) intent.move = Math.sign(err) * ((ctx && ctx.towardX) || 1);
     }
+    // The local guard shows the instant the key goes down; the sim's guard follows two frames later.
     intent.block = this.isLocal ? (this.localBlock || this.held === 'block') : this.held === 'block';
     return intent;
   }
@@ -99,17 +79,18 @@ export class NetController {
 }
 
 /**
- * The local corner's keys → the server's two input kinds: HELD states (sent on every change,
- * down AND up) and attack PRESSES (sent once per key-down). `send(kind, value)` is the page's
- * hub call. Also feeds the local NetController so the fighter moves before the server answers.
+ * The local corner's keys → the sim's input: the HELD state (corner-relative: idle, forward,
+ * back, block — sent on every change, down AND up) and attack PRESSES (once per key-down).
+ * `onInput(held, press)` hands each to the rollback session.
  */
 class NetInput {
-  constructor(controller, send) {
+  constructor(controller, inwardDir, onInput) {
     this.controller = controller;
-    this.send = send;
+    this.inwardDir = inwardDir; // the screen direction (+1 = right) that walks this corner in
+    this.onInput = onInput;
     this.down = new Set();
     this.lastWalk = null;
-    this.lastSent = 'idle';
+    this.held = HELD_IDLE;
     this._onDown = (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const tag = (e.target?.tagName || '').toLowerCase();
@@ -124,7 +105,7 @@ class NetInput {
       } else if (code === 'KeyF' || code === 'KeyG' || code === 'KeyH') {
         e.preventDefault?.();
         if (e.repeat) return;
-        this.send('press', code === 'KeyF' ? 'punch' : code === 'KeyG' ? 'kick' : 'special');
+        this.onInput(this.held, code === 'KeyF' ? PRESS_PUNCH : code === 'KeyG' ? PRESS_KICK : PRESS_SPECIAL);
       }
     };
     this._onUp = (e) => {
@@ -146,12 +127,11 @@ class NetInput {
     const block = this.down.has('KeyR') || this.down.has('KeyS');
     const l = this.down.has('KeyA'), r = this.down.has('KeyD');
     const dir = l && r ? (this.lastWalk === 'KeyA' ? -1 : 1) : l ? -1 : r ? 1 : 0;
-    this.controller.localDir = block ? 0 : dir;
     this.controller.localBlock = block;
-    const state = block ? 'block' : dir < 0 ? 'left' : dir > 0 ? 'right' : 'idle';
-    if (state === this.lastSent) return;
-    this.lastSent = state;
-    this.send('held', state);
+    const held = block ? HELD_BLOCK : dir === 0 ? HELD_IDLE : dir === this.inwardDir ? HELD_FORWARD : HELD_BACK;
+    if (held === this.held) return;
+    this.held = held;
+    this.onInput(held, PRESS_NONE);
   }
 
   dispose() {
@@ -170,37 +150,68 @@ function chestHit(defender) {
 }
 
 class NetplayMethods {
-  /** Online setup, from start(): who is local, and the input bridge. */
+  /** Online setup, from start(): the rollback session, who is local, the input bridge, the present loop. */
   _initNet() {
     const o = this.options;
-    this.online = { localSide: o.localSide || 0, lastTick: -1, final: null, finalAt: 0 };
-    const local = this.online.localSide ? this.fighters[this.online.localSide - 1] : null;
+    const localSide = o.localSide || 0;
+    const session = new RollbackSession({
+      localSide,
+      send: (frame, held, press, seq) => {
+        this.dotnet?.invokeMethodAsync('OnNetInput', frame, held, press, seq).catch(() => {});
+      },
+    });
+    this.online = { localSide, session, final: null, finalAt: 0, thrown: new Map(), raf: 0 };
+    const local = localSide ? this.fighters[localSide - 1] : null;
     for (const f of this.fighters) {
       f.controller.fighter = f;
       // +1 = the screen direction that walks this corner toward the other (P1 stands left).
       f.controller.inwardDir = f.index === 1 ? 1 : -1;
     }
     if (local && this.dotnet) {
-      this.netInput = new NetInput(local.controller, (kind, value) => {
-        this.dotnet.invokeMethodAsync(kind === 'held' ? 'OnNetHeld' : 'OnNetPress', value).catch(() => {});
-      });
+      this.netInput = new NetInput(local.controller, local.controller.inwardDir, (held, press) => session.localInput(held, press, performance.now()));
+    }
+    // Its own loop, so the sim keeps time through the splash and the countdown too (the engine's
+    // fighting tick only runs once the bell has gone).
+    const loop = () => {
+      if (this.disposed || !this.online) return;
+      this._netFrame();
+      this.online.raf = requestAnimationFrame(loop);
+    };
+    this.online.raf = requestAnimationFrame(loop);
+  }
+
+  /** One server snapshot (PoBrawlMatchState, camelCase): a desync check and sync point, plus the server's verdict on the end. */
+  applyNet(s) {
+    if (!this.online || !s) return;
+    if (s.sim && s.sim.length) this.online.session.onSnapshot(s.sim, s.frame, s.checksum, performance.now());
+    if (s.finished && !this.online.final) {
+      this.online.final = { winner: s.winner === 0 ? 1 : s.winner === 1 ? 2 : 0, event: s.lastEvent || '' };
+      this.online.finalAt = performance.now() / 1000;
     }
   }
 
-  /** One server snapshot (PoBrawlMatchState, camelCase). */
-  applyNet(s) {
-    if (!this.online || !this.fighters || !s) return;
-    if (s.tick <= this.online.lastTick) return; // late or duplicate
-    this.online.lastTick = s.tick;
-    const now = performance.now() / 1000;
-    const corners = [
-      { f: this.fighters[0], x: s.player1X, hp: s.player1Hp, en: s.player1Energy, held: s.player1Held, swing: s.player1Swing, outcome: s.player1Outcome, dmg: s.player1Damage },
-      { f: this.fighters[1], x: s.player2X, hp: s.player2Hp, en: s.player2Energy, held: s.player2Held, swing: s.player2Swing, outcome: s.player2Outcome, dmg: s.player2Damage },
-    ];
+  /** One confirmed input (PoBrawlMatchInputEvent, camelCase). */
+  applyNetInput(ev) {
+    if (!this.online || !ev) return;
+    this.online.session.onInput(ev.side, ev.frame, ev.held, ev.press, ev.sequence);
+  }
 
-    // ── Clock and phase: the server's pre-roll drives the engine's countdown ──
-    const elapsed = s.elapsedSeconds;
-    if (elapsed < 0 && !s.finished) {
+  /** One clock-sync sample. */
+  applyNetClock(clockFrame, rttMs) {
+    if (!this.online) return;
+    this.online.session.onClock(clockFrame, rttMs, performance.now());
+  }
+
+  /** Every render frame: advance the rollback sim to the clock, then present its state. */
+  _netFrame() {
+    const o = this.online;
+    o.session.update(performance.now());
+    const s = o.session.state;
+    if (!s || !this.fighters) return;
+
+    // ── Clock and phase: the sim's pre-roll drives the engine's countdown ──
+    const elapsed = (s.frame - s.fightStart) / HZ;
+    if (elapsed < 0 && !o.final) {
       if (this.phase === 'intro') {
         clearTimeout(this._splashTimer);
         this._hideSplash();
@@ -222,37 +233,59 @@ class NetplayMethods {
     }
     if (this.phase === 'fighting') this.clock = Math.max(0, elapsed);
 
-    for (const c of corners) {
-      c.f.controller.push(now, c.x, HELD[c.held] || 'idle');
-      c.f.energy = Math.max(0, Math.min(1, c.en / 100));
-      c.f.gassed = false;
+    const corners = [[this.fighters[0], s.p1, 0], [this.fighters[1], s.p2, 1]];
+    for (const [f, c] of corners) {
+      f.controller.simX = c.x / 1000;
+      f.controller.held = HELD[c.held] || 'idle';
+      f.energy = Math.max(0, Math.min(1, c.energy / ENERGY_MAX));
+      f.gassed = false;
     }
+    if (this.phase !== 'fighting') return;
 
-    // ── Swings: the server fired them this tick, with their verdicts ──
-    if (this.phase === 'fighting') {
-      for (const c of corners) {
-        const name = SWING[c.swing];
-        if (name) this._netSwing(c.f, name, { outcome: c.outcome || 'whiff', damage: c.dmg || 0, special: name === 'special' });
-      }
-      // HP: the server's, plus whatever it already took that this screen has not shown landing.
-      for (const c of corners) {
-        const opp = c.f === this.fighters[0] ? this.fighters[1] : this.fighters[0];
-        const pending = opp.netVerdict && opp.netVerdict.outcome !== 'whiff' ? opp.netVerdict.damage : 0;
-        const player = this.combat.getPlayer(c.f.playerId);
-        if (player && player.alive && c.f.state !== 'ko') {
-          const want = Math.min(player.maxHealth, c.hp + pending);
-          if (Math.abs(player.health - want) > 0.01) { player.health = want; this.hudDirty = true; }
+    // ── Swings: each (corner, frame) the sim fired, thrown once ──
+    // Scan the recent history, not just the present state: on a slow render several swings can
+    // fire between two frames on screen, and a rollback can reveal one a few frames back.
+    const history = o.session.history;
+    for (let fr = Math.max(s.frame - SWING_STALE_FRAMES, s.fightStart + 1); fr <= s.frame; fr++) {
+      const st = history[fr % HISTORY];
+      if (!st || st.frame !== fr) continue;
+      for (const [f, , side] of corners) {
+        const c = side === 0 ? st.p1 : st.p2;
+        if (c.swingFrame !== fr || !SWING[c.swing]) continue;
+        const key = `${side}:${fr}`;
+        const outcome = OUTCOME[c.outcome] || 'whiff';
+        if (o.thrown.has(key)) {
+          // Already thrown: a rollback may have changed what it did — correct the verdict still in the air.
+          if (f.netVerdict && f.netVerdict.key === key) { f.netVerdict.outcome = outcome; f.netVerdict.damage = c.damage; }
+          continue;
         }
+        o.thrown.set(key, fr);
+        this._netSwing(f, SWING[c.swing], { key, frame: fr, outcome, damage: c.damage, special: c.swing === PRESS_SPECIAL });
       }
     }
+    for (const [f, c] of corners) {
+      // A verdict whose swing a rollback erased (the sim's latest swing is now older) never happened.
+      if (f.netVerdict && f.netVerdict.frame > c.swingFrame) { f.netVerdict.outcome = 'whiff'; f.netVerdict.damage = 0; }
+    }
+    if (o.thrown.size > 64) {
+      for (const [key, frame] of o.thrown) if (frame < s.frame - 2 * HISTORY) o.thrown.delete(key);
+    }
 
-    if (s.finished && !this.online.final) {
-      this.online.final = { winner: s.winner === 0 ? 1 : s.winner === 1 ? 2 : 0, event: s.lastEvent || '' };
-      this.online.finalAt = now;
+    // ── HP: the sim's, plus whatever it already took that this screen has not shown landing ──
+    // Never below 1 here: the KO only ever comes through the hit pipeline (a landed verdict, or
+    // _tickNet's finishing blow once the server has said "ko"), so a predicted KO cannot play early.
+    for (const [f, c] of corners) {
+      const opp = f === this.fighters[0] ? this.fighters[1] : this.fighters[0];
+      const pending = opp.netVerdict && opp.netVerdict.outcome !== 'whiff' ? opp.netVerdict.damage : 0;
+      const player = this.combat.getPlayer(f.playerId);
+      if (player && player.alive && f.state !== 'ko') {
+        const want = Math.max(1, Math.min(player.maxHealth, c.hp + pending));
+        if (Math.abs(player.health - want) > 0.01) { player.health = want; this.hudDirty = true; }
+      }
     }
   }
 
-  /** Throw the swing the server fired. Any verdict still in the air lands first. */
+  /** Throw the swing the sim fired. Any verdict still in the air lands first. */
   _netSwing(f, name, verdict) {
     const opp = f === this.fighters[0] ? this.fighters[1] : this.fighters[0];
     if (f.netVerdict) this._presentNetVerdict(f, opp, f.attack || ATTACKS.punch, f.netVerdict, chestHit(opp));
@@ -272,11 +305,11 @@ class NetplayMethods {
     if (f.state !== attackName) this._presentNetVerdict(f, opp, ATTACKS[attackName], verdict, chestHit(opp));
   }
 
-  /** The hit pipeline's online door (from _tryHit): the limb touched — land the server's verdict. */
+  /** The hit pipeline's online door (from _tryHit): the limb touched — land the sim's verdict. */
   _tryHitNet(attacker, defender, attack) {
     const v = attacker.netVerdict;
     if (!v) { attacker.hasHit = true; return; }
-    if (v.outcome === 'whiff') return; // the server says it missed: let the limb sail through
+    if (v.outcome === 'whiff') return; // the sim says it missed: let the limb sail through
     const wMul = attacker.swingWindupMul ?? 1.0;
     const aMul = attacker.swingActiveMul ?? 1.0;
     const phase = attacker.stateT > attack.windup * wMul + attack.active * aMul ? 'recover' : 'active';
@@ -300,6 +333,10 @@ class NetplayMethods {
     attacker.netVerdict = null;
     attacker.hasHit = true;
     if (v.outcome === 'whiff' || defender.state === 'ko') return;
+    // Until the server confirms a KO, a predicted killing blow leaves the defender on 1 HP.
+    let amount = v.damage;
+    const dp = this.combat.getPlayer(defender.playerId);
+    if (dp && !(this.online.final && this.online.final.event === 'ko') && amount >= dp.health) amount = Math.max(0, dp.health - 1);
     const dpos = defender.rig.root.position;
     const apos = attacker.rig.root.position;
     const knockDir = new THREE.Vector3(dpos.x - apos.x, 0, dpos.z - apos.z);
@@ -313,11 +350,11 @@ class NetplayMethods {
       effect: regionEffect(defender.regionDmg), knockDir, impulseDir,
       chargeMul: v.special ? 2.5 : 1, atkMass, defMass,
       powerScale: attacker.rig.config.attackPower * (atkMass / defMass), dpos,
-      baseDmg: v.damage, torqueY: 0,
+      baseDmg: amount, torqueY: 0,
     };
 
     if (v.outcome === 'blocked') {
-      // The guard held: the block's sparks, sound and absorb, plus any chip the server took.
+      // The guard held: the block's sparks, sound and absorb, plus any chip the sim took.
       this._spawnSparks(hit.point, 0x9ad0ff, 6, 1.0);
       this._flashImpactLight(hit.point, 3, 0x9ad0ff, 0.1);
       this.audio.block(hit.point);
@@ -329,8 +366,8 @@ class NetplayMethods {
       defender.knockback.add(knockDir.clone().multiplyScalar(2.0 / defMass));
       defender.stats.blocks += 1;
       this._hitFeedback(attack, false);
-      if (v.damage > 0) {
-        this.combat.damage({ playerId: defender.playerId, amount: v.damage, sourceId: attacker.playerId });
+      if (amount > 0) {
+        this.combat.damage({ playerId: defender.playerId, amount, sourceId: attacker.playerId });
         this.hudDirty = true;
         this._resolveCombatEvents(s);
       }
@@ -343,42 +380,54 @@ class NetplayMethods {
 
   /**
    * Per sim tick while fighting: pull each fighter onto its mark (the controller's steering
-   * does the walking; this removes the residue — lunges, knockback, rounding), and end the
-   * fight when the server has.
+   * does the walking; this removes the residue — lunges, knockback, a rollback's correction),
+   * and end the fight when the server has.
    */
   _tickNet(dt) {
     const now = performance.now() / 1000;
-    // Wall-clock, not sim time: on a slow device the render loop caps dt (MAX_FRAME_DT), so
-    // the sim runs slower than real time — and a fighter steered on sim time would trail the
-    // server's X further every second. The server's ring is real time; so is this.
+    // Wall-clock, not engine time: on a slow device the render loop caps dt (MAX_FRAME_DT), so
+    // the engine runs slower than real time — and a fighter steered on engine time would trail
+    // the sim's X further every second. The sim's ring is real time; so is this.
     const realDt = Math.min(0.25, Math.max(dt, now - (this.online.steerAt || now)));
     this.online.steerAt = now;
-    const k = 1 - Math.exp(-realDt * 6);
+    const k = 1 - Math.exp(-realDt * 10);
     for (const f of this.fighters) {
       if (f.state === 'ko') continue;
-      const tx = f.controller.targetX(now);
+      const tx = f.controller.targetX();
       const pos = f.rig.root.position;
       if (tx !== null) pos.x += (tx - pos.x) * k;
-      // The server's ring is a line; circling and knockback drift come back to it.
+      // The sim's ring is a line; circling and knockback drift come back to it.
       pos.z *= 1 - k;
     }
     const fin = this.online.final;
     if (!fin || this.phase !== 'fighting') return;
-    // A KO lands through its verdict (the killing blow is on its way to the chin). Anything
-    // else — the bell, a forfeit — ends it now; a KO that somehow never lands gets 1.5 s.
-    const koPending = fin.event === 'ko' && now - this.online.finalAt < 1.5;
-    if (koPending) return;
+    if (fin.event === 'ko' && fin.winner) {
+      const winner = this.fighters[fin.winner - 1];
+      const loser = this.fighters[2 - fin.winner];
+      // The killing blow is usually still in the air: let it land on the chin (1.5 s at most).
+      const inAir = winner.netVerdict && winner.netVerdict.outcome !== 'whiff';
+      if (inAir && now - this.online.finalAt < 1.5) return;
+      if (loser.state !== 'ko') {
+        // It already landed (on the 1 HP a predicted KO leaves) or never will: finish it now.
+        const hp = this.combat.getPlayer(loser.playerId)?.health ?? 1;
+        winner.netVerdict = null;
+        this._presentNetVerdict(winner, loser, winner.attack || ATTACKS.punch,
+          { outcome: 'hit', damage: Math.max(1, Math.ceil(hp)), special: false }, chestHit(loser));
+      }
+      if (this.phase !== 'fighting') return; // that was the KO
+    }
     for (const f of this.fighters) {
       const opp = f === this.fighters[0] ? this.fighters[1] : this.fighters[0];
       if (f.netVerdict) this._presentNetVerdict(f, opp, f.attack || ATTACKS.punch, f.netVerdict, chestHit(opp));
     }
     if (this.phase !== 'fighting') return; // that verdict was the KO
-    const label = fin.event === 'forfeit' ? 'FORFEIT!' : fin.event === 'abandoned' ? 'NO CONTEST' : 'TIME!';
+    const label = fin.event === 'forfeit' ? 'FORFEIT!' : fin.event === 'abandoned' ? 'NO CONTEST' : fin.event === 'ko' ? 'K.O.!' : 'TIME!';
     this._endMatch(fin.winner, label);
   }
 
   _disposeNet() {
     if (this.netInput) { this.netInput.dispose(); this.netInput = null; }
+    if (this.online?.raf) cancelAnimationFrame(this.online.raf);
   }
 }
 

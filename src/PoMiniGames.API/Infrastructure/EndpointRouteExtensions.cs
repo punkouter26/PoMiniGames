@@ -73,6 +73,9 @@ internal static class EndpointRouteExtensions
         app.MapPoEcosystemGalleryEndpoints();
         // Dynamic SVG Player License cards & Online MMR profile inspection
         app.MapPlayerCardEndpoints();
+        // PoBrawl fighter dossiers: public reference text (static facts + a cached Wikipedia
+        // summary) that the fighter select shows before sign-in.
+        app.MapPoBrawlDossierEndpoints();
 
         // ── Authenticated game API ─────────────────────────────────────────
         // All game-data endpoints require a valid session. Per-endpoint rate

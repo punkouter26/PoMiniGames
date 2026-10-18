@@ -140,6 +140,8 @@ builder.Services.AddBlazoredLocalStorage();
 // page loads the Radzen stylesheet itself so the other games keep their plain CSS.
 builder.Services.AddRadzenComponents();
 builder.Services.AddScoped<PoMiniGamesClient.Games.PoMule.PoMuleSaveStore>();
+// PoBrawl fighter dossiers: fetched once per app life, static facts until (or unless) they land.
+builder.Services.AddScoped<PoMiniGamesClient.Games.PoBrawl.PoBrawlDossierService>();
 // Viewport-width helper so leaderboards can render
 // top-3 on mobile and top-10 on desktop without a JS-only media query.
 builder.Services.AddScoped<BrowserViewport>();

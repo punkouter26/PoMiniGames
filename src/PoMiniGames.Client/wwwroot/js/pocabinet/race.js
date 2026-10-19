@@ -40,8 +40,9 @@
 // times (sim clock) are unaffected; online the server owns time and it never runs.
 //
 // More of the same rule (render + audio only): every exhaust pop audio.js
-// reports becomes a flame on that car; barrier hits and contacts dent the cars
-// involved and throw debris; the grandstand crowd murmurs, cheers a pass-by, an
+// reports becomes a flame on that car; every hit the sim reports dents that car where it
+// landed, tears hanging parts off it and throws debris (online: the fx layer's contacts);
+// a damaged engine smokes and a wreck burns; the grandstand crowd murmurs, cheers a pass-by, an
 // overtake, a PB and the finish (confetti on a podium); wall hits, contacts, overtakes
 // and the finish also fire the platform's 'pocabinet' cues (gameCues.js: impact, hitstop,
 // haptics — the sound stays audio.js's); wet-road reflections
@@ -53,7 +54,7 @@ import { Vector3 } from 'three';
 import { buildTrack, wrapAngle } from './track.js';
 import * as ph from './physics.js';
 import { attachInput } from './input.js';
-import { mountCar, unmountCar, CarCrowd } from './cars.js';
+import { mountCar, unmountCar, CarCrowd, updateDebris, clearDebris } from './cars.js';
 import * as audio from './audio.js';
 import { currentEnvironment } from './environment.js';
 import { lapTraces, bestTrace, loadPbTrace, savePbTrace, renderTelemetry, debriefFacts } from './telemetry.js';
@@ -74,13 +75,11 @@ const SLOW_MO_SCALE = 0.28;
 const GANTRY_PODS = 5;
 const STAND_PASS = 24;           // world units from the grandstand that count as a pass-by
 const AXLE = 14;                 // sim units from a car's centre to each axle (height sampling)
-// What a wrecked car loses, at worst: a steady pull on the wheel, a share of its lock and of
-// its throttle. Subtle on purpose (a bent car is slower, not undriveable) and meant to be tuned.
-const WEAR_PULL = 0.06;
-const WEAR_LOCK = 0.15;
-const WEAR_POWER = 0.15;
-const WEAR_FLOOR = 0.3;          // a hit weaker than this only marks the paint
-const WEAR_GAIN = 0.6;           // a flat-out hit into a wall costs about 0.4 of the worst
+const WRECK_HOLD = 3.5;          // seconds the player watches their own wreck before the results
+// A hit dents from DENT_FLOOR u/s of closing speed (a race has ~130 contacts a car, most of them
+// rubs under 8) and as hard as a dent goes at DENT_FLOOR + DENT_SPEED.
+const DENT_FLOOR = 10;
+const DENT_SPEED = 55;
 
 let race = null;
 
@@ -172,14 +171,15 @@ class Race {
         this.prevLocalPos = 0;
         this.wallHits = 0;
         this.lastWallAt = 0;
-        // What the hits have cost the player's car, each 0..1 of the worst (pull is signed,
-        // + = right). It shapes the INPUT in tick(), like the driver aids, before the input
-        // is recorded or sent: both physics copies and the lap verifier are untouched, the lap
-        // proof replays as driven, and online it needs no server support or snapshot field.
-        // ponytail: the rivals only dent. Their controls come from aiControls, which the lap
-        // verifier re-runs, so wearing them down needs a deterministic damage state in all
-        // three sim mirrors. Do that if the field should limp too.
-        this.wear = { pull: 0, lock: 0, power: 0 };
+        // Damage is sim state now (physics.js hurt(): every car, both mirrors, the lap proof).
+        // Where it is simulated here, the sim reports every hit into this list and each one
+        // becomes a dent where it landed, the way it pushed (applyHits()); online the fx layer's
+        // contacts dent the cars instead (damage()).
+        this.hits = [];
+        if (this.mode !== 'net') ph.reportHits(this.hits);
+        this.wreckAt = -1;           // sim clock the local car was wrecked at
+        this.damageHud = null;
+        this.dragPoints = [];
 
         this.input = attachInput({
             touchRoot: 'pocabinetTouch',
@@ -318,6 +318,10 @@ class Race {
         body.along = proj.along;
         body.lateral = proj.lateral;
         body.onGrass = Math.abs(proj.lateral) > this.track.halfWidth;
+        body.damage = Number(s.damage) || 0;
+        body.engine = Number(s.engine) || 0;
+        body.pull = Number(s.pull) || 0;
+        body.wrecked = !!s.wrecked;
     }
 
     savePrev(car) {
@@ -402,12 +406,6 @@ class Race {
         if (this.local && this.mode !== 'demo') {
             controls = ph.assistControls(this.track, this.local.body, raw,
                 { steering: this.settings.steeringAssist, autoBrake: !!this.settings.autoBrake }, this.grip);
-            const w = this.wear;
-            controls = {
-                throttle: controls.throttle * (1 - WEAR_POWER * w.power),
-                brake: controls.brake,
-                steer: Math.min(1, Math.max(-1, controls.steer * (1 - WEAR_LOCK * w.lock) + WEAR_PULL * w.pull)),
-            };
         }
         if (this.proof) {
             // Quantize BEFORE stepping, so what is recorded is exactly what was simulated:
@@ -433,14 +431,17 @@ class Race {
         const tickStart = Math.max(0, elapsed - TICK);
         const stepDt = elapsed - tickStart;
         const bodies = this.cars.map(c => c.body);
-        if (this.proof && this.local && !this.local.finished && this.proof.length < MAX_RECORD_FRAMES) {
+        // A wrecked player is out: the log ends there, and the car is driven off the line
+        // (MIRRORED by PoCabinetLapVerifier.Replay, which stops at the wreck).
+        const driving = this.local && !this.local.finished && !this.local.body.wrecked;
+        if (this.proof && driving && this.proof.length < MAX_RECORD_FRAMES) {
             this.proof.push(controls.q);
         }
         for (const car of this.cars) {
             this.savePrev(car);
             car.prevDistance = car.body.distance;
             let c;
-            if (car.isLocal && !car.finished && this.mode !== 'demo') c = controls;
+            if (car.isLocal && driving && this.mode !== 'demo') c = controls;
             else {
                 const persona = car.persona || ph.AUTOPILOT;
                 c = ph.aiControls(this.track, car.body, persona, car.finished ? car.maxSpeed * this.track.coolDownAt(car.body.distance) : car.maxSpeed,
@@ -450,6 +451,7 @@ class Race {
             ph.step(this.track, car.body, c, stepDt, this.grip);
         }
         ph.resolveContacts(this.track, bodies);
+        this.applyHits();
         this.lapBookkeeping(tickStart, stepDt, elapsed);
         this.checkPhotoFinish();
         this.feedback();
@@ -460,7 +462,8 @@ class Race {
     lapBookkeeping(tickStart, stepDt, elapsed) {
         const L = this.track.lapLength;
         for (const car of this.cars) {
-            if (car.finished) continue;
+            // A wreck counts no more laps (MIRRORED by PoCabinetLapVerifier and PoCabinetSim).
+            if (car.finished || car.body.wrecked) continue;
             if (car.isLocal) this.checkSectors(car.prevDistance, car.body.distance, tickStart, stepDt);
             while (car.body.distance >= (car.lapsDone + 1) * L) {
                 const boundary = (car.lapsDone + 1) * L;
@@ -493,11 +496,47 @@ class Race {
         });
         order.forEach((c, i) => { c.position = i + 1; });
         this.banterEvents(order, elapsed);
-        const everyone = this.cars.every(c => c.finished);
+        const everyone = this.cars.every(c => c.finished || c.body.wrecked);
         const grace = this.firstFinishAt >= 0 && elapsed - this.firstFinishAt > FINISH_GRACE;
-        if (!this.simDone && (everyone || grace || (this.local?.finished && elapsed - this.local.finishTime > 6))) {
+        const wreckedOut = this.wreckAt >= 0 && this.clock - this.wreckAt > WRECK_HOLD + 3;
+        if (!this.simDone && (everyone || grace || wreckedOut || (this.local?.finished && elapsed - this.local.finishTime > 6))) {
             this.simDone = true;
         }
+    }
+
+    /**
+     * Every hit the sim reported this tick becomes a dent on that car where it landed, crushed
+     * the way it pushed; a hard one throws chunks and paint off it. The local car's own wreck
+     * is a moment of its own (onLocalWreck()).
+     */
+    applyHits() {
+        const hits = this.hits;
+        if (hits.length) {
+            if (!this.byBody) this.byBody = new Map(this.cars.map(c => [c.body, c]));
+            for (const h of hits) {
+                const car = this.byBody.get(h.body);
+                if (!car?.mesh) continue;
+                const s = Math.min(1, (h.closing - DENT_FLOOR) / DENT_SPEED);
+                if (!car.mesh.addHit(h.fwd, h.side, h.nx, h.ny, s) || s < 0.3) continue;
+                const b = car.body, ch = Math.cos(b.heading), sh = Math.sin(b.heading);
+                const x = (b.x + ch * h.fwd - sh * h.side) / 10, z = (b.y + sh * h.fwd + ch * h.side) / 10;
+                this.fx?.debris(x, z, car.mesh.paintHex, s, car.render.h);
+            }
+            hits.length = 0;
+        }
+        const me = this.local;
+        if (me && me.body.wrecked && this.wreckAt < 0) this.onLocalWreck();
+    }
+
+    /** The player's car is gone: the engine dies with a bang, and the race ends for them. */
+    onLocalWreck() {
+        this.wreckAt = this.clock;
+        if (this.mode === 'demo') return;
+        audio.impact(1, 'wall');
+        this.cue('wall', 1);
+        this.input.rumble(1);
+        this.scene.fx.shake = Math.max(this.scene.fx.shake, 1);
+        this.scene.fx.flash = Math.max(this.scene.fx.flash, this.scene.fx.reduced ? 0.1 : 0.35);
     }
 
     netTick(controls) {
@@ -519,7 +558,9 @@ class Race {
         if (moving && !this.local.finished) {
             this.savePrev(this.local);
             const before = this.local.body.distance;
-            ph.step(this.track, this.local.body, controls, TICK, 1);
+            // The server drives a wrecked car off the line itself (PoCabinetSim); predict that.
+            const body = this.local.body;
+            ph.step(this.track, body, body.wrecked ? ph.wreckControls(this.track, body) : controls, TICK, 1);
             const raceT = this.estServerMs() / 1000 - COUNTDOWN;
             this.checkSectors(before, this.local.body.distance, raceT - TICK, TICK);
             this.feedback();
@@ -678,6 +719,13 @@ class Race {
             if (!car) continue;
             car.position = s.position;
             car.finished = !!s.finished;
+            // A remote car is never simulated here: its body only carries what the server says
+            // the hits did, for the smoke, the scorch and the HUD.
+            if (!car.isLocal) {
+                car.body.damage = Number(s.damage) || 0;
+                car.body.engine = Number(s.engine) || 0;
+                car.body.wrecked = !!s.wrecked;
+            }
             car.lapsDone = Math.max(0, (s.lap || 1) - 1);
         }
         if (snap.finished) n.finished = true;
@@ -704,7 +752,9 @@ class Race {
         else if (ahead < -half) ahead += this.track.length;
         server.distance = this.local.body.distance - ahead;
         if (snap.started && !s.finished) {
-            for (const h of n.history) if (h.moving) ph.step(this.track, server, h.c, TICK, 1);
+            for (const h of n.history) {
+                if (h.moving) ph.step(this.track, server, server.wrecked ? ph.wreckControls(this.track, server) : h.c, TICK, 1);
+            }
         }
 
         const cur = this.local.body;
@@ -790,8 +840,10 @@ class Race {
             car.render.along = pose.along;
             this.place(car.render);
             car.mesh?.update({ x: pose.x, y: pose.y, heading: pose.heading, speedKmh: pose.speed * ph.KMH_PER_UNIT, h: car.render.h, pitch: car.render.pitch, roll: car.render.roll });
+            car.mesh?.setCondition(!!car.body.wrecked);
         }
         this.cull();
+        updateDebris(this.paused ? 0 : dt * this.timeScale);
 
         // Camera: the local car, or the race leader when spectating.
         let mode = this.cameraMode;
@@ -886,7 +938,9 @@ class Race {
             const b = this.local.body;
             const kmh = Math.abs(this.local.render.speed) * ph.KMH_PER_UNIT;
             const throttle = this.mode === 'demo' && preStart ? 0 : this.lastControls.throttle;
-            audio.updateEngine(racing ? kmh : 0, throttle, racing ? 'race' : preStart ? 'grid' : 'off');
+            // A wrecked engine is dead: the note stops with the bang.
+            const dead = !!b.wrecked;
+            audio.updateEngine(racing && !dead ? kmh : 0, dead ? 0 : throttle, dead ? 'off' : racing ? 'race' : preStart ? 'grid' : 'off');
             const es = audio.engineState();
             audio.setSqueal(racing && b.sliding ? 1 : 0, kmh);
 
@@ -928,34 +982,22 @@ class Race {
 
         this.crowdAndMoments(focus, racing, preStart, speed01);
         this.updateGauge(racing || preStart);
+        this.updateDamageHud(focus);
+        if (dt > 0 && !this.paused) this.dragSparks(dt);
         this.reflections?.update(performance.now() / 1000, this.cars.map(c => c.mesh));
         this.updateAudioScene(dt, racing || preStart);
     }
 
-    /** A hit on car `id` at world (x, z): dent it, throw debris off a real one, and wear the player's. */
+    /**
+     * Online only: a hit the fx layer saw on car `id` at world (x, z) dents it and throws
+     * debris off a real one. Where the race is simulated here the sim's own hits do that
+     * (applyHits()), with the direction they pushed and without counting a scrape twice.
+     */
     damage(id, x, z, strength) {
+        if (this.mode !== 'net') return;
         const car = this.cars.find(c => c.id === id);
         if (!car || !(strength > 0.12)) return;
-        if (car === this.local && this.mode !== 'demo' && !car.finished) this.wearFrom(car.render, x, z, strength);
         if (car.mesh?.addDamage(x, z, strength) && strength > 0.3) this.fx?.debris(x, z, car.mesh.paintHex, strength, car.render.h);
-    }
-
-    /**
-     * What a hit at world (x, z) costs the car at pose `r`. Where it landed decides what broke:
-     * a front corner bends the steering (the car pulls toward the hit and loses lock) and can
-     * hole the radiator; a hit further back mostly knocks the tracking out a little.
-     */
-    wearFrom(r, x, z, strength) {
-        const s = (strength - WEAR_FLOOR) * WEAR_GAIN;
-        if (s <= 0) return;
-        const dx = x * 10 - r.x, dy = z * 10 - r.y;
-        const ch = Math.cos(r.heading), sh = Math.sin(r.heading);
-        const front = dx * ch + dy * sh > 6;                                       // the hull is 39 long
-        const side = Math.min(1, Math.max(-1, (dy * ch - dx * sh) / ph.HULL_RADIUS));
-        const w = this.wear;
-        w.pull = Math.min(1, Math.max(-1, w.pull + side * s * (front ? 1 : 0.4)));
-        if (front) w.lock = Math.min(1, w.lock + s);
-        w.power = Math.min(1, w.power + s * (front ? 0.8 : 0.3));
     }
 
     /** Grandstand, overtakes and the finish. */
@@ -1017,6 +1059,50 @@ class Race {
         return this.mode === 'solo' ? (window.PoImpact?.getTimeScale?.() ?? 1) : 1;
     }
 
+    /** Sparks off every bumper that is hanging off a car in view and dragging on the road. */
+    dragSparks(dt) {
+        const out = this.dragPoints;
+        for (const car of this.cars) {
+            const v = car.render.speed;
+            if (!car.mesh?.group.visible || Math.abs(v) < 12) continue;
+            out.length = 0;
+            car.mesh.dragging(out);
+            const back = Math.cos(car.render.heading) * v * -0.03, side = Math.sin(car.render.heading) * v * -0.03;
+            for (const p of out) {
+                for (let i = 0; i < 3; i++) {
+                    if (Math.random() > dt * 25) continue;
+                    this.fx?.spark(p.x, p.y, p.z, back + (Math.random() - 0.5) * 2, 0.8 + Math.random() * 2, side + (Math.random() - 0.5) * 2);
+                }
+            }
+        }
+    }
+
+    /**
+     * The damage panel (#pocabinetDamage, the page's markup), written straight to the DOM like
+     * the gauge: a car outline lit by zone (how bent the body is there, from the dents), and
+     * the engine and structure the sim says are left. data-state: ok | hurt | critical | wrecked.
+     */
+    updateDamageHud(focus) {
+        const now = performance.now();
+        if (now - (this.damageHudAt || 0) < 100) return;
+        this.damageHudAt = now;
+        if (!this.damageHud?.isConnected) this.damageHud = document.getElementById('pocabinetDamage');
+        const el = this.damageHud, car = this.local || focus;
+        if (!el || !car) return;
+        const z = car.mesh?.zones || { front: 0, rear: 0, left: 0, right: 0 };
+        const b = car.body;
+        const worst = Math.max(b.damage || 0, b.engine || 0);
+        const state = b.wrecked ? 'wrecked' : worst > 0.65 ? 'critical' : worst > 0.15 ? 'hurt' : 'ok';
+        const set = (k, v) => el.style.setProperty(k, Math.min(1, Math.max(0, v)).toFixed(2));
+        set('--dmg-front', z.front * 0.8);
+        set('--dmg-rear', z.rear * 0.8);
+        set('--dmg-left', z.left * 0.8);
+        set('--dmg-right', z.right * 0.8);
+        set('--dmg-engine', b.engine || 0);
+        set('--dmg-body', b.damage || 0);
+        if (el.dataset.state !== state) el.dataset.state = state;
+    }
+
     /** The glass gauge: speed, gear and RPM written straight into the page's markup. */
     updateGauge(live) {
         // Blazor renders the gauge with the racing phase, which can land after startRace,
@@ -1049,6 +1135,8 @@ class Race {
             // Where the sim has the car on the road, when it knows (fx.js would otherwise
             // search blind, and on a course that crosses itself find the wrong level).
             hint: (exact || c.isLocal) ? c.body.segHint : -1,
+            // What the hits have done, for the engine smoke and the fire of a wreck.
+            engine: c.body.engine, wrecked: !!c.body.wrecked,
         }));
     }
 
@@ -1118,7 +1206,8 @@ class Race {
     pushHud(elapsed) {
         if (this.hudFinishedSent) return;
         const local = this.local;
-        const finished = !!local?.finished;
+        // A wrecked player's race is over too, once they have watched it happen.
+        const finished = !!local?.finished || (this.wreckAt >= 0 && this.clock - this.wreckAt > WRECK_HOLD);
         // The page needs the whole field twice: once to count it, and at the finish for the
         // standings. In between it only reads the local car, and marshalling a hundred rows
         // into .NET thirty times a second costs more than the race does.
@@ -1139,6 +1228,8 @@ class Race {
                 lap: c.lapsDone + 1,
                 lapProgress: fraction(c.body.distance / this.track.length),
                 position: c.position, isPlayer: c.isLocal, finished: c.finished, ackSeq: 0,
+                damage: round3(c.body.damage), engine: round3(c.body.engine), pull: round3(c.body.pull),
+                wrecked: !!c.body.wrecked, style: ph.archetype(c.persona),
             })),
             latestDialogue: this.line,
             static: null,
@@ -1385,6 +1476,8 @@ class Race {
         this.scene.offFrame?.(this.frameCb);
         this.input.detach();
         for (const car of this.cars) if (car.mesh) unmountCar(car.mesh);
+        if (this.mode !== 'net') ph.reportHits(null);
+        clearDebris();
         this.crowd?.dispose();
         this.fx?.dispose();
         this.reflections?.dispose();

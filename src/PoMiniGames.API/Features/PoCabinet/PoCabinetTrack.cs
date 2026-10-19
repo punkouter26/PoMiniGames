@@ -35,6 +35,10 @@ public sealed class PoCabinetTrack
     private readonly double[] _tx;
     private readonly double[] _ty;
     private readonly double[] _curv;
+    /// <summary>Road height and cross slope per sample (null on a flat, unbanked track): the
+    /// same values the browser gets as the world's CenterZ / CenterBank.</summary>
+    private readonly double[]? _z;
+    private readonly double[]? _bank;
     private readonly bool _pointToPoint;
     private readonly double _parkAt;
 
@@ -67,6 +71,10 @@ public sealed class PoCabinetTrack
             _ty[i] = len > 1e-9 ? dy / len : 0;
         }
         Length = _cum[Count];
+        var z = PoCabinetTrackGeometry.BuildCenterlineValues(def.KnotZ, def.StepsPerSegment, 1);
+        var bank = PoCabinetTrackGeometry.BuildCenterlineValues(def.KnotBank, def.StepsPerSegment, 3);
+        _z = z.Length == Count ? z : null;
+        _bank = bank.Length == Count ? bank : null;
 
         // Point-to-point (the Playground run): the lap ends at the finish knot instead of back
         // at the line, and a finished car rolls on into the run-out and parks half way down
@@ -96,6 +104,23 @@ public sealed class PoCabinetTrack
             _curv[i] = (raw[(i - 1 + Count) % Count] + raw[i] + raw[(i + 1) % Count]) / 3.0;
         }
     }
+
+    /// <summary>Rise per unit of road along segment <paramref name=i/> (+ = uphill in the
+    /// direction of travel); 0 on a flat track. Mirrors track.js <c>grade</c>.</summary>
+    public double Grade(int i)
+    {
+        if (_z is null) return 0;
+        double len = _segLen[i];
+        return len > 1e-9 ? (_z[(i + 1) % Count] - _z[i]) / len : 0;
+    }
+
+    /// <summary>Cross slope at sample <paramref name=i/> (+ = right side higher); 0 when unbanked. Mirrors track.js <c>bankOf</c>.</summary>
+    public double Bank(int i) => _bank is null ? 0 : _bank[i];
+
+    /// <summary>Unit tangent of segment <paramref name=i/>.</summary>
+    public double TangentX(int i) => _tx[i];
+
+    public double TangentY(int i) => _ty[i];
 
     public static PoCabinetTrack Get(string? trackId)
     {

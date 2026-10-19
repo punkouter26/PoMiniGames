@@ -214,7 +214,7 @@ How movement reaches the engine:
 |---|---|---|
 | PoBrawl boxer | Kinematic | Velocity is eased toward the intent and the position is written directly. Physics only takes over for the KO ragdoll. |
 | PoVoxelStrike monsters | Direct position | No physics body. The mesh is moved each frame and settles onto the terrain height. |
-| PoCabinet racer | Custom arcade car | Speed along the heading; turning limited by grip. |
+| PoCabinet racer | Custom arcade car | Speed along the heading; turning limited by grip. Barrier hits and contacts cost structure, engine and alignment (`hurt()` in `physics.js`, `PoCabinetPhysics.Hurt`): a bent car pulls and loses lock, power, top speed and grip, and a wrecked one limps off the line and is out (DNF). Hills are physics too (the Marble Run): gravity along the grade (`SLOPE_GRAVITY` 60) speeds a car downhill and slows it uphill, drag past top speed tops a descent out, a banked turn adds grip, and braking takes cornering grip (a friction circle). The AI brakes only for corners and traffic, so a descent can carry it up to 30 u/s over its own pace. |
 | PoRacer bot | Custom arcade car | One circle per car; on-or-off steering and pedals. |
 | PoMarbleRace marble | Physics body | A rolling sphere. No brain: gravity and the track do everything. |
 | PoEcosystem creature | Kinematic over a heightmap | Velocity intent with fallback headings when blocked. |
@@ -324,7 +324,7 @@ world. The middle column is the closest real setting in this project.
 | | | How long an island creature remembers food and water. | 120 s food, 240 s water | `js/poecosystem/sim/core/config.js` |
 | | | How long a boxer remembers the player's habits. | `HABIT_TAU = 8` s | `js/pobrawl/ai.js` |
 | **Exploration rate** | Epsilon / entropy | Chance the board CPU plays a random move on purpose. | 0.55 down to 0.05 (TicTacToe); 0.60 down to 0.00 (ConnectFive) | `StrengthForElo` in each AI file |
-| | | Chance a PoCabinet racer misjudges a corner. | `wildness` 0.01 to 0.12 for the four officials | `js/pocabinet/physics.js` |
+| | | Chance a PoCabinet racer misjudges a corner and runs off the road. | `wildness` 0.03 to 0.14 for the four officials, 0.05 to 0.25 for the field (every car has some) | `js/pocabinet/physics.js` |
 | | | Steering wobble on a PoRacer bot. | `0.015 x (1.15 - CorneringSkill)` per tick | `PoRacerSim.cs` |
 | **Reaction time** | Decision period | Delay before a boxer makes a weighted choice. | 560 ms (rung 1) down to 95 ms (rung 15) | `js/pobrawl/ai.js` |
 | **How often it thinks** | Decision frequency | Ticks per second. | PoBrawl 60, PoJevArena sim 60 (one model call per unit per second), PoRacer 50, PoCabinet 30, PoEcosystem 20 (goals re-scored 4 times a second) | each engine's constants |
@@ -362,7 +362,8 @@ There is no inspector panel. Settings are constants in source files; edit, rebui
 | Board-game CPU strength | `StrengthForElo` in `TicTacToeAI.cs` / `ConnectFiveAI.cs` | Rating thresholds map to search depth and blunder chance. |
 | Horde monsters | `ARCHETYPES` in `wwwroot/js/povoxelstrike/enemies.js` | `hp`, `speed`, `meleeDamage`, `spitInterval`. Spawn pacing is in the spawn director below it. |
 | Wall guns | constants at the top of `FortressGuns` in `wwwroot/js/povoxelstrike/fortress.js` | Range 120, reload 2.2 s, spread 0.035 rad. |
-| PoCabinet officials | the roster in `wwwroot/js/pocabinet/physics.js` **and** `PoCabinetSim.cs` | The two files are a line-for-line mirror. Change both or the lap verifier will reject laps. |
+| PoCabinet officials | the roster in `wwwroot/js/pocabinet/physics.js` **and** `PoCabinetSim.cs` | The two files are a line-for-line mirror. Change both or the lap verifier will reject laps. Each driver has eight traits (line, lookahead, braking, collision tolerance, drafting, wildness, `aggression`, `twitch`); a bruiser (aggression ≥ 0.8) follows close enough to bump and turns in on a car alongside. `archetype()` names a driver's strongest trait for the standings (display only). |
+| PoCabinet damage | the damage constants at the top of `physics.js` **and** `PoCabinetPhysics.cs` | Same mirror rule: `DAMAGE_FLOOR` 12 u/s is shrugged off, `DAMAGE_SCALE` 9500 is the squared excess that wrecks a car. Changing either means regenerating `tests/Shared/Fixtures/pocabinet-lap-proofs.txt`. How it looks (dents, loose parts, smoke) is `cars.js` / `fx.js` and never touches the sim. |
 | PoRacer bots | `PoRacerAiDriver.cs` (personalities), `PoRacerRaceRegistry.cs` (tier pace and caution) | Server-side only. |
 | Island creatures | `wwwroot/js/poecosystem/sim/creatures/species.js` and `sim/core/config.js` | PoEcosystem is watch-only by design; tune numbers, do not add player controls. |
 | Arena creatures | `Shared/Games/PoJevArenaShared.cs` | Presets, ability costs, build budget of 80. |

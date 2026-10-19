@@ -10,8 +10,15 @@
 // car sideways (`slip`) and turns it (`spin`) as well as changing its speed; the tyres
 // then bleed both off in step(). A tap on a rear corner turns a car, a T-bone slides it.
 //
-// MIRROR CONTRACT: step / advanceDistance / hullContact / resolveContacts / gridSlot /
-// soloField / aiControls are line-for-line ports of PoCabinetPhysics.cs,
+// Damage is part of the sim (hurt()): every barrier hit and every contact harder than a
+// nudge costs the car structure, engine and alignment, by how hard it closed and where on
+// the body it landed. A bent car pulls to one side, has less lock, power, top speed and
+// grip; a car whose structure or engine is gone is wrecked: the engine dies and it has just
+// enough limp left to get off the racing line (wreckControls()), then it stops for good.
+// Being state in the body, it is in the lap proof and the server's sim for free.
+//
+// MIRROR CONTRACT: step / hurt / advanceDistance / hullContact / resolveContacts / gridSlot /
+// soloField / aiControls / wreckControls are line-for-line ports of PoCabinetPhysics.cs,
 // PoCabinetAiDriver.cs and PoCabinetPersonality.SoloField, with the same constants in
 // the same order of operations. Solo races run this copy. All trig is track.js's own
 // sin / cos / atan2 (never Math.*), so the two copies agree to the last bit and a lap
@@ -19,6 +26,10 @@
 // Multiplayer runs the C# copy on the server while this copy predicts the local
 // car and replays unacknowledged inputs on top of every snapshot — if the two
 // drift apart, each correction becomes a visible snap.
+//
+// Hills and banking are physics too: gravity along the road's grade speeds a car downhill
+// and slows it uphill (with drag past top speed so a descent tops out), a banked turn holds
+// it in, and braking takes grip from cornering (a friction circle).
 //
 // Frame: forward is (cos h, sin h); the right-hand side is (-sin h, cos h); steer
 // +1 turns right (heading increases). The scene maps sim (x, y) → world (x/10, y/10)
@@ -60,6 +71,40 @@ const SLIP_SLIDING = 8;
 /** Cars further apart than this along the road never touch: where the Playground run
  *  crosses over itself they are on different levels. */
 const SAME_ROAD = 120;
+/** Damage (hurt()): closing speed a body shrugs off, and the square of the excess over it that
+ *  takes all of a car's structure (a square hit on the barrier at about 110 u/s). */
+const DAMAGE_FLOOR = 12;
+const DAMAGE_SCALE = 9500;
+/** Engine share of a hit on the nose (radiator, engine bay) and of one anywhere else. */
+const ENGINE_NOSE = 1.25;
+const ENGINE_OTHER = 0.3;
+/** Misalignment from a hit on a front corner and from one further back. */
+const PULL_NOSE = 2.2;
+const PULL_OTHER = 0.6;
+/** What full damage costs: engine power and top speed (engine), grip (structure), lock and a
+ *  steady pull on the wheel (alignment). */
+const POWER_LOSS = 0.5;
+const TOP_LOSS = 0.2;
+const GRIP_LOSS = 0.2;
+const LOCK_LOSS = 0.3;
+const PULL_STEER = 0.14;
+/** A wrecked car limps at no more than this, and only until it is this far off the tarmac. */
+const LIMP_SPEED = 14;
+const LIMP_THROTTLE = 0.5;
+const WRECK_CLEAR = 16;
+/** Hills (track.grade): gravity along the road, arcade-strong so a descent is felt (u/s² per
+ *  unit of grade), and the drag that takes back speed past a car's top speed, so a long
+ *  descent tops out instead of running away (per second of overspeed). */
+const SLOPE_GRAVITY = 60;
+const OVERSPEED_DRAG = 1.2;
+/** A banked turn holds a car in (+ this share of grip per unit of bank turning into it), an
+ *  off-camber one lets it go (down to −half that). */
+const BANK_GRIP = 0.6;
+/** The friction circle: the brakes take this share of the cornering grip at full pressure,
+ *  so braking hard into a corner washes the nose wide. */
+const TRAIL_LOSS = 0.25;
+/** AI: how far over its own pace a car lets a descent carry it before it brakes for it. */
+const RUN_ON = 30;
 /** AI following: the gap it keeps to the car ahead (centres; hulls touch at 39) and the braking it plans on. */
 const FOLLOW_GAP = 44;
 const FOLLOW_DECEL = 80;
@@ -81,18 +126,20 @@ const LAPSE_LENGTH = 170;
  * The four officials, in the server's roster order (PoCabinetPersonality.Roster). A persona
  * is how a car is driven: the line it holds (lateralOffset), how early it turns in
  * (lookahead), how late and how hard it brakes (brakingAggression), how it insists on its
- * line in traffic (collisionTolerance), whether it tucks in behind a car (draftingAffinity)
- * and how often it overcooks a corner and runs off the road (wildness; seed keys the draws).
+ * line in traffic (collisionTolerance), whether it tucks in behind a car (draftingAffinity),
+ * how often it overcooks a corner and runs off the road (wildness; seed keys the draws), how
+ * it treats the car in front and beside it (aggression: a bruiser follows close enough to
+ * bump and turns in on a car alongside) and how hard it saws at the wheel (twitch).
  */
 export const OFFICIALS = Object.freeze([
     { id: 'sean-s', name: 'Sean S.', color: '#3470d8', maxSpeed: MAX_SPEED * 0.93, corneringSkill: 0.62,
-      persona: { lookahead: 25, lateralOffset: -0.95, brakingAggression: 0.95, collisionTolerance: 0.2, draftingAffinity: 0.1, wildness: 0.12, seed: 201 } },
+      persona: { lookahead: 25, lateralOffset: -0.95, brakingAggression: 0.95, collisionTolerance: 0.2, draftingAffinity: 0.1, wildness: 0.14, aggression: 0.55, twitch: 0.85, seed: 201 } },
     { id: 'steve-b', name: 'Steve B.', color: '#5e4b8b', maxSpeed: MAX_SPEED * 0.95, corneringSkill: 0.55,
-      persona: { lookahead: 45, lateralOffset: 0.85, brakingAggression: 0.20, collisionTolerance: 0.6, draftingAffinity: 0.2, wildness: 0.03, seed: 202 } },
+      persona: { lookahead: 45, lateralOffset: 0.85, brakingAggression: 0.20, collisionTolerance: 0.6, draftingAffinity: 0.2, wildness: 0.05, aggression: 0.1, twitch: 0.3, seed: 202 } },
     { id: 'bill-b', name: 'Bill B.', color: '#a02c2c', maxSpeed: MAX_SPEED * 0.91, corneringSkill: 0.70,
-      persona: { lookahead: 100, lateralOffset: 0.0, brakingAggression: 0.50, collisionTolerance: 0.9, draftingAffinity: 0.0, wildness: 0.01, seed: 203 } },
+      persona: { lookahead: 100, lateralOffset: 0.0, brakingAggression: 0.50, collisionTolerance: 0.9, draftingAffinity: 0.0, wildness: 0.03, aggression: 0.35, twitch: 0.1, seed: 203 } },
     { id: 'mike-p', name: 'Mike P.', color: '#1c8054', maxSpeed: MAX_SPEED * 0.96, corneringSkill: 0.60,
-      persona: { lookahead: 130, lateralOffset: -0.40, brakingAggression: 0.40, collisionTolerance: 0.3, draftingAffinity: 0.95, wildness: 0.06, seed: 204 } },
+      persona: { lookahead: 130, lateralOffset: -0.50, brakingAggression: 0.40, collisionTolerance: 0.3, draftingAffinity: 0.95, wildness: 0.08, aggression: 0.85, twitch: 0.45, seed: 204 } },
 ]);
 
 const FIELD_FIRST = ['Dana', 'Kyle', 'Priya', 'Omar', 'Lena', 'Marcus', 'Ines', 'Tobias', 'Yuki', 'Carla',
@@ -104,8 +151,9 @@ const FIELD_LAST = ['K.', 'R.', 'D.', 'W.', 'M.'];
  * from the quickest to the slowest. Qualifying order on purpose: a grid sorted any other
  * way has to overtake itself, and a hundred cars doing that on a 27-second lap is a
  * traffic jam, not a race. A field racer's pace comes from its index; so does its
- * personality, every trait from a byte of its own (two hashes of the index), so no two
- * cars drive alike and no trait follows from another.
+ * personality, every trait from a byte of its own (three hashes of the index), so no two
+ * cars drive alike and no trait follows from another. Every one of them has some wildness:
+ * the whole field runs off the road now and then, the liabilities a lot.
  * Mirrors PoCabinetPersonality.SoloField (which carries no names or colours: the server
  * only re-runs the physics).
  */
@@ -117,6 +165,8 @@ export function soloField() {
         const g = Math.imul(i + 1, 0x85EBCA6B) >>> 0;
         const a = (h & 0xff) / 255, b = ((h >>> 8) & 0xff) / 255, c = ((h >>> 16) & 0xff) / 255, d = (h >>> 24) / 255;
         const e = (g & 0xff) / 255, f = ((g >>> 8) & 0xff) / 255, k = ((g >>> 16) & 0xff) / 255, m = (g >>> 24) / 255;
+        const q = Math.imul(i + 1, 0xC2B2AE35) >>> 0;
+        const r = (q & 0xff) / 255, t = ((q >>> 8) & 0xff) / 255;
         const pace = 1 - i / (n - 1);
         field.push({
             id: 'field', name: `${FIELD_FIRST[i % FIELD_FIRST.length]} ${FIELD_LAST[Math.floor(i / FIELD_FIRST.length)]}`,
@@ -126,12 +176,30 @@ export function soloField() {
             persona: {
                 lookahead: 30 + 90 * c, lateralOffset: -0.9 + 1.8 * d, brakingAggression: 0.05 + 0.9 * e,
                 collisionTolerance: 0.1 + 0.8 * k, draftingAffinity: 0.7 * m,
-                // Most of the field is tidy; a few are a liability.
-                wildness: 0.01 + 0.2 * f * f, seed: i + 1,
+                // Everyone runs wide now and then; a few are a liability.
+                wildness: 0.05 + 0.2 * f * f, aggression: r, twitch: t, seed: i + 1,
             },
         });
     }
     return field;
+}
+
+/**
+ * The one word a driver's personality comes down to, for the standings and the HUD: its
+ * most extreme trait. Display only; nothing in the sim reads it.
+ */
+export function archetype(p) {
+    if (!p) return '';
+    if (p.aggression >= 0.8) return 'Bruiser';
+    if (p.wildness >= 0.17) return 'Wild card';
+    if (p.brakingAggression >= 0.85) return 'Late braker';
+    if (p.draftingAffinity >= 0.55) return 'Slipstreamer';
+    if (p.twitch >= 0.85) return 'Twitchy';
+    if (p.collisionTolerance >= 0.8) return 'Line holder';
+    if (p.brakingAggression <= 0.15) return 'Cautious';
+    if (p.twitch <= 0.15) return 'Smooth';
+    if (p.lookahead >= 100) return 'Tactician';
+    return 'Journeyman';
 }
 
 /**
@@ -159,7 +227,7 @@ function lapse(persona, distance) {
 }
 
 /** Neutral line used by the demo autopilot and for finished cars' cool-down lap. */
-export const AUTOPILOT = Object.freeze({ lookahead: 100, lateralOffset: 0, brakingAggression: 0.5, collisionTolerance: 0.9, draftingAffinity: 0 });
+export const AUTOPILOT = Object.freeze({ lookahead: 100, lateralOffset: 0, brakingAggression: 0.5, collisionTolerance: 0.9, draftingAffinity: 0, aggression: 0, twitch: 0.375 });
 
 export function wallLateral(track) {
     return track.halfWidth + RUN_OFF - CAR_RADIUS * 0.5;
@@ -172,6 +240,8 @@ export function createBody() {
         segHint: -1, along: 0, distance: 0, lateral: 0,
         onGrass: false, sliding: false, wallImpact: 0,
         slip: 0, spin: 0,   // sideways speed (+ = right) and yaw rate a contact left behind
+        // What the hits have cost (hurt()): structure and engine 0..1, alignment −1..1 (+ pulls right).
+        damage: 0, engine: 0, pull: 0, wrecked: false,
     };
 }
 
@@ -181,14 +251,55 @@ export function copyBody(src, dst) {
     d.segHint = src.segHint; d.along = src.along; d.distance = src.distance; d.lateral = src.lateral;
     d.onGrass = src.onGrass; d.sliding = src.sliding; d.wallImpact = src.wallImpact;
     d.slip = src.slip; d.spin = src.spin;
+    d.damage = src.damage; d.engine = src.engine; d.pull = src.pull; d.wrecked = src.wrecked;
     return d;
+}
+
+// Where race.js wants every hit reported, for the dents (render only: nothing reads it back).
+let hitSink = null;
+/** Report every hit from here on into `list` as { body, fwd, side, nx, ny, closing } (null stops). */
+export function reportHits(list) { hitSink = list; }
+
+/**
+ * A hit on `car` closing at `closing` u/s, landing (fwd, side) from its centre in its own frame
+ * (+ = ahead, + = right), with (nx, ny) the way it pushed, in the same frame. What it costs
+ * goes as the square of the closing speed over DAMAGE_FLOOR: structure wherever it lands, the
+ * engine mostly from the nose, and the alignment from a corner (the car pulls toward it).
+ * Mirrors PoCabinetPhysics.Hurt.
+ */
+function hurt(car, closing, fwd, side, nx, ny) {
+    if (hitSink && closing > 4) hitSink.push({ body: car, fwd, side, nx, ny, closing });
+    const e = closing - DAMAGE_FLOOR;
+    if (!(e > 0) || car.wrecked) return;
+    const s = e * e / DAMAGE_SCALE;
+    const nose = fwd > HULL_HALF;
+    const across = Math.min(1, Math.max(-1, side / HULL_RADIUS));
+    car.damage = Math.min(1, car.damage + s);
+    car.engine = Math.min(1, car.engine + s * (nose ? ENGINE_NOSE : ENGINE_OTHER));
+    car.pull = Math.min(1, Math.max(-1, car.pull + across * s * (nose ? PULL_NOSE : PULL_OTHER)));
+    if (car.damage >= 1 || car.engine >= 1) car.wrecked = true;
 }
 
 /** Advance one car by dt with controls { throttle, brake, steer }. Mirrors PoCabinetPhysics.Step. */
 export function step(track, car, c, dt, grip) {
-    const throttle = c.throttle, brake = c.brake, steer = c.steer;
+    let throttle = c.throttle, steer = c.steer;
+    const brake = c.brake;
     const v = car.speed;
     const surfaceGrip = car.onGrass ? GRASS_GRIP : 1;
+    // What the hits have cost: a wrecked engine gives only a limp, and only until the car is
+    // clear of the tarmac; a bent car pulls and has lost lock, power, top speed and grip.
+    if (car.wrecked) {
+        throttle = Math.abs(car.lateral) > track.halfWidth + WRECK_CLEAR || v >= LIMP_SPEED ? 0 : Math.min(throttle, LIMP_THROTTLE);
+    }
+    steer = Math.min(1, Math.max(-1, steer * (1 - LOCK_LOSS * Math.abs(car.pull)) + PULL_STEER * car.pull));
+    const power = 1 - POWER_LOSS * car.engine;
+    const top = MAX_SPEED * (1 - TOP_LOSS * car.engine);
+    grip = grip * (1 - GRIP_LOSS * car.damage);
+    // The road under it (last tick's segment): how steep the way it is pointing, how banked.
+    const seg = car.segHint;
+    const roadDot = seg >= 0 ? cos(car.heading) * track.tx[seg] + sin(car.heading) * track.ty[seg] : 0;
+    const slope = seg >= 0 ? track.grade(seg) * roadDot : 0;
+    const bank = seg >= 0 ? track.bankOf(seg) : 0;
 
     let v2;
     if (v < -0.01) {
@@ -201,18 +312,26 @@ export function step(track, car, c, dt, grip) {
     } else if (v <= 0.5 && throttle === 0 && brake > 0) {
         v2 = Math.max(-REVERSE_MAX, v - REVERSE_ACCEL * brake * dt);
     } else {
-        const ratio = v / MAX_SPEED;
-        let a = throttle * ACCEL * grip * Math.max(0, 1 - ratio * ratio)
+        const ratio = v / top;
+        let a = throttle * ACCEL * power * grip * Math.max(0, 1 - ratio * ratio)
             - brake * BRAKE_DECEL
             - COAST_DECEL * (1 - throttle);
         if (car.onGrass && v > 25) a -= GRASS_DECEL;
+        // Downhill pulls the car on and uphill holds it back; past its top speed the air
+        // takes the excess back.
+        a -= SLOPE_GRAVITY * slope;
+        if (v > top) a -= OVERSPEED_DRAG * (v - top);
         v2 = Math.max(0, v + a * dt);
     }
 
     const speedAbs = Math.abs(v2);
     const lockScale = Math.min(1, speedAbs / STEER_FULL_SPEED);
     const omegaWanted = steer * STEER_RATE * lockScale * (v2 < 0 ? -1 : 1);
-    const omegaGrip = GRIP_ACCEL * grip * surfaceGrip / Math.max(speedAbs, 1);
+    // Grip to turn with: more in a turn banked into it, less off-camber, and less again for
+    // what the brakes are using (the friction circle).
+    const camber = omegaWanted > 0 ? -bank : bank;
+    const omegaGrip = GRIP_ACCEL * grip * surfaceGrip * (1 + BANK_GRIP * Math.min(1, Math.max(-0.5, camber)))
+        * (1 - TRAIL_LOSS * brake * brake) / Math.max(speedAbs, 1);
     const omega = Math.min(omegaGrip, Math.max(-omegaGrip, omegaWanted));
     car.sliding = Math.abs(omegaWanted) > omegaGrip * 1.02 && speedAbs > 30;
     if (car.sliding) {
@@ -226,8 +345,9 @@ export function step(track, car, c, dt, grip) {
     if (Math.abs(slip) > SLIP_SLIDING) car.sliding = true;
 
     let heading = car.heading + (omega + spin) * dt;
-    let x = car.x + (cos(heading) * v2 - sin(heading) * slip) * dt;
-    let y = car.y + (sin(heading) * v2 + cos(heading) * slip) * dt;
+    const ch = cos(heading), sh = sin(heading);
+    let x = car.x + (ch * v2 - sh * slip) * dt;
+    let y = car.y + (sh * v2 + ch * slip) * dt;
 
     let proj = track.project(x, y, car.segHint);
     const wallLat = wallLateral(track);
@@ -239,9 +359,12 @@ export function step(track, car, c, dt, grip) {
         x -= nx * excess;
         y -= ny * excess;
 
-        let vx = cos(heading) * v2 - sin(heading) * slip, vy = sin(heading) * v2 + cos(heading) * slip;
+        let vx = ch * v2 - sh * slip, vy = sh * v2 + ch * slip;
         const vn = vx * nx + vy * ny;
         if (vn > 0) {
+            // The part of the body facing the barrier takes it, pushed straight back from it.
+            const fn = nx * ch + ny * sh, sn = ny * ch - nx * sh;
+            hurt(car, vn, fn * (HULL_HALF + HULL_RADIUS), sn * HULL_RADIUS, -fn, -sn);
             const tx = vx - nx * vn, ty = vy - ny * vn;
             vx = tx * WALL_FRICTION - nx * vn * WALL_RESTITUTION;
             vy = ty * WALL_FRICTION - ny * vn * WALL_RESTITUTION;
@@ -362,6 +485,11 @@ export function resolveContacts(track, cars) {
             b.slip = Math.min(MAX_SLIP, Math.max(-MAX_SLIP, b.slip));
             a.spin = Math.min(MAX_SPIN, Math.max(-MAX_SPIN, a.spin));
             b.spin = Math.min(MAX_SPIN, Math.max(-MAX_SPIN, b.spin));
+            // Both bodies take the hit where they touched, each pushed away from the other.
+            const fa = nx * ahx + ny * ahy, sa = ny * ahx - nx * ahy;
+            const fb = nx * bhx + ny * bhy, sb = ny * bhx - nx * bhy;
+            hurt(a, closing, rax * ahx + ray * ahy, ray * ahx - rax * ahy, -fa, -sa);
+            hurt(b, closing, rbx * bhx + rby * bhy, rby * bhx - rbx * bhy, fb, sb);
         }
     }
 }
@@ -444,8 +572,26 @@ function clearRun(n, lateral) {
     return run;
 }
 
+/**
+ * A wrecked car's driver: get it off the racing line to the barrier on the side it is nearer,
+ * on what limp the engine has left (step() caps it), then stop it there.
+ * Mirrors PoCabinetAiDriver.Wrecked.
+ */
+export function wreckControls(track, car) {
+    const v = car.speed;
+    const target = (car.lateral < 0 ? -1 : 1) * (track.halfWidth + RUN_OFF * 0.7);
+    const p = track.pointAt(car.along + 30 + Math.abs(v) * 0.3);
+    const tx = p.x + -p.ty * target;
+    const ty = p.y + p.tx * target;
+    let steer = Math.min(1, Math.max(-1, wrapAngle(atan2(ty - car.y, tx - car.x) - car.heading) * 2.4));
+    if (v < 0) steer = -steer;
+    const clear = Math.abs(car.lateral) > track.halfWidth + WRECK_CLEAR;
+    return { throttle: clear ? 0 : 1, brake: clear && v > 0.5 ? 0.6 : 0, steer };
+}
+
 /** AI controls for one car. Mirrors PoCabinetAiDriver.Decide. */
 export function aiControls(track, car, persona, maxSpeed, corneringSkill, field, grip) {
+    if (car.wrecked) return wreckControls(track, car);
     const v = car.speed;
     const hw = track.halfWidth;
     const edge = hw * 0.8;
@@ -479,9 +625,10 @@ export function aiControls(track, car, persona, maxSpeed, corneringSkill, field,
         }
         // In its path AND ahead of it on the road: two cars converging at an angle are each
         // in the other's path, and without the second test both wait for the other forever.
-        if (d > 0 && fwd > 4 && fwd < blockGap && Math.abs(side) < 20) { blockGap = fwd; blocker = other; }
+        // A wreck is never followed: it is not going anywhere, so it is a lane to avoid (below).
+        if (d > 0 && fwd > 4 && fwd < blockGap && Math.abs(side) < 20 && !other.wrecked) { blockGap = fwd; blocker = other; }
         if (d <= 4) continue;
-        if (d < gap) { gap = d; ahead = other; }
+        if (d < gap && !other.wrecked) { gap = d; ahead = other; }
         if (other.speed < v + 4) { NEAR[near] = other; NEAR_GAP[near] = d; near++; }
     }
     if (ahead && persona.draftingAffinity > 0.5 && gap > 50) {
@@ -502,8 +649,9 @@ export function aiControls(track, car, persona, maxSpeed, corneringSkill, field,
     // A lapse: off its line and out over the edge of the road.
     const lapsing = lapse(persona, car.distance);
     if (lapsing !== 0) lateralTarget = lapsing > 0 ? hw + RUN_OFF * 0.6 : -(hw + RUN_OFF * 0.6);
-    // Never turn in on a car that is alongside: hold the lane (but always come back off the grass).
-    if (lateralTarget > car.lateral ? right : left) lateralTarget = Math.min(edge, Math.max(-edge, car.lateral));
+    // Never turn in on a car that is alongside: hold the lane (but always come back off the
+    // grass). A bruiser does it anyway and leans on whoever is there.
+    if (persona.aggression < 0.8 && (lateralTarget > car.lateral ? right : left)) lateralTarget = Math.min(edge, Math.max(-edge, car.lateral));
 
     const look = persona.lookahead * 0.5 + 20 + Math.abs(v) * 0.45;
     const p = track.pointAt(car.along + look);
@@ -511,25 +659,33 @@ export function aiControls(track, car, persona, maxSpeed, corneringSkill, field,
     const ty = p.y + p.tx * lateralTarget;
     const desired = atan2(ty - car.y, tx - car.x);
     const err = wrapAngle(desired - car.heading);
-    let steer = Math.min(1, Math.max(-1, err * 2.4));
+    // A smooth driver feeds the lock in; a twitchy one saws at it and weaves.
+    let steer = Math.min(1, Math.max(-1, err * (1.8 + 1.6 * persona.twitch)));
     if (v < 0) steer = -steer;
 
     // A late braker looks 0.7 s up the road for its corner, a cautious one 1.3 s; either
     // way a lapse has it believing in grip that is not there.
     const margin = (0.55 + corneringSkill * 0.4) * (lapsing !== 0 ? Math.abs(lapsing) : 1);
-    let target = Math.min(maxSpeed, cornerSpeed(track, car, grip, margin, 1.3 - 0.6 * persona.brakingAggression));
+    const corner = cornerSpeed(track, car, grip, margin, 1.3 - 0.6 * persona.brakingAggression);
+    let target = Math.min(maxSpeed, corner);
+    // What it brakes for: the corner and the traffic. Its own pace it only lifts for, so a
+    // descent can carry it on, up to RUN_ON over (a finished car parking, at 0, stops).
+    let limit = Math.min(corner, maxSpeed > 0 ? maxSpeed + RUN_ON : 0);
     if (blocker) {
         // The car ahead in this lane: no faster than can still be braked down to its speed
         // in the room there is, and a little under it once nose to tail. Never negative:
-        // brake at a standstill is the reverse gear.
-        const room = blockGap - FOLLOW_GAP;
+        // brake at a standstill is the reverse gear. An aggressive driver follows closer than
+        // the cars are long, and bumps.
+        const room = blockGap - (FOLLOW_GAP - 12 * persona.aggression);
         const vb = Math.max(0, blocker.speed);
-        target = Math.min(target, room > 0 ? Math.sqrt(vb * vb + 2 * FOLLOW_DECEL * room) : Math.max(0, vb - 15));
+        const follow = room > 0 ? Math.sqrt(vb * vb + 2 * FOLLOW_DECEL * room) : Math.max(0, vb - 15);
+        target = Math.min(target, follow);
+        limit = Math.min(limit, follow);
     }
 
     const throttle = v < target - 3 ? 1 : v < target ? 0.35 : 0;
-    const brake = v > target + 4
-        ? Math.min(1, Math.max(0.15, (v - target) / 18 * (0.6 + persona.brakingAggression * 0.8)))
+    const brake = v > limit + 4
+        ? Math.min(1, Math.max(0.15, (v - limit) / 18 * (0.6 + persona.brakingAggression * 0.8)))
         : 0;
     return { throttle, brake, steer };
 }

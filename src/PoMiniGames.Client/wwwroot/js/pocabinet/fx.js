@@ -2,7 +2,8 @@
 //
 // Car-driven particles and marks for PoCabinet: tyre smoke, grass dust, rain
 // spray, wall sparks, car-to-car contact sparks, launch smoke off the line, and
-// skid marks that stay on the tarmac for the whole race.
+// skid marks that stay on the tarmac for the whole race, and the smoke off a damaged
+// engine (grey, then black) and the fire of a wreck.
 //
 // Everything is derived from the poses race.js already draws (position, heading,
 // speed) plus, where the car is simulated locally, its body's `sliding` flag —
@@ -13,7 +14,8 @@
 // update() returns the frame's contact events so race.js can play the crunch
 // (positional when it is someone else's shunt), and the frame's barrier hits
 // (first touch only, as strong as the car was closing on the wall), which race.js
-// turns into dents on that car (cars.js) and, for the player's, into wear.
+// turns into dents on that car (cars.js) online, where the sim is the server's and its
+// own hits (physics.js reportHits) are not seen here.
 //
 // One-shots race.js fires: backfire() — a flame out of the tail on
 // every exhaust pop audio.js reports; debris() — chunks and paint flakes off a
@@ -24,7 +26,8 @@ import { wrapAngle } from './track.js';
 import { GRIP_ACCEL, RUN_OFF, CAR_RADIUS, hullContact } from './physics.js';
 
 const WS = 10;
-const MAX_SMOKE = 700;
+const MAX_SMOKE = 900;
+const SMOKE_RANGE = 180;        // world units from the camera: further off, a wreck's smoke is not drawn
 const MAX_SPARKS = 360;
 const MAX_SKID = 2600;          // quads in the skid-mark ring buffer
 const SKID_W = 0.14;            // half tyre width, world units
@@ -248,7 +251,7 @@ class CarFx {
     }
 
     newState() {
-        return { h: null, x: 0, y: 0, up: 0, v: 0, lat: 0, hint: -1, skid: [null, null], launch: 0, launchStrength: 1, acc: 0, walled: false, wallAt: 0, off: null, out: 0, hl: null };
+        return { h: null, x: 0, y: 0, up: 0, v: 0, lat: 0, hint: -1, skid: [null, null], launch: 0, launchStrength: 1, acc: 0, walled: false, wallAt: 0, off: null, out: 0, hl: null, sacc: 0, wreckT: 0 };
     }
 
     /** A flame out of the tail of car `id` (its last pose), `strength` 0..1. */
@@ -432,6 +435,33 @@ class CarFx {
                 }
             }
             s.walled = wall;
+
+            // Damage: a hurt engine smokes out of the bonnet, grey and then black as it goes; a
+            // wreck pours black smoke and burns for a while, then smoulders.
+            const engine = c.wrecked ? 1 : Math.max(0, ((Number(c.engine) || 0) - 0.4) / 0.6);
+            if (c.wrecked) s.wreckT += dt;
+            const cam = this.sh.camera?.position;
+            const inRange = !cam || (x - cam.x) ** 2 + (z - cam.z) ** 2 < SMOKE_RANGE * SMOKE_RANGE;
+            if (engine > 0 && inRange) {
+                const burning = c.wrecked && s.wreckT < 12;
+                s.sacc += dt * (c.wrecked ? (s.wreckT < 14 ? 24 : 6) : 3 + engine * 12);
+                const bx = x + fx * 1.35, bz = z + fz * 1.35;
+                while (s.sacc >= 1) {
+                    s.sacc -= 1;
+                    const shade = c.wrecked ? 0.07 + rnd() * 0.05 : 0.6 - 0.4 * engine + rnd() * 0.08;
+                    this.smoke.spawn(
+                        bx + (rnd() - 0.5) * 0.5, up + 0.75, bz + (rnd() - 0.5) * 0.5,
+                        vx * 0.3 + (rnd() - 0.5) * 0.6, 1.1 + rnd() * 1.2, vz * 0.3 + (rnd() - 0.5) * 0.6,
+                        1.8 + rnd() * 1.4, 0.5, c.wrecked ? 3.4 + rnd() * 1.2 : 1.8 + engine * 1.2,
+                        c.wrecked ? 0.5 : 0.22 + engine * 0.22, shade, shade, shade * 1.03, 0.7, -0.5);
+                }
+                if (burning && rnd() < dt * 45) {
+                    const k = rnd();
+                    this.sparks.spawn(bx + (rnd() - 0.5) * 0.6, up + 0.6 + rnd() * 0.2, bz + (rnd() - 0.5) * 0.6,
+                        (rnd() - 0.5) * 0.8, 1.5 + rnd() * 1.8, (rnd() - 0.5) * 0.8,
+                        0.3 + rnd() * 0.35, 0.7 + rnd() * 0.5, 0.2, 1, 1, 0.35 + k * 0.4, 0.06, 2, -2.5);
+                }
+            }
         }
 
         // Car-to-car contact: the physics' own hull test (+ a little for interpolation), so the

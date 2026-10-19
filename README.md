@@ -78,7 +78,7 @@ scores, and, only when a player opts in, talks to AI models on the player's beha
 | PoFunQuiz | Multiplayer trivia lobby from a free question bank (opt-in Fresh AI questions) |
 | PoMarbleRace | Physics marble race on baked GLB tracks; online 2-player via host-streamed physics |
 | PoRacer | Canvas racer with WebGL effects, solo races, and a multiplayer lobby |
-| PoCabinet | 3D circuit racer: solo career across four tracks, AI officials, and a server-simulated online lobby |
+| PoCabinet | 3D circuit racer: solo career across four tracks, AI officials, and a server-simulated online lobby; a 100-car field where every driver has its own personality (bruisers, late brakers, wild cards…) and runs off the road now and then; damage is real: hits dent the body where they land, knock bumpers, wings and mirrors loose and off, break lamps and glass, and cost the car power, grip and alignment until it is wrecked and out; hills and banking are real physics (cars run faster downhill, slower uphill, banked turns hold them in, hard braking mid-corner washes wide) |
 | PoVoxelStrike | Third-person survival shooter with fully destructible voxel structures |
 | PoJevArena | Design creatures, draft 10 v 10, and watch the arena brain (free local rules, or TypeSafe's Jev when picked in Settings) make every tactical call; post-match Black Box scrubber |
 | PoMule | Eight-player M.U.L.E.: claim land, work M.U.L.E.s and trade on a walking-floor market for twelve months vs seven AI personalities; all-AI demo |

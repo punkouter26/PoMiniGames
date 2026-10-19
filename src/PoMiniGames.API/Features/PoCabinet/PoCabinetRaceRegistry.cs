@@ -255,6 +255,10 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
             Position = c.Position,
             IsPlayer = c.IsPlayer,
             Finished = c.Finished,
+            Damage = Math.Round(c.Damage, 3),
+            Engine = Math.Round(c.Engine, 3),
+            Pull = Math.Round(c.Pull, 3),
+            Wrecked = c.Wrecked,
             AckSeq = c.AckSeq,
         }).ToList();
 

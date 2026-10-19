@@ -134,10 +134,11 @@ class Track {
         this.lapLength = this.pointToPoint ? cum[finish] : length;
         this.parkAt = this.pointToPoint ? (cum[finish] + cum[this.hiddenFrom]) / 2 : 0;
 
-        // Render-only (no physics reads these): road height per sample in sim units, the
-        // road's cross slope (tan of the bank, + = right side higher), the stretch of the
-        // loop that is not drawn (the return link), and where the tarmac starts — before it
-        // the scene lays an open chute in place of the model's gutter.
+        // Road height per sample in sim units and the road's cross slope (tan of the bank, + =
+        // right side higher): the physics reads them per segment (grade(), bankOf(): gravity on
+        // a slope, grip in a banked turn), the scene interpolated (heightAt(), bankAt()). Then
+        // render-only: the stretch of the loop that is not drawn (the return link), and where
+        // the tarmac starts — before it the scene lays an open chute in place of the model's gutter.
         const perSample = (a) => Array.isArray(a) && a.length === this.count ? Float64Array.from(a, Number) : null;
         this.z = perSample(world?.centerZ);
         this.bank = perSample(world?.centerBank);
@@ -167,6 +168,18 @@ class Track {
     /** True where the scene lays tarmac (everywhere, unless the track starts on a chute: see roadFrom). */
     built(i) {
         return this.drawn(i) && (this.roadFrom <= 0 || (i >= this.roadFrom && i < this.hiddenFrom));
+    }
+
+    /** Rise per unit of road along segment `i` (+ = uphill in the direction of travel); 0 on a flat track. Mirrors PoCabinetTrack.Grade. */
+    grade(i) {
+        if (!this.z) return 0;
+        const len = this.segLen[i];
+        return len > 1e-9 ? (this.z[(i + 1) % this.count] - this.z[i]) / len : 0;
+    }
+
+    /** Cross slope at sample `i` (+ = right side higher); 0 on an unbanked track. Mirrors PoCabinetTrack.Bank. */
+    bankOf(i) {
+        return this.bank ? this.bank[i] : 0;
     }
 
     /** Cross slope (tan of the bank) at a distance along the loop; 0 on an unbanked track. */

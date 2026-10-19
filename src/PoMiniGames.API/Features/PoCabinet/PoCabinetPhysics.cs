@@ -49,6 +49,14 @@ public class PoCabinetCarBody
     public double Slip { get; set; }
     /// <summary>Yaw rate a contact left behind, rad/s. Bleeds off the same way.</summary>
     public double Spin { get; set; }
+    /// <summary>Structure the hits have cost, 0..1 (see <see cref="PoCabinetPhysics.Hurt"/>): grip.</summary>
+    public double Damage { get; set; }
+    /// <summary>Engine the hits have cost, 0..1: power and top speed.</summary>
+    public double Engine { get; set; }
+    /// <summary>Misalignment, -1..1 (+ pulls right): a steady pull on the wheel and lost lock.</summary>
+    public double Pull { get; set; }
+    /// <summary>Structure or engine gone: the engine is dead but for a limp off the road.</summary>
+    public bool Wrecked { get; set; }
 }
 
 /// <summary>
@@ -64,8 +72,19 @@ public class PoCabinetCarBody
 /// well as changing its speed; <see cref="Step"/> then bleeds both off through the tyres.
 /// </para>
 /// <para>
+/// Damage is sim state (<see cref="Hurt"/>): every barrier hit and contact harder than a nudge
+/// costs structure, engine and alignment by how hard it closed and where on the body it landed.
+/// A bent car pulls and has less lock, power, top speed and grip; a wrecked one has a dead
+/// engine but for a limp off the racing line, then stops.
+/// </para>
+/// <para>
+/// Hills and banking are physics too: gravity along the road's grade speeds a car downhill and
+/// slows it uphill (with drag past top speed, so a descent tops out), a banked turn holds it in,
+/// and braking takes grip from cornering (a friction circle).
+/// </para>
+/// <para>
 /// <b>Mirror contract:</b> <c>wwwroot/js/pocabinet/physics.js</c> ports <see cref="Step"/>,
-/// <see cref="ResolveContacts"/>, <see cref="GridBack"/> and <see cref="GridSlot"/> line for
+/// <see cref="Hurt"/>, <see cref="ResolveContacts"/>, <see cref="GridBack"/> and <see cref="GridSlot"/> line for
 /// line, with the same constants. Solo races run the JS copy; multiplayer runs this one on the server while the
 /// browser runs the JS copy to predict its own car and replays unacknowledged inputs on top of
 /// each snapshot. If the two diverge, every correction becomes a visible snap.
@@ -115,6 +134,34 @@ public static class PoCabinetPhysics
     public const double SameRoad = 120;
     public const double GridColumn = 22;
     public const double GridRow = 50;
+    /// <summary>Damage: closing speed a body shrugs off, and the square of the excess over it that
+    /// takes all of a car's structure (a square hit on the barrier at about 110 u/s).</summary>
+    public const double DamageFloor = 12;
+    public const double DamageScale = 9500;
+    /// <summary>Engine share of a hit on the nose and of one anywhere else.</summary>
+    public const double EngineNose = 1.25;
+    public const double EngineOther = 0.3;
+    /// <summary>Misalignment from a hit on a front corner and from one further back.</summary>
+    public const double PullNose = 2.2;
+    public const double PullOther = 0.6;
+    /// <summary>What full damage costs: power and top speed (engine), grip (structure), lock and pull (alignment).</summary>
+    public const double PowerLoss = 0.5;
+    public const double TopLoss = 0.2;
+    public const double GripLoss = 0.2;
+    public const double LockLoss = 0.3;
+    public const double PullSteer = 0.14;
+    /// <summary>A wrecked car limps at no more than this, and only until it is this far off the tarmac.</summary>
+    public const double LimpSpeed = 14;
+    public const double LimpThrottle = 0.5;
+    public const double WreckClear = 16;
+    /// <summary>Hills: gravity along the road (u/s² per unit of grade) and the drag on speed past
+    /// a car's top speed, so a long descent tops out.</summary>
+    public const double SlopeGravity = 60;
+    public const double OverspeedDrag = 1.2;
+    /// <summary>Grip a turn banked into it adds per unit of bank (off-camber takes up to half that).</summary>
+    public const double BankGrip = 0.6;
+    /// <summary>The friction circle: the share of cornering grip full brake pressure takes.</summary>
+    public const double TrailLoss = 0.25;
 
     /// <summary>Barrier distance from the centerline for a track (car centre can't pass it).</summary>
     public static double WallLateral(PoCabinetTrack track) => track.HalfWidth + RunOff - CarRadius * 0.5;
@@ -128,6 +175,21 @@ public static class PoCabinetPhysics
         double throttle = c.Throttle, brake = c.Brake, steer = c.Steer;
         double v = car.Speed;
         double surfaceGrip = car.OnGrass ? GrassGrip : 1;
+        // What the hits have cost: a wrecked engine gives only a limp, and only until the car is
+        // clear of the tarmac; a bent car pulls and has lost lock, power, top speed and grip.
+        if (car.Wrecked)
+        {
+            throttle = Math.Abs(car.Lateral) > track.HalfWidth + WreckClear || v >= LimpSpeed ? 0 : Math.Min(throttle, LimpThrottle);
+        }
+        steer = Math.Min(1, Math.Max(-1, steer * (1 - LockLoss * Math.Abs(car.Pull)) + PullSteer * car.Pull));
+        double power = 1 - PowerLoss * car.Engine;
+        double top = MaxSpeed * (1 - TopLoss * car.Engine);
+        grip = grip * (1 - GripLoss * car.Damage);
+        // The road under it (last tick's segment): how steep the way it is pointing, how banked.
+        int seg = car.SegHint;
+        double roadDot = seg >= 0 ? PoCabinetTrack.Cos(car.Heading) * track.TangentX(seg) + PoCabinetTrack.Sin(car.Heading) * track.TangentY(seg) : 0;
+        double slope = seg >= 0 ? track.Grade(seg) * roadDot : 0;
+        double bank = seg >= 0 ? track.Bank(seg) : 0;
 
         // ── Longitudinal ────────────────────────────────────────────────
         double v2;
@@ -151,11 +213,15 @@ public static class PoCabinetPhysics
         }
         else
         {
-            double ratio = v / MaxSpeed;
-            double a = throttle * Accel * grip * Math.Max(0, 1 - ratio * ratio)
+            double ratio = v / top;
+            double a = throttle * Accel * power * grip * Math.Max(0, 1 - ratio * ratio)
                        - brake * BrakeDecel
                        - CoastDecel * (1 - throttle);
             if (car.OnGrass && v > 25) a -= GrassDecel;
+            // Downhill pulls the car on and uphill holds it back; past its top speed the air
+            // takes the excess back.
+            a -= SlopeGravity * slope;
+            if (v > top) a -= OverspeedDrag * (v - top);
             v2 = Math.Max(0, v + a * dt);
         }
 
@@ -163,7 +229,11 @@ public static class PoCabinetPhysics
         double speedAbs = Math.Abs(v2);
         double lockScale = Math.Min(1, speedAbs / SteerFullSpeed);
         double omegaWanted = steer * SteerRate * lockScale * (v2 < 0 ? -1 : 1);
-        double omegaGrip = GripAccel * grip * surfaceGrip / Math.Max(speedAbs, 1);
+        // Grip to turn with: more in a turn banked into it, less off-camber, and less again for
+        // what the brakes are using (the friction circle).
+        double camber = omegaWanted > 0 ? -bank : bank;
+        double omegaGrip = GripAccel * grip * surfaceGrip * (1 + BankGrip * Math.Min(1, Math.Max(-0.5, camber)))
+            * (1 - TrailLoss * brake * brake) / Math.Max(speedAbs, 1);
         double omega = Math.Clamp(omegaWanted, -omegaGrip, omegaGrip);
         car.Sliding = Math.Abs(omegaWanted) > omegaGrip * 1.02 && speedAbs > 30;
         if (car.Sliding)
@@ -178,8 +248,9 @@ public static class PoCabinetPhysics
         if (Math.Abs(slip) > SlipSliding) car.Sliding = true;
 
         double heading = car.Heading + (omega + spin) * dt;
-        double x = car.X + (PoCabinetTrack.Cos(heading) * v2 - PoCabinetTrack.Sin(heading) * slip) * dt;
-        double y = car.Y + (PoCabinetTrack.Sin(heading) * v2 + PoCabinetTrack.Cos(heading) * slip) * dt;
+        double ch = PoCabinetTrack.Cos(heading), sh = PoCabinetTrack.Sin(heading);
+        double x = car.X + (ch * v2 - sh * slip) * dt;
+        double y = car.Y + (sh * v2 + ch * slip) * dt;
 
         // ── Track: grass and barrier ────────────────────────────────────
         var proj = track.Project(x, y, car.SegHint);
@@ -193,10 +264,13 @@ public static class PoCabinetPhysics
             x -= nx * excess;
             y -= ny * excess;
 
-            double vx = PoCabinetTrack.Cos(heading) * v2 - PoCabinetTrack.Sin(heading) * slip, vy = PoCabinetTrack.Sin(heading) * v2 + PoCabinetTrack.Cos(heading) * slip;
+            double vx = ch * v2 - sh * slip, vy = sh * v2 + ch * slip;
             double vn = vx * nx + vy * ny;
             if (vn > 0)
             {
+                // The part of the body facing the barrier takes it, pushed straight back from it.
+                double fn = nx * ch + ny * sh, sn = ny * ch - nx * sh;
+                Hurt(car, vn, fn * (HullHalf + HullRadius), sn * HullRadius);
                 double tx = vx - nx * vn, ty = vy - ny * vn;
                 vx = tx * WallFriction - nx * vn * WallRestitution;
                 vy = ty * WallFriction - ny * vn * WallRestitution;
@@ -332,8 +406,32 @@ public static class PoCabinetPhysics
                 b.Slip = Math.Min(MaxSlip, Math.Max(-MaxSlip, b.Slip));
                 a.Spin = Math.Min(MaxSpin, Math.Max(-MaxSpin, a.Spin));
                 b.Spin = Math.Min(MaxSpin, Math.Max(-MaxSpin, b.Spin));
+                // Both bodies take the hit where they touched.
+                Hurt(a, closing, rax * ahx + ray * ahy, ray * ahx - rax * ahy);
+                Hurt(b, closing, rbx * bhx + rby * bhy, rby * bhx - rbx * bhy);
             }
         }
+    }
+
+    /// <summary>
+    /// A hit on <paramref name="car"/> closing at <paramref name="closing"/> u/s, landing
+    /// (<paramref name="fwd"/>, <paramref name="side"/>) from its centre in its own frame (+ =
+    /// ahead, + = right). What it costs goes as the square of the closing speed over
+    /// <see cref="DamageFloor"/>: structure wherever it lands, the engine mostly from the nose,
+    /// and the alignment from a corner (the car pulls toward it). Mirrors physics.js <c>hurt</c>
+    /// (which also reports the hit to the renderer for the dents).
+    /// </summary>
+    public static void Hurt(PoCabinetCarBody car, double closing, double fwd, double side)
+    {
+        double e = closing - DamageFloor;
+        if (!(e > 0) || car.Wrecked) return;
+        double s = e * e / DamageScale;
+        bool nose = fwd > HullHalf;
+        double across = Math.Min(1, Math.Max(-1, side / HullRadius));
+        car.Damage = Math.Min(1, car.Damage + s);
+        car.Engine = Math.Min(1, car.Engine + s * (nose ? EngineNose : EngineOther));
+        car.Pull = Math.Min(1, Math.Max(-1, car.Pull + across * s * (nose ? PullNose : PullOther)));
+        if (car.Damage >= 1 || car.Engine >= 1) car.Wrecked = true;
     }
 
     /// <summary>Columns of the starting grid: as many as the tarmac takes, at least two.</summary>

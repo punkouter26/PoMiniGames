@@ -70,6 +70,21 @@
                         <span class="pocabinet-gauge__unit">km/h</span>
                         <span class="pocabinet-gauge__gear" data-gauge="gear"></span>
                     </div>
+                    @* Damage panel: race.js writes the --dmg-* zones (0..1) and data-state
+                       (ok | hurt | critical | wrecked) straight to the DOM, like the gauge; the
+                       words are CSS content, so Blazor owns no text that JS changes. *@
+                    <div id="pocabinetDamage" class="pocabinet-damage" data-state="ok" aria-hidden="true">
+                        <span class="pocabinet-damage__car">
+                            <span class="pocabinet-damage__zone pocabinet-damage__zone--front"></span>
+                            <span class="pocabinet-damage__zone pocabinet-damage__zone--rear"></span>
+                            <span class="pocabinet-damage__zone pocabinet-damage__zone--left"></span>
+                            <span class="pocabinet-damage__zone pocabinet-damage__zone--right"></span>
+                            <span class="pocabinet-damage__engine"></span>
+                        </span>
+                        <span class="pocabinet-damage__bar pocabinet-damage__bar--engine"></span>
+                        <span class="pocabinet-damage__bar pocabinet-damage__bar--body"></span>
+                    </div>
+                    <div class="pocabinet-wreckbanner" aria-hidden="true">Wrecked</div>
                     @* @key re-creates the badge on every place change, so its swoosh replays. Prefixed:
                        the countdown sibling keys on its number, and a bare 3 here collided with it. *@
                     <div @key="PosBadgeKey" class="pocabinet-posbadge @PosBadgeClass" aria-hidden="true">

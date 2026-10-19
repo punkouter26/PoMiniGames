@@ -62,6 +62,17 @@ public sealed class PoCabinetCarState
     public int Position { get; set; }
     public bool IsPlayer { get; set; }
     public bool Finished { get; set; }
+    /// <summary>What the hits have cost the car (PoCabinetPhysics.Hurt): structure and engine
+    /// 0..1, alignment -1..1 (+ pulls right). The owning client predicts with them, and every
+    /// client smokes and dents the car by them.</summary>
+    public double Damage { get; set; }
+    public double Engine { get; set; }
+    public double Pull { get; set; }
+    /// <summary>Structure or engine gone: out of the race, limping off the racing line.</summary>
+    public bool Wrecked { get; set; }
+    /// <summary>An AI driver's personality in a word ("Bruiser", "Late braker"; physics.js
+    /// <c>archetype</c>), for the standings. Solo snapshots only; empty online.</summary>
+    public string Style { get; set; } = "";
     /// <summary>
     /// Highest <see cref="PoCabinetInput.Seq"/> the server has applied to this car (0 for AI
     /// officials and in solo races). The owning client drops acknowledged inputs from its
@@ -214,7 +225,8 @@ public sealed record PoCabinetFinalEntry(
     bool Finished,
     double TotalTimeSeconds,
     double BestLapSeconds = -1,
-    int CarId = -1);
+    int CarId = -1,
+    bool Wrecked = false);
 
 // ──────────────────────────────  Banter + debrief  ──────────────────────────────
 

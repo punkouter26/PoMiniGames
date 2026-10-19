@@ -196,6 +196,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     private bool _mountStarted;
     private bool _submitted;
     private double _submittedBestLap;
+    private bool _wreckAnnounced;
     private int _lastLapCount;
     private double _lastLapTime;
     private long _lastHudRender;
@@ -474,7 +475,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             e.Name,
             // The server calls the race once every human is home, so unfinished officials
             // were simply still lapping — "DNF" read as if they had crashed out.
-            e.Finished && e.TotalTimeSeconds > 0 ? FormatLapTime(e.TotalTimeSeconds) : e.IsPlayer ? "did not finish" : "AI official · still on track",
+            e.Finished && e.TotalTimeSeconds > 0 ? FormatLapTime(e.TotalTimeSeconds) : e.Wrecked ? "wrecked · DNF" : e.IsPlayer ? "did not finish" : "AI official · still on track",
             e.CarId == _localCarId)).ToList();
         var mine = result.Standings.FirstOrDefault(e => e.CarId == _localCarId);
         if (mine is not null) _position = mine.Position;
@@ -598,6 +599,12 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             }
             _position = localCar.Position;
             _lapSeconds = snap.ElapsedRaceTime;
+            if (localCar.Wrecked && !_wreckAnnounced)
+            {
+                _wreckAnnounced = true;
+                _liveAnnouncement = "Your car is wrecked. The engine is gone and your race is over.";
+                forceRender = true;
+            }
             if (snap.BestLapSeconds is { } reported && reported > 0 && (_bestLapSession <= 0 || reported < _bestLapSession))
             {
                 _bestLapSession = reported;
@@ -629,7 +636,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         if ((localDone || (IsMultiplayerMode && snap.Finished)) && _phase == Phase.Racing)
         {
             _finalStandings ??= cars.OrderBy(c => c.Position)
-                .Select(c => new StandingRow(c.Name, c.Id == localCar?.Id ? "You" : c.IsPlayer ? "Player" : c.OfficialId == "field" ? "AI racer" : "AI official", c.Id == localCar?.Id))
+                .Select(c => new StandingRow(c.Name, StandingDetail(c, c.Id == localCar?.Id), c.Id == localCar?.Id))
                 .ToList();
             _awaitingFinal = IsMultiplayerMode && _finalResult is null;
             EnterFinished();
@@ -643,6 +650,14 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             _lastHudRender = now;
             InvokeAsync(StateHasChanged);
         }
+    }
+
+    /// <summary>Who a solo car was, in a word or two: the AI drivers by their personality, and a wreck says so.</summary>
+    private static string StandingDetail(PoCabinetCarState c, bool isLocal)
+    {
+        var who = isLocal ? "You" : c.IsPlayer ? "Player" : c.OfficialId == "field" ? "AI racer" : "AI official";
+        if (!isLocal && !c.IsPlayer && !string.IsNullOrEmpty(c.Style)) who += $" · {c.Style}";
+        return c.Wrecked && !c.Finished ? who + " · wrecked" : who;
     }
 
     private void EnterFinished()
@@ -800,6 +815,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _pingMs = null;
         _submitted = false;
         _submittedBestLap = 0;
+        _wreckAnnounced = false;
         _telemetryDrawn = false;
         _telemetrySummary = null;
         _hasReferenceLap = false;

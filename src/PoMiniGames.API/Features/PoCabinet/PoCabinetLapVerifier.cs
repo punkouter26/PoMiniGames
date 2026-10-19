@@ -18,7 +18,9 @@ namespace PoMiniGames.Features.PoCabinet;
 /// contacts, same clock arithmetic
 /// (<c>clock += TICK</c>, <c>tickStart = max(0, elapsed − TICK)</c>). The page quantizes the
 /// player's controls to thousandths <i>before</i> stepping them, so the recorded integers are
-/// exactly what the browser simulated. JS and .NET trig can still differ in the last ulp, so
+/// exactly what the browser simulated. Damage is in the replay too (it is physics state): the
+/// log ends where the player's car was wrecked, and a wrecked car counts no more laps.
+/// JS and .NET trig can still differ in the last ulp, so
 /// the replay is not bit-identical — which is why the stored time is the server's, never the
 /// claim.
 /// </para>
@@ -88,7 +90,7 @@ public static class PoCabinetLapVerifier
 
         double clock = 0;
         int used = 0;
-        while (used < inputs.Count && !player.Finished)
+        while (used < inputs.Count && !player.Finished && !player.Wrecked)
         {
             clock += tick;
             double elapsed = clock - Countdown;
@@ -110,7 +112,7 @@ public static class PoCabinetLapVerifier
 
             foreach (var car in cars)
             {
-                if (car.Finished) continue;
+                if (car.Finished || car.Wrecked) continue;
                 while (car.Distance >= (car.LapsDone + 1) * track.LapLength)
                 {
                     double boundary = (car.LapsDone + 1) * track.LapLength;

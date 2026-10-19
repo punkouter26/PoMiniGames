@@ -255,6 +255,19 @@ public class ApiService
         }
     }
 
+    /// <summary>Cabinet's one online lobby, as a head count (start card). Null when the API is offline.</summary>
+    public async Task<PoMiniGames.Shared.Games.PoCabinetLobbySummary?> GetPoCabinetLobbySummaryAsync()
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync("/api/pocabinet/lobby", ApiJsonContext.Default.PoCabinetLobbySummary);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>Normalized leaderboards for every game in one round-trip (home preview, /leaderboards hub).</summary>
     /// <param name="weekly">True for this ISO week's boards (only the high-score boards have one).</param>
     public async Task<GameLeaderboardDto[]?> GetAllLeaderboardsAsync(int limit = 5, bool weekly = false)

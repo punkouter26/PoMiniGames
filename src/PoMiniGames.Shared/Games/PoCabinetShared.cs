@@ -257,6 +257,12 @@ public sealed class PoCabinetLobbyView
     public string? YourSeatId { get; set; }
 }
 
+/// <summary>
+/// What the start card's "Online now" tile shows (<c>GET /api/pocabinet/lobby</c>, anonymous):
+/// how many humans sit in the one lobby, whether its race is running, and its track. No names.
+/// </summary>
+public sealed record PoCabinetLobbySummary(int Players, bool InRace, string? TrackId);
+
 // ──────────────────────────────  Final result  ──────────────────────────────
 
 public sealed record PoCabinetFinalResult(

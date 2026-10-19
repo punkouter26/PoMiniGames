@@ -1,7 +1,8 @@
 @* PoCabinetSettingsPanel — the settings that are Cabinet's own: music, HUD size,
-   weather, controls and driver aids. Bound two-way via Value + ValueChanged;
+   weather, controls and driver aids, in four groups. Bound two-way via Value + ValueChanged;
    persistence and JS-side application are the page's job — this component only edits
-   the view model and raises the change. Native Blazor + design tokens, no Radzen.
+   the view model and raises the change. Native Blazor + design tokens, no Radzen: a
+   choice of two or three is a row of pills (radio inputs), not a dropdown.
    Render quality and FOV are not settings: scene.js picks the quality tier from
    the measured frame rate.
 
@@ -10,105 +11,82 @@
    work: either source turns the option on, so with the app's switch on, turning
    Cabinet's off would do nothing. One button opens the sheet.
 
-   Compact (the pause overlay): the app-settings button and Music up front, everything
-   else folded under "More settings", so pausing doesn't open a 12-row form. *@
+   It lives in one place, PoCabinetDrawer, which the start card, the pause card and the
+   lobby all open (it used to be a fold-out on the start card and a second, "compact"
+   copy with a fold-out inside it in the pause card). *@
 @inject SettingsService AppSettings
 
 <div class="pocabinet-settings" role="group" aria-label="Cabinet settings">
-    <div class="pocabinet-settings__row">
-        <span>Volume, mute, motion and colours</span>
-        <button type="button" class="pocabinet-secondary" @onclick="AppSettings.RequestOpen">App settings</button>
-    </div>
+    <fieldset class="pocabinet-settings__group">
+        <legend>Sound</legend>
+        <label class="pocabinet-settings__row">
+            <span>Race music</span>
+            <input type="checkbox" role="switch" class="pocabinet-switch" checked="@Value.Music" @onchange="OnMusicChanged" />
+        </label>
+        <div class="pocabinet-settings__row">
+            <span>Volume, mute, motion and colours</span>
+            <button type="button" class="pocabinet-secondary" @onclick="AppSettings.RequestOpen">App settings</button>
+        </div>
+    </fieldset>
 
-    <div class="pocabinet-settings__row">
-        <label for="pocabinet-music">Music</label>
-        <input id="pocabinet-music" type="checkbox" checked="@Value.Music" @onchange="OnMusicChanged" />
-    </div>
+    <fieldset class="pocabinet-settings__group">
+        <legend>Display</legend>
+        @Pills("hud", "HUD size", HudOptions, Format(Value.HudScale), v => RaiseAsync(s => s.HudScale = ParseDouble(v, s.HudScale)))
+        @Pills("weather", "Weather", WeatherOptions, Value.Weather, v => RaiseAsync(s => s.Weather = v))
+    </fieldset>
 
-    @if (Compact)
-    {
-        <details class="pocabinet-settings__more">
-            <summary>More settings</summary>
-            @Rest
-        </details>
-    }
-    else
-    {
-        @Rest
-    }
+    <fieldset class="pocabinet-settings__group">
+        <legend>Driving aids</legend>
+        @Pills("assist", "Steering assist", AssistOptions, Value.SteeringAssist, v => RaiseAsync(s => s.SteeringAssist = v))
+        <label class="pocabinet-settings__row">
+            <span>Auto-brake for corners</span>
+            <input type="checkbox" role="switch" class="pocabinet-switch" checked="@Value.AutoBrake" @onchange="e => RaiseAsync(s => s.AutoBrake = e.Value is bool b && b)" />
+        </label>
+        <label class="pocabinet-settings__row">
+            <span>Racing line <small>green = flat out, red = brake</small></span>
+            <input type="checkbox" role="switch" class="pocabinet-switch" checked="@Value.RacingLine" @onchange="e => RaiseAsync(s => s.RacingLine = e.Value is bool b && b)" />
+        </label>
+    </fieldset>
+
+    <fieldset class="pocabinet-settings__group">
+        <legend>Touch screens</legend>
+        @Pills("touch", "On-screen controls", TouchOptions, Value.TouchControls, v => RaiseAsync(s => s.TouchControls = v))
+        @Pills("steer", "Steering", SteerOptions, Value.SteerMode, v => RaiseAsync(s => s.SteerMode = v))
+        <label class="pocabinet-settings__row">
+            <span>Sensitivity</span>
+            <input type="range" min="0.5" max="1.5" step="0.05"
+                   value="@Format(Value.SteerSensitivity)" @oninput="e => RaiseAsync(s => s.SteerSensitivity = ParseDouble(e.Value?.ToString(), s.SteerSensitivity))" />
+            <span class="pocabinet-settings__value">@($"{Value.SteerSensitivity:0.00}×")</span>
+        </label>
+    </fieldset>
 </div>
 
 @code {
     [Parameter] public PoCabinetUiSettings Value { get; set; } = new();
     [Parameter] public EventCallback<PoCabinetUiSettings> ValueChanged { get; set; }
-    /// <summary>Pause overlay: audio rows only, the rest behind "More settings".</summary>
-    [Parameter] public bool Compact { get; set; }
 
-    private RenderFragment Rest => @<div class="pocabinet-settings__rest">
-        <div class="pocabinet-settings__row">
-            <label for="pocabinet-hud">HUD size</label>
-            <select id="pocabinet-hud" value="@Format(Value.HudScale)" @onchange="OnHudScaleChanged">
-                <option value="0.85">Small</option>
-                <option value="1">Normal</option>
-                <option value="1.15">Large</option>
-            </select>
+    private static readonly (string Value, string Text)[] HudOptions = [("0.85", "Small"), ("1", "Normal"), ("1.15", "Large")];
+    private static readonly (string Value, string Text)[] WeatherOptions = [("clear", "Clear"), ("rain", "Rain"), ("auto", "Live D.C.")];
+    private static readonly (string Value, string Text)[] AssistOptions = [("off", "Off"), ("light", "Light"), ("strong", "Strong")];
+    private static readonly (string Value, string Text)[] TouchOptions = [("auto", "Auto"), ("on", "Always"), ("off", "Hide")];
+    private static readonly (string Value, string Text)[] SteerOptions = [("pad", "Steer pad"), ("tilt", "Tilt")];
+
+    /// <summary>One labelled row of radio pills; the group name keeps each row its own radio set.</summary>
+    private RenderFragment Pills(string name, string label, (string Value, string Text)[] options, string current, Func<string, Task> onPick) => __builder =>
+    {
+        <div class="pocabinet-settings__row" role="radiogroup" aria-label="@label">
+            <span>@label</span>
+            <span class="pocabinet-pills">
+                @foreach (var (value, text) in options)
+                {
+                    <label class="pocabinet-pill">
+                        <input type="radio" name="pocabinet-@name" value="@value" checked="@(value == current)" @onchange="() => onPick(value)" />
+                        <span>@text</span>
+                    </label>
+                }
+            </span>
         </div>
-
-        <div class="pocabinet-settings__row">
-            <label for="pocabinet-weather">Weather</label>
-            <select id="pocabinet-weather" value="@Value.Weather" @onchange="OnWeatherChanged">
-                <option value="clear">Clear</option>
-                <option value="rain">Rain (slippery, solo)</option>
-                <option value="auto">Live (Washington D.C.)</option>
-            </select>
-        </div>
-
-        <h3 class="pocabinet-settings__group">Controls &amp; driver aids</h3>
-        <p class="pocabinet-settings__hint">Keyboard: W A S D or arrows, C changes camera, Esc pauses. Gamepads work too: left stick steers, the triggers are gas and brake.</p>
-
-        <div class="pocabinet-settings__row">
-            <label for="pocabinet-touch">On-screen touch controls</label>
-            <select id="pocabinet-touch" value="@Value.TouchControls" @onchange="OnTouchChanged">
-                <option value="auto">Auto (touch screens)</option>
-                <option value="on">Always show</option>
-                <option value="off">Hide</option>
-            </select>
-        </div>
-
-        <div class="pocabinet-settings__row">
-            <label for="pocabinet-steermode">Touch steering</label>
-            <select id="pocabinet-steermode" value="@Value.SteerMode" @onchange="OnSteerModeChanged">
-                <option value="pad">Steer pad</option>
-                <option value="tilt">Tilt the device</option>
-            </select>
-        </div>
-
-        <div class="pocabinet-settings__row">
-            <label for="pocabinet-sens">Steering sensitivity</label>
-            <input id="pocabinet-sens" type="range" min="0.5" max="1.5" step="0.05"
-                   value="@Format(Value.SteerSensitivity)" @oninput="OnSensitivityChanged" />
-            <span class="pocabinet-settings__value">@($"{Value.SteerSensitivity:0.00}×")</span>
-        </div>
-
-        <div class="pocabinet-settings__row">
-            <label for="pocabinet-assist">Steering assist</label>
-            <select id="pocabinet-assist" value="@Value.SteeringAssist" @onchange="OnAssistChanged">
-                <option value="off">Off</option>
-                <option value="light">Light</option>
-                <option value="strong">Strong</option>
-            </select>
-        </div>
-
-        <div class="pocabinet-settings__row">
-            <label for="pocabinet-autobrake">Auto-brake for corners</label>
-            <input id="pocabinet-autobrake" type="checkbox" checked="@Value.AutoBrake" @onchange="OnAutoBrakeChanged" />
-        </div>
-
-        <div class="pocabinet-settings__row">
-            <label for="pocabinet-line">Show racing line (green = flat out, red = brake)</label>
-            <input id="pocabinet-line" type="checkbox" checked="@Value.RacingLine" @onchange="OnRacingLineChanged" />
-        </div>
-    </div>;
+    };
 
     private static string Format(double d) =>
         d.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -121,30 +99,6 @@
 
     private Task OnMusicChanged(ChangeEventArgs e) =>
         RaiseAsync(s => s.Music = e.Value is bool b && b);
-
-    private Task OnHudScaleChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.HudScale = ParseDouble(e.Value?.ToString(), s.HudScale));
-
-    private Task OnWeatherChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.Weather = e.Value?.ToString() ?? s.Weather);
-
-    private Task OnTouchChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.TouchControls = e.Value?.ToString() ?? s.TouchControls);
-
-    private Task OnSteerModeChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.SteerMode = e.Value?.ToString() ?? s.SteerMode);
-
-    private Task OnSensitivityChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.SteerSensitivity = ParseDouble(e.Value?.ToString(), s.SteerSensitivity));
-
-    private Task OnAssistChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.SteeringAssist = e.Value?.ToString() ?? s.SteeringAssist);
-
-    private Task OnAutoBrakeChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.AutoBrake = e.Value is bool b && b);
-
-    private Task OnRacingLineChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.RacingLine = e.Value is bool b && b);
 
     private static double ParseDouble(string? raw, double fallback) =>
         double.TryParse(raw, System.Globalization.NumberStyles.Float,

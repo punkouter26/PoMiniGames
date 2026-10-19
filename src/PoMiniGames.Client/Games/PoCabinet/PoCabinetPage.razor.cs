@@ -40,6 +40,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     [Inject] private PoCabinetSession Session { get; set; } = default!;
     [Inject] private PoCabinetCareerState Career { get; set; } = default!;
     [Inject] private PoMiniGamesClient.Services.Auth.AuthStateService AuthState { get; set; } = default!;
+    [Inject] private PoMiniGamesClient.Services.Http.ApiService Api { get; set; } = default!;
 
     [Parameter] public string? ModeSegment { get; set; }
 
@@ -94,7 +95,10 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     protected bool _awaitingFinal;
 
     protected double?[] _sectorTimes = new double?[3];
-    protected double?[] _lastLapSectorTimes = new double?[3];
+    /// <summary>Each finished lap's three splits, in lap order (the results' laps table).</summary>
+    protected List<double?[]> _lapSectors = new();
+    /// <summary>Per entry of <see cref="_lapTimes"/>: deleted for track limits.</summary>
+    protected List<bool> _lapDeleted = new();
     protected readonly double[] _sessionBestSectors = [double.MaxValue, double.MaxValue, double.MaxValue];
     protected readonly double[] _storedBestSectors = [double.MaxValue, double.MaxValue, double.MaxValue];
     protected double _storedBestLap;
@@ -153,8 +157,9 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     private int FrontRunnerCut => _totalCars > PoCabinetCatalog.CarCount ? PoCabinetCatalog.SoloFrontRunners : 3;
 
     /// <summary>
-    /// The standings below the podium. A solo field is a hundred rows, so only the top ten and
-    /// the places round the player are listed; a gap shows as a null row.
+    /// The standings below the podium. A solo field is a hundred rows, so only the places
+    /// round the player (two either side) are listed; a gap shows as a null row. A
+    /// multiplayer-sized field (twelve or fewer) is listed whole.
     /// </summary>
     protected IEnumerable<(int Place, StandingRow? Row)> StandingsBelowPodium(List<StandingRow> standings)
     {
@@ -162,7 +167,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         var last = 3;
         for (var i = 3; i < standings.Count; i++)
         {
-            if (standings.Count > 12 && i >= 10 && (mine < 0 || Math.Abs(i - mine) > 2)) continue;
+            if (standings.Count > 12 && (mine < 0 || Math.Abs(i - mine) > 2)) continue;
             if (i > last) yield return (0, null);
             yield return (i + 1, standings[i]);
             last = i + 1;
@@ -182,12 +187,78 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         || Career.Current.TrophyUnlocked
         || Career.Current.GoldLiveryUnlocked;
 
+    // ─── The start card's pit wall ───────────────────────────────────────────
+
+    protected PoCabinetDrawer? _drawer;
+    /// <summary>Phones: which half of the setup shows ("tracks" | "garage"); desktop shows both.</summary>
+    protected string _setupTab = "tracks";
+    protected Dictionary<string, double> _bestLaps = new(StringComparer.OrdinalIgnoreCase);
+    protected PoCabinetLastRace? _lastRace;
+    protected PoCabinetLobbySummary? _lobbySummary;
+
+    protected void SetTab(string tab) => _setupTab = tab;
+
+    protected string SettingsSummary =>
+        $"Assist {Settings.SteeringAssist} · {(Settings.AutoBrake ? "auto-brake" : "no auto-brake")} · {Settings.Weather switch { "rain" => "rain", "auto" => "live weather", _ => "clear" }}";
+
+    protected string OnlineHeadline => _lobbySummary is not { } s ? "—"
+        : s.Players == 1 ? "1 driver" : $"{s.Players} drivers";
+
+    protected string OnlineDetail => _lobbySummary switch
+    {
+        null => "Lobby status unavailable",
+        { InRace: true } => "Racing now — you'll join the next one",
+        { Players: 0 } => "Nobody yet — open it and host",
+        var s => $"Waiting on {PoCabinetCatalog.GetTrack(s.TrackId).Name}",
+    };
+
+    /// <summary>This race's best lap, or the stored one before the first lap is done.</summary>
+    protected double BestLapShown => _bestLapSession > 0 ? _bestLapSession : _storedBestLap;
+
+    protected int LapRows => Math.Max(_lapTimes.Count, _lapSectors.Count);
+
+    /// <summary>The fastest lap that counted (the laps table marks its row).</summary>
+    protected double BestValidLap => _lapTimes.Where((t, i) => t > 0 && !(i < _lapDeleted.Count && _lapDeleted[i])).DefaultIfEmpty(0).Min();
+
+    /// <summary>What this race did for the campaign (1P, a stage track), as a results chip.</summary>
+    protected (string Text, bool Good)? CampaignNote
+    {
+        get
+        {
+            if (Mode != GameMode.OnePlayer || _awaitingFinal) return null;
+            var stage = StageIndexFor(_trackId ?? "");
+            if (stage < 0) return null;
+            if (Career.Current.TrophyUnlocked && stage == PoCabinetCatalog.CampaignStages - 1 && Career.Current.CompletedStages.Contains(stage))
+                return ("🏆 Campaign won", true);
+            if (Career.Current.CompletedStages.Contains(stage)) return ($"Stage {stage + 1} cleared ✓", true);
+            if (stage == Career.Current.CurrentStageIndex)
+                return ($"Stage {stage + 1}: top {PoCabinetCatalog.CampaignPassPlace} needed to advance", false);
+            return null;
+        }
+    }
+
+    /// <summary>The campaign's next open stage, once this race cleared the one before it.</summary>
+    protected string? NextStageTrackId
+    {
+        get
+        {
+            if (Mode != GameMode.OnePlayer) return null;
+            var stage = StageIndexFor(_trackId ?? "");
+            var next = Career.Current.CurrentStageIndex;
+            if (stage < 0 || !Career.Current.CompletedStages.Contains(stage) || next <= stage
+                || Career.Current.CompletedStages.Contains(next) || next >= PoCabinetCatalog.Tracks.Count) return null;
+            return PoCabinetCatalog.Tracks[next].Id;
+        }
+    }
+
     private IJSObjectReference? _sceneHandle;
     private IJSObjectReference? _dialogueHandle;
     private IJSObjectReference? _minimapHandle;
     private IJSObjectReference? _envHandle;
     private string? _currentDialogueOfficialId;
     private string? _lastDialogueKey;
+    /// <summary>Bumped by every teardown; keys the race section so a restart mounts on new canvases.</summary>
+    protected int _raceSerial;
     protected ElementReference _canvas;
     protected ElementReference _minimapCanvas;
     private DotNetObjectReference<PoCabinetPageBase>? _selfRef;
@@ -220,10 +291,48 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             // had chosen. Importing the engine here instead would delay the first render.
             Settings = PoCabinetUiSettings.FromJson(await JS.InvokeAsync<string?>("localStorage.getItem", "pocabinet.settings.v1"));
             _envKey = Settings.Weather;
+            // The paint shop's stored pick, so the first race is in it (the shop used to load it
+            // for itself and never tell the page).
+            if (PoCabinetPitWall.ParsePaint(await JS.InvokeAsync<string?>("localStorage.getItem", PoCabinetPitWall.PaintKey)) is { } paint)
+            {
+                _livery = paint.Livery;
+                _color = paint.Color;
+            }
+            await LoadPitWallAsync();
         }
         catch { /* storage unavailable or corrupt — defaults are fine */ }
         _loaded = true;
+        if (Mode != GameMode.Demo) _ = RefreshLobbySummaryAsync();
     }
+
+    /// <summary>Best laps and the last race, from this browser's storage.</summary>
+    private async Task LoadPitWallAsync()
+    {
+        try
+        {
+            _bestLaps = PoCabinetPitWall.ParseBestLaps(await JS.InvokeAsync<string?>("localStorage.getItem", PoCabinetPitWall.RecordsKey));
+            _lastRace = PoCabinetPitWall.ParseLastRace(await JS.InvokeAsync<string?>("localStorage.getItem", PoCabinetPitWall.LastRaceKey));
+        }
+        catch { /* storage unavailable — the tiles say so */ }
+    }
+
+    /// <summary>The "Online now" tile: one anonymous GET, never awaited by the first render.</summary>
+    private async Task RefreshLobbySummaryAsync()
+    {
+        _lobbySummary = await Api.GetPoCabinetLobbySummaryAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Back on the start card: re-read what the race just changed.</summary>
+    private async Task ReturnToStartAsync()
+    {
+        _phase = Phase.Start;
+        await LoadPitWallAsync();
+        await InvokeAsync(StateHasChanged);
+        if (Mode != GameMode.Demo) _ = RefreshLobbySummaryAsync();
+    }
+
+    protected Task OpenDrawerAsync() => _drawer?.OpenAsync() ?? Task.CompletedTask;
 
     /// <summary>
     /// A mode switch mid-race (same component, new route parameter) tears the race down.
@@ -291,11 +400,18 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    protected Task OnPaintChanged((string Livery, string Color) sel)
+    protected async Task OnPaintChanged((string Livery, string Color) sel)
     {
         _livery = sel.Livery;
         _color = sel.Color;
-        return Task.CompletedTask;
+        // In the lobby the seat already has a colour: re-joining is idempotent for a seated
+        // player and carries the new one, which the server applies and broadcasts.
+        if (_phase == Phase.Lobby && Session.MySeatId is not null)
+        {
+            try { await Session.JoinLobbyAsync(PlayerNameSvc.GetOrReadInitialName(), null, PlayerColorHex); }
+            catch { /* best effort: the seat keeps its old colour */ }
+        }
+        await InvokeAsync(StateHasChanged);
     }
 
     /// <summary>The opening card's Start (or a demo card timing out): multiplayer joins the lobby; everything else races.</summary>
@@ -327,10 +443,32 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         return BeginWireModeAsync(start.Code);
     }
 
-    protected Task LeaveLobbyAsync()
+    protected Task LeaveLobbyAsync() => ReturnToStartAsync();
+
+    /// <summary>Pause card's Restart and the results' Race again: the same track, a fresh grid.</summary>
+    protected async Task RestartRaceAsync()
     {
-        _phase = Phase.Start;
-        return InvokeAsync(StateHasChanged);
+        if (IsMultiplayerMode) return;
+        await TeardownRaceAsync();
+        _status = null;
+        _phase = Phase.Loading;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>The results' "Next stage": race the campaign's next track straight away.</summary>
+    protected Task RaceTrackAsync(string trackId)
+    {
+        _trackId = trackId;
+        return RestartRaceAsync();
+    }
+
+    /// <summary>Online results: the lobby reopens after every race, so the rematch is there.</summary>
+    protected async Task BackToLobbyAsync()
+    {
+        await TeardownRaceAsync();
+        _status = null;
+        _phase = Phase.Lobby;
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task UnlockAudioAsync()
@@ -591,7 +729,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
                 // A lap past track limits is timed but counts for nothing (race.js lapBookkeeping).
                 var invalid = _lapInvalid;
                 if (!invalid && lapTime > 0 && (_bestLapSession <= 0 || lapTime < _bestLapSession)) _bestLapSession = lapTime;
-                CloseLap(lapTime, snap.ElapsedRaceTime);
+                CloseLap(lapTime, snap.ElapsedRaceTime, invalid);
                 _lastLapInvalid = invalid;
                 if (lapTime > 0) Fire("PoCabinet.lapChime");
                 if (localCar.Lap <= _totalLaps)
@@ -741,6 +879,13 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             }
             catch { /* records are a bonus */ }
 
+            if (Mode != GameMode.Demo)
+            {
+                _lastRace = new PoCabinetLastRace(trackId, _position, _totalCars, lapSeconds, IsMultiplayerMode, DateTimeOffset.UtcNow);
+                try { await JS.InvokeVoidAsync("localStorage.setItem", PoCabinetPitWall.LastRaceKey, PoCabinetPitWall.Serialize(_lastRace)); }
+                catch { /* the start card just shows no last race */ }
+            }
+
             if (lapSeconds <= 0 || Mode == GameMode.Demo)
             {
                 _status = Mode == GameMode.Demo ? null : "Race finished (no complete lap recorded).";
@@ -817,7 +962,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _sectorIndex = 0;
         _sectorStart = 0;
         _sectorTimes = new double?[3];
-        _lastLapSectorTimes = new double?[3];
+        _lapSectors = new List<double?[]>();
+        _lapDeleted = new List<bool>();
         _sessionBestSectors.AsSpan().Fill(double.MaxValue);
         _lapTimes = new List<double>();
         _lastLapSeconds = 0;
@@ -889,7 +1035,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     /// race.js, both modes: the local car crossed sector boundary <paramref name="sector"/> (0..2,
     /// thirds of the lap) at race time <paramref name="raceTime"/>, <paramref name="seconds"/>
     /// after the previous one. Crossing times are interpolated inside the tick, like lap times.
-    /// Sector 2 closing is the lap line: the finished lap's splits move to "last lap".
+    /// Sector 2 closing is the lap line: the finished lap's splits join the laps table.
     /// </summary>
     [JSInvokable]
     public Task OnSectorAsync(int sector, double seconds, double raceTime)
@@ -901,18 +1047,19 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _sectorIndex = (sector + 1) % 3;
         if (sector == 2)
         {
-            _lastLapSectorTimes = (double?[])_sectorTimes.Clone();
+            _lapSectors.Add((double?[])_sectorTimes.Clone());
             _sectorTimes = new double?[3];
         }
         return InvokeAsync(StateHasChanged);
     }
 
-    private void CloseLap(double lapTime, double elapsed)
+    private void CloseLap(double lapTime, double elapsed, bool deleted)
     {
         if (lapTime > 0)
         {
             _lastLapSeconds = lapTime;
             _lapTimes.Add(lapTime);
+            _lapDeleted.Add(deleted);
         }
         _lastLapTime = elapsed;
     }
@@ -978,8 +1125,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     protected async Task QuitToMenuAsync()
     {
         await TeardownRaceAsync();
-        _phase = Phase.Start;
-        await InvokeAsync(StateHasChanged);
+        await ReturnToStartAsync();
     }
 
     /// <summary>Stop the race driver and unmount every engine handle; the canvas is about to leave the DOM.</summary>
@@ -995,6 +1141,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _gameCode = null;
         _localCarId = null;
         _recordingClip = false;
+        // The next race renders new canvases (the section's @key): this one's WebGL context is gone.
+        _raceSerial++;
     }
 
     private async Task TeardownSceneAsync()

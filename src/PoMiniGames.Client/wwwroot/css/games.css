@@ -227,6 +227,13 @@
   padding: 0;
 }
 
+/* Cabinet's race is immersive: no app top bar while the race view is up (pause → Quit, or the
+   results' hub button, are the ways out). Pure CSS on the page's own class, so the bar comes
+   back by itself on the start card, the lobby and every other page. */
+.gl-page:has(.pocabinet-race--immersive) .gl-top-bar {
+  display: none;
+}
+
 /* Marble Race's canvas is appended by scene.js, so it carries no razor scope
    attribute and a scoped `.mr-canvas-host canvas { width/height: 100% }` rule
    in PoMarbleRacePage.razor.css cannot match it — the element would render at

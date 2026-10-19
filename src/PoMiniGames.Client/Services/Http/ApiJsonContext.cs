@@ -57,6 +57,7 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(PoCabinetHighScore))]
 [JsonSerializable(typeof(PoCabinetHighScore[]))]
 [JsonSerializable(typeof(PoCabinetHighScoreRequest))]
+[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoCabinetLobbySummary))]
 [JsonSerializable(typeof(PoBrawlHighScore))]
 [JsonSerializable(typeof(PoBrawlHighScore[]))]
 // Single entry only — the client POSTs ladder progress but never reads the board back

@@ -1,44 +1,35 @@
 @*
-    PoCabinetPaintShop — 4 liveries × 4 colors = 16 swatches, persisted to
-    localStorage via Blazored.LocalStorage (the framework's preference per
-    Program.cs). Selection flows via two-way binding so the parent page can
-    submit the chosen livery alongside the race result.
+    PoCabinetPaintShop — 4 liveries × 4 colors = 16 swatches. The page reads the stored
+    choice (PoCabinetPitWall.PaintKey) before the first render and passes it in; this
+    component saves each pick through Blazored.LocalStorage (the framework's preference per
+    Program.cs) and raises it. It used to load the stored choice itself without telling the
+    page, so a race started in the default paint until a swatch was clicked.
 *@
 
 @using Blazored.LocalStorage
 @inject ILocalStorageService LocalStorage
 
-<div class="pocabinet-paintshop" aria-label="Customize your car">
-    <div class="pocabinet-paintshop__grid" role="radiogroup" aria-label="Pick a paint job">
-        @foreach (var (name, hex) in COLORS)
+<div class="pocabinet-paintshop" role="radiogroup" aria-label="Pick a paint job">
+    @foreach (var (name, _) in COLORS)
+    {
+        @foreach (var livery in LIVERIES)
         {
-            @foreach (var livery in LIVERIES)
-            {
-                var isSelected = livery == _selectedLivery && name == _selectedColor;
-                var swatchBg = hex;
-                // Stripe livery lays the colour over a contrasting base so the
-                // pattern reads as a paint job, not a flat swatch.
-                var stripeColor = name == "Gold" ? "#fff" : "#fff8";
-                var previewBg = livery == "Solid" ? swatchBg
-                    : livery == "Stripe" ? $"repeating-linear-gradient(45deg, {swatchBg} 0 6px, {stripeColor} 6px 12px)"
-                    : livery == "Block"  ? $"linear-gradient(135deg, {swatchBg} 0 50%, #ffffff22 50% 100%)"
-                    /* Split */            : $"linear-gradient(90deg, {swatchBg} 0 50%, #ffffff22 50% 100%)";
-                <button type="button"
-                        class="pocabinet-swatch @(isSelected ? "pocabinet-swatch--selected" : null)"
-                        role="radio"
-                        aria-checked="@(isSelected ? "true" : "false")"
-                        aria-label="@livery @name"
-                        style="--swatch: @previewBg;"
-                        @onclick="() => Select(livery, name)">
-                </button>
-            }
+            var isSelected = livery == SelectedLivery && name == SelectedColor;
+            var previewBg = PreviewFor(livery, name);
+            <button type="button"
+                    class="pocabinet-swatch @(isSelected ? "pocabinet-swatch--selected" : null)"
+                    role="radio"
+                    aria-checked="@(isSelected ? "true" : "false")"
+                    aria-label="@livery @name"
+                    title="@livery · @name"
+                    style="--swatch: @previewBg;"
+                    @onclick="() => Select(livery, name)">
+            </button>
         }
-    </div>
+    }
 </div>
 
 @code {
-    private const string StorageKey = "pocabinet.paintshop.v1";
-
     private static readonly string[] LIVERIES = { "Stripe", "Block", "Split", "Solid" };
 
     private static readonly (string Name, string Hex)[] COLORS =
@@ -59,57 +50,36 @@
         return COLORS[0].Hex;
     }
 
-    private string _selectedLivery = "Stripe";
-    private string _selectedColor = "Indigo";
+    /// <summary>The CSS background that previews a paint job (swatches and the garage's car chip).</summary>
+    public static string PreviewFor(string? livery, string? color)
+    {
+        var hex = HexFor(color);
+        // Stripe livery lays the colour over a contrasting base so the
+        // pattern reads as a paint job, not a flat swatch.
+        var stripeColor = string.Equals(color, "Gold", StringComparison.OrdinalIgnoreCase) ? "#fff" : "#fff8";
+        return livery switch
+        {
+            "Solid" => hex,
+            "Block" => $"linear-gradient(135deg, {hex} 0 50%, #ffffff22 50% 100%)",
+            "Split" => $"linear-gradient(90deg, {hex} 0 50%, #ffffff22 50% 100%)",
+            _ => $"repeating-linear-gradient(45deg, {hex} 0 6px, {stripeColor} 6px 12px)",
+        };
+    }
 
-    /// <summary>The current selection, surfaced so the parent page can submit it with the result.</summary>
     [Parameter] public string? SelectedLivery { get; set; }
     [Parameter] public string? SelectedColor { get; set; }
     [Parameter] public EventCallback<(string Livery, string Color)> SelectionChanged { get; set; }
 
-    protected override async Task OnInitializedAsync()
-    {
-        try
-        {
-            var saved = await LocalStorage.GetItemAsStringAsync(StorageKey);
-            if (!string.IsNullOrWhiteSpace(saved))
-            {
-                // Stored value is "<livery>|<color>".
-                var parts = saved.Split('|', 2);
-                if (parts.Length == 2)
-                {
-                    _selectedLivery = parts[0];
-                    _selectedColor = parts[1];
-                }
-            }
-        }
-        catch
-        {
-            // localStorage unavailable — fall back to defaults.
-        }
-        SelectedLivery = _selectedLivery;
-        SelectedColor = _selectedColor;
-    }
-
     private async Task Select(string livery, string color)
     {
-        _selectedLivery = livery;
-        _selectedColor = color;
-        SelectedLivery = livery;
-        SelectedColor = color;
-        await PersistAsync();
-        await SelectionChanged.InvokeAsync((livery, color));
-    }
-
-    private async Task PersistAsync()
-    {
         try
         {
-            await LocalStorage.SetItemAsStringAsync(StorageKey, $"{_selectedLivery}|{_selectedColor}");
+            await LocalStorage.SetItemAsStringAsync(PoCabinetPitWall.PaintKey, $"{livery}|{color}");
         }
         catch
         {
-            // ignore — in-memory fallback for the rest of the session
+            // ignore — the page keeps the choice for the rest of the session
         }
+        await SelectionChanged.InvokeAsync((livery, color));
     }
 }

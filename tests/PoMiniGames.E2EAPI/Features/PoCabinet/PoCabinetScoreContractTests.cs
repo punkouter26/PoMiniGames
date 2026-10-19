@@ -43,6 +43,14 @@ public sealed class PoCabinetScoreContractTests
         var defaultRead = await client.GetAsync("/api/pocabinet/scores");
         defaultRead.StatusCode.Should().Be(HttpStatusCode.OK);
 
+        // The start card's lobby head count: anonymous like the boards, and nobody is in a
+        // fresh host's lobby.
+        var lobby = await client.GetAsync("/api/pocabinet/lobby");
+        lobby.StatusCode.Should().Be(HttpStatusCode.OK, "the start card reads the lobby head count without signing in");
+        var summary = await lobby.Content.ReadFromJsonAsync<PoMiniGames.Shared.Games.PoCabinetLobbySummary>(
+            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        summary.Should().Be(new PoMiniGames.Shared.Games.PoCabinetLobbySummary(0, false, null));
+
         // Authed POST with an out-of-range lap must fail validation. We don't arm
         // antiforgery here (this test is shape-only); the framework's blanket 403
         // path proves the endpoint exists and is gated, which is what the contract

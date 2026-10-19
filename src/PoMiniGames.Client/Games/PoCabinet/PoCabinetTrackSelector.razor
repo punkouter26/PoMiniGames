@@ -1,13 +1,15 @@
 @*
-    PoCabinetTrackSelector — the themed tracks and today's daily circuit. Keyboard navigation + screen reader
-    labels; the parent owns the selection (two-way binding).
+    PoCabinetTrackSelector — the themed tracks and today's daily circuit as one-line rows
+    (two lines on a phone): accent, name, length · difficulty, your best lap there, and a
+    short campaign tag. Keyboard navigation + screen reader labels; the parent owns the
+    selection (two-way binding).
 
-    Campaign (1P): each card says what a race there means for the campaign, and the
-    trophy / gold-livery chips sit under the grid. Every track stays raceable: a stage
-    that is not the current one only "doesn't count yet", which the card says instead
-    of implying you can't pick it.
+    Campaign (1P): one progress bar above the rows — the four stages, the trophy and the
+    gold livery — in place of a sentence on every card plus a rewards row under the grid.
+    Every track stays raceable: a stage that is not the current one is only "free for now",
+    which the tag's tooltip says instead of implying you can't pick it.
 
-    Compact (the lobby host): a plain dropdown instead of the big cards.
+    Compact (the lobby host): a plain dropdown instead of the rows.
 *@
 
 @using PoMiniGames.Shared.Games
@@ -28,51 +30,72 @@
 }
 else
 {
+    @if (Campaign)
+    {
+        <ol class="pocabinet-campaign" aria-label="Campaign progress">
+            @for (var i = 0; i < PoCabinetCatalog.CampaignStages; i++)
+            {
+                var (kind, text) = StageNote(i);
+                <li class="pocabinet-campaign__step pocabinet-campaign__step--@kind" title="@AllTracks[i].Name: @text">
+                    <span class="pocabinet-campaign__dot" aria-hidden="true">@(kind == "done" ? "✓" : (i + 1).ToString())</span>
+                    <span class="pocabinet-campaign__name">@ShortName(AllTracks[i].Name)</span>
+                    <span class="pocabinet-sr">@text</span>
+                </li>
+            }
+            <li class="pocabinet-campaign__reward @(Career.Current.TrophyUnlocked ? "pocabinet-campaign__reward--won" : null)"
+                title="@(Career.Current.TrophyUnlocked ? "Trophy won" : $"Trophy: a top-{PoCabinetCatalog.CampaignTrophyPlace} finish in the final stage")">
+                🏆<span class="pocabinet-sr">@(Career.Current.TrophyUnlocked ? "Trophy won" : "Trophy not won yet")</span>
+            </li>
+            <li class="pocabinet-campaign__reward @(Career.Current.GoldLiveryUnlocked ? "pocabinet-campaign__reward--won" : null)"
+                title="Gold livery @(Career.Current.GoldLiveryUnlocked ? "unlocked" : "locked")">
+                🎨<span class="pocabinet-sr">Gold livery @(Career.Current.GoldLiveryUnlocked ? "unlocked" : "locked")</span>
+            </li>
+        </ol>
+    }
     <div class="pocabinet-track-selector" role="radiogroup" aria-label="Choose a track">
         @for (var i = 0; i < AllTracks.Count; i++)
         {
             var stage = i;
             var track = AllTracks[i];
-            var accent = TrackAccent(track.Id);
             var isSelected = track.Id == SelectedTrackId;
             (string Kind, string Text)? campaign = !Campaign ? null
                 : stage < PoCabinetCatalog.CampaignStages ? StageNote(stage)
                 : ("free", "Free race · not a campaign stage");
+            var best = BestLaps?.GetValueOrDefault(track.Id) ?? 0;
             <button type="button"
                     class="pocabinet-track @(isSelected ? "pocabinet-track--selected" : null)"
                     role="radio"
                     aria-checked="@(isSelected ? "true" : "false")"
                     data-track-id="@track.Id"
                     title="@track.Description"
+                    style="--accent: @TrackAccent(track.Id);"
                     @onclick="() => SelectTrack(track.Id)">
-                <span class="pocabinet-track__swatch" style="--accent: @accent;" aria-hidden="true"></span>
-                <span class="pocabinet-track__body">
-                    <strong class="pocabinet-track__title">@track.Name</strong>
-                    <span class="pocabinet-track__meta">@TrackMeta(track.Id)</span>
-                    @if (campaign is { } note)
-                    {
-                        <span class="pocabinet-track__stage pocabinet-track__stage--@note.Kind">@note.Text</span>
-                    }
+                <span class="pocabinet-track__swatch" aria-hidden="true"></span>
+                <strong class="pocabinet-track__title">@track.Name</strong>
+                <span class="pocabinet-track__meta">@TrackMeta(track.Id)</span>
+                <span class="pocabinet-track__best @(best > 0 ? null : "pocabinet-track__best--none")">
+                    @(best > 0 ? $"PB {FormatLap(best)}" : "No lap yet")
                 </span>
+                @if (campaign is { } note)
+                {
+                    <span class="pocabinet-track__stage pocabinet-track__stage--@note.Kind" title="@note.Text">
+                        @StageTag(stage, note.Kind)<span class="pocabinet-sr"> — @note.Text</span>
+                    </span>
+                }
             </button>
         }
     </div>
-    @if (Campaign)
-    {
-        <p class="pocabinet-rewards" aria-label="Campaign rewards">
-            <span class="pocabinet-reward @(Career.Current.TrophyUnlocked ? "pocabinet-reward--unlocked" : null)">🏆 @(Career.Current.TrophyUnlocked ? "Trophy won" : "Trophy: win the final stage")</span>
-            <span class="pocabinet-reward @(Career.Current.GoldLiveryUnlocked ? "pocabinet-reward--unlocked" : null)">🎨 Gold livery @(Career.Current.GoldLiveryUnlocked ? "unlocked" : "locked")</span>
-        </p>
-    }
 }
 
 @code {
     [Parameter] public string? SelectedTrackId { get; set; }
     [Parameter] public EventCallback<string> SelectedTrackIdChanged { get; set; }
-    /// <summary>1P: show each track's campaign stage and the rewards.</summary>
+    /// <summary>1P: the campaign bar and each track's stage tag.</summary>
     [Parameter] public bool Campaign { get; set; }
-    /// <summary>Lobby host: a dropdown instead of cards.</summary>
+    /// <summary>Lobby host: a dropdown instead of rows.</summary>
     [Parameter] public bool Compact { get; set; }
+    /// <summary>This browser's best lap per track id (settings.js records); absent = no lap yet.</summary>
+    [Parameter] public IReadOnlyDictionary<string, double>? BestLaps { get; set; }
 
     private static readonly Dictionary<string, (string Accent, int LengthKm, string Difficulty)> TrackInfo =
         new(StringComparer.OrdinalIgnoreCase)
@@ -99,16 +122,33 @@ else
         : TrackInfo.TryGetValue(id, out var info) ? info.Accent : "#888";
 
     private static string TrackMeta(string id) =>
-        PoCabinetDailyTrack.TryParse(id, out _) ? "New layout every day · 3 km"
+        PoCabinetDailyTrack.TryParse(id, out _) ? "New every day · 3 km"
         : !TrackInfo.TryGetValue(id, out var info) ? ""
         : PoCabinetTrackGeometry.Get(id).Laps == 1 ? $"One run · {info.Difficulty}"
         : $"{info.LengthKm} km · {info.Difficulty}";
 
+    /// <summary>"Mar-a-Lago Grand Prix" → "Mar-a-Lago": the bar has room for one word a stage.</summary>
+    private static string ShortName(string name) => name.Split(' ')[0];
+
+    private static string StageTag(int stage, string kind) => kind switch
+    {
+        "done" => $"Stage {stage + 1} ✓",
+        "active" => $"Stage {stage + 1} · now",
+        _ when stage < PoCabinetCatalog.CampaignStages => $"Stage {stage + 1}",
+        _ => "Free race",
+    };
+
     private (string Kind, string Text) StageNote(int stage)
     {
-        if (Career.Current.CompletedStages.Contains(stage)) return ("done", $"Stage {stage + 1} ✓ cleared");
-        if (stage == Career.Current.CurrentStageIndex) return ("active", $"Stage {stage + 1} · top {PoCabinetCatalog.CampaignPassPlace} advances");
-        return ("free", $"Stage {stage + 1} · free race for now");
+        if (Career.Current.CompletedStages.Contains(stage)) return ("done", $"Stage {stage + 1} cleared");
+        if (stage == Career.Current.CurrentStageIndex) return ("active", $"Stage {stage + 1}: a top-{PoCabinetCatalog.CampaignPassPlace} finish advances");
+        return ("free", $"Stage {stage + 1}: a free race for now");
+    }
+
+    private static string FormatLap(double seconds)
+    {
+        var minutes = (int)(seconds / 60);
+        return $"{minutes}:{seconds - minutes * 60:00.0}";
     }
 
     private Task SelectTrack(string id)

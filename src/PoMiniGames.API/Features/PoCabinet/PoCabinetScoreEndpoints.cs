@@ -34,6 +34,11 @@ public static class PoCabinetScoreEndpoints
             .AllowAnonymous()
             .RequireRateLimiting("leaderboard-read");
 
+        // The start card's "Online now" tile: a head count of the one lobby, no names.
+        app.MapGet("/pocabinet/lobby", (PoCabinetLobbyService lobbies) => Results.Ok(lobbies.Summary()))
+            .AllowAnonymous()
+            .RequireRateLimiting("leaderboard-read");
+
         // Authenticated writes — bounded by pocabinet (10/min, same shape as highscores).
         app.MapPost("/pocabinet/scores", PostScoreAsync)
             .RequireRateLimiting("pocabinet");

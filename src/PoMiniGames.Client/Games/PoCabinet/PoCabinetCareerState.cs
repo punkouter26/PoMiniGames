@@ -75,12 +75,4 @@ public sealed class PoCabinetCareerState
             Changed?.Invoke();
         }
     }
-
-    /// <summary>Reset to fresh state (for "Restart Career" UI flow).</summary>
-    public async Task ResetAsync()
-    {
-        Current = PoCabinetCareerDto.New();
-        await SaveAsync();
-        Changed?.Invoke();
-    }
 }

@@ -26,7 +26,7 @@
                                Title="@TitleContent"
                                Objective="@Lede"
                                Controls="@ControlsContent"
-                               Options="@(Mode == GameMode.Demo ? null : SetupContent)"
+                               Options="@OptionsContent"
                                Mode="@(Mode == GameMode.Demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                                StartLabel="@(Mode == GameMode.Demo ? null : IsMultiplayerMode ? "Join lobby" : "Start race")"
                                OnStart="StartRaceAsync" />
@@ -214,7 +214,7 @@
             }
         }
         <PoCabinetDrawer @ref="_drawer" Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
-                         ShowPaint="@(_phase == Phase.Lobby)" Livery="@_livery" Color="@_color" PaintChanged="OnPaintChanged" />
+                         Livery="@_livery" Color="@_color" PaintChanged="OnPaintChanged" />
     </div>
 </GameShell>
 
@@ -251,11 +251,20 @@
         }
     </span>;
 
-    // The card's Options slot: the pit wall.
-    private RenderFragment SetupContent => @<PoCabinetSetup IsMultiplayer="@IsMultiplayerMode" Campaign="@(Mode == GameMode.OnePlayer)"
-                                                           TrackId="@_trackId" TrackIdChanged="OnTrackChanged"
-                                                           Livery="@_livery" Color="@_color" PaintChanged="OnPaintChanged"
-                                                           Settings="Settings" OnOpenSettings="OpenDrawerAsync" Status="@_status" />;
+    // The card's Options slot: the tracks, in 1P (online, the lobby host picks one; the demo
+    // picks its own). Paint and settings are in the drawer (pause card, lobby). Otherwise only
+    // a failed start says so here.
+    private RenderFragment? OptionsContent => Mode == GameMode.OnePlayer
+        ? @<div class="pocabinet-start">
+            <PoCabinetTrackSelector SelectedTrackId="@_trackId" SelectedTrackIdChanged="OnTrackChanged" Campaign="true" />
+            @if (!string.IsNullOrEmpty(_status))
+            {
+                @StatusLine
+            }
+        </div>
+        : string.IsNullOrEmpty(_status) ? null : StatusLine;
+
+    private RenderFragment StatusLine => @<p class="pocabinet-status" role="alert">@_status</p>;
 
     // The end-of-game modal's summary. A <section>, not a <div>: the modal's own rule for
     // "a div's second and later divs are small print" would shrink the podium.

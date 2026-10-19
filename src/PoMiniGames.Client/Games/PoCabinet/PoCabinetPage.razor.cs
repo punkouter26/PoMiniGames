@@ -10,9 +10,9 @@ namespace PoMiniGamesClient.Games.PoCabinet;
 /// <summary>
 /// Code-behind for <see cref="PoCabinetPage"/>. The page lifecycle is:
 /// <list type="number">
-///   <item><b>Start</b> — the pit wall (<see cref="PoCabinetSetup"/>): track, paint, settings.
-///         1p/demo go to <see cref="Phase.Loading"/>; multiplayer joins the one lobby (first in
-///         hosts; there are no codes).</item>
+///   <item><b>Start</b> — the shared card: how to play and, in 1P, the track list. 1p/demo go
+///         to <see cref="Phase.Loading"/>; multiplayer joins the one lobby (first in hosts; there
+///         are no codes).</item>
 ///   <item><b>Lobby</b> — <see cref="PoCabinetLobby"/>; its <c>RaceStarting</c> hand-off calls
 ///         <see cref="BeginWireModeAsync"/> directly. (It used to navigate to this same page with
 ///         a query string, which Blazor treats as a parameter change on the live component —
@@ -212,7 +212,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _loaded = true;
     }
 
-    /// <summary>Back on the start card (the pit wall re-reads what the race just changed).</summary>
+    /// <summary>Back on the start card (the track list re-reads the best laps the race just set).</summary>
     private Task ReturnToStartAsync()
     {
         _phase = Phase.Start;
@@ -739,13 +739,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
                 }
             }
             catch { /* records are a bonus */ }
-
-            if (Mode != GameMode.Demo)
-            {
-                var lastRace = new PoCabinetLastRace(trackId, _position, _totalCars, lapSeconds, IsMultiplayerMode, DateTimeOffset.UtcNow);
-                try { await JS.InvokeVoidAsync("localStorage.setItem", PoCabinetPitWall.LastRaceKey, PoCabinetPitWall.Serialize(lastRace)); }
-                catch { /* the start card just shows no last race */ }
-            }
 
             if (lapSeconds <= 0 || Mode == GameMode.Demo)
             {

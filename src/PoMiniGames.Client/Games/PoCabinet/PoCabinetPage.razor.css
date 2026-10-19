@@ -696,15 +696,13 @@
     z-index: 6;
 }
 
-/* ─── Start: the shared opening card as a pit wall (GameIntro) ────────────── */
-/* Tracks on the left, the garage on the right, in the card's Options slot. The wrapper is
-   display:contents, there only so this scoped sheet can widen the shared card. Online mode
-   has only the garage, so its card stays narrow. */
+/* ─── Start: the shared opening card (GameIntro) ─────────────────────────── */
+/* The 1P card's Options slot is the track list: one row a track, wide enough for its name,
+   length, best lap and campaign tag. The wrapper is display:contents, there only so this
+   scoped sheet can widen the shared card; Online and Demo keep the card's own width. */
 .pocabinet-intro { display: contents; }
 
-.pocabinet-intro ::deep .gps-intro-card:has(.pocabinet-setup) { width: min(96vw, 1040px); }
-
-.pocabinet-intro ::deep .gps-intro-card:has(.pocabinet-setup--solo-pane) { width: min(96vw, 520px); }
+.pocabinet-intro ::deep .gps-intro-card:has(.pocabinet-start) { width: min(96vw, 720px); }
 
 .pocabinet-controls { margin: 0; }
 

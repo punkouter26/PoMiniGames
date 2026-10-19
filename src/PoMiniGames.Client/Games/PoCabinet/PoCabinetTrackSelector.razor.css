@@ -58,68 +58,23 @@
 
 .pocabinet-track__best--none { color: var(--color-text-muted); }
 
-/* Campaign: the four stages, then the trophy and the gold livery, in one bar. */
-.pocabinet-campaign {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    font-size: 0.82rem;
-}
 
-.pocabinet-campaign__step {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    flex: 1 1 0;
-    min-width: 0;
-    padding: 0.2rem 0.5rem 0.2rem 0.2rem;
-    border: 1px solid var(--color-border, transparent);
-    border-radius: 999px;
-    color: var(--color-text-muted);
-}
 
-.pocabinet-campaign__dot {
-    flex: none;
-    display: inline-grid;
-    place-items: center;
-    width: 1.45rem;
-    height: 1.45rem;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--color-text) 10%, transparent);
-    color: var(--color-text);
-    font-size: 0.78rem;
-    font-weight: 700;
-}
 
-.pocabinet-campaign__name { white-space: nowrap; }
 
-.pocabinet-campaign__step--done { color: var(--color-text); }
 
-.pocabinet-campaign__step--done .pocabinet-campaign__dot {
-    background: var(--color-primary);
-    color: var(--color-on-primary, white);
-}
 
-.pocabinet-campaign__step--active {
-    border-color: var(--color-primary);
-    color: var(--color-text);
-    font-weight: 600;
-}
 
-.pocabinet-campaign__reward {
-    flex: none;
-    font-size: 1.1rem;
-    filter: grayscale(1);
-    opacity: 0.45;
-}
 
-.pocabinet-campaign__reward--won {
-    filter: none;
-    opacity: 1;
-}
+
+
+
+
+
+
+
+
+
 
 /* Each track row's campaign tag, right-aligned. */
 .pocabinet-track__stage {
@@ -154,9 +109,9 @@
         padding: 0.28rem 0.65rem 0.28rem 0.45rem;
         line-height: 1.2;
     }
-    .pocabinet-campaign__step { flex: 1 1 auto; justify-content: center; padding: 0.15rem; }
-    .pocabinet-campaign__dot { width: 1.3rem; height: 1.3rem; }
-    .pocabinet-campaign__name { display: none; }
+    
+    
+    
 }
 
 .pocabinet-track-select {

@@ -164,17 +164,6 @@ public sealed class PoCabinetLobbyService
         }
     }
 
-    /// <summary>Head count for the start card: no names, so anyone may read it.</summary>
-    public PoCabinetLobbySummary Summary()
-    {
-        lock (_gate)
-        {
-            return _lobby is { } lobby
-                ? new PoCabinetLobbySummary(lobby.Players.Count, lobby.IsStarted, lobby.TrackId)
-                : new PoCabinetLobbySummary(0, false, null);
-        }
-    }
-
     /// <summary>Wire view of the lobby; <paramref name="forPlayerId"/> fills <c>YourSeatId</c>.</summary>
     public PoCabinetLobbyView? View(string? forPlayerId = null)
     {

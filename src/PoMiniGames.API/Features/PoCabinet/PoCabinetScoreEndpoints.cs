@@ -9,8 +9,8 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Features.PoCabinet;
 
 /// <summary>
-/// PoCabinet score endpoints: the start card's anonymous lobby head count, and authenticated
-/// best-lap submissions guarded by the <c>pocabinet</c> rate-limit policy. There is no read of
+/// PoCabinet's score endpoint: authenticated best-lap submissions guarded by the
+/// <c>pocabinet</c> rate-limit policy. There is no read of
 /// the stored laps: the app has no Cabinet board.
 ///
 /// <para>
@@ -27,14 +27,8 @@ public static class PoCabinetScoreEndpoints
 {
     public static void MapPoCabinetScoreEndpoints(this IEndpointRouteBuilder app)
     {
-        // Mounted under gameApi (which has the /api prefix and requires authorization) — paths
-        // below are RELATIVE. The start card's "Online now" tile: a head count of the one lobby,
-        // no names, so anonymous and bounded by leaderboard-read (60/min).
-        app.MapGet("/pocabinet/lobby", (PoCabinetLobbyService lobbies) => Results.Ok(lobbies.Summary()))
-            .AllowAnonymous()
-            .RequireRateLimiting("leaderboard-read");
-
-        // Authenticated writes — bounded by pocabinet (10/min, same shape as highscores).
+        // Mounted under gameApi (which has the /api prefix and requires authorization) — the
+        // path is RELATIVE. Authenticated writes, bounded by pocabinet (10/min, same shape as highscores).
         app.MapPost("/pocabinet/scores", PostScoreAsync)
             .RequireRateLimiting("pocabinet");
     }

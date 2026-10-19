@@ -10,7 +10,6 @@ namespace PoMiniGames.E2EAPI.Features.PoCabinet;
 /// HTTP contract tests for the PoCabinet endpoints. One method by design — the E2E-API tier is
 /// capped at 25.
 /// <list type="bullet">
-///   <item>Anonymous GET <c>/api/pocabinet/lobby</c> returns the start card's head count.</item>
 ///   <item>POST <c>/api/pocabinet/scores</c> rejects a malformed payload (a negative lap) before
 ///         anything is stored. There is no read of the stored laps: the app has no Cabinet board.</item>
 /// </list>
@@ -18,19 +17,12 @@ namespace PoMiniGames.E2EAPI.Features.PoCabinet;
 public sealed class PoCabinetScoreContractTests
 {
     [Fact]
-    public async Task LobbyHeadCount_IsAnonymous_AndScoresRejectAnOutOfRangeLap()
+    public async Task Scores_RejectAnOutOfRangeLap()
     {
         // Use a WebApplicationFactory so we exercise the full HTTP pipeline
         // (routing, antiforgery, model binding, JSON) against a real host.
         await using var factory = new ScoreFactory();
         using var client = factory.CreateClient();
-
-        // The start card's lobby head count: anonymous, and nobody is in a fresh host's lobby.
-        var lobby = await client.GetAsync("/api/pocabinet/lobby");
-        lobby.StatusCode.Should().Be(HttpStatusCode.OK, "the start card reads the lobby head count without signing in");
-        var summary = await lobby.Content.ReadFromJsonAsync<PoMiniGames.Shared.Games.PoCabinetLobbySummary>(
-            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        summary.Should().Be(new PoMiniGames.Shared.Games.PoCabinetLobbySummary(0, false, null));
 
         // Authed POST with an out-of-range lap must fail validation. We don't arm
         // antiforgery here (this test is shape-only); the framework's blanket 403

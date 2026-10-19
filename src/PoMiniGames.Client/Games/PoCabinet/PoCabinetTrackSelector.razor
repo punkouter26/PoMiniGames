@@ -4,10 +4,10 @@
     short campaign tag. Keyboard navigation + screen reader labels; the parent owns the
     selection (two-way binding).
 
-    Campaign (1P): one progress bar above the rows — the four stages, the trophy and the
-    gold livery — in place of a sentence on every card plus a rewards row under the grid.
-    Every track stays raceable: a stage that is not the current one is only "free for now",
-    which the tag's tooltip says instead of implying you can't pick it.
+    Campaign (1P): each row's tag says what the track is to the campaign (cleared, the stage to
+    race now, a free race). Every track stays raceable: a stage that is not the current one is
+    only "free for now", which the tag's tooltip says instead of implying you can't pick it.
+    Your best lap per track comes from this browser's records (records.js's store).
 
     Compact (the lobby host): a plain dropdown instead of the rows.
 *@
@@ -15,6 +15,7 @@
 @using PoMiniGames.Shared.Games
 @implements IDisposable
 @inject PoCabinetCareerState Career
+@inject IJSRuntime JS
 
 @if (Compact)
 {
@@ -30,28 +31,6 @@
 }
 else
 {
-    @if (Campaign)
-    {
-        <ol class="pocabinet-campaign" aria-label="Campaign progress">
-            @for (var i = 0; i < PoCabinetCatalog.CampaignStages; i++)
-            {
-                var (kind, text) = StageNote(i);
-                <li class="pocabinet-campaign__step pocabinet-campaign__step--@kind" title="@AllTracks[i].Name: @text">
-                    <span class="pocabinet-campaign__dot" aria-hidden="true">@(kind == "done" ? "✓" : (i + 1).ToString())</span>
-                    <span class="pocabinet-campaign__name">@ShortName(AllTracks[i].Name)</span>
-                    <span class="pocabinet-sr">@text</span>
-                </li>
-            }
-            <li class="pocabinet-campaign__reward @(Career.Current.TrophyUnlocked ? "pocabinet-campaign__reward--won" : null)"
-                title="@(Career.Current.TrophyUnlocked ? "Trophy won" : $"Trophy: a top-{PoCabinetCatalog.CampaignTrophyPlace} finish in the final stage")">
-                🏆<span class="pocabinet-sr">@(Career.Current.TrophyUnlocked ? "Trophy won" : "Trophy not won yet")</span>
-            </li>
-            <li class="pocabinet-campaign__reward @(Career.Current.TrophyUnlocked ? "pocabinet-campaign__reward--won" : null)"
-                title="Gold livery @(Career.Current.TrophyUnlocked ? "unlocked" : "locked: it comes with the trophy")">
-                🎨<span class="pocabinet-sr">Gold livery @(Career.Current.TrophyUnlocked ? "unlocked" : "locked")</span>
-            </li>
-        </ol>
-    }
     <div class="pocabinet-track-selector" role="radiogroup" aria-label="Choose a track">
         @for (var i = 0; i < AllTracks.Count; i++)
         {
@@ -61,7 +40,7 @@ else
             (string Kind, string Text)? campaign = !Campaign ? null
                 : stage < PoCabinetCatalog.CampaignStages ? StageNote(stage)
                 : ("free", "Free race · not a campaign stage");
-            var best = BestLaps?.GetValueOrDefault(track.Id) ?? 0;
+            var best = _bestLaps.GetValueOrDefault(track.Id);
             <button type="button"
                     class="pocabinet-track @(isSelected ? "pocabinet-track--selected" : null)"
                     role="radio"
@@ -90,18 +69,25 @@ else
 @code {
     [Parameter] public string? SelectedTrackId { get; set; }
     [Parameter] public EventCallback<string> SelectedTrackIdChanged { get; set; }
-    /// <summary>1P: the campaign bar and each track's stage tag.</summary>
+    /// <summary>1P: each track's campaign tag.</summary>
     [Parameter] public bool Campaign { get; set; }
     /// <summary>Lobby host: a dropdown instead of rows.</summary>
     [Parameter] public bool Compact { get; set; }
-    /// <summary>This browser's best lap per track id (records.js); absent = no lap yet.</summary>
-    [Parameter] public IReadOnlyDictionary<string, double>? BestLaps { get; set; }
 
     /// <summary>The fixed tracks, then today's daily circuit (UTC), which changes at midnight.</summary>
     private static IReadOnlyList<PoCabinetTrackInfo> AllTracks =>
         [.. PoCabinetCatalog.Tracks, PoCabinetCatalog.Today(DateTime.UtcNow)];
 
-    protected override void OnInitialized() => Career.Changed += OnCareerChanged;
+    /// <summary>This browser's best lap per track id; absent = no lap yet.</summary>
+    private Dictionary<string, double> _bestLaps = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Career.Changed += OnCareerChanged;
+        if (Compact) return;
+        try { _bestLaps = PoCabinetPitWall.ParseBestLaps(await JS.InvokeAsync<string?>("localStorage.getItem", PoCabinetPitWall.RecordsKey)); }
+        catch { /* storage unavailable: every row says "No lap yet" */ }
+    }
 
     private void OnCareerChanged() => InvokeAsync(StateHasChanged);
 
@@ -110,9 +96,6 @@ else
     private static string TrackMeta(PoCabinetTrackInfo track) =>
         PoCabinetTrackGeometry.Get(track.Id).Laps == 1 ? $"One run · {track.Difficulty}"
         : $"{track.LengthKm} km · {track.Difficulty}";
-
-    /// <summary>"Mar-a-Lago Grand Prix" → "Mar-a-Lago": the bar has room for one word a stage.</summary>
-    private static string ShortName(string name) => name.Split(' ')[0];
 
     private static string StageTag(int stage, string kind) => kind switch
     {

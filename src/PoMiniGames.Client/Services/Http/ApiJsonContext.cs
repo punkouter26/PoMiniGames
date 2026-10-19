@@ -55,7 +55,6 @@ namespace PoMiniGamesClient.Services.Http;
 // the request shape carries only the score + the contextual track/position,
 // identity is resolved server-side.
 [JsonSerializable(typeof(PoCabinetHighScoreRequest))]
-[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoCabinetLobbySummary))]
 [JsonSerializable(typeof(PoBrawlHighScore))]
 [JsonSerializable(typeof(PoBrawlHighScore[]))]
 // Single entry only — the client POSTs ladder progress but never reads the board back

@@ -2,18 +2,14 @@ using System.Text.Json;
 
 namespace PoMiniGamesClient.Games.PoCabinet;
 
-/// <summary>The last race this browser finished, for the start card's "Last race" tile.</summary>
-public sealed record PoCabinetLastRace(string TrackId, int Position, int TotalCars, double BestLapSeconds, bool Online, DateTimeOffset AtUtc);
-
 /// <summary>
-/// The start card's read of what this browser already knows: the personal best per track
-/// (records.js owns <c>pocabinet.records.v1</c>; this only reads it) and the last race.
-/// Plain localStorage strings, parsed here, so the card needs no engine import.
+/// What the page reads from this browser before the engine is imported: the personal best per
+/// track for the track list (records.js owns <c>pocabinet.records.v1</c>; this only reads it)
+/// and the stored paint job. Plain localStorage strings, parsed here.
 /// </summary>
 public static class PoCabinetPitWall
 {
     public const string RecordsKey = "pocabinet.records.v1";
-    public const string LastRaceKey = "pocabinet.lastrace.v1";
     public const string PaintKey = "pocabinet.paintshop.v1";
 
     /// <summary>Best lap per track id from records.js's store; unset or corrupt tracks are left out.</summary>
@@ -39,16 +35,6 @@ public static class PoCabinetPitWall
         catch (JsonException) { /* hand-edited or stale: no bests */ }
         return bests;
     }
-
-    public static PoCabinetLastRace? ParseLastRace(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json)) return null;
-        try { return JsonSerializer.Deserialize(json, PoCabinetJsonContext.Default.PoCabinetLastRace); }
-        catch (JsonException) { return null; }
-    }
-
-    public static string Serialize(PoCabinetLastRace race) =>
-        JsonSerializer.Serialize(race, PoCabinetJsonContext.Default.PoCabinetLastRace);
 
     /// <summary>The paint shop's stored "&lt;livery&gt;|&lt;color&gt;", or null when unset or malformed.</summary>
     public static (string Livery, string Color)? ParsePaint(string? raw)

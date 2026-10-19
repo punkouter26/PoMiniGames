@@ -2,7 +2,7 @@
 //
 // Keeps the last several seconds of the fight recorded at all times and, when a
 // match ends, keeps the file: the lead-up, the finishing blow and the fall, with
-// the fight's own audio. The news overlay (news.js) and the result modal offer it
+// the fight's own audio. The result modal offers it
 // as "Save KO clip" (the phone share sheet where the browser has one).
 //
 // Same machinery as PoEcosystem's Island Reel (poecosystem/render/reel.js), for

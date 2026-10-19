@@ -41,7 +41,7 @@
     left: 50%;
     top: calc(var(--pb-gutter, 0px) + 104px);
     translate: -50% 0;
-    /* Clears the HUD and ladder rail above and the Breaking News lower third below. */
+    /* Clears the HUD and ladder rail above and the caption bar below. */
     width: min(440px, calc(100% - 24px));
     padding: 12px 14px 10px;
     border-radius: 16px;

@@ -17,7 +17,7 @@
    in the same arena the other modes use (engine mode 'tournament': both corners CPU, the page
    picks every pairing through PoBrawl.matchup), and each result moves both fighters' Elo.
    This component shares PoBrawlPage's CSS scope (CssScope in the csproj), so the engine's DOM —
-   splash, banner, captions, news desk — and the fight chrome are styled exactly as there. *@
+   splash, banner, captions — and the fight chrome are styled exactly as there. *@
 
 <PageTitle>Brawl Tournament · PoMiniGames</PageTitle>
 
@@ -155,8 +155,9 @@
     private bool _ratingsLoaded;
     private bool _report = true;
     private int _speed = 1;
-    private bool _director = true;
-    private bool _isoCam = true;
+    // The camera starts where the settings sheet's "Brawl show" row says: Full = Broadcast, Simple = Ringside.
+    private bool _director;
+    private bool _isoCam;
 
     private bool _introDone;
     private bool _bracketOpen;
@@ -575,6 +576,7 @@
     {
         _playerName = PlayerNameService.GetPlayerName();
         _titles = PoBrawlProgressBook.LoadTitles();
+        _director = _isoCam = PoBrawlShowPrefs.IsFull;
         _cup = PoBrawlTournament.Draw(Roster, new Random(_drawSeed), _ratings);
     }
 

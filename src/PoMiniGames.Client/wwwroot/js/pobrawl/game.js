@@ -35,7 +35,6 @@ import { SceneSetup, ENV_INTENSITY } from './sceneSetup.js';
 import { KeyBridge } from '../gamepadBus.js';
 import { BrawlHaptics } from './haptics.js';
 import { MatWear } from './matWear.js';
-import { NewsDesk } from './news.js';
 import { KoClipRecorder } from './clip.js';
 import { NetController, Netplay } from './netplay.js';
 import { Commentary } from './commentary.js';
@@ -465,12 +464,6 @@ export class BrawlGame {
     // Rumble and phone buzz for the humans only (haptics.js); CPU-only and spectated fights get
     // an inert router that still claims the platform haptics, so nothing buzzes on their behalf.
     this.haptics = new BrawlHaptics(this, { active: !cpuOnly && !spectating });
-
-    // The Breaking News result package (news.js).
-    this.news = new NewsDesk(this.container, {
-      onSaveClip: () => this.saveClip(),
-      demo: cpuOnly,
-    });
 
     // Rolling KO clip (clip.js). Not in demo (nobody to hand it to), not
     // in the training room (no KO), not on the low tier (encoding costs frames).
@@ -1199,9 +1192,7 @@ export class BrawlGame {
       }
     }
     this._setBanner('3');
-    // The previous result's lower third goes, and the clip recorder
-    // starts cycling again for the new fight.
-    if (this.news) this.news.hide();
+    // The clip recorder starts cycling again for the new fight.
     if (this.clip) this.clip.resume();
     this._dangerPushed = -1;
   }
@@ -2442,26 +2433,14 @@ export class BrawlGame {
     }
   }
 
-  // ══ Result package: news + clip ═══════════════════════════════════════
-  // Called from _reportResult once the winner is known.
+  // ══ Result package: shatter + pyro (Full show) and the clip ═══════════════
+  // Called from _reportResult once the winner is known. The result itself — line, recap,
+  // press, the clip button — is the page's one result modal; nothing here repeats it.
   _presentResult() {
-    const [f1, f2] = this.fighters;
-    // A KO breaks the glass into the result, and the winner gets the pyro.
-    if (this.fighters.some((f) => f.state === 'ko')) {
+    // Full show: a KO breaks the glass into the result, and the winner gets the pyro.
+    if (this._fullShow() && this.fighters.some((f) => f.state === 'ko')) {
       this._shatterPending = true;
       if (this.winner) this._startPyro();
-    }
-    if (this.news) {
-      const ko = this.fighters.some((f) => f.state === 'ko');
-      this.news.show({
-        p1: f1.rig.config.name || f1.charId,
-        p2: f2.rig.config.name || f2.charId,
-        winner: this.winner,
-        ko,
-        seconds: this.clock || 0,
-        stats: [f1.stats, f2.stats],
-      }, () => this.rng.random());
-      this.audio?.newsSting();
     }
     if (this.clip) {
       this.clip.freeze();
@@ -2472,14 +2451,13 @@ export class BrawlGame {
         if (this.disposed || !this.clip) return;
         this.clip.capture().then((blob) => {
           if (!blob || this.disposed) return;
-          this.news?.showClipButton(true);
           this.dotnet?.invokeMethodAsync('OnClipReady').catch(() => {});
         });
       }, 1800);
     }
   }
 
-  /** Save or share the last KO clip (the news button and the result modal). */
+  /** Save or share the last KO clip (the result modal's button). */
   saveClip() {
     return this.clip ? this.clip.save() : Promise.resolve(false);
   }
@@ -3132,7 +3110,6 @@ export class BrawlGame {
     if (this.gamepads) { this.gamepads.dispose(); this.gamepads = null; }
     if (this.haptics) { this.haptics.dispose(); this.haptics = null; }
     if (this.clip) { this.clip.dispose(); this.clip = null; }
-    if (this.news) { this.news.dispose(); this.news = null; }
     if (this.matWear) { this.matWear.dispose(); this.matWear = null; }
     if (this._pSprite) { this._pSprite.dispose(); this._pSprite = null; }
     // Drop the tier subscription before anything else is torn down — the handler

@@ -2010,61 +2010,6 @@ class AudioBus {
     this._pulse(0.6);
   }
 
-  // Breaking-news "da-da-da-DAAA": brass stabs to a held fifth over a timpani roll.
-  newsSting() {
-    if (!this._ensure() || this.muted || this.ctx.state !== 'running') return;
-    const ctx = this.ctx;
-    const now = ctx.currentTime + 0.02;
-    const stab = (t0, freqs, dur, peak) => {
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.setValueAtTime(900, t0);
-      lp.frequency.exponentialRampToValueAtTime(4200, t0 + 0.05);
-      lp.frequency.exponentialRampToValueAtTime(1600, t0 + dur);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.linearRampToValueAtTime(peak, t0 + 0.012);
-      g.gain.setValueAtTime(peak, t0 + dur * 0.6);
-      g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
-      lp.connect(g).connect(this.sfxGain);
-      for (const hz of freqs) {
-        for (const cents of [-6, 6]) {
-          const o = ctx.createOscillator();
-          o.type = 'sawtooth';
-          o.frequency.value = hz;
-          o.detune.value = cents;
-          o.connect(lp);
-          o.start(t0); o.stop(t0 + dur + 0.02);
-          autoDisconnect(o, [o]);
-        }
-      }
-      const end = ctx.createConstantSource();
-      end.start(t0); end.stop(t0 + dur + 0.05);
-      autoDisconnect(end, [end, lp, g]);
-    };
-    const e = 0.16;
-    stab(now, [440, 659.25], 0.12, 0.05);              // A4 + E5
-    stab(now + e, [440, 659.25], 0.12, 0.05);
-    stab(now + e * 2, [493.88, 739.99], 0.12, 0.055);  // B4 + F#5
-    stab(now + e * 3, [587.33, 880], 1.1, 0.065);      // D5 + A5, held
-
-    for (let i = 0; i < 8; i++) {
-      const t0 = now + i * (e * 3 / 8);
-      const o = ctx.createOscillator();
-      o.type = 'sine';
-      o.frequency.setValueAtTime(98, t0);
-      o.frequency.exponentialRampToValueAtTime(72, t0 + 0.08);
-      const g = ctx.createGain();
-      const pk = 0.05 + i * 0.025;
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.linearRampToValueAtTime(pk, t0 + 0.006);
-      g.gain.exponentialRampToValueAtTime(0.0008, t0 + (i === 7 ? 0.9 : 0.12));
-      o.connect(g).connect(this.sfxGain);
-      o.start(t0); o.stop(t0 + (i === 7 ? 0.95 : 0.14));
-      autoDisconnect(o, [o, g]);
-    }
-  }
-
   // ══ Showtime (audioShow.js) ══════════════════════════════════════════
   // Driven by the show bus. The conductor is audioShow's silent clock; the AudioBus only
   // asks it how far the next grid line is (setConductor) and schedules on the audio clock.
@@ -2323,10 +2268,10 @@ class AudioBus {
 
   /**
    * The winner's motif resolved as a fanfare: the phrase in its own voice over a brass
-   * octave, then the tonic major chord held over a timpani stroke. `delay` lets the news
-   * sting (newsSting, fired by the same result) finish first.
+   * octave, then the tonic major chord held over a timpani stroke. `delay` lets the crowd's
+   * result roar land first.
    */
-  fanfare(charId, delay = 1.5) {
+  fanfare(charId, delay = 0.6) {
     if (!this._ensure() || this.muted || this.ctx.state !== 'running') return;
     const ctx = this.ctx;
     const at = ctx.currentTime + delay;

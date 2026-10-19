@@ -145,7 +145,7 @@ export class KeyboardController {
 // cluster stacks its small keys over its big ones, so the pad fits a 360px
 // phone. The host
 // gets .pb-has-pad so the page's bottom-docked chrome (training bar, caption,
-// news package) can lift clear of it. Synthetic key events feed the normal
+// result chrome) can lift clear of it. Synthetic key events feed the normal
 // input path, so the touch panel has no control semantics of its own —
 // rebinding a key in LAYOUTS rebinds the button. Returns the panel; the caller
 // removes it (and .pb-has-pad) on dispose.

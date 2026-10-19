@@ -75,6 +75,8 @@ class CeremonyMethods {
 
   /** The final is decided: crown `charId` (falls back to the bout's winner). */
   ceremony(charId) {
+    // Full show only (show.js): the Simple show ends the final on the result card.
+    if (!this._fullShow()) return;
     if (!this._belt || !this.fighters || this.disposed) return;
     const f = this.fighters.find((x) => x.charId === charId && x.state !== 'ko')
       || (this.winner ? this.fighters[this.winner - 1] : null);

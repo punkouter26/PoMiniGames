@@ -54,14 +54,7 @@
 }
 
 .hq-modes {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.hq-modes .app-btn {
     min-height: 40px;
-    min-width: 56px;
 }
 
 /* Two columns on a desktop: the player's record and the map, then the boards. */

@@ -87,9 +87,11 @@ class DirectorMethods {
   _dirState() {
     if (this._dir) return this._dir;
     const o = this.options || {};
+    // Unless the page says otherwise, the TV cuts are part of the Full show (show.js fullShow).
+    const full = this._fullShow();
     this._dir = {
-      on: o.director !== false,
-      isoOn: o.isoCam !== false,
+      on: o.director === undefined ? full : o.director !== false,
+      isoOn: o.isoCam === undefined ? full : o.isoCam !== false,
       live: false,
       shot: null,         // { name, len, t, focus, side, seed, pos, look, fov }
       prev: null,         // name of the shot before, to avoid repeats

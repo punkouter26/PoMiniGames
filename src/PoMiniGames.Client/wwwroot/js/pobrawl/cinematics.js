@@ -173,7 +173,7 @@ class CinematicsMethods {
       }).catch(() => {});
     }
     this._show('result', { winner: this.winner, ko: this.fighters.some((f) => f.state === 'ko') });
-    // Breaking News lower third and the KO clip.
+    // The Full-show shatter and pyro, and the KO clip.
     this._presentResult();
   }
 

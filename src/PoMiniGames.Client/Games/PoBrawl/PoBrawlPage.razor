@@ -236,9 +236,9 @@
     // KO clip (wwwroot/js/pobrawl/clip.js).
     private bool _clipReady;
 
-    // How long a 1P win holds on the result before rolling into the next rung, so the
-    // Breaking News lower third (news.js) is on screen long enough to be read.
-    private const int LadderResultHoldMs = 2600;
+    // How long a 1P win holds on the result before rolling into the next rung: long enough
+    // for the banner and the winner's fanfare to land.
+    private const int LadderResultHoldMs = 1800;
     // The between-rungs hold when the campaign map plays: the batch flips, then the bus drives.
     private const int CampaignInterludeMs = 4200;
     // Rungs beaten while the campaign interlude is on screen; null otherwise.
@@ -1384,10 +1384,18 @@
                 await Task.Delay(250);
             }
             if (generation != _ladderRollGeneration || _training) return;
-            _campaignBeaten = _ladder;
-            await InvokeAsync(StateHasChanged);
-            await Task.Delay(Math.Max(LadderResultHoldMs, CampaignInterludeMs));
-            if (_campaignBeaten == _ladder) _campaignBeaten = null;
+            // The campaign-map interlude is part of the Full show; the Simple one just holds.
+            if (PoBrawlShowPrefs.IsFull)
+            {
+                _campaignBeaten = _ladder;
+                await InvokeAsync(StateHasChanged);
+                await Task.Delay(Math.Max(LadderResultHoldMs, CampaignInterludeMs));
+                if (_campaignBeaten == _ladder) _campaignBeaten = null;
+            }
+            else
+            {
+                await Task.Delay(LadderResultHoldMs);
+            }
             if (generation != _ladderRollGeneration || _training)
             {
                 await InvokeAsync(StateHasChanged);

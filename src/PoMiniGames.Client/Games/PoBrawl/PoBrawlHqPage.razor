@@ -22,12 +22,8 @@
             <a class="app-btn app-btn--primary hq-continue" href="/pobrawl/1player">
                 🥊 @(_ladder == 0 && _rating.Wins == 0 ? "Start the ladder" : $"Continue the ladder · rung {_ladder + 1}")
             </a>
-            <nav class="hq-modes" aria-label="Other modes">
-                <a class="app-btn app-btn--ghost" href="/pobrawl/2player">2P</a>
-                <a class="app-btn app-btn--ghost" href="/pobrawl/multi">Online</a>
-                <a class="app-btn app-btn--ghost" href="/pobrawl/tournament">Cup</a>
-                <a class="app-btn app-btn--ghost" href="/pobrawl/demo">Demo</a>
-            </nav>
+            @* One way to the other modes: the intro card's mode pills (2P, Online, Demo, Cup). *@
+            <a class="app-btn app-btn--ghost hq-modes" href="/pobrawl">All modes</a>
         </section>
 
         <div class="hq-grid">

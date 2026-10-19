@@ -30,6 +30,13 @@
 //
 // Presentation only: handlers use Math.random, never `this.rng` (seeded replays, online lockstep).
 // A throwing handler is logged and skipped, never allowed to take the fight down.
+//
+// Simple vs Full show (the settings sheet's "Brawl show" row, PoBrawlShowPrefs.razor). Simple, the
+// default, registers only the modules that carry fight information — the sound design and the
+// charge aura. Full adds the dressing: balloons, LED boards, the instant replay and the result
+// glass (plus, elsewhere, the KO shatter and pyro, the comic KO words, the crowd's camera flashes,
+// the belt ceremony and the director's TV cuts — each gated on _fullShow()). A module that never
+// registered costs nothing: the bus only calls what registered, and _replayBegin answers false.
 
 import { AudioShow } from './audioShow.js';
 import { ChargeAura } from './chargeAura.js';
@@ -40,6 +47,11 @@ import { ResultGlass } from './resultGlass.js';
 
 export const SHOW_MODULES = [AudioShow, ChargeAura, Balloons, LedBoards, Replay, ResultGlass];
 
+/** True when the player chose the Full show in the settings sheet; Simple otherwise (and by default). */
+export function fullShow() {
+  try { return localStorage.getItem('pobrawl_show') === 'full'; } catch { return false; }
+}
+
 function guard(label, fn, ...args) {
   try { return fn(...args); } catch (e) { console.warn(`[PoBrawl] show ${label} failed`, e); return undefined; }
 }
@@ -47,10 +59,18 @@ function guard(label, fn, ...args) {
 class ShowMethods {
   _initShow() {
     this._showFns = { ev: [], up: [], render: [], dispose: [] };
-    for (const init of [this._initAudioShow, this._initChargeAura, this._initBalloons,
-      this._initLedBoards, this._initReplay, this._initResultGlass]) {
+    // Read once per engine: a fight keeps the show it started with.
+    this._showFull = fullShow();
+    const inits = [this._initAudioShow, this._initChargeAura];
+    if (this._showFull) inits.push(this._initBalloons, this._initLedBoards, this._initReplay, this._initResultGlass);
+    for (const init of inits) {
       if (typeof init === 'function') guard('init', () => init.call(this));
     }
+  }
+
+  /** The Full show is on for this engine (see the header). */
+  _fullShow() {
+    return this._showFull ?? fullShow();
   }
 
   _onShow(fn) { this._showFns?.ev.push(fn); }

@@ -57,6 +57,7 @@ class SpectacleMethods {
   // ── Comic-book KO ────────────────────────────────────────────────────
   /** The killing blow: freeze, print the frame as a comic panel, slam a word in. */
   _comicKO(point, attackName) {
+    if (!this._fullShow()) return; // Full show only (show.js)
     this._comicT = COMIC_HOLD + COMIC_FADE;
     // The KO branch of _tick ignores hitstopT, so park timeScale; _updateSpectacle restores slow-mo.
     this._comicFreeze = COMIC_FREEZE;
@@ -123,7 +124,7 @@ class SpectacleMethods {
 
   // ── Press row ────────────────────────────────────────────────────────
   _pressBurst(n) {
-    if (!this.arena) return;
+    if (!this.arena || !this._fullShow()) return; // the crowd's camera flashes: Full show only
     pressBurst(this.arena, n);
     this.audio?.shutter(Math.min(6, Math.ceil(n * 0.6)));
   }
@@ -196,7 +197,7 @@ class SpectacleMethods {
     cv.className = 'pb-shatter';
     cv.width = snap.width; cv.height = snap.height;
     cv.setAttribute('aria-hidden', 'true');
-    src.after(cv);   // over the 3D view, under the banner and the news desk
+    src.after(cv);   // over the 3D view, under the banner
     this._shatterEl = cv;
     const ctx = cv.getContext('2d');
     const W = cv.width, H = cv.height;

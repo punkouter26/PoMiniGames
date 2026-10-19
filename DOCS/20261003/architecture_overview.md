@@ -608,8 +608,8 @@ fighter the main shot is not centred on. It is drawn after the composer: the sce
 a half-float target at 0.8x of the inset's pixels, at half rate, with no post and no
 shadow-map re-render, then goes through its own OutputPass into a scissored corner. A drop to
 the low tier pulls the inset until the next round. Toggles: `PoBrawl.setDirector(on)` and
-`PoBrawl.setIsoCam(on)` (the tournament bar's "🎥 Director cam" and "📺 Iso"; the init options
-`director` and `isoCam`), plus `PoBrawl.director()` for diagnostics.
+`PoBrawl.setIsoCam(on)` (the tournament bar's "🎥" camera button; the init options
+`director` and `isoCam`, which default to the Brawl show setting: on for Full, off for Simple), plus `PoBrawl.director()` for diagnostics.
 
 **Side view for human modes.** 1P, 2P, online and training keep a plain side view
 (`cinematics.js _sideView`): the boom sits straight out on the audience side of the pair's
@@ -637,14 +637,25 @@ and a dispose. A throwing handler is logged and skipped. Every module uses `Math
 the seeded match RNG, builds its materials at boot so `_warmupRender` compiles them, and scales by
 tier and reduced motion. All of them together cost about 0.7 ms a frame on the high tier.
 
+**Simple and Full show.** The settings sheet's "Brawl show" row (`Games/PoBrawl/PoBrawlShowPrefs.razor`,
+localStorage `pobrawl_show` = `full` | `simple`) picks how much of this runs; Simple is the default.
+`show.js` reads it once per engine (`fullShow()`, `_fullShow()`). Simple registers only
+`audioShow.js` and `chargeAura.js`, the two that carry fight information. Full adds the balloon
+drop, LED boards, instant replay and result glass, and turns on the KO shatter and pyro
+(`_presentResult`), the comic KO words and the crowd's camera flashes (`spectacle.js`), the belt
+ceremony (`ceremony.js`, whose belt is not even built in Simple), the director's default in Demo
+(`director.js`), the Cup's starting camera and the 1P campaign-map interlude between rungs. The
+result itself is always the page's one result card (line, recap, press, KO clip); the old
+"Breaking News" lower third (`news.js`) repeated the recap and was removed on 2026-10-18.
+
 | Module | What it does |
 |---|---|
 | `audioShow.js` + `audio.js` | A silent conductor clock, published as `this.beat` (`bpm`, `phase`, `beatN`, `bar`, `pulse`, `energy`). A per-fighter charge riser with a full-charge glint and a release snap. A 4-7 note motif per president, played at the countdown, on supers and in the winner's fanfare; the belt ceremony gets a flourish. Combo notes and the stab when the lead flips snap to the beat. The mix follows the director's shot (tight, mid, wide, KO). In player modes the AudioListener follows the camera (HRTF on the high tier). The crowd stomps and claps on the beat when energy is high and chants a formant-synth "U-S-A!". `balloonPop()` is the balloon pop. There is still no music bed. |
 | `chargeAura.js` | A fresnel energy shell on the striking fist or shoe while a strike charges, going from white to gold, with heat shimmer, motes from the shared particle pool, a full-charge star glint and a release flare. |
-| `balloons.js` | A convention balloon drop: 60 instanced balloons, sized by tier. Half of them drop on a KO win, all of them on the tournament final or the last ladder rung. Balloons float down buoyantly, collide through a spatial hash, are shoved by fighters and pop on hits. Pleated bunting and pennant strings run on Verlet cloth and kick on hits and the KO. Test hook: `_balloonDrop(n, spread)`. |
-| `ledBoards.js` (+ `arena.js` `uWave`) | Dot-matrix LED ribbon boards on the apron skirt and a ringside barrier. One shader scrolls a canvas marquee that is redrawn only when the text changes. It shows names, the popular-vote split, combos, BLOCKED, super names, KNOCKOUT, COMEBACK!, FINAL 10 SECONDS and UPSET ALERT, in the colour of the momentum leader. The truss and boards pulse on `beat.pulse`. A stadium wave rolls round the stands, lifting seats and phone lights. |
-| `replay.js` | A preallocated ring buffer of every joint and root, about 4 s at 60 Hz. After a KO (not on a TIME decision, online, in training or under tournament fast-forward) a new `replay` phase runs between `ko` and `result`. It opens with a seal wipe and an "INSTANT REPLAY" bug, plays a wide angle at 1x and then the impact at 0.3x under a telestrator circle and arrow, and restores the live pose and camera exactly. Any key, tap or click skips it. `OnMatchEnd`, the news package, the shatter and the KO clip all follow it. |
-| `resultGlass.js` | On the medium and high tiers, when the result modal opens: the captured last frame goes through a dual-Kawase blur on a lazily created WebGL2 canvas. A glass slab under the modal adds refraction, edge dispersion, a specular that follows the pointer and one light sweep. The modal turns translucent (`data-pb-glass`) only once the glass is drawn. The low tier keeps the stock backdrop blur. |
+| `balloons.js` | Full show only. A convention balloon drop: 60 instanced balloons, sized by tier. Half of them drop on a KO win, all of them on the tournament final or the last ladder rung. Balloons float down buoyantly, collide through a spatial hash, are shoved by fighters and pop on hits. Pleated bunting and pennant strings run on Verlet cloth and kick on hits and the KO. Test hook: `_balloonDrop(n, spread)`. |
+| `ledBoards.js` (+ `arena.js` `uWave`) | Full show only. Dot-matrix LED ribbon boards on the apron skirt and a ringside barrier. One shader scrolls a canvas marquee that is redrawn only when the text changes. It shows names, the popular-vote split, combos, BLOCKED, super names, KNOCKOUT, COMEBACK!, FINAL 10 SECONDS and UPSET ALERT, in the colour of the momentum leader. The truss and boards pulse on `beat.pulse`. A stadium wave rolls round the stands, lifting seats and phone lights. |
+| `replay.js` | A preallocated ring buffer of every joint and root, about 4 s at 60 Hz. After a KO (not on a TIME decision, online, in training or under tournament fast-forward) a new `replay` phase runs between `ko` and `result`. It opens with a seal wipe and an "INSTANT REPLAY" bug, plays a wide angle at 1x and then the impact at 0.3x under a telestrator circle and arrow, and restores the live pose and camera exactly. Any key, tap or click skips it. Full show only. `OnMatchEnd`, the shatter and the KO clip all follow it. |
+| `resultGlass.js` | Full show only. On the medium and high tiers, when the result modal opens: the captured last frame goes through a dual-Kawase blur on a lazily created WebGL2 canvas. A glass slab under the modal adds refraction, edge dispersion, a specular that follows the pointer and one light sweep. The modal turns translucent (`data-pb-glass`) only once the glass is drawn. The low tier keeps the stock backdrop blur. |
 
 **Fighter select and campaign map.** The 2P select (`selectStage.js`, `PoBrawl.select.*`) draws
 the real fighter rigs live inside frosted-glass tiles: one WebGL canvas, one scissored viewport
@@ -654,6 +665,6 @@ with cues in `gameCues.js` (`selectTick`, `selectLock`, `selectVs`). The canvas 
 buttons. The 1P ladder is an election-night tile cartogram (`PoBrawlCampaignMap.razor`, data in
 `PoBrawlCampaign.cs`: 2024 electoral votes, home states and per-rung swing batches). Each win flips
 the beaten president's home state plus a regional batch, a campaign bus drives to the next
-opponent's state, and the count crosses 270 only on the last rung; a unit scenario pins this. The
-between-rungs hold is 4.2 s so the map can play. The ending card shows the full map stamped
+opponent's state, and the count crosses 270 only on the last rung; a unit scenario pins this. With the Full show the
+between-rungs hold is 4.2 s so the map can play; the Simple show skips the map and holds 1.8 s. The ending card shows the full map stamped
 "270 — ELECTED". Reduced motion shows the final state at once.

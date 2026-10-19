@@ -13,7 +13,7 @@
 // tight angle on the killing blow at SLOW x with a freeze while the telestrator rings it, and a
 // seal wipe back. Under the out-wipe the live state is put back exactly (rig transforms, the
 // camera, the fighters' velocities) and _koResult reports the result, so OnMatchEnd, the modal,
-// the news desk and the shatter all come after the replay. Any key / click / tap / pad button skips.
+// and the shatter all come after the replay. Any key / click / tap / pad button skips.
 //
 // Not online (lockstep), not training (no KO), not on a decision at the bell (no 'ko'), not
 // under the tournament's fast-forward. Reduced motion: no seal spin, straight cuts, one angle.
@@ -571,7 +571,7 @@ class ReplayMethods {
     if (!rp.active) return;
     if (!rp.covered || rp.stage !== 'out') this._replayRestore();
     this._replayStop();
-    // The result proper: OnMatchEnd, the modal, the news desk, the shatter.
+    // The result proper: OnMatchEnd, the modal, the shatter.
     if (this.phase === 'replay') this._koResult();
   }
 

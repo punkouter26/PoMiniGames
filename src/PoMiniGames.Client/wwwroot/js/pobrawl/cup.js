@@ -48,7 +48,8 @@ class CupMethods {
       moodPushed: 0, booT: 4, gaspT: 0, decided: false, captionT: 0, look: null,
     };
     this.cupBout(this.options, true);
-    this._initCeremony();
+    // The belt is only built for the Full show, the only one that crowns a champion on screen.
+    if (this._fullShow()) this._initCeremony();
   }
 
   /**

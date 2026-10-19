@@ -26,7 +26,7 @@ import * as THREE from 'three';
 
 // jointA/jointB are the rig's joint names; radius is the capsule thickness in
 // world units.
-export const FIGHTER_CAPSULES = {
+const FIGHTER_CAPSULES = {
   // ── Hurt capsules (defender's body) ────────────────────────────────
   hurt: {
     head:      { jointA: 'torso', jointB: 'head',     radius: 0.30 },
@@ -56,7 +56,7 @@ export const FIGHTER_CAPSULES = {
 // fighters.js) — a hit only registers when the visible limb polygons reach
 // the defender. `forwardReach` is a small knuckle/toe pad; the range comes
 // from the stretched strike animation and the attack lunge.
-export const ATTACK_CAPSULES = {
+const ATTACK_CAPSULES = {
   punch: {
     active: {
       forearm: { jointA: 'elbowR', jointB: 'fistR', radius: 0.11 },

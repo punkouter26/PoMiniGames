@@ -29,14 +29,14 @@ import {
 } from './rollbackSim.js';
 
 export const HISTORY = 128;          // state ring, frames (~2.1 s at 60 Hz)
-export const LEAD_MARGIN = 1;        // frames a player runs ahead of the server beyond RTT/2
-export const SPECTATOR_LAG = 4;      // frames a spectator trails beyond RTT/2
-export const MAX_SLEW = 2;           // frames per second the clock may be nudged
-export const SNAP_CLOCK_FRAMES = 30; // a clock error larger than this is fixed by a jump
-export const MAX_STEPS = 60;         // frames simulated per update (a step is microseconds; a 4 fps tab must keep pace)
-export const UNCONFIRMED_TTL = 120;  // frames an un-echoed local input may chase the anchor before it is dropped
-export const MAX_HALF_RTT = 20;      // frames: a lead longer than this would only buy deeper rollbacks
-export const MAX_SANE_RTT = 2000;    // ms: a ping slower than this (a main thread busy booting) says nothing about the network
+const LEAD_MARGIN = 1;        // frames a player runs ahead of the server beyond RTT/2
+const SPECTATOR_LAG = 4;      // frames a spectator trails beyond RTT/2
+const MAX_SLEW = 2;           // frames per second the clock may be nudged
+const SNAP_CLOCK_FRAMES = 30; // a clock error larger than this is fixed by a jump
+const MAX_STEPS = 60;         // frames simulated per update (a step is microseconds; a 4 fps tab must keep pace)
+const UNCONFIRMED_TTL = 120;  // frames an un-echoed local input may chase the anchor before it is dropped
+const MAX_HALF_RTT = 20;      // frames: a lead longer than this would only buy deeper rollbacks
+const MAX_SANE_RTT = 2000;    // ms: a ping slower than this (a main thread busy booting) says nothing about the network
 
 export class RollbackSession {
   /**

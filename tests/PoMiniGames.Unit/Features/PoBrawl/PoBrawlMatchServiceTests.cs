@@ -1,3 +1,6 @@
+using System.Reflection;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.PoBrawl.Online;
@@ -19,12 +22,12 @@ namespace PoMiniGames.Unit.Features.PoBrawl;
 public class PoBrawlMatchServiceTests
 {
     // ── The golden script — must match tests/pobrawl-rollback.test.mjs (GOLDEN) ──
-    private const string GoldenMatchId = "golden-0f8a3c";
-    private const uint GoldenSeed = 382267504;
-    private const int GoldenFrame = 739;
-    private const uint GoldenChecksum = 2463409506;
-    private static readonly int[] GoldenHeldPick = [0, 1, 1, 1, 2, 3];
-    private static readonly int[] GoldenPressPick = [0, 0, 0, 0, 0, 4, 5, 6];
+    private static readonly JsonElement Contract =
+        JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "pobrawl-rollback-golden.json"))).RootElement;
+    private static readonly JsonElement Golden = Contract.GetProperty("golden");
+    private static readonly string GoldenMatchId = Golden.GetProperty("matchId").GetString()!;
+    private static readonly int[] GoldenHeldPick = [.. Golden.GetProperty("heldPick").EnumerateArray().Select(e => e.GetInt32())];
+    private static readonly int[] GoldenPressPick = [.. Golden.GetProperty("pressPick").EnumerateArray().Select(e => e.GetInt32())];
 
     private long _seq;
 
@@ -311,26 +314,37 @@ public class PoBrawlMatchServiceTests
     }
 
     /// <summary>
-    /// Cross-language determinism: the golden input script gives exactly the final state the JS sim
-    /// gives (tests/pobrawl-rollback.test.mjs asserts the same numbers), and the referee fed the same
-    /// script as frame-stamped inputs arrives at the very same state.
+    /// Cross-language determinism: every rule constant and the golden script's final state match
+    /// tests/pobrawl-rollback-golden.json, the contract tests/pobrawl-rollback.test.mjs holds the
+    /// JS sim to, and the referee fed the same script as frame-stamped inputs arrives at the very
+    /// same state.
     /// </summary>
     private void GoldenScript_MatchesTheJavaScriptSim_AndTheRefereeAppliesIt()
     {
-        Sim.SeedFromMatchId(GoldenMatchId).Should().Be(GoldenSeed);
-        var s = Sim.Create(Sim.SeedFromMatchId(GoldenMatchId), 30);
-        var script = 12345;
+        var tuning = typeof(Sim).GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(f => f.IsLiteral)
+            .ToDictionary(f => Regex.Replace(f.Name, "(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", "_").ToUpperInvariant(),
+                f => (int)f.GetRawConstantValue()!);
+        var expected = Contract.GetProperty("tuning").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetInt32());
+        tuning.Should().BeEquivalentTo(expected, "the C# and JS sims share one rulebook");
+
+        var fightStart = Golden.GetProperty("fightStart").GetInt32();
+        var goldenChecksum = Golden.GetProperty("checksum").GetUInt32();
+        Sim.SeedFromMatchId(GoldenMatchId).Should().Be(Golden.GetProperty("seed").GetUInt32());
+        var s = Sim.Create(Sim.SeedFromMatchId(GoldenMatchId), fightStart);
+        var script = Golden.GetProperty("scriptSeed").GetInt32();
         var events = new List<(int Frame, int P1, int P2)>();
-        while (s.Over == 0 && s.Frame < 30 + Sim.RoundFrames + 10)
+        while (s.Over == 0 && s.Frame < fightStart + Sim.RoundFrames + 10)
         {
             var e1 = GoldenEvent(ref script);
             var e2 = GoldenEvent(ref script);
             events.Add((s.Frame + 1, e1, e2));
             Sim.Step(ref s, e1, e2);
         }
-        s.Frame.Should().Be(GoldenFrame);
-        Sim.Checksum(s).Should().Be(GoldenChecksum);
-        (s.P1.Hp, s.P2.Hp, s.Reason, s.Winner).Should().Be((0, 7, Sim.ReasonKo, 2));
+        s.Frame.Should().Be(Golden.GetProperty("frame").GetInt32());
+        Sim.Checksum(s).Should().Be(goldenChecksum);
+        (s.P1.Hp, s.P2.Hp, s.Reason, s.Winner).Should().Be((Golden.GetProperty("p1Hp").GetInt32(), Golden.GetProperty("p2Hp").GetInt32(),
+            Golden.GetProperty("reason").GetInt32(), Golden.GetProperty("winner").GetInt32()));
 
         // The referee: the same script, sent as inputs stamped for their frames, half a second of pre-roll.
         var match = StartedMatch(GoldenMatchId, countdownSeconds: 0.5);
@@ -344,7 +358,7 @@ public class PoBrawlMatchServiceTests
             }
             match.Step();
         }
-        Sim.Checksum(match.SimState).Should().Be(GoldenChecksum);
+        Sim.Checksum(match.SimState).Should().Be(goldenChecksum);
         match.Snapshot().LastEvent.Should().Be("ko");
     }
 }

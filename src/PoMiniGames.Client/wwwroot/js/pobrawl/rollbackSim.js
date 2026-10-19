@@ -4,8 +4,9 @@
 // stay BIT-IDENTICAL: the same state and inputs give the same next state and the same checksum in
 // both. The server referees the fight with the C# copy; each browser predicts and rolls back with
 // this one (rollbackSession.js). A golden input script pins the final checksum on both sides
-// (tests/pobrawl-rollback.test.mjs and the C# PoBrawlMatchServiceTests scenario), so change a rule
-// here and there in the same commit, and update the golden number in both tests.
+// (tests/pobrawl-rollback.test.mjs and the C# PoBrawlMatchServiceTests scenario), and both read the
+// one contract file tests/pobrawl-rollback-golden.json — every constant in TUNING below and the
+// golden result. Change a rule here and there in the same commit, and update that file.
 //
 // Integer discipline: every value is a small int. Division goes through `| 0` (truncation, like C#),
 // the RNG through Math.imul and `>>> 0` (uint32 wrap, like C# unchecked uint). No floats.
@@ -18,43 +19,60 @@ export const INPUT_DELAY = 2;
 export const ROUND_FRAMES = 60 * HZ;
 export const MAX_HP = 100;
 
-export const RING_HALF_MM = 5200;
+const RING_HALF_MM = 5200;
 export const SPAWN_X_MM = 1600;
-export const MIN_GAP_MM = 950;
+const MIN_GAP_MM = 950;
 export const WALK_IN_MM = 40;
-export const WALK_OUT_MM = 32;
+const WALK_OUT_MM = 32;
 
 export const PUNCH_REACH_MM = 1500;
-export const KICK_REACH_MM = 1750;
-export const SPECIAL_REACH_MM = 1750;
+const KICK_REACH_MM = 1750;
+const SPECIAL_REACH_MM = 1750;
 
-export const PUNCH_KNOCKBACK_MM = 150;
-export const KICK_KNOCKBACK_MM = 450;
-export const SPECIAL_KNOCKBACK_MM = 900;
+const PUNCH_KNOCKBACK_MM = 150;
+const KICK_KNOCKBACK_MM = 450;
+const SPECIAL_KNOCKBACK_MM = 900;
 
-export const PUNCH_COOLDOWN = 18;
-export const KICK_COOLDOWN = 30;
-export const SPECIAL_COOLDOWN = 48;
+const PUNCH_COOLDOWN = 18;
+const KICK_COOLDOWN = 30;
+const SPECIAL_COOLDOWN = 48;
 
-export const ENERGY_SCALE = 6;
+const ENERGY_SCALE = 6;
 export const ENERGY_MAX = 100 * ENERGY_SCALE;
-export const ENERGY_REGEN_IDLE = 2;
-export const ENERGY_REGEN_WALK = 1;
-export const PUNCH_ENERGY_COST = 3 * ENERGY_SCALE;
-export const KICK_ENERGY_COST = 6 * ENERGY_SCALE;
-export const ENERGY_ON_HIT = 6 * ENERGY_SCALE;
+const ENERGY_REGEN_IDLE = 2;
+const ENERGY_REGEN_WALK = 1;
+const PUNCH_ENERGY_COST = 3 * ENERGY_SCALE;
+const KICK_ENERGY_COST = 6 * ENERGY_SCALE;
+const ENERGY_ON_HIT = 6 * ENERGY_SCALE;
 
-export const PUNCH_DAMAGE = 6;
-export const KICK_DAMAGE = 10;
-export const SPECIAL_DAMAGE = 18;
-export const DAMAGE_VARIANCE_PCT = 20;
+const PUNCH_DAMAGE = 6;
+const KICK_DAMAGE = 10;
+const SPECIAL_DAMAGE = 18;
+const DAMAGE_VARIANCE_PCT = 20;
 
 export const HELD_IDLE = 0, HELD_FORWARD = 1, HELD_BACK = 2, HELD_BLOCK = 3;
 export const PRESS_NONE = 0, PRESS_PUNCH = 4, PRESS_KICK = 5, PRESS_SPECIAL = 6;
 export const OUTCOME_NONE = 0, OUTCOME_HIT = 1, OUTCOME_BLOCKED = 2, OUTCOME_WHIFF = 3;
 export const REASON_NONE = 0, REASON_KO = 1, REASON_TIME = 2;
 
-export const PACKED_LENGTH = 26;
+const PACKED_LENGTH = 26;
+
+/** Every rule constant, keyed as tests/pobrawl-rollback-golden.json keys them (the C# twin's parity check). */
+export const TUNING = Object.freeze({
+  HZ, INPUT_DELAY_FRAMES: INPUT_DELAY, ROUND_FRAMES, MAX_HP,
+  RING_HALF_MM, SPAWN_X_MM, MIN_GAP_MM, WALK_IN_MM, WALK_OUT_MM,
+  PUNCH_REACH_MM, KICK_REACH_MM, SPECIAL_REACH_MM,
+  PUNCH_KNOCKBACK_MM, KICK_KNOCKBACK_MM, SPECIAL_KNOCKBACK_MM,
+  PUNCH_COOLDOWN, KICK_COOLDOWN, SPECIAL_COOLDOWN,
+  ENERGY_SCALE, ENERGY_MAX, ENERGY_REGEN_IDLE, ENERGY_REGEN_WALK,
+  PUNCH_ENERGY_COST, KICK_ENERGY_COST, ENERGY_ON_HIT,
+  PUNCH_DAMAGE, KICK_DAMAGE, SPECIAL_DAMAGE, DAMAGE_VARIANCE_PCT,
+  HELD_IDLE, HELD_FORWARD, HELD_BACK, HELD_BLOCK,
+  PRESS_NONE, PRESS_PUNCH, PRESS_KICK, PRESS_SPECIAL,
+  OUTCOME_NONE, OUTCOME_HIT, OUTCOME_BLOCKED, OUTCOME_WHIFF,
+  REASON_NONE, REASON_KO, REASON_TIME,
+  PACKED_LENGTH,
+});
 
 function newCorner(x) {
   return { hp: MAX_HP, energy: 0, x, held: HELD_IDLE, pending: PRESS_NONE, cooldown: 0, swingFrame: -1, swing: 0, outcome: 0, damage: 0 };
@@ -87,8 +105,8 @@ export function nextRandom(holder) {
 
 /** One input event as an int: 0 = none; bits 0–2 hold held+1 (0 = unchanged), bits 3–5 the press. */
 export function encodeInput(held, press) { return ((held + 1) | (press << 3)) | 0; }
-export function heldOf(input) { return (input & 7) - 1; }
-export function pressOf(input) { return (input >> 3) & 7; }
+function heldOf(input) { return (input & 7) - 1; }
+function pressOf(input) { return (input >> 3) & 7; }
 
 /** Two events on one frame: the later one's held if it set one, its press if it pressed. */
 export function mergeInput(earlier, later) {

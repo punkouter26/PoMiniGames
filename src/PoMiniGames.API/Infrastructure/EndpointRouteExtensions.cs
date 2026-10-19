@@ -133,8 +133,8 @@ internal static class EndpointRouteExtensions
         app.MapHub<PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeLockstepHub>("/povoxelstrike/lockstep-hub").RequireAuthorization();
         // PoBrawl online: lobby hub carries the ready/start room, match hub carries the
         // per-tick combat state. Same platform conventions as every other live hub.
-        app.MapHub<PoMiniGames.Features.PoBrawl.Online.PoBrawlLobbyHub>("/pobrawl/lobby-hub").RequireAuthorization();
-        app.MapHub<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchHub>("/pobrawl/match-hub").RequireAuthorization();
+        app.MapHub<PoBrawlLobbyHub>("/pobrawl/lobby-hub").RequireAuthorization();
+        app.MapHub<PoBrawlMatchHub>("/pobrawl/match-hub").RequireAuthorization();
         // ConnectFive + TicTacToe online: one turn-match hub each carries queue, moves,
         // rematch and reconnect. SignalR-first like PoCoupleQuiz — neither slice maps
         // an HTTP route at all.

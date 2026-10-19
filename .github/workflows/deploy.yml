@@ -167,6 +167,10 @@ jobs:
       # (Azurite + Playwright). See the CI/CD policy header.
       - name: Run unit tests
         run: dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj --configuration Debug
+      # The JS half of the PoBrawl rollback contract (tests/pobrawl-rollback-golden.json);
+      # the C# half runs in the unit tier above. Node ships on ubuntu-latest.
+      - name: Run PoBrawl rollback sim parity (JS)
+        run: node --test tests/pobrawl-rollback.test.mjs
 
   deploy:
     name: Deploy to Azure App Service

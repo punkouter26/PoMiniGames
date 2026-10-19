@@ -1,48 +1,43 @@
 // PoBrawl online rollback: the JS sim (rollbackSim.js) and the rollback session (rollbackSession.js).
 //
-// The golden script below is the cross-language determinism check: the C# twin
-// (PoMiniGames.Shared PoBrawlRollbackSim) runs the very same script in
-// tests/PoMiniGames.Unit/Features/PoBrawl/PoBrawlMatchServiceTests.cs and asserts the same
-// final checksum. Change a rule in one sim and you must change it in the other and update
-// GOLDEN in both tests.
+// The cross-language determinism check: tests/pobrawl-rollback-golden.json is the contract both
+// sims answer to — every rule constant and the golden script's final state. The C# twin
+// (PoMiniGames.Shared PoBrawlRollbackSim) reads the same file in
+// tests/PoMiniGames.Unit/Features/PoBrawl/PoBrawlMatchServiceTests.cs. Change a rule in one sim
+// and you must change it in the other and update that file. CI runs this file (deploy.yml).
 //
 // Run: node --test tests/pobrawl-rollback.test.mjs
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 const sim = await import(new URL('../src/PoMiniGames.Client/wwwroot/js/pobrawl/rollbackSim.js', import.meta.url));
 const { RollbackSession, HISTORY } = await import(new URL('../src/PoMiniGames.Client/wwwroot/js/pobrawl/rollbackSession.js', import.meta.url));
 
-// Must match PoBrawlMatchServiceTests.GoldenChecksum / GoldenFrame / GoldenHp.
-const GOLDEN = { matchId: 'golden-0f8a3c', seed: 0, frame: 0, checksum: 0, p1Hp: 0, p2Hp: 0, reason: 0, winner: 0 };
-GOLDEN.seed = 382267504;
-GOLDEN.frame = 739;
-GOLDEN.checksum = 2463409506;
-GOLDEN.p1Hp = 0;
-GOLDEN.p2Hp = 7;
-GOLDEN.reason = sim.REASON_KO;
-GOLDEN.winner = 2;
-
-const HELD_PICK = [0, 1, 1, 1, 2, 3];
-const PRESS_PICK = [0, 0, 0, 0, 0, 4, 5, 6];
+const CONTRACT = JSON.parse(readFileSync(new URL('./pobrawl-rollback-golden.json', import.meta.url), 'utf8'));
+const GOLDEN = CONTRACT.golden;
 
 /** The golden input script: a scripted mulberry32 stream decides each corner's event per frame. */
 function goldenEvent(script) {
   const r = sim.nextRandom(script);
   if (r % 11 !== 0) return 0;
-  return sim.encodeInput(HELD_PICK[(r >>> 3) % 6], PRESS_PICK[(r >>> 11) % 8]);
+  return sim.encodeInput(GOLDEN.heldPick[(r >>> 3) % 6], GOLDEN.pressPick[(r >>> 11) % 8]);
 }
 
 function runGolden() {
-  const s = sim.createState(sim.seedFromMatchId(GOLDEN.matchId), 30);
-  const script = { rng: 12345 };
-  while (!s.over && s.frame < 30 + sim.ROUND_FRAMES + 10) {
+  const s = sim.createState(sim.seedFromMatchId(GOLDEN.matchId), GOLDEN.fightStart);
+  const script = { rng: GOLDEN.scriptSeed };
+  while (!s.over && s.frame < GOLDEN.fightStart + sim.ROUND_FRAMES + 10) {
     const e1 = goldenEvent(script);
     const e2 = goldenEvent(script);
     sim.step(s, e1, e2);
   }
   return s;
 }
+
+test('every rule constant matches the shared contract the C# sim also checks', () => {
+  assert.deepEqual({ ...sim.TUNING }, CONTRACT.tuning);
+});
 
 test('golden script: the same final state as the C# sim', () => {
   assert.equal(sim.seedFromMatchId(GOLDEN.matchId), GOLDEN.seed);

@@ -348,8 +348,7 @@
         animation: pb-dmg-fade 0.6s linear forwards;
     }
 
-    .pb-canvas-host ::deep .pb-combo--on,
-    .pb-rung--now {
+    .pb-canvas-host ::deep .pb-combo--on {
         animation: none;
     }
 

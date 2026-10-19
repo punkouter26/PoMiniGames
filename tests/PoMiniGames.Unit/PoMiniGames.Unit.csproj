@@ -30,4 +30,9 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The PoBrawl rollback sim contract, shared with tests/pobrawl-rollback.test.mjs. -->
+    <None Include="..\pobrawl-rollback-golden.json" Link="pobrawl-rollback-golden.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -803,14 +803,16 @@ class HitResolutionMethods {
     // the skin a flatter matte. The clearcoat gives the glistening second
     // specular highlight of a sweat film; sheen widens the grazing-angle
     // glow. Both ride the same sweat value the roughness drop uses.
-    skin.clearcoat = 0.55 * sweat;
+    // Never below the 0.001 the rig is built with (fighters.js): clearcoat 0 drops the
+    // lobe from the shader, so the skin would swap programs as sweat starts and stops.
+    skin.clearcoat = Math.max(0.001, 0.55 * sweat);
     skin.sheen = 0.32 + 0.25 * sweat;
     // The face has its own materials (tinted skin + painted detail
     // plate) — they glisten with the rest of the skin.
     if (f.rig.materials.faceMat) {
       const fm = f.rig.materials.faceMat;
       fm.roughness = 0.55 - 0.3 * sweat;
-      fm.clearcoat = 0.55 * sweat;
+      fm.clearcoat = Math.max(0.001, 0.55 * sweat);
       fm.sheen = 0.32 + 0.25 * sweat;
     }
     if (f.rig.materials.plateMat) f.rig.materials.plateMat.roughness = 0.6 - 0.3 * sweat;

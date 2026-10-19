@@ -25,6 +25,9 @@ const HOLD_ASPECT = 1.25;
 // keeps reporting mode='super' until the dwell elapses).
 const CAMERA_PRIORITY = { normal: 0, super: 1, ko: 2 };
 const CAMERA_MIN_DWELL = 1.2;
+// Side hysteresis for the framing perpendicular (see _updateCamera): the camera keeps its
+// side until the perpendicular points this far behind the pair, then cuts across.
+const PERP_FLIP_Z = 0.3;
 
 class CinematicsMethods {
   /**
@@ -223,6 +226,9 @@ class CinematicsMethods {
     const perp = new THREE.Vector3(axis.z, 0, -axis.x);
     if (perp.z < 0) perp.negate();
     if (this._sideView()) perp.set(0, 0, 1);
+    // _updateCamera holds its side from here: +1 when the raw perpendicular (axis.z, 0,
+    // -axis.x) already faced +Z, -1 when it was flipped onto it.
+    this._camSide = -axis.x >= 0 ? 1 : -1;
     // Must match the framing maths in _updateCamera's normal branch.
     // The side-view branch looks at the midpoint at the same height, so the snap fits both.
     const distance = this._framingDistance(sep);
@@ -247,8 +253,17 @@ class CinematicsMethods {
     // Audience side (+Z) only. _snapCameraToFraming enforces the same rule and the
     // spring boom has to match it: choosing perp from camera.position each frame flips
     // sign as the camera crosses mid, sending the view through 180° on every step.
+    // With hysteresis: when the pair lines up front-to-back the perpendicular points
+    // along ±X and a bare `z < 0` test flips on every shuffle, throwing the target to the
+    // far side of the ring — the boom and the director's follow then travel straight
+    // through the fighters (a blurred view of the mat from between them) and back again,
+    // which flickers. The side holds until the pair has clearly turned past that line,
+    // and the change is a cut (_camSideCut), never a move across the ring.
     const perp = new THREE.Vector3(axis.z, 0, -axis.x);
-    if (perp.z < 0) perp.negate();
+    const side = this._camSide || 1;
+    this._camSide = perp.z * side < -PERP_FLIP_Z ? -side : side;
+    if (this._camSide !== side) this._camSideCut = true;
+    perp.multiplyScalar(this._camSide);
 
     let distance = this._framingDistance(sep);
     let height = 1.55 + sep * 0.06;
@@ -333,6 +348,11 @@ class CinematicsMethods {
       const target = mid.clone().add(perp.multiplyScalar(distance));
       target.y = height;
       target.x = THREE.MathUtils.clamp(target.x, -(RING_HALF + 1.0), RING_HALF + 1.0);
+      if (this._camSideCut) {
+        // Changed sides: cut straight to the new framing rather than swing through the pair.
+        this.camera.position.copy(target);
+        this._camVel.set(0, 0, 0);
+      }
       const sdt = Math.min(dt, 1 / 20);
       const K = 26, C = 8.5;
       this._camVel.x += ((target.x - this.camera.position.x) * K - this._camVel.x * C) * sdt;
@@ -363,6 +383,10 @@ class CinematicsMethods {
       this.camera.position.y += (Math.random() - 0.5) * amp;
       this.shakeT = Math.max(0, this.shakeT - dt);
     }
+
+    // A side change is consumed by whichever branch ran this frame (the KO/super shots
+    // place themselves and ignore it).
+    this._camSideCut = false;
 
     // Picture-in-picture iso camera (director.js); drawn after the composer in game.js.
     this._updateIsoCam(dt);

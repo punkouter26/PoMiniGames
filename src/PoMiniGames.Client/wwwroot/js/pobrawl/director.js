@@ -72,6 +72,19 @@ function flatDir(a, b, out, fallback) {
   return out.lengthSq() > 1e-6 ? out.normalize() : out.copy(fallback);
 }
 
+// True when the straight move from a to b on the ground plane would carry the camera
+// through a fighter. Short moves never do: the follow covers them in a frame or two.
+function crossesPair(a, b, ps) {
+  const dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz;
+  if (L2 < 1.2 * 1.2) return false;
+  for (const p of ps) {
+    const t = THREE.MathUtils.clamp(((p.x - a.x) * dx + (p.z - a.z) * dz) / L2, 0, 1);
+    const ex = a.x + dx * t - p.x, ez = a.z + dz * t - p.z;
+    if (ex * ex + ez * ez < 0.9 * 0.9) return true;
+  }
+  return false;
+}
+
 // Keep a camera out of the stands: low rigs inside the first row, high ones within the hall.
 function clampRadius(p, name) {
   // The crowd cutaway sits in the seats on purpose.
@@ -246,7 +259,11 @@ class DirectorMethods {
     const fov = this._rig(s, c);
     clampRadius(s.pos, s.name);
     // Within a shot the rig is followed, not snapped: fighters move every frame and a
-    // camera bolted to them jitters. A cut (s.snap) lands exactly.
+    // camera bolted to them jitters. A cut (s.snap) lands exactly. So does a move that
+    // would pass through the fighters — the framing side changed (cinematics.js
+    // _camSideCut) or the pair turned under the rig: a TV camera cuts there, it doesn't
+    // fly through the ring.
+    if (!s.snap && (this._camSideCut || crossesPair(s.cam, s.pos, c.p))) s.snap = true;
     const k = s.snap ? 1 : 1 - Math.exp(-dt * (s.name === 'wide' || s.name === 'crane' ? 3 : 6));
     if (s.snap) {
       s.cam.copy(s.pos);

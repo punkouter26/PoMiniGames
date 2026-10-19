@@ -207,6 +207,7 @@ public sealed class AchievementService : IDisposable
             if (played > 0 || plays > 0) tried++;
         }
 
+        var brawl = PoMiniGamesClient.Games.PoBrawl.PoBrawlProgressBook.Load(name);
         return new AchievementFacts
         {
             Wins = wins,
@@ -215,16 +216,13 @@ public sealed class AchievementService : IDisposable
             GamesTried = tried,
             Sessions = sessions,
             DayStreak = _dayStreak,
-            BrawlRung = ReadInt($"pobrawl_ladder_{name}"),
-            BrawlClears = ReadInt($"pobrawl_clears_{name}"),
+            BrawlRung = brawl.Rung,
+            BrawlClears = brawl.Clears,
             SimSessions = simSessions,
             BestBoardRank = _bestBoardRank,
             OnlineWins = _onlineWins,
         };
     }
-
-    private static int ReadInt(string key) =>
-        int.TryParse(LocalStorageService.GetItem<string>(key), out var n) ? n : 0;
 
     private void TouchDay(DateTime today)
     {

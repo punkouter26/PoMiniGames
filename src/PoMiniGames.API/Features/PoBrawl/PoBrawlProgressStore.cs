@@ -12,10 +12,8 @@ namespace PoMiniGames.Features.PoBrawl;
 /// here: a read failure is "nothing saved", a write failure is null — never an in-memory stand-in.
 /// </summary>
 /// <remarks>
-/// A save MERGES rather than overwrites: the newer rung wins by its client timestamp, the fastest
-/// KO keeps the lower time, and the clear count keeps the higher — so an old tab saving late can
-/// neither roll the ladder back nor erase a record set on another device. The merge runs under
-/// the row's ETag and retries a lost race.
+/// A save MERGES rather than overwrites (<see cref="PoBrawlProgressDto.Merge"/>, the rule the
+/// browser uses too). The merge runs under the row's ETag and retries a lost race.
 /// </remarks>
 public sealed class PoBrawlProgressStore(TableServiceClient tables, ILogger<PoBrawlProgressStore> logger)
 {
@@ -50,7 +48,7 @@ public sealed class PoBrawlProgressStore(TableServiceClient tables, ILogger<PoBr
             {
                 var existing = await _table.GetEntityIfExistsAsync<TableEntity>(Partition, key, cancellationToken: ct);
                 var current = existing.HasValue ? ToDto(existing.Value!) : null;
-                var merged = Merge(current, incoming);
+                var merged = PoBrawlProgressDto.Merge(current, incoming);
                 var entity = new TableEntity(Partition, key)
                 {
                     ["UserId"] = userId,
@@ -77,20 +75,6 @@ public sealed class PoBrawlProgressStore(TableServiceClient tables, ILogger<PoBr
             logger.LogWarning(ex, "PoBrawl progress write failed");
             return null;
         }
-    }
-
-    internal static PoBrawlProgressDto Merge(PoBrawlProgressDto? current, PoBrawlProgressDto incoming)
-    {
-        if (current is null) return incoming;
-        var newer = incoming.UpdatedAtUnixMs >= current.UpdatedAtUnixMs ? incoming : current;
-        var ko = new[] { current.BestKoSeconds, incoming.BestKoSeconds }.Where(v => v > 0).DefaultIfEmpty(0).Min();
-        return new PoBrawlProgressDto
-        {
-            Rung = newer.Rung,
-            UpdatedAtUnixMs = newer.UpdatedAtUnixMs,
-            BestKoSeconds = ko,
-            Clears = Math.Max(current.Clears, incoming.Clears),
-        };
     }
 
     private static PoBrawlProgressDto ToDto(TableEntity e) => new()

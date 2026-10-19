@@ -174,7 +174,6 @@
     private int _generation;
 
     // Tournament titles per fighter, kept in this browser across tournaments: "titles" in the standings.
-    private const string TitlesKey = "pobrawl_cup_titles";
     private Dictionary<string, int> _titles = [];
 
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoBrawl);
@@ -575,7 +574,7 @@
     protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
-        _titles = LoadTitles();
+        _titles = PoBrawlProgressBook.LoadTitles();
         _cup = PoBrawlTournament.Draw(Roster, new Random(_drawSeed), _ratings);
     }
 
@@ -752,24 +751,7 @@
         }
     }
 
-    private static Dictionary<string, int> LoadTitles()
-    {
-        var raw = LocalStorageService.GetItem<string>(TitlesKey) ?? "";
-        var titles = new Dictionary<string, int>();
-        // "trump:2,obama:1" — a flat string, so no reflection-based JSON in the trimmed build.
-        foreach (var pair in raw.Split(',', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var parts = pair.Split(':');
-            if (parts.Length == 2 && PoBrawlRoster.IsRateable(parts[0]) && int.TryParse(parts[1], out var n) && n > 0) titles[parts[0]] = n;
-        }
-        return titles;
-    }
-
-    private void SaveTitle(string championId)
-    {
-        _titles[championId] = (_titles.TryGetValue(championId, out var n) ? n : 0) + 1;
-        LocalStorageService.SetItem(TitlesKey, string.Join(',', _titles.Select(kv => $"{kv.Key}:{kv.Value}")));
-    }
+    private void SaveTitle(string championId) => _titles = PoBrawlProgressBook.RecordTitle(championId);
 
     public async ValueTask DisposeAsync()
     {

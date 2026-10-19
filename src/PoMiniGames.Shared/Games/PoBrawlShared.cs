@@ -60,4 +60,24 @@ public sealed class PoBrawlProgressDto
     public int Clears { get; set; }
     /// <summary>When the rung was written, Unix ms — the tiebreak between two devices.</summary>
     public long UpdatedAtUnixMs { get; set; }
+
+    /// <summary>
+    /// Two copies of one player's progress, folded: the newer rung wins by its timestamp, the
+    /// fastest KO keeps the lower non-zero time, and the clear count keeps the higher — so an old
+    /// tab or device saving late can neither roll the ladder back nor erase a record. The server
+    /// store and the browser both merge with this, so they can never disagree on the rule.
+    /// </summary>
+    public static PoBrawlProgressDto Merge(PoBrawlProgressDto? current, PoBrawlProgressDto incoming)
+    {
+        if (current is null) return incoming;
+        var newer = incoming.UpdatedAtUnixMs >= current.UpdatedAtUnixMs ? incoming : current;
+        var ko = new[] { current.BestKoSeconds, incoming.BestKoSeconds }.Where(v => v > 0).DefaultIfEmpty(0).Min();
+        return new PoBrawlProgressDto
+        {
+            Rung = newer.Rung,
+            UpdatedAtUnixMs = newer.UpdatedAtUnixMs,
+            BestKoSeconds = ko,
+            Clears = Math.Max(current.Clears, incoming.Clears),
+        };
+    }
 }

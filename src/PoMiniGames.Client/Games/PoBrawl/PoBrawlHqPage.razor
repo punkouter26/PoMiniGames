@@ -123,9 +123,6 @@
 
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoBrawl);
 
-    // The same keys PoBrawlPage and PoBrawlTournamentPage write.
-    private const string TitlesKey = "pobrawl_cup_titles";
-
     private readonly GameStatsService _gameStats = new();
     private string _playerName = "";
     private int _ladder;
@@ -169,13 +166,35 @@
 
     protected override void OnInitialized()
     {
+        LoadLocal();
+        _titles = PoBrawlProgressBook.LoadTitles();
+        // On a hard refresh the page can initialise before the stored (then signed-in) name
+        // arrives, and everything above is keyed by it — re-read when it settles, as PoBrawlPage does.
+        PlayerNameService.StateChanged += OnPlayerNameChanged;
+    }
+
+    private void LoadLocal()
+    {
         _playerName = PlayerNameService.GetPlayerName();
-        _ladder = int.TryParse(LocalStorageService.GetItem<string>($"pobrawl_ladder_{_playerName}"), out var l) ? Math.Clamp(l, 0, PoBrawlRoster.Count - 1) : 0;
-        _clears = int.TryParse(LocalStorageService.GetItem<string>($"pobrawl_clears_{_playerName}"), out var c) ? c : 0;
-        _bestKo = double.TryParse(LocalStorageService.GetItem<string>($"pobrawl_bestko_{_playerName}"), System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out var ko) ? ko : 0;
+        Show(PoBrawlProgressBook.Load(_playerName));
         _rating = _gameStats.GetAdaptiveRating("pobrawl", _playerName);
-        _titles = LoadTitles();
+    }
+
+    private void OnPlayerNameChanged()
+    {
+        if (PlayerNameService.GetPlayerName() == _playerName) return;
+        _ = InvokeAsync(() =>
+        {
+            LoadLocal();
+            StateHasChanged();
+        });
+    }
+
+    private void Show(PoMiniGames.Shared.Games.PoBrawlProgressDto progress)
+    {
+        _ladder = progress.Rung;
+        _clears = progress.Clears;
+        _bestKo = progress.BestKoSeconds;
     }
 
     protected override async Task OnInitializedAsync()
@@ -185,14 +204,10 @@
         var keys = new[] { "pobrawl", "pobrawlko", "pobrawldemo" };
         var boardTasks = keys.Select(k => ApiService.GetGameLeaderboardAsync(k, k == "pobrawldemo" ? PoBrawlRoster.Count : 10)).ToArray();
         var remote = await progressTask;
-        if (remote is not null)
-        {
-            // Newer copy wins the rung, as on the 1P page (PoBrawlPage.MergeRemoteProgressAsync).
-            var localAt = long.TryParse(LocalStorageService.GetItem<string>($"pobrawl_ladder_at_{_playerName}"), out var at) ? at : 0;
-            if (remote.UpdatedAtUnixMs > localAt) _ladder = Math.Clamp(remote.Rung, 0, PoBrawlRoster.Count - 1);
-            _clears = Math.Max(_clears, remote.Clears);
-            if (remote.BestKoSeconds > 0 && (_bestKo == 0 || remote.BestKoSeconds < _bestKo)) _bestKo = remote.BestKoSeconds;
-        }
+        // The merge is stored under the player's name, so never under a placeholder.
+        await PlayerNameService.Initialized;
+        if (PlayerNameService.GetPlayerName() != _playerName) LoadLocal();
+        if (remote is not null) Show(PoBrawlProgressBook.Adopt(_playerName, remote));
         var boards = await Task.WhenAll(boardTasks);
         for (var i = 0; i < keys.Length; i++) _boards[keys[i]] = boards[i];
         _boardsLoaded = true;
@@ -214,19 +229,9 @@
         StateHasChanged();
     }
 
-    private static Dictionary<string, int> LoadTitles()
-    {
-        var titles = new Dictionary<string, int>();
-        foreach (var pair in (LocalStorageService.GetItem<string>(TitlesKey) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var parts = pair.Split(':');
-            if (parts.Length == 2 && PoBrawlRoster.IsRateable(parts[0]) && int.TryParse(parts[1], out var n) && n > 0) titles[parts[0]] = n;
-        }
-        return titles;
-    }
-
     public async ValueTask DisposeAsync()
     {
+        PlayerNameService.StateChanged -= OnPlayerNameChanged;
         if (_theme is null) return;
         try
         {

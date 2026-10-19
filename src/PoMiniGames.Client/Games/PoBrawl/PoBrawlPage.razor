@@ -218,11 +218,7 @@
     private bool _champion;              // the last rung just fell: the result modal shows the ending card
     private AdaptiveRating _rating = new();
     private int _lastEloDelta;
-    private string LadderKey => $"pobrawl_ladder_{_playerName}";
-    // When the rung was last written here, so a newer server copy (another device) can win.
-    private string LadderAtKey => $"pobrawl_ladder_at_{_playerName}";
-    private string BestKoKey => $"pobrawl_bestko_{_playerName}";
-    private string ClearsKey => $"pobrawl_clears_{_playerName}";
+    // Rung, fastest KO and clears are kept per player name by PoBrawlProgressBook.
     private int _clears;                 // full ladder clears, all time
 
     // ── Fight recap ───────────────────────────────────────────────────────
@@ -657,16 +653,15 @@
     {
         var remote = await ApiService.GetPoBrawlProgressAsync();
         if (remote is null) return;
-        var localAt = long.TryParse(LocalStorageService.GetItem<string>(LadderAtKey), out var at) ? at : 0;
-        if (remote.UpdatedAtUnixMs > localAt && !_introDone)
+        // Once the fight has started the running match owns the rung; the records still merge.
+        var merged = PoBrawlProgressBook.Adopt(_playerName, remote, takeRung: !_introDone);
+        if (!_introDone)
         {
-            _ladder = Math.Clamp(remote.Rung, 0, Roster.Length - 1);
+            _ladder = merged.Rung;
             _p2Char = Roster[_ladder].Id;
-            LocalStorageService.SetItem(LadderKey, _ladder.ToString());
-            LocalStorageService.SetItem(LadderAtKey, remote.UpdatedAtUnixMs.ToString());
         }
-        if (remote.BestKoSeconds > 0 && (_bestKo == 0 || remote.BestKoSeconds < _bestKo)) SaveBestKo(remote.BestKoSeconds);
-        _clears = Math.Max(_clears, remote.Clears);
+        _bestKo = merged.BestKoSeconds;
+        _clears = merged.Clears;
         UpdateStats();
     }
 
@@ -693,12 +688,12 @@
     {
         _playerName = PlayerNameService.GetPlayerName();
         _stats = _gameStats.GetStats("pobrawl", _playerName);
-        _bestKo = double.TryParse(LocalStorageService.GetItem<string>(BestKoKey), System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture, out var ko) ? ko : 0;
-        _clears = int.TryParse(LocalStorageService.GetItem<string>(ClearsKey), out var c) ? c : 0;
+        var progress = PoBrawlProgressBook.Load(_playerName);
+        _bestKo = progress.BestKoSeconds;
+        _clears = progress.Clears;
         if (_mode != "1p") return;
         _rating = _gameStats.GetAdaptiveRating("pobrawl", _playerName);
-        _ladder = LoadLadder();
+        _ladder = progress.Rung;
         _p1Char = Bob.Id;
         _p2Char = Roster[_ladder].Id;
     }
@@ -1306,7 +1301,7 @@
         // A KO, not a decision at the bell: a time-up win is not a "KO in 60.00s" record.
         if (won && elapsedSeconds > 0 && elapsedSeconds < 59.9 && (_bestKo == 0 || elapsedSeconds < _bestKo))
         {
-            SaveBestKo(elapsedSeconds);
+            _bestKo = PoBrawlProgressBook.RecordBestKo(_playerName, elapsedSeconds);
             _newRecord = true;
             best = new PoBrawlHighScore
             {
@@ -1338,8 +1333,7 @@
             {
                 _champion = true;   // cleared the last rung → triumphant end, show the modal
                 _ladder = 0;
-                _clears++;
-                LocalStorageService.SetItem(ClearsKey, _clears.ToString());
+                _clears = PoBrawlProgressBook.RecordClear(_playerName);
             }
             else
             {
@@ -1496,35 +1490,15 @@
         return idx < 0 ? 0 : idx;
     }
 
-    private int LoadLadder()
-    {
-        var raw = LocalStorageService.GetItem<string>(LadderKey);
-        return int.TryParse(raw, out var i) ? Math.Clamp(i, 0, Roster.Length - 1) : 0;
-    }
-
     /// <summary>
     /// Persist the rung here and, signed in, on the server (PUT /api/pobrawl/progress) so the run
     /// follows the player to another device. The timestamp is what lets the newer copy win on load.
     /// </summary>
     private void SaveLadder()
     {
-        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        LocalStorageService.SetItem(LadderKey, _ladder.ToString());
-        LocalStorageService.SetItem(LadderAtKey, now.ToString());
+        var progress = PoBrawlProgressBook.RecordRung(_playerName, _ladder);
         if (!Auth.IsAuthenticated) return;
-        _ = ApiService.SavePoBrawlProgressAsync(new PoMiniGames.Shared.Games.PoBrawlProgressDto
-        {
-            Rung = _ladder,
-            BestKoSeconds = _bestKo,
-            Clears = _clears,
-            UpdatedAtUnixMs = now,
-        });
-    }
-
-    private void SaveBestKo(double seconds)
-    {
-        _bestKo = Math.Round(seconds, 2);
-        LocalStorageService.SetItem(BestKoKey, _bestKo.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        _ = ApiService.SavePoBrawlProgressAsync(progress);
     }
 
     public async ValueTask DisposeAsync()

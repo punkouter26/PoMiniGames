@@ -1,5 +1,6 @@
 using FluentAssertions;
 using PoMiniGames.Domain.Primitives;
+using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Games.PoBrawl;
 
 namespace PoMiniGames.Unit.Features.PoBrawl;
@@ -17,6 +18,7 @@ public sealed class PoBrawlTournamentTests
     [InlineData(nameof(Results_AreRefused_WhenNotASide_OrOnceDecided))]
     [InlineData(nameof(Expectation_FavoursTheHigherRating_AndOnlyAnUnderdogWinIsAnUpset))]
     [InlineData(nameof(CampaignTrail_Crosses270_OnlyOnTheLastRung))]
+    [InlineData(nameof(Progress_Merge_TakesTheNewerRung_TheFastestKo_AndTheMostClears))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
     private static PoBrawlTournament NewCup(int seed = 7, IReadOnlyDictionary<string, int>? ratings = null) =>
@@ -134,5 +136,23 @@ public sealed class PoBrawlTournamentTests
         PoBrawlCampaign.VotesAfter(0).Should().Be(0);
         PoBrawlCampaign.VotesAfter(rungs - 1).Should().BeLessThan(PoBrawlCampaign.ToWin);
         PoBrawlCampaign.VotesAfter(rungs).Should().BeGreaterThanOrEqualTo(PoBrawlCampaign.ToWin);
+    }
+
+    /// <summary>The one merge rule the server store and the browser's PoBrawlProgressBook both use.</summary>
+    private void Progress_Merge_TakesTheNewerRung_TheFastestKo_AndTheMostClears()
+    {
+        var older = new PoBrawlProgressDto { Rung = 9, BestKoSeconds = 12.5, Clears = 3, UpdatedAtUnixMs = 1_000 };
+        var newer = new PoBrawlProgressDto { Rung = 2, BestKoSeconds = 0, Clears = 1, UpdatedAtUnixMs = 2_000 };
+
+        var merged = PoBrawlProgressDto.Merge(older, newer);
+        (merged.Rung, merged.UpdatedAtUnixMs).Should().Be((2, 2_000L), "the newer copy wins the rung, however low");
+        merged.BestKoSeconds.Should().Be(12.5, "a zero is 'no KO yet', never a record");
+        merged.Clears.Should().Be(3);
+
+        // Order-independent: an old tab saving late cannot roll anything back.
+        var late = PoBrawlProgressDto.Merge(newer, older);
+        (late.Rung, late.BestKoSeconds, late.Clears).Should().Be((merged.Rung, merged.BestKoSeconds, merged.Clears));
+        PoBrawlProgressDto.Merge(null, older).Should().BeSameAs(older);
+        PoBrawlProgressDto.Merge(older, new PoBrawlProgressDto { BestKoSeconds = 8.25, UpdatedAtUnixMs = 0 }).BestKoSeconds.Should().Be(8.25);
     }
 }

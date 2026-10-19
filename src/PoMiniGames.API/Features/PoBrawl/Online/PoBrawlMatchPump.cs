@@ -8,8 +8,9 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// hub connection that started it leaving. Each wake it catches every match's sim up to its
 /// real-time clock, broadcasts a snapshot whenever a match crosses a snapshot frame (10 Hz), and
 /// when a match finishes sends each corner its own result once, then leaves the match in the
-/// registry for <see cref="PoBrawlMatchRegistry.FinishedLinger"/> (rematch votes, a late
-/// reconnect) before sweeping it.
+/// registry for <see cref="PoBrawlMatchRegistry.FinishedLinger"/> (a late reconnect, the result
+/// ingest) before sweeping it. While a corner is still awaited the clock is held, and the pump only
+/// sends a once-a-second snapshot carrying the arrival countdown — or the abandon when it runs out.
 /// </summary>
 /// <remarks>
 /// A Stopwatch catch-up loop, not a 16.7 ms PeriodicTimer: Windows timers tick at ~15.6 ms, so a
@@ -71,9 +72,21 @@ public sealed class PoBrawlMatchPump : BackgroundService
             return;
         }
         var before = match.Frame;
-        var ran = match.AdvanceTo((long)Math.Floor(match.ClockFrame(now)));
-        if (ran == 0) return;
+        var waiting = match.IsWaiting;
+        var ran = match.AdvanceToClock(now);
         var finished = match.FinishedAtUtc is not null;
+        if (waiting && !finished)
+        {
+            // Held clock: one snapshot per whole second waited, so the corner that is here sees the
+            // other's arrival countdown tick.
+            var second = (long)(Stopwatch.GetElapsedTime(match.CreatedAt, now).TotalSeconds);
+            if (match.TryMarkWaitingNotice(second))
+            {
+                await _hubContext.Clients.Group(PoBrawlMatchHub.MatchGroup(match.GameCode)).SendAsync("matchState", match.Snapshot(), ct);
+            }
+            return;
+        }
+        if (ran == 0 && !finished) return;
         var crossed = before / PoBrawlMatchService.SnapshotEveryFrames != (before + ran) / PoBrawlMatchService.SnapshotEveryFrames;
         if (!crossed && !finished) return;
         var snap = match.Snapshot();

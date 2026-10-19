@@ -72,8 +72,10 @@
         @if (Options != null)
         {
             @* Keydowns stop here for the same reason as the mode switch above: Space
-               on a checkbox in the options must tick it, not start the game. *@
-            <div class="gps-intro-options" @onkeydown:stopPropagation="true">@Options</div>
+               on a checkbox in the options must tick it, not start the game. A select
+               driven by per-player keys (ForwardOptionKeys) lets them through to OnKey,
+               so its keys keep working once a tile inside it has focus. *@
+            <div class="gps-intro-options" @onkeydown:stopPropagation="@(!ForwardOptionKeys)">@Options</div>
         }
 
         <div class="gps-intro-actions">
@@ -178,6 +180,13 @@
 
     /// <summary>Forward keydowns to the host (TwoPlayer option selection).</summary>
     [Parameter] public bool CaptureKeys { get; set; }
+
+    /// <summary>
+    /// TwoPlayer only: keydowns inside <see cref="Options"/> still bubble to the card and
+    /// reach <see cref="OnKey"/>. For a select whose options are the per-player keys' targets
+    /// (PoBrawl), where a focused tile must not swallow the other player's keys.
+    /// </summary>
+    [Parameter] public bool ForwardOptionKeys { get; set; }
 
     /// <summary>Fired once when the intro is dismissed and play should begin.</summary>
     [Parameter] public EventCallback OnStart { get; set; }

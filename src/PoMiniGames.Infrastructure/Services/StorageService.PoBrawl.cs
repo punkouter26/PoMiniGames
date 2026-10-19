@@ -29,10 +29,16 @@ namespace PoMiniGames.Infrastructure.Services;
 public partial class StorageService
 {
     // ── PoBrawl presidents ladder ─────────────────────────────────────────
-    // Unlike the high-score boards (append + dedupe by content hash), the ladder
-    // keeps exactly one row per player: RowKey = sanitized player name, and
-    // PresidentsBeaten only ever ratchets up. Elo/Date follow the run that set
-    // (or matched) the best, so a later worse run can't erase a full clear.
+    // One row per signed-in identity: RowKey = a hash of the claim id (the raw id kept in UserId
+    // for the account export/erase), the moderated display name a plain column. PresidentsBeaten
+    // only ever ratchets up, one rung per submission at most, and never faster than a real fight
+    // can be won — so the board is the server's own count of wins, not the client's claim.
+    // Rows from before that (keyed by the typed name, no UserId) could carry any rung under any
+    // name; they are left in the table for the account export/erase but never ranked.
+
+    /// <summary>Clamp for the client's adaptive Elo, which only breaks ladder ties.</summary>
+    public const int PoBrawlLadderMinElo = 100;
+    public const int PoBrawlLadderMaxElo = 3000;
 
     public async Task<List<PoBrawlLadderEntry>> GetPoBrawlLadderAsync(int limit = 10)
     {
@@ -48,13 +54,11 @@ public partial class StorageService
                 filter: $"PartitionKey eq '{PoBrawlLadderPartition}'",
                 maxPerPage: 1000))
             {
-                entries.Add(new PoBrawlLadderEntry
+                if (string.IsNullOrEmpty(e.GetString("UserId")))
                 {
-                    PlayerName = e.GetString("PlayerName") ?? "",
-                    PresidentsBeaten = e.GetInt32("PresidentsBeaten") ?? 0,
-                    Elo = e.GetInt32("Elo") ?? 0,
-                    Date = e.GetString("Date") ?? "",
-                });
+                    continue; // A legacy name-keyed row: unattributable, so unranked.
+                }
+                entries.Add(LadderEntryFrom(e));
             }
 
             // Most presidents beaten first; higher Elo breaks ties, then earliest clear.
@@ -72,24 +76,30 @@ public partial class StorageService
         }
     }
 
-    public async Task<PoBrawlLadderEntry> SavePoBrawlLadderAsync(PoBrawlLadderEntry entry)
+    public async Task<(PoBrawlLadderEntry Entry, PoBrawlLadderVerdict Verdict)> SavePoBrawlLadderAsync(
+        string userId, PoBrawlLadderEntry entry, TimeSpan minRungInterval)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
         var sanitized = entry with
         {
             PlayerName = SanitizeName(entry.PlayerName),
             // Roster-derived, not a literal: a hardcoded 10 truncated every clear past the
-            // tenth rung to 10 once the roster grew to 15, so a champion run and a ten-rung
-            // run stored the same value and the board could never separate them.
+            // tenth rung once the roster grew to 15.
             PresidentsBeaten = Math.Clamp(entry.PresidentsBeaten, 0, PoBrawlRoster.Count),
+            // The client's own adaptive rating: only a tiebreaker, but still unbounded input.
+            Elo = Math.Clamp(entry.Elo, PoBrawlLadderMinElo, PoBrawlLadderMaxElo),
             Date = DefaultDate(entry.Date),
         };
 
         if (!IsStorageAvailable())
         {
-            return sanitized;
+            return (sanitized, PoBrawlLadderVerdict.Unavailable);
         }
 
-        var rowKey = sanitized.PlayerName.ToLowerInvariant();
+        var rowKey = LadderRowKey(userId);
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var stored = sanitized with { PresidentsBeaten = 0 };
+        var verdict = PoBrawlLadderVerdict.Held;
         try
         {
             await TableConcurrency.UpdateWithRetryAsync<TableEntity>(
@@ -99,25 +109,59 @@ public partial class StorageService
                 factory: () => new TableEntity(PoBrawlLadderPartition, rowKey),
                 mutate: e =>
                 {
-                    var existingBest = e.GetInt32("PresidentsBeaten") ?? -1;
-                    if (sanitized.PresidentsBeaten < existingBest)
+                    // Re-evaluated on every concurrency retry, against the row as re-read.
+                    var best = e.GetInt32("PresidentsBeaten") ?? 0;
+                    stored = e.ContainsKey("UserId") ? LadderEntryFrom(e) : stored;
+
+                    // One rung past the stored best at most: a run is won one fight at a time, and
+                    // every win posts. A claim further up is credited one rung, not refused, so a
+                    // player whose row lags (a dropped post) still climbs on the next win.
+                    var target = Math.Min(sanitized.PresidentsBeaten, Math.Min(best + 1, PoBrawlRoster.Count));
+                    if (target <= best)
                     {
-                        return false; // A worse run never overwrites the best.
+                        verdict = PoBrawlLadderVerdict.Held; // A worse run never overwrites the best.
+                        return false;
                     }
+
+                    // A KO, the result hold and the next fight's splash and countdown all sit between
+                    // two real rungs; two climbs closer together than that were not fought.
+                    if (e.GetInt64("LastRungAtUnixMs") is { } last && now - last < (long)minRungInterval.TotalMilliseconds)
+                    {
+                        verdict = PoBrawlLadderVerdict.TooFast;
+                        return false;
+                    }
+
+                    e["UserId"] = userId;
                     e["PlayerName"] = sanitized.PlayerName;
-                    e["PresidentsBeaten"] = sanitized.PresidentsBeaten;
+                    e["PresidentsBeaten"] = target;
                     e["Elo"] = sanitized.Elo;
                     e["Date"] = sanitized.Date;
+                    e["LastRungAtUnixMs"] = now;
+                    stored = sanitized with { PresidentsBeaten = target };
+                    verdict = PoBrawlLadderVerdict.Climbed;
                     return true;
                 });
         }
         catch (Exception ex)
         {
             MarkUnavailable(ex);
-            // Silent drop on no-fallback path — see SaveHighScoreAsync's matching block.
+            return (sanitized, PoBrawlLadderVerdict.Unavailable);
         }
-        return sanitized;
+        return (stored, verdict);
     }
+
+    /// <summary>Table-safe, case-insensitive row key for a claim id (ids can carry '/', '#' and the like).</summary>
+    private static string LadderRowKey(string userId) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(userId.Trim().ToLowerInvariant())))[..32];
+
+    private static PoBrawlLadderEntry LadderEntryFrom(TableEntity e) => new()
+    {
+        PlayerName = e.GetString("PlayerName") ?? "",
+        PresidentsBeaten = e.GetInt32("PresidentsBeaten") ?? 0,
+        Elo = e.GetInt32("Elo") ?? 0,
+        Date = e.GetString("Date") ?? "",
+    };
 
     // ── PoBrawl demo-mode fighter Elo ─────────────────────────────────────
     // One row per fighter, RowKey = canonical fighter id, so the partition is bounded at

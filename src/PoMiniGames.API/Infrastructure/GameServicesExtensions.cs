@@ -292,6 +292,7 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchRegistry>();
         services.AddHostedService<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchPump>();
         services.AddSingleton<PoMiniGames.Features.PoBrawl.PoBrawlProgressStore>();
+        services.AddSingleton<PoMiniGames.Features.PoBrawl.PoBrawlDemoEloGate>();
 
         // PoBrawl fighter dossiers — static facts enriched once a day from the free Wikimedia
         // REST API. Wikimedia asks for a descriptive User-Agent; the standard resilience handler
@@ -309,9 +310,11 @@ internal static class GameServicesExtensions
             })
             .AddStandardResilienceHandler(options =>
             {
+                // One 4 s attempt per title, in practice: a retry only fits inside the 5 s total
+                // after a fast failure. The page never waits on these anyway (FirstLoadWait).
                 options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(4);
-                options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(10);
-                options.Retry.MaxRetryAttempts = 2;
+                options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(5);
+                options.Retry.MaxRetryAttempts = 1;
             });
         services.AddSingleton<PoMiniGames.Features.PoBrawl.PoBrawlDossierService>();
 

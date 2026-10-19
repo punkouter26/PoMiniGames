@@ -110,13 +110,32 @@ export class KeyBridge {
 
   poll() {
     if (!this.supported) return;
-    // Re-derived every poll so a pad plugged in mid-game just works.
     const live = connectedPads();
+    // Slots are sticky: a pad keeps its slot until IT disconnects. Re-deriving "the n-th live
+    // pad" every poll moved player 2's pad onto player 1 mid-fight the moment pad 1 was pulled.
+    // A pad plugged in mid-game takes the lowest free slot.
+    const byIndex = new Map(live.map((p) => [p.index, p]));
     for (let s = 0; s < this.slots.length; s++) {
-      const pad = live[s] || null;
-      this.padIndex[s] = pad ? pad.index : -1;
+      if (this.padIndex[s] >= 0 && !byIndex.has(this.padIndex[s])) this.padIndex[s] = -1;
+    }
+    for (const pad of live) {
+      if (this.padIndex.includes(pad.index)) continue;
+      const free = this.padIndex.indexOf(-1);
+      if (free < 0) break;
+      this.padIndex[free] = pad.index;
+    }
+    for (let s = 0; s < this.slots.length; s++) {
+      const pad = this.padIndex[s] >= 0 ? byIndex.get(this.padIndex[s]) : null;
       this._apply(s, pad ? this.codesFor(pad, this.slots[s]) : null);
     }
+  }
+
+  /**
+   * Release every key the pads are holding (the engine paused, or the window lost focus). A pad
+   * still held down presses its keys again on the next poll.
+   */
+  releaseAll() {
+    for (let s = 0; s < this.held.length; s++) this._apply(s, null);
   }
 
   _apply(s, want) {
@@ -151,7 +170,7 @@ export class KeyBridge {
 
   dispose() {
     // Release everything so an engine disposed mid-hold does not leave a key stuck down.
-    for (let s = 0; s < this.held.length; s++) this._apply(s, null);
+    this.releaseAll();
   }
 }
 

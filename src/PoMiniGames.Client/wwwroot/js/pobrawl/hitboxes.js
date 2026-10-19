@@ -14,7 +14,8 @@
 // ── Capsule anatomy ───────────────────────────────────────────────────────
 // A capsule is { jointA, jointB, radius } where jointA/jointB are rig joint
 // names; its world endpoints are those joints' world positions at test time.
-// Sets: striker (deals damage), hurt (receives), guard (block surface).
+// Sets: striker (deals damage) and hurt (receives). The guard is not a
+// capsule set but an arc — see `guardCovers`.
 //
 // ── Why capsules not boxes ───────────────────────────────────────────────
 // Boxes would be slightly more accurate to the visible primitives but require
@@ -42,12 +43,15 @@ const FIGHTER_CAPSULES = {
     forearmL:  { jointA: 'shoulderL', jointB: 'elbowL', radius: 0.11 },
     forearmR:  { jointA: 'shoulderR', jointB: 'elbowR', radius: 0.11 },
   },
-  // ── Guard capsules (block surface) ──────────────────────────────────
-  guard: {
-    forearmL:  { jointA: 'shoulderL', jointB: 'elbowL', radius: 0.16 },
-    forearmR:  { jointA: 'shoulderR', jointB: 'elbowR', radius: 0.16 },
-  },
 };
+
+// Half-angle of the guard, measured from the defender's facing. A held guard
+// stops every strike thrown from inside it — the classic fighting-game rule.
+// It used to be two forearm capsules the striker had to touch, which let most
+// strikes slip past a guard that was visibly up (1 block in 10 against a
+// player holding the button all round). 100° covers the whole front and both
+// flanks, so only a strike from behind the shoulder line still lands.
+const GUARD_HALF_ARC_COS = Math.cos(THREE.MathUtils.degToRad(100));
 
 // Per-attack striker capsules. We split strike vs recovery so a swing that
 // misses never re-strikes on the way back.
@@ -195,19 +199,17 @@ export function testAttackHit(attackerRig, attackName, phase, defenderRig) {
 }
 
 /**
- * Test every attacker striker capsule against the defender's guard set.
- * Returns true if any striker intersects a guard capsule.
+ * Does a guard facing the way `defenderRig` faces cover a strike coming from
+ * `fromPos` (world XZ)? Facing includes the spin a hook knocked into the
+ * defender, so a fighter twisted off-line can be hit round the guard.
  */
-export function testAttackBlocked(attackerRig, attackName, phase, defenderRig) {
-  const def = FIGHTER_CAPSULES.guard;
-  const atkSet = ATTACK_CAPSULES[attackName];
-  if (!atkSet) return false;
-  const caps = phase === 'recover' ? atkSet.recover : atkSet.active;
-  if (!caps) return false;
-  for (const cap of Object.values(caps)) {
-    if (testCapsuleAgainstSet(attackerRig, cap, defenderRig, def)) return true;
-  }
-  return false;
+export function guardCovers(defenderRig, fromPos) {
+  const fwd = facing(defenderRig, new THREE.Vector3());
+  const p = defenderRig.root.position;
+  const dx = fromPos.x - p.x, dz = fromPos.z - p.z;
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-4) return true; // overlapping roots: no side to come from
+  return (fwd.x * dx + fwd.z * dz) / len >= GUARD_HALF_ARC_COS;
 }
 
 /**

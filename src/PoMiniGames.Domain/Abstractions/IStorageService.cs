@@ -32,9 +32,16 @@ public interface IStorageService
     Task<List<PoRacerHighScore>> GetPoRacerHighScoresAsync(int limit = 10, string? trackId = null, bool weekly = false);
     Task<PoRacerHighScore> SavePoRacerHighScoreAsync(PoRacerHighScore entry);
 
-    // PoBrawl presidents-ladder leaderboard (one row per player, best-ever progress)
+    // PoBrawl presidents-ladder leaderboard (one row per signed-in identity, best-ever progress)
     Task<List<PoBrawlLadderEntry>> GetPoBrawlLadderAsync(int limit = 10);
-    Task<PoBrawlLadderEntry> SavePoBrawlLadderAsync(PoBrawlLadderEntry entry);
+
+    /// <summary>
+    /// Climbs <paramref name="userId"/>'s ladder row toward the claimed rung — at most one rung past
+    /// what is stored, and never sooner than <paramref name="minRungInterval"/> after the last climb.
+    /// Returns the row as stored afterwards and what the call did to it.
+    /// </summary>
+    Task<(PoBrawlLadderEntry Entry, PoBrawlLadderVerdict Verdict)> SavePoBrawlLadderAsync(
+        string userId, PoBrawlLadderEntry entry, TimeSpan minRungInterval);
 
     // PoBrawl demo-mode fighter Elo (one row per fighter, head-to-head ratings)
     Task<List<PoBrawlFighterRating>> GetPoBrawlFighterRatingsAsync(int limit = 10);
@@ -67,7 +74,9 @@ public interface IStorageService
     /// <param name="loserPrincipalId">Principal id of the loser; the other side when <paramref name="isDraw"/>.</param>
     /// <param name="winnerDisplayName">Display name for the winner's row (claim identity at submit time).</param>
     /// <param name="loserDisplayName">Display name for the loser's row.</param>
-    Task RecordPoBrawlOnlineMatchAsync(
+    /// <returns>True once both rows are written; false when storage is down or the pair-write failed
+    /// (and was rolled back), so the caller can release its once-per-match claim and ask for a retry.</returns>
+    Task<bool> RecordPoBrawlOnlineMatchAsync(
         string winnerPrincipalId, string loserPrincipalId,
         string winnerDisplayName, string loserDisplayName,
         bool isDraw);

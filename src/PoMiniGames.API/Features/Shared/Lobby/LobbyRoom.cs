@@ -64,6 +64,11 @@ public abstract class LobbyRoom<TPlayer> where TPlayer : class, ILobbyPlayer
     {
     }
 
+    /// <summary>Called under the lock when a seat does something (ready toggled), for idle tracking.</summary>
+    protected virtual void OnSeatTouched(string connectionId)
+    {
+    }
+
     public LobbyState<TPlayer> State
     {
         get
@@ -146,6 +151,7 @@ public abstract class LobbyRoom<TPlayer> where TPlayer : class, ILobbyPlayer
         {
             if (!_players.TryGetValue(connectionId, out var existing)) return;
             _players[connectionId] = WithReady(existing, ready);
+            OnSeatTouched(connectionId);
         }
     }
 
@@ -161,6 +167,7 @@ public abstract class LobbyRoom<TPlayer> where TPlayer : class, ILobbyPlayer
             if (!_players.TryGetValue(connectionId, out var existing)) return (false, false, "");
             var toggled = WithReady(existing, !existing.IsReady);
             _players[connectionId] = toggled;
+            OnSeatTouched(connectionId);
             return (true, toggled.IsReady, $"{toggled.DisplayName} is {(toggled.IsReady ? "ready" : "not ready")}");
         }
     }
@@ -186,15 +193,24 @@ public abstract class LobbyRoom<TPlayer> where TPlayer : class, ILobbyPlayer
     }
 
     /// <summary>Host-only. Sets the started flag atomically so a second Start cannot race past the first.</summary>
-    public bool TryStart(string connectionId)
+    public bool TryStart(string connectionId) => TryStartWithRoster(connectionId) is not null;
+
+    /// <summary>
+    /// <see cref="TryStart"/>, returning the roster the gate passed — captured under the same lock
+    /// that set the started flag — or null when the start was refused. A game must build itself
+    /// from THIS list: <see cref="Players"/> read a moment later can already be missing a seat
+    /// that left in between.
+    /// </summary>
+    public IReadOnlyList<TPlayer>? TryStartWithRoster(string connectionId)
     {
         lock (_lock)
         {
-            if (_startedAtMs > 0) return false;
-            if (_hostConnectionId != connectionId) return false;
-            if (!CanStart(Ordered(), _hostConnectionId)) return false;
+            if (_startedAtMs > 0) return null;
+            if (_hostConnectionId != connectionId) return null;
+            var roster = Ordered();
+            if (!CanStart(roster, _hostConnectionId)) return null;
             _startedAtMs = NowMs();
-            return true;
+            return roster;
         }
     }
 

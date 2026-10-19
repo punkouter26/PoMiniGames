@@ -13,8 +13,10 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// corner on finish; <see cref="Ping"/> is the clients' clock sync.
 /// </summary>
 /// <remarks>
-/// The group is keyed by the match CODE, not the match id, so a rematch (a new match on the same
-/// code) reaches everyone already watching — spectators included — without a re-subscribe.
+/// The group is keyed by the match CODE. A JoinMatch tells the whole group (so the corner that
+/// arrived first learns the second is in and the countdown has started). Inputs are budgeted per
+/// corner by the match itself (<see cref="PoBrawlMatchService.MaxInputsPerSecond"/>); a refused
+/// one is simply not echoed.
 /// </remarks>
 public sealed class PoBrawlMatchHub : Hub
 {
@@ -53,7 +55,7 @@ public sealed class PoBrawlMatchHub : Hub
         if (match is null) return null;
 
         var identity = RequestIdentity.Resolve(Context.User);
-        // A reconnect on a live socket (or a rematch) re-pins: drop the old binding first.
+        // A reconnect on a live socket re-pins: drop the old binding first.
         await ReleaseAsync(_registry.MatchFor(Context.ConnectionId));
         var seated = match.RegisterConnectionByPrincipal(identity.UserId, Context.ConnectionId);
         _registry.BindConnection(Context.ConnectionId, match.GameCode);
@@ -63,6 +65,12 @@ public sealed class PoBrawlMatchHub : Hub
         if (seated && match.FinishedAtUtc is not null)
         {
             await Clients.Caller.SendAsync("matchFinished", match.BuildResultFor(Context.ConnectionId));
+        }
+        else if (seated)
+        {
+            // While a corner is awaited the pump only ticks once a second; the arrival itself is
+            // news (it starts the clock), so the group hears it now.
+            await Clients.Group(MatchGroup(match.GameCode)).SendAsync("matchState", match.Snapshot());
         }
         return new PoBrawlMatchSnapshot
         {
@@ -88,32 +96,6 @@ public sealed class PoBrawlMatchHub : Hub
 
     /// <summary>Clock sync: where the caller's fight clock is. Null when the caller is in no fight.</summary>
     public PoBrawlMatchClock? Ping() => _registry.MatchFor(Context.ConnectionId)?.Clock();
-
-    /// <summary>
-    /// After the bell: this corner wants another round. The vote count goes out to the match group, and
-    /// once both corners have asked, a fresh match starts on the same code with the same fighters
-    /// and everyone in the group is told to re-join it.
-    /// </summary>
-    public async Task RequestRematch()
-    {
-        var match = _registry.MatchFor(Context.ConnectionId);
-        // A swept match (FinishedLinger elapsed, or a rematch already replaced it) can never
-        // reach two votes. Throwing — instead of the old silent return — is what lets the
-        // caller's UI reset its "waiting for a rematch" state instead of showing it forever.
-        if (match is null)
-        {
-            throw new HubException("That fight has ended — start a new one from the lobby.");
-        }
-        var agreed = match.VoteRematch(Context.ConnectionId);
-        var group = Clients.Group(MatchGroup(match.GameCode));
-        if (!agreed)
-        {
-            await group.SendAsync("matchState", match.Snapshot());
-            return;
-        }
-        var next = _registry.Rematch(match.GameCode);
-        if (next is not null) await group.SendAsync("rematch", next.GameCode);
-    }
 
     /// <summary>
     /// Explicit leave (client-initiated, not disconnect). Same as a drop: the corner's grace

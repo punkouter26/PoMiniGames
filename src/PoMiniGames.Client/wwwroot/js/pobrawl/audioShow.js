@@ -18,7 +18,7 @@
 //   Charge risers  — one per charging fighter, pitch and brightness following f.chargeAmt,
 //                    panned to the fighter, a glint at full charge, snapped shut on release (or
 //                    whenever the fighter leaves 'charge' some other way). CPU corners quieter.
-//   Perspective    — the mix follows the camera. Director modes (demo, tournament): each cut
+//   Perspective    — the mix follows the camera. Director mode (tournament): each cut
 //                    picks tight / mid / wide; super and KO cinematics override. Player modes:
 //                    the AudioListener rides the camera and one-shots get a PannerNode (HRTF on
 //                    the high tier, equal-power below).
@@ -56,7 +56,7 @@ const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 class AudioShowMethods {
   _initAudioShow() {
     const mode = this.options?.mode;
-    const director = mode === 'demo' || mode === 'tournament';
+    const director = mode === 'tournament';
     this.beat = { bpm: COUNTDOWN_BPM, t: 0, phase: 0, beatN: 0, bar: 0, pulse: 0, energy: 0 };
     this._as = {
       director,

@@ -139,15 +139,22 @@ export function buildArenaColliders(world, mats) {
       }));
     }
   }
-  // Rope walls: one thin springy box per side spanning the rope band
-  // (y 0.45..1.35) so a launched body rebounds into the ring.
+  // Rope walls: one springy box per side so a launched body rebounds into the
+  // ring. Deep and tall on purpose: a charged KO launches limbs at 20+ m/s, and
+  // the old 8 cm slab spanning only the rope band (y 0.45..1.35) was tunnelled
+  // through at 120 Hz, slid under or cleared — the body left the ring and the KO
+  // camera filmed the crowd. Floor to WALL_TOP, WALL_DEPTH thick, inner face
+  // where the ropes are (HALF − 0.04, as before). The ragdoll also clamps itself
+  // to the ring (ragdollPhysics.js RING_LIMIT), so this is the bounce, not the fence.
+  const WALL_DEPTH = 0.6, WALL_TOP = 2.4, WALL_LEN = HALF + WALL_DEPTH;
+  const wallOff = HALF - 0.04 + WALL_DEPTH / 2;
   for (const side of [0, 1]) {
     for (const sign of [-1, 1]) {
       add(new CANNON.Body({
         mass: 0, material: mats.arena,
         shape: new CANNON.Box(new CANNON.Vec3(
-          side ? 0.04 : HALF, 0.45, side ? HALF : 0.04)),
-        position: new CANNON.Vec3(side ? sign * HALF : 0, 0.9, side ? 0 : sign * HALF),
+          side ? WALL_DEPTH / 2 : WALL_LEN, WALL_TOP / 2, side ? WALL_LEN : WALL_DEPTH / 2)),
+        position: new CANNON.Vec3(side ? sign * wallOff : 0, WALL_TOP / 2, side ? 0 : sign * wallOff),
       }));
     }
   }

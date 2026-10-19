@@ -253,13 +253,15 @@ public sealed class GameResultService
             () => _sync.EnqueuePoMule(run));
 
     /// <summary>Records the PoBrawl outcome locally and submits the fastest-KO score together.</summary>
-    /// <remarks>The PoBrawl submit API only signals reachability (null response), so a
-    /// failure always parks for replay — there is no explicit-rejection path here.</remarks>
     public Task<PlayerStats> RecordAndSubmitPoBrawlAsync(
         string playerName, GameResult result, PoBrawlHighScore? highScore) =>
         RecordAndSubmitCoreAsync("pobrawl", playerName, result, highScore is not null,
-            async () => await _api.SubmitPoBrawlHighScoreAsync(highScore!) is null
-                ? SubmitOutcome.Park
-                : SubmitOutcome.Saved,
+            async () =>
+            {
+                var submitted = await _api.SubmitPoBrawlHighScoreAsync(highScore!);
+                return submitted.IsSaved ? SubmitOutcome.Saved
+                    : submitted.ShouldRetry ? SubmitOutcome.Park
+                    : SubmitOutcome.Rejected;
+            },
             () => _sync.EnqueuePoBrawl(highScore!));
 }

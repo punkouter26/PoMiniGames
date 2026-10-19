@@ -1,7 +1,8 @@
 // commentary.js — ringside commentary and captions.
 //
-// Captions: the ring calls ("Fight!", "K O!", super names, the ring introduction, the
-// champion) and the commentary below are written into a caption bar at the foot of the arena.
+// Captions: the ring calls (super names, the ring introduction, the champion) and the
+// commentary below are written into a caption bar at the foot of the arena. A call the big
+// banner already shows ("FIGHT!", "K.O.!") stays off the bar (_echoesBanner).
 // Text only: there is no spoken commentary.
 //
 // Commentary: template lines on fight events — a long combo, a monster hit, a perfect guard,
@@ -66,16 +67,36 @@ class CommentaryMethods {
     this.captionEl = el;
   }
 
-  /** Show `text` in the caption bar for a few seconds. */
+  /**
+   * Show `text` in the caption bar for a few seconds. A ring call the big banner is already
+   * shouting ("K O!" under "K.O.!", "Fight!" under "FIGHT!") is dropped: the same word in two
+   * places at once reads as clutter. Order does not matter; _setBanner hides a caption it echoes.
+   */
   _caption(text, secs = CAPTION_SECS) {
     const el = this.captionEl;
     if (!el || !text) return;
+    if (this._echoesBanner(text, this.banner?.textContent)) return;
     el.textContent = String(text);
     el.classList.remove('pb-caption--on');
     void el.offsetWidth; // restart the fade-in
     el.classList.add('pb-caption--on');
     clearTimeout(this._captionTimer);
     this._captionTimer = setTimeout(() => el.classList.remove('pb-caption--on'), secs * 1000);
+  }
+
+  /** Same words, ignoring case, spacing and punctuation ("K O!" ≡ "K.O.!"). */
+  _echoesBanner(caption, banner) {
+    const norm = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const c = norm(caption);
+    return c !== '' && c === norm(banner);
+  }
+
+  /** The banner just changed (hudFeedback.js _setBanner): drop a caption that says the same. */
+  _captionYieldTo(banner) {
+    const el = this.captionEl;
+    if (!el || !el.classList.contains('pb-caption--on') || !this._echoesBanner(el.textContent, banner)) return;
+    clearTimeout(this._captionTimer);
+    el.classList.remove('pb-caption--on');
   }
 
   /** Say one line of `kind` about fighter `a` (and `b`), if the pacing allows. */

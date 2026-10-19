@@ -41,13 +41,13 @@ public partial class PoBrawlPage
 
     private string _playerName = "";
     private string _mode = "1p";
-    private bool _demo => _mode == "demo";
 
     // Outcome for the end-of-game cue. _winner is 1 for the local player and 2
-    // for the opponent; only the 1P ladder has a "you" to win, so 2-player and
-    // demo stay Unknown (see GameOverModal.Outcome).
+    // for the opponent; only the 1P ladder has a "you" to win, so 2-player stays
+    // Unknown (see GameOverModal.Outcome). Online reads the server's outcome.
     private GameResult OutcomeForCue => _mode == "online"
-        ? _netResult?.Outcome switch
+        ? _netResult is { Abandoned: true } ? GameResult.InProgress   // never fought: neutral, not a draw
+        : _netResult?.Outcome switch
         {
             PoMiniGames.Shared.Games.PoBrawlOutcome.Win => GameResult.Win,
             PoMiniGames.Shared.Games.PoBrawlOutcome.Loss => GameResult.Loss,
@@ -62,25 +62,22 @@ public partial class PoBrawlPage
 
 
     // ── Intro/welcome gate ──
-    // The fight does not start until the intro card is dismissed: OK in 1P, a 2s
-    // flash in demo, and in 2P once both players lock in their fighter with their
-    // own keyboard halves (P1: A/D + F, P2: ←/→ + K — mirroring the in-game keys).
+    // The fight does not start until the intro card is dismissed: OK in 1P, and in 2P once
+    // both players lock in their fighter with their own keyboard halves (P1: A/D + F,
+    // P2: ←/→ + K — mirroring the in-game keys).
     private bool _introDone;
     private int _p1Sel;       // cursor into PickableRoster for player 1
     private int _p2Sel = 1;   // player 2 starts one down so they don't overlap P1
     private bool _p1Locked;
     private bool _p2Locked;
     private bool BothLocked => _p1Locked && _p2Locked;
-    private GameIntro.IntroMode _introMode => _demo
-        ? GameIntro.IntroMode.Demo
-        : _mode == "2p" ? GameIntro.IntroMode.TwoPlayer : GameIntro.IntroMode.OnePlayer;
+    private GameIntro.IntroMode _introMode =>
+        _mode == "2p" ? GameIntro.IntroMode.TwoPlayer : GameIntro.IntroMode.OnePlayer;
     // The 60-second limit belongs in the objective: a player who does not know the clock is
     // a deadline reads a decision loss as the game ending arbitrarily.
     private string IntroObjective => _mode == "2p"
         ? "Two fighters enter — one round, 60 seconds. Each player picks below."
-        : _mode == "demo"
-            ? "Two CPU presidents go 60 seconds. Sit back — the fight runs itself."
-            : "KO inside 60 seconds — closest health at the bell is a draw.";
+        : "KO inside 60 seconds — closest health at the bell is a draw.";
     // "fighting" | "result".
     private string _phase = "fighting";
     private string _p1Char = "trump";
@@ -96,12 +93,11 @@ public partial class PoBrawlPage
 
     // The shell's polite live region. Sparse milestones only — round start, the first
     // reading of each fighter in the red, training and the result — never the 4×/sec HUD
-    // pump. Demo stays silent: a kiosk has nobody listening.
+    // pump.
     private string _announcement = "";
     private bool _p1DangerAnnounced;
     private bool _p2DangerAnnounced;
 
-    private List<StatItem> _statItems = new();
     // 1P win–loss for the result's facts line (UpdateStats).
     private string _record = "0–0";
     private PlayerStats _stats = new();
@@ -141,15 +137,28 @@ public partial class PoBrawlPage
 
     // ── Post-fight press conference (scripted, PoBrawlPressLines) ─────────
     private PoBrawlPressLine? _presser;
-    // Bumped when a fight starts or training is entered, so a pending ladder roll (the
-    // LadderResultHoldMs wait) can tell it has been superseded.
+    // Bumped when a fight starts or restarts, training is entered or the page goes away, so a
+    // pending ladder roll (the LadderResultHoldMs wait) can tell it has been superseded.
     private int _ladderRollGeneration;
+
+    // ── Pause (1P, training, 2P; never online). The engine owns the state (PoBrawl.setPaused)
+    // and reports every change through OnPauseChanged. ──
+    private bool _paused;
+    private bool _focusResume;
+    private ElementReference _resumeButton;
+    private bool CanPause => _mode is "1p" or "2p";
+    // Not between rungs: a restart there would re-fight the president just beaten, on a ladder
+    // that has already moved up.
+    private bool PauseAvailable => CanPause && _introDone && _phase == "fighting" && !_ladderRolling;
+    private bool _ladderRolling;
 
     // ── Online (PoBrawlNetSession; the arena predicts the server's fight and rolls back) ──
     private PoBrawlNetSession? _net;
     private string _code = "";
     private string? _engineMatchId;   // the fight the running engine is showing
     private bool _netMissing;         // JoinMatch answered null: no fight on this code
+    private bool _netConnectFailed;   // the hub never answered (network, auth): retryable
+    private string? _netConnectError;
     // Corner state, cached at join. The live Snapshot can turn null underneath an open result
     // screen (a reconnect that answers null once the swept fight is gone), so name/side
     // readouts must not dereference it.
@@ -162,6 +171,9 @@ public partial class PoBrawlPage
     private string _p1Player = "";
     private string _p2Player = "";
 
+    /// <summary>The fight is held at frame 0 until the second corner joins (not a warning).</summary>
+    private bool NetWaiting => _net?.State is { Finished: false, WaitingForOpponent: true };
+
     /// <summary>What the network is doing to the fight, or null when nothing worth saying.</summary>
     private string? NetNotice
     {
@@ -170,6 +182,14 @@ public partial class PoBrawlPage
             if (_net is null) return null;
             if (_net.ConnectionState == Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Reconnecting) return "Reconnecting…";
             if (_net.ConnectionState == Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Disconnected) return "Disconnected";
+            // The other corner has not reached the hub yet: the server holds the clock at frame 0
+            // and starts the countdown when they arrive. ForfeitInSeconds is their arrival time left.
+            if (_net.State is { Finished: false, WaitingForOpponent: true } w)
+            {
+                var due = w.ForfeitInSeconds is { } arrive ? $" ({Math.Ceiling(arrive):0}s)" : "";
+                var whom = _isSpectator ? (!w.Player1Connected ? _p1Player : _p2Player) : "your opponent";
+                return $"Waiting for {whom}…{due}";
+            }
             if (_net.State is { Finished: false, ForfeitInSeconds: { } left } s)
             {
                 var who = !s.Player1Connected ? _p1Player : _p2Player;
@@ -206,10 +226,9 @@ public partial class PoBrawlPage
 
     protected override void OnInitialized()
     {
-        var routeMode = GameModes.Parse(Mode);
-        _mode = routeMode == GameMode.Demo ? "demo"
-              : routeMode == GameMode.TwoPlayer ? "2p"
-              : "1p";
+        // /pobrawl/demo (the Cup), /pobrawl/multi (the lobby) and /pobrawl/hq are their own
+        // pages' literal routes, so only 1P, 2P and online land here.
+        _mode = GameModes.Parse(Mode) == GameMode.TwoPlayer ? "2p" : "1p";
         // /pobrawl/online?code=… — the lobby's fight. Not a GameModes slug: it is not a way to
         // START a game (that is /pobrawl/multi), only where a started one is played or watched.
         // The lobby page showed the intro card, so there is none here.
@@ -218,6 +237,12 @@ public partial class PoBrawlPage
             _mode = "online";
             _introDone = true;
             _code = (CodeQuery ?? "").Trim().ToUpperInvariant();
+        }
+        else if (!IsKnownMode(Mode))
+        {
+            // /pobrawl/bogus would play 1P on an address the mode switch does not recognise,
+            // so the 1P/2P/Online/Demo tabs vanished. Same page, the canonical address.
+            Nav.NavigateTo("/pobrawl" + new Uri(Nav.Uri).Query, replace: true);
         }
         LoadLocalProgress();
         // The name can still be settling (localStorage read, then the signed-in display name) —
@@ -236,9 +261,12 @@ public partial class PoBrawlPage
             _p2Char = PickableRoster[_p2Sel].Id;
         }
         UpdateStats();
-
-        if (_demo) Kiosk.SetCurrent("pobrawl-demo");
     }
+
+    private static bool IsKnownMode(string? mode) =>
+        string.IsNullOrEmpty(mode)
+        || string.Equals(mode, GameModes.OnePlayerSlug, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(mode, GameModes.TwoPlayerSlug, StringComparison.OrdinalIgnoreCase);
 
     // One remote-progress merge per page life: first render when already signed in, otherwise
     // the moment the auto-guest identity settles (see OnAuthSettled).
@@ -293,6 +321,13 @@ public partial class PoBrawlPage
         // 2P select: keep the live portraits (selectStage.js) on the cursors and locks.
         // After _ref: the first call awaits the engine module's load.
         if (_mode == "2p" && !_introDone) await SyncSelectStageAsync();
+        // The pause card just opened: Resume takes focus, so Enter or Space resumes too (the
+        // engine still reads Escape and P with a button focused).
+        if (_focusResume && _paused && PauseAvailable)
+        {
+            _focusResume = false;
+            try { await _resumeButton.FocusAsync(); } catch { /* not rendered yet */ }
+        }
         if (!firstRender) return;
 
         if (_mode == "online")
@@ -325,7 +360,7 @@ public partial class PoBrawlPage
     /// </summary>
     private void OnPlayerNameChanged()
     {
-        if (_introDone || _demo || PlayerNameService.GetPlayerName() == _playerName) return;
+        if (_introDone || PlayerNameService.GetPlayerName() == _playerName) return;
         _ = InvokeAsync(() =>
         {
             LoadLocalProgress();
@@ -339,8 +374,10 @@ public partial class PoBrawlPage
     // matches each player's in-game half of the keyboard.
     private void OnIntroKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {
-        if (_mode != "2p" || _introDone) return;
+        // A held key auto-repeats: it would race the cursor and flick a lock on and off.
+        if (_mode != "2p" || _introDone || e.Repeat) return;
         var n = PickableRoster.Length;
+        var wasLocked = BothLocked;
         // The grid is SelectColumns wide: across is ±1, down is ±SelectColumns (the in-game
         // circle keys, W/S and ↑/↓), all wrapping.
         switch (e.Code)
@@ -357,8 +394,9 @@ public partial class PoBrawlPage
             case "KeyK": _p2Locked = !_p2Locked; break;
             default: return;
         }
-        // Both locked → straight into the fight (no reaching for the mouse).
-        if (BothLocked) { _ = VersusThenStartAsync(); return; }
+        // The second lock → straight into the fight (no reaching for the mouse). Only on the
+        // lock itself: a cursor key pressed once both are in must not replay the VS sting.
+        if (BothLocked && !wasLocked) { _ = VersusThenStartAsync(); return; }
         StateHasChanged();
     }
 
@@ -372,9 +410,10 @@ public partial class PoBrawlPage
     /// </summary>
     private void TapFighter(int idx)
     {
-        if (_introDone) return;
+        // Both already in: the VS sting is running, and a tap changes nothing.
+        if (_introDone || BothLocked) return;
         if (!_p1Locked) { _p1Sel = idx; _p1Locked = true; }
-        else if (!_p2Locked) { _p2Sel = idx; _p2Locked = true; }
+        else { _p2Sel = idx; _p2Locked = true; }
         if (BothLocked) _ = VersusThenStartAsync();
     }
 
@@ -383,7 +422,8 @@ public partial class PoBrawlPage
     {
         if (_introDone) return;
         if (side == 1) _p1Locked = !_p1Locked; else _p2Locked = !_p2Locked;
-        // Match the keyboard path: both sides ready starts the fight.
+        // Match the keyboard path: both sides ready starts the fight (a toggle can only make
+        // BothLocked true by locking, so this never replays the sting).
         if (BothLocked) _ = VersusThenStartAsync();
     }
 
@@ -392,7 +432,7 @@ public partial class PoBrawlPage
     private const string SelectStageId = "pb-select-stage";
     private Task? _selectStageMount;
     private string? _selectStageSent;   // the cursor/lock state the stage last saw
-    private int _versusGeneration;      // bumped per both-locked moment; an unlock cancels it
+    private bool _versusRunning;        // the VS sting is playing; a second both-locked waits on it
 
     private string SelectStageKey => $"{_p1Sel}|{_p2Sel}|{_p1Locked}|{_p2Locked}";
 
@@ -430,15 +470,18 @@ public partial class PoBrawlPage
     /// <summary>
     /// Both corners locked: the second seal stamps, the VS sting plays and the slash crosses
     /// the screen (instant under reduced motion), then the fight starts — unless someone
-    /// unlocked in the meantime.
+    /// unlocked in the meantime. One sting at a time: a lock landing while it plays is picked
+    /// up by the check at its end.
     /// </summary>
     private async Task VersusThenStartAsync()
     {
-        var generation = ++_versusGeneration;
+        if (_versusRunning) return;
+        _versusRunning = true;
         StateHasChanged();
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.select.versus", SelectStageId); }
         catch { /* no engine module: start straight away */ }
-        if (generation != _versusGeneration || !BothLocked) return;
+        finally { _versusRunning = false; }
+        if (!BothLocked) return;
         await OnIntroStartAsync();
     }
 
@@ -487,14 +530,7 @@ public partial class PoBrawlPage
         if (_introDone) return;
         _introDone = true;
 
-        if (_demo)
-        {
-            // Attract mode: two random fighters, CPU vs CPU.
-            var picks = Roster.OrderBy(_ => Guid.NewGuid()).Take(2).ToArray();
-            _p1Char = picks[0].Id;
-            _p2Char = picks[1].Id;
-        }
-        else if (_mode == "2p")
+        if (_mode == "2p")
         {
             // The two intro columns decided these (per-half keys, or tap). The
             // cursors start one apart (Bob vs Trump), so Start without locking
@@ -528,8 +564,9 @@ public partial class PoBrawlPage
     private async Task InitEngine()
     {
         ResetRoundHud();
+        _paused = false; // a fresh engine starts running
         // 1P difficulty is the ladder rung (1 = pushover Trump … 15 = brutal
-        // FDR); demo keeps the balanced mid-tier CPU-vs-CPU fight.
+        // FDR); 2P and online have no CPU, so the value is only a placeholder.
         object difficulty = _mode == "1p" ? _ladder + 1 : "medium";
         // Online: which corner is ours (0 = watching). The engine's rollback session drives both
         // corners and only reads the local keys for corner `localSide`.
@@ -591,15 +628,31 @@ public partial class PoBrawlPage
         }
         catch (Exception ex)
         {
+            // A missing fight is not an exception — JoinMatch answers null (OnNetJoinedAsync).
+            // Anything thrown is the transport, the sign-in or the hub refusing: worth a retry.
             Console.Error.WriteLine($"[PoBrawl] online connect failed: {ex.Message}");
-            _netMissing = true;
+            _netConnectFailed = true;
+            _netConnectError = PoBrawlNetSession.HubMessage(ex, "The fight server didn't answer. Check your connection and try again.");
             StateHasChanged();
         }
     }
 
+    private async Task RetryConnectAsync()
+    {
+        _netConnectFailed = false;
+        _netConnectError = null;
+        if (_net is { } old)
+        {
+            _net = null;
+            await old.DisposeAsync();
+        }
+        StateHasChanged();
+        await StartOnlineAsync();
+    }
+
     /// <summary>
-    /// A (re-)join answered. A new fight (the first join, or a rematch) boots the arena on its
-    /// fighters; a reconnect to the fight already on screen just carries on.
+    /// A (re-)join answered. A new fight boots the arena on its fighters; a reconnect to the
+    /// fight already on screen just carries on.
     /// </summary>
     private async Task OnNetJoinedAsync(PoMiniGames.Shared.Games.PoBrawlMatchSnapshot? snap)
     {
@@ -660,9 +713,22 @@ public partial class PoBrawlPage
     private async Task OnNetFinishedAsync(PoMiniGames.Shared.Games.PoBrawlMatchResult r)
     {
         _netResult = r;
+        if (r.Abandoned)
+        {
+            // The opponent never arrived: no fight, no rating, nothing to report. The engine may
+            // never reach a result of its own from a frozen clock, so the page ends it here.
+            _phase = "result";
+            _presser = null;
+            _announcement = _isSpectator
+                ? "The fight never started — a corner never showed up."
+                : "Your opponent never showed up. No rating change.";
+            StateHasChanged();
+            return;
+        }
         StateHasChanged();
         if (_netSubmittedFor == r.MatchId || _isSpectator || _net?.Snapshot is null) return;
         _netSubmittedFor = r.MatchId;
+        // Retries a 503 (the Elo write) with the same body inside the server's hold on the fight.
         if (!await ApiService.SubmitPoBrawlOnlineMatchAsync(new PoMiniGames.Shared.Games.PoBrawlMatchResultDto { MatchId = r.MatchId }))
         {
             Toasts.Show("Couldn't record the match — Elo didn't update.", ToastType.Warning);
@@ -704,7 +770,7 @@ public partial class PoBrawlPage
     /// and captions it under the VS splash. Local fights only.
     /// </summary>
     private string? IntroLine() =>
-        _training || _demo || _mode == "online" ? null : PoBrawlPressLines.Intro(_p1Char, _p2Char)?.Text;
+        _training || _mode == "online" ? null : PoBrawlPressLines.Intro(_p1Char, _p2Char)?.Text;
 
     // ── Training room (1P) ───────────────────────────────────────────────
     // Entered from the intro card; left by the bar's "Back to the ladder". Either direction
@@ -787,7 +853,8 @@ public partial class PoBrawlPage
             if (!_p1DangerAnnounced)
             {
                 _p1DangerAnnounced = true;
-                if (!_demo) { _announcement = $"{CharName(_p1Char)} is in the red — health critical."; said = true; }
+                _announcement = $"{CharName(_p1Char)} is in the red — health critical.";
+                said = true;
             }
         }
         else
@@ -800,7 +867,8 @@ public partial class PoBrawlPage
             if (!_p2DangerAnnounced)
             {
                 _p2DangerAnnounced = true;
-                if (!_demo) { _announcement = $"{CharName(_p2Char)} is in the red — health critical."; said = true; }
+                _announcement = $"{CharName(_p2Char)} is in the red — health critical.";
+                said = true;
             }
         }
         else
@@ -835,8 +903,8 @@ public partial class PoBrawlPage
         try { await JSRuntime.InvokeAsync<bool>("PoBrawl.saveClip"); } catch { }
     }
 
-    /// <summary>Engine → page on every spawn. Demo reshuffles its roster in JS, so the resolved
-    /// ids keep the HUD names on the fighters underneath them.</summary>
+    /// <summary>Engine → page on every spawn: the resolved ids keep the HUD names on the
+    /// fighters underneath them.</summary>
     [JSInvokable]
     public void OnMatchStart(string p1Char, string p2Char)
     {
@@ -861,22 +929,7 @@ public partial class PoBrawlPage
         _lastKo = elapsedSeconds;
         if (recap is not null) _recap = Accumulate(_recap, recap);
         _lastRecap = recap;
-
-        if (_demo)
-        {
-            _phase = "result";
-            _announcement = winner == 0
-                ? "Exhibition over — a draw."
-                : $"Exhibition over — {CharName(winner == 1 ? _p1Char : _p2Char)} wins.";
-            // Demo is CPU vs CPU, so the result rates the two fighters against each other
-            // rather than any player. 2P is excluded: those fighters are human-picked and
-            // human-driven, which measures the players, not the roster.
-            await RecordDemoFighterEloAsync(winner);
-            await InvokeAsync(StateHasChanged);
-            // Tell the kiosk reel the post-game phase is up so it can rotate now.
-            Kiosk.MarkFinished();
-            return;
-        }
+        _paused = false;
 
         // Online: the engine only presents the server's result (netplay.js ends the fight when
         // the server does). The outcome that counts — and the Elo write — arrive separately as
@@ -884,6 +937,12 @@ public partial class PoBrawlPage
         if (_mode == "online")
         {
             _phase = "result";
+            // Abandoned (nobody fought): OnNetFinishedAsync already said so, and there is no presser.
+            if (_netResult is { Abandoned: true })
+            {
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
             _announcement = winner == 0
                 ? "The bell — a draw."
                 : $"{(winner == 1 ? _p1Player : _p2Player)} takes it with {CharName(winner == 1 ? _p1Char : _p2Char)}.";
@@ -955,8 +1014,9 @@ public partial class PoBrawlPage
             SaveLadder();
 
             // Global ladder board: presidents beaten this run (Roster.Length on a full clear —
-            // _ladder has already wrapped to 0). The server keeps each player's best.
-            _ = await ApiService.SubmitPoBrawlLadderAsync(new PoBrawlLadderEntry
+            // _ladder has already wrapped to 0). The server keeps each player's best, so a
+            // dropped submit self-heals on the next win — and the next rung never waits on it.
+            _ = ApiService.SubmitPoBrawlLadderAsync(new PoBrawlLadderEntry
             {
                 PlayerName = _playerName,
                 PresidentsBeaten = _champion ? Roster.Length : _ladder,
@@ -964,8 +1024,9 @@ public partial class PoBrawlPage
             });
         }
 
-        _stats = await GameResults.RecordAndSubmitPoBrawlAsync(_playerName, result, best);
-        UpdateStats();
+        // The record and the fastest-KO submit run beside the roll, not in front of it: a slow
+        // network must not hold the next rung. The result's W–L follows when they land.
+        _ = RecordResultAsync(result, best);
 
         // The live region says the 1P result — including the roll-into-the-next-rung path,
         // which shows no modal at all.
@@ -979,50 +1040,9 @@ public partial class PoBrawlPage
 
         if (advanceToNext)
         {
-            // Hold on the result first (see LadderResultHoldMs). Leaving for training or
-            // navigating away inside the hold supersedes this roll.
-            var generation = _ladderRollGeneration;
-            var nextP2 = Roster[_ladder].Id;
-            _p2Char = nextP2;
-            // The KO cinematic runs on the RENDER clock — frozen in a backgrounded tab — while
-            // the hold below is wall-clock. Wait the 'ko' phase out (capped) so the roll never
-            // cuts the ragdoll/replay the player was owed; accessor lives in index.js.
-            for (var waits = 0; waits < 40; waits++)
-            {
-                string? enginePhase;
-                try { enginePhase = await JSRuntime.InvokeAsync<string?>("PoBrawl.phase"); }
-                catch { break; } // engine gone, or an older cached build without the accessor
-                if (enginePhase is null || enginePhase != "ko") break;
-                await Task.Delay(250);
-            }
-            if (generation != _ladderRollGeneration || _training) return;
-            // The campaign-map interlude is part of the Full show; the Simple one just holds.
-            if (PoBrawlShowPrefs.IsFull)
-            {
-                _campaignBeaten = _ladder;
-                await InvokeAsync(StateHasChanged);
-                await Task.Delay(Math.Max(LadderResultHoldMs, CampaignInterludeMs));
-                if (_campaignBeaten == _ladder) _campaignBeaten = null;
-            }
-            else
-            {
-                await Task.Delay(LadderResultHoldMs);
-            }
-            if (generation != _ladderRollGeneration || _training)
-            {
-                await InvokeAsync(StateHasChanged);
-                return;
-            }
-
-            // Stay in the fight: reset the HUD and roll the engine into the next president.
-            // GameOver stays false, so no modal is shown.
-            _p2Char = nextP2;
-            _phase = "fighting";
-            ResetRoundHud();
-            await InvokeAsync(StateHasChanged);
-            var introLine = IntroLine();
-            try { await JSRuntime.InvokeVoidAsync("PoBrawl.next", _p2Char, _ladder + 1, introLine); }
-            catch (Exception ex) { Console.Error.WriteLine($"[PoBrawl] next-match failed: {ex.Message}"); }
+            _ladderRolling = true;
+            try { await RollToNextRungAsync(); }
+            finally { _ladderRolling = false; }
             return;
         }
 
@@ -1031,48 +1051,200 @@ public partial class PoBrawlPage
         _ = StartPresserAsync();
     }
 
-    /// <summary>Reports one finished demo match to the fighter-Elo board.</summary>
-    /// <param name="winner">1 = the left fighter, 2 = the right fighter, 0 = a draw.</param>
-    private async Task RecordDemoFighterEloAsync(int winner)
+    /// <summary>
+    /// A 1P win with presidents still in line: hold on the result, play the campaign interlude,
+    /// then roll the engine into the next rung — no modal.
+    /// </summary>
+    private async Task RollToNextRungAsync()
     {
-        // AuthGate normally signs the visitor in first; if not, watch silently rather than
-        // firing a 401 after every match for as long as the kiosk is left running.
-        if (!Auth.IsAuthenticated) return;
+        // Hold on the result first (see LadderResultHoldMs). Leaving for training or
+        // navigating away inside the hold supersedes this roll.
+        // OnMatchEnd only fires once the engine is in 'result', after the KO cinematic, so the
+        // hold starts straight away.
+        var generation = _ladderRollGeneration;
+        var nextP2 = Roster[_ladder].Id;
+        _p2Char = nextP2;
+        // The campaign-map interlude is part of the Full show; the Simple one just holds.
+        if (PoBrawlShowPrefs.IsFull)
+        {
+            _campaignBeaten = _ladder;
+            await InvokeAsync(StateHasChanged);
+            await Task.Delay(Math.Max(LadderResultHoldMs, CampaignInterludeMs));
+            if (_campaignBeaten == _ladder) _campaignBeaten = null;
+        }
+        else
+        {
+            await Task.Delay(LadderResultHoldMs);
+        }
+        if (generation != _ladderRollGeneration || _training)
+        {
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
 
-        // The engine reshuffles its own roster on restart and reports the pairing through
-        // OnMatchStart. A degenerate self-pairing would be rejected server-side, so skip it
-        // here instead of spending the request.
-        if (string.IsNullOrEmpty(_p1Char) || string.IsNullOrEmpty(_p2Char) || _p1Char == _p2Char) return;
+        // Stay in the fight: reset the HUD and roll the engine into the next president.
+        // GameOver stays false, so no modal is shown.
+        _p2Char = nextP2;
+        _phase = "fighting";
+        ResetRoundHud();
+        await InvokeAsync(StateHasChanged);
+        var introLine = IntroLine();
+        try { await JSRuntime.InvokeVoidAsync("PoBrawl.next", _p2Char, _ladder + 1, introLine); }
+        catch (Exception ex) { Console.Error.WriteLine($"[PoBrawl] next-match failed: {ex.Message}"); }
+    }
 
-        // Only the left fighter takes the winner slot unless the right one actually won. On a
-        // draw the order is arbitrary — IsDraw is what scores the match.
-        var leftWon = winner != 2;
-        var request = new PoBrawlDemoResultRequest(
-            WinnerFighterId: leftWon ? _p1Char : _p2Char,
-            LoserFighterId: leftWon ? _p2Char : _p1Char,
-            IsDraw: winner == 0);
-
-        // The POST answers with the re-ranked board, which nothing here renders; the write is
-        // what feeds the "Brawl Demo" board on /leaderboards.
-        await ApiService.SubmitPoBrawlDemoResultAsync(request);
+    /// <summary>The local record, then the fastest-KO submit (parked offline by GameResultService).</summary>
+    private async Task RecordResultAsync(GameResult result, PoBrawlHighScore? best)
+    {
+        try
+        {
+            _stats = await GameResults.RecordAndSubmitPoBrawlAsync(_playerName, result, best);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[PoBrawl] recording the result failed: {ex.Message}");
+            return;
+        }
+        UpdateStats();
+        await InvokeAsync(StateHasChanged);
     }
 
     private void UpdateStats()
     {
         var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
         _record = $"{bucket.Wins}–{bucket.Losses}";
-        _statItems = _mode == "1p"
-            ? GameStatsPanel.Build(bucket, includeDraws: false, includeElo: false,
-                ("Elo", _rating.Elo.ToString()),
-                ("Best KO", _bestKo > 0 ? $"{_bestKo:0.00}s" : "0s"))
-            : GameStatsPanel.Build(bucket, includeDraws: false, includeElo: true,
-                ("Best KO", _bestKo > 0 ? $"{_bestKo:0.00}s" : "0s"));
+    }
+
+    // ── Pause ────────────────────────────────────────────────────────────
+    /// <summary>
+    /// Engine → page whenever the fight pauses or resumes: the pause button, Escape / P, the
+    /// auto-pause when the tab or window loses focus, a restart.
+    /// </summary>
+    [JSInvokable]
+    public void OnPauseChanged(bool paused)
+    {
+        if (!CanPause || _paused == paused) return;
+        _paused = paused;
+        _focusResume = paused;
+        if (paused) _announcement = "Paused. Press Escape or P to resume.";
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PauseAsync()
+    {
+        try { await JSRuntime.InvokeVoidAsync("PoBrawl.setPaused", true); }
+        catch (Exception ex) { Console.Error.WriteLine($"[PoBrawl] pause failed: {ex.Message}"); }
+    }
+
+    // The card closes on the engine's OnPauseChanged(false), never here: Escape and P on the
+    // open card reach the engine (data-pb-pause), and a page-side toggle would double it.
+    private async Task ResumeAsync()
+    {
+        try { await JSRuntime.InvokeVoidAsync("PoBrawl.setPaused", false); }
+        catch (Exception ex) { Console.Error.WriteLine($"[PoBrawl] resume failed: {ex.Message}"); }
+    }
+
+    /// <summary>The bout again from the countdown — same fighters, same rung (or a fresh training room).</summary>
+    private async Task RestartFightAsync()
+    {
+        ResetRoundState();
+        _announcement = $"Restart — {CharName(_p1Char)} versus {CharName(_p2Char)}.";
+        await RestartEngineAsync();
+    }
+
+    private void QuitFight() => Nav.NavigateTo("/pobrawl", forceLoad: true);
+
+    /// <summary>Returns the page to a bout about to start: no result, no pause, a fresh HUD.</summary>
+    private void ResetRoundState()
+    {
+        ++_ladderRollGeneration; // a pending ladder roll belongs to a bout that is gone
+        _phase = "fighting";
+        _winner = 0;
+        _paused = false;
+        _campaignBeaten = null;
+        _p1DangerAnnounced = _p2DangerAnnounced = false;
+        ResetRoundHud();
+    }
+
+    /// <summary>PoBrawl.restart keeps the engine; an engine without it gets a fresh boot instead.</summary>
+    private async Task RestartEngineAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("PoBrawl.restart");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[PoBrawl] restart failed, re-initialising: {ex.Message}");
+            await InitEngine();
+        }
+    }
+
+    // ── The result's own next step (GameOverModal.OnPrimary): no page reload ──
+    private EventCallback ResultPrimary => CanPause ? EventCallback.Factory.Create(this, FightAgainAsync) : default;
+
+    private EventCallback ResultSecondary => _mode == "2p" ? EventCallback.Factory.Create(this, PickNewFightersAsync) : default;
+
+    private string ResultPrimaryLabel => _mode == "2p" ? "Rematch" : _champion ? "Start a new run" : "Fight again";
+
+    /// <summary>
+    /// 1P: the rung that just held (or, after a full clear, rung 1 again) as a new run. 2P: the
+    /// same two fighters again.
+    /// </summary>
+    private async Task FightAgainAsync()
+    {
+        var newRun = _champion;
+        ResetRoundState();
+        _recap = null;
+        _lastRecap = null;
+        _presser = null;
+        _resultTab = null;
+        _newRecord = false;
+        _announcement = _mode == "2p"
+            ? $"Rematch — {CharName(_p1Char)} versus {CharName(_p2Char)}."
+            : $"Again — {CharName(newRun ? Roster[_ladder].Id : _p2Char)} for the rung.";
+        if (newRun)
+        {
+            // The ladder already wrapped to rung 1 (OnMatchEnd): a new matchup, so a new boot.
+            _champion = false;
+            _p2Char = Roster[_ladder].Id;
+            StateHasChanged();
+            await InitEngine();
+            return;
+        }
+        StateHasChanged();
+        await RestartEngineAsync();
+    }
+
+    /// <summary>2P: back to the fighter select, in place.</summary>
+    private async Task PickNewFightersAsync()
+    {
+        ResetRoundState();
+        _recap = null;
+        _lastRecap = null;
+        _presser = null;
+        _resultTab = null;
+        try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
+        _p1Locked = _p2Locked = false;
+        // The select's live portraits mount again on the next render (SyncSelectStageAsync).
+        _selectStageMount = null;
+        _selectStageSent = null;
+        _introDone = false;
+        _announcement = "Pick new fighters.";
+        StateHasChanged();
     }
 
     private string ResultLine()
     {
         if (_mode == "online")
         {
+            // Not a win: the fight never happened, and the server moved no rating.
+            if (_netResult is { Abandoned: true })
+            {
+                return _isSpectator
+                    ? "🚪 The fight never started — a corner never showed up."
+                    : "🚪 Your opponent never showed up — no rating change.";
+            }
             var how = _netResult?.Forfeit == true ? " by forfeit"
                 : _net?.State?.LastEvent == "ko" ? " by knockout"
                 : " on the cards";
@@ -1124,6 +1296,9 @@ public partial class PoBrawlPage
 
     public async ValueTask DisposeAsync()
     {
+        // A ladder roll still in its hold must not call PoBrawl.next on whatever engine the next
+        // page boots (the Cup shares the PoBrawl global).
+        ++_ladderRollGeneration;
         PlayerNameService.StateChanged -= OnPlayerNameChanged;
         Auth.StateChanged -= OnAuthSettled;
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }

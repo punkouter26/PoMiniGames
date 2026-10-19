@@ -17,8 +17,8 @@
 //
 // Created lazily on the modal, destroyed on 'countdown' / 'reset' / dispose or when the modal
 // closes; the extra context is released with loseContext. Low tier: nothing here — the modal's
-// own CSS backdrop-filter is the fallback. Demo (no modal): nothing. Reduced motion: no sweep and
-// a fixed highlight. Presentation only.
+// own CSS backdrop-filter is the fallback. Reduced motion: no sweep and a fixed highlight.
+// Presentation only.
 
 import * as Quality from './quality.js';
 
@@ -237,7 +237,7 @@ class ResultGlassMethods {
     this._onShow((type) => {
       const rg = this._rg;
       if (type === 'result') {
-        rg.armed = this.options?.mode !== 'demo';
+        rg.armed = true;
         rg.poll = 0;
       } else if (type === 'countdown' || type === 'reset') {
         rg.armed = false;

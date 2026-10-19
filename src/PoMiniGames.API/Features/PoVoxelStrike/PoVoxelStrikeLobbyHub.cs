@@ -27,9 +27,9 @@ public sealed class PoVoxelStrikeLobbyHub : LobbyHub<PoVoxelStrikeLobbyPlayer, P
     protected override (LobbyState<PoVoxelStrikeLobbyPlayer> state, string message) OpenSeat(string displayName, bool isGuest) =>
         Lobby.Open(Context.ConnectionId, displayName, isGuest);
 
-    protected override Task OnStartingAsync()
+    protected override Task OnStartingAsync(IReadOnlyList<PoVoxelStrikeLobbyPlayer> roster)
     {
-        _lockstep.GetOrCreateSession(PoVoxelStrikeLobbyService.GlobalCode, Lobby.Players);
+        _lockstep.GetOrCreateSession(PoVoxelStrikeLobbyService.GlobalCode, roster);
         return Task.CompletedTask;
     }
 

@@ -1,14 +1,10 @@
-@* The one controls legend for every Brawl entry point (1P, 2P, demo, the online lobby): an
+@* The one controls legend for every Brawl entry point (1P, 2P, the online lobby): an
    action → keys grid instead of a bullet list per mode, then the few rules the HUD cannot
    teach. Keys follow the engine: input.js for the local modes (circle on W/S, the signature
    move fires by itself) and netplay.js online (no circling, H is the special). On a touch
    screen the key column shows the pad's glyphs instead (CSS, .pbc-touch). *@
 
-@if (Mode == "demo")
-{
-    <p class="pbc-lead">No controls: both corners are CPU. Sit back and watch the 60 seconds.</p>
-}
-else if (Mode == "2p")
+@if (Mode == "2p")
 {
     <table class="pbc-table">
         <thead>
@@ -20,9 +16,11 @@ else if (Mode == "2p")
             <tr><th scope="row">Circle</th><td><kbd>W</kbd><kbd>S</kbd></td><td><kbd>↑</kbd><kbd>↓</kbd></td></tr>
             <tr><th scope="row">Block <small>(hold)</small></th><td><kbd>R</kbd></td><td><kbd>;</kbd></td></tr>
             <tr><th scope="row">Punch · kick <small>· lock</small></th><td><kbd>F</kbd> · <kbd>G</kbd></td><td><kbd>K</kbd> · <kbd>L</kbd></td></tr>
+            <tr><th scope="row">Pause</th><td colspan="2"><kbd>Esc</kbd> or <kbd>P</kbd></td></tr>
         </tbody>
     </table>
-    <p class="pbc-touch-note">On a phone the touch pad drives Player 1; Player 2 needs the keyboard or a gamepad.</p>
+    @* Gamepads take the corners in the order they connect (input.js): pad 1 is Player 1. *@
+    <p class="pbc-touch-note">On a phone the touch pad drives Player 1. Player 2 needs a keyboard, or a second gamepad: the first pad is Player 1, the second Player 2.</p>
 }
 else
 {
@@ -38,6 +36,10 @@ else
         @if (Mode == "online")
         {
             <div><dt>Special</dt><dd><span class="pbc-kb"><kbd>H</kbd></span><span class="pbc-touch">⚡</span></dd></div>
+        }
+        else
+        {
+            <div><dt>Pause</dt><dd><span class="pbc-kb"><kbd>Esc</kbd></span><span class="pbc-touch">⏸</span></dd></div>
         }
     </dl>
 }
@@ -58,7 +60,7 @@ else
         <li>📏 A punch reaches 1.5 m, a kick 1.75 m. The special needs a full bar.</li>
         <li>📶 Drop out and you have 15 s to get back before it is a forfeit.</li>
     }
-    else if (Mode != "demo")
+    else
     {
         @* Last on purpose: the PERFECT window is invisible on the HUD, so this card is the only
            place it is taught, and the last line is the one in view when the card closes. *@
@@ -67,6 +69,6 @@ else
 </ul>
 
 @code {
-    /// <summary>"1p", "2p", "demo" or "online".</summary>
+    /// <summary>"1p", "2p" or "online".</summary>
     [Parameter] public string Mode { get; set; } = "1p";
 }

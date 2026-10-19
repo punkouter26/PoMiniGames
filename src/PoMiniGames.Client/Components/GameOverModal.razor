@@ -139,16 +139,33 @@
                 }
             </div>
             <div class="gps-modal-main">
-                @if (CanPlayAgain)
+                @if (OnPrimary.HasDelegate)
                 {
-                    <button class="app-btn app-btn--secondary" @onclick="PlayAgain">Play again</button>
+                    @* The game's own next step (a rematch in place) leads; leaving drops to a
+                       secondary button, and Escape still means leaving. *@
+                    <button class="app-btn app-btn--secondary" @onclick="Back">
+                        <span>@BackText</span>
+                        <kbd class="gps-kbd">Esc</kbd>
+                    </button>
+                    @if (OnSecondary.HasDelegate)
+                    {
+                        <button class="app-btn app-btn--secondary" @onclick="SecondaryAsync">@SecondaryLabel</button>
+                    }
+                    <button class="app-btn app-btn--primary" @onclick="PrimaryAsync" autofocus>@PrimaryLabel</button>
                 }
-                <button class="app-btn app-btn--primary"
-                        @onclick="Back"
-                        autofocus>
-                    <span>Back to all games</span>
-                    <kbd class="gps-kbd gps-kbd--primary">Esc</kbd>
-                </button>
+                else
+                {
+                    @if (CanPlayAgain)
+                    {
+                        <button class="app-btn app-btn--secondary" @onclick="PlayAgain">Play again</button>
+                    }
+                    <button class="app-btn app-btn--primary"
+                            @onclick="Back"
+                            autofocus>
+                        <span>@BackText</span>
+                        <kbd class="gps-kbd gps-kbd--primary">Esc</kbd>
+                    </button>
+                }
             </div>
         </footer>
 
@@ -186,6 +203,21 @@
     /// modal would still be up when the player next opens the game.
     /// </summary>
     [Parameter] public EventCallback OnOk { get; set; }
+
+    /// <summary>Label of the leave button. "Back to all games" unless the game sits under a lobby.</summary>
+    [Parameter] public string? BackLabel { get; set; }
+
+    /// <summary>
+    /// Optional in-place next step ("Fight again", "Rematch"). When set it becomes the primary
+    /// button, replaces the page-reloading Play again, and the leave button turns secondary.
+    /// The modal closes first; the game resets its own state (dropping GameOver unmounts this).
+    /// </summary>
+    [Parameter] public EventCallback OnPrimary { get; set; }
+    [Parameter] public string PrimaryLabel { get; set; } = "Play again";
+
+    /// <summary>Optional second in-place action beside <see cref="OnPrimary"/> ("Pick new fighters").</summary>
+    [Parameter] public EventCallback OnSecondary { get; set; }
+    [Parameter] public string? SecondaryLabel { get; set; }
 
     /// <summary>
     /// How the match ended, so the modal can sound the right cue. Left
@@ -491,6 +523,22 @@
         }
         if (OnOk.HasDelegate) await OnOk.InvokeAsync();
         Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+    }
+
+    private string BackText => string.IsNullOrWhiteSpace(BackLabel) ? "Back to all games" : BackLabel;
+
+    private async Task PrimaryAsync() => await CloseThenAsync(OnPrimary);
+
+    private async Task SecondaryAsync() => await CloseThenAsync(OnSecondary);
+
+    /// <summary>An in-place action: close the native dialog (see Back), then let the game reset.</summary>
+    private async Task CloseThenAsync(EventCallback action)
+    {
+        if (_dialogOpened)
+        {
+            try { await _dialog.CloseAsync(JS); } catch { /* already closed */ }
+        }
+        await action.InvokeAsync();
     }
 
     private async Task Ok()

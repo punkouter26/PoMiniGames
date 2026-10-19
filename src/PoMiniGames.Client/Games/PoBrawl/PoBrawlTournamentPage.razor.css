@@ -62,6 +62,21 @@
     color: var(--pb-gold);
 }
 
+/* A result just landed and the drawer is shut: the Bracket button glows until it is opened. */
+.pt-btn--fresh {
+    border-color: var(--pb-gold);
+    color: var(--pb-gold);
+    animation: pt-btn-glow 1.2s ease-in-out 3;
+}
+
+@keyframes pt-btn-glow {
+    50% { box-shadow: 0 0 16px rgba(255, 209, 102, 0.85); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pt-btn--fresh { animation: none; }
+}
+
 /* ── Bracket drawer: docked right over the arena (a bottom sheet on a phone). No backdrop:
    the fight stays in view beside it. A size container, so the bracket can stack itself
    when the drawer is narrow (see the @container rule at the end). ── */
@@ -148,34 +163,9 @@
     cursor: pointer;
 }
 
-.pt-titles-list {
-    list-style: none;
-    margin: 0 0 10px;
-    padding: 0;
-    display: grid;
-    gap: 4px;
-}
-
-.pt-titles-list li {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.05);
-}
-
-.pt-titles-name {
-    font-weight: 600;
-}
-
-.pt-titles-n {
-    color: var(--pb-gold);
-    font-variant-numeric: tabular-nums;
-}
-
 .pt-hq-link {
     display: inline-flex;
+    align-self: center;
     align-items: center;
     min-height: 32px;
     color: var(--pb-gold);
@@ -570,20 +560,6 @@
 .pt-final-note {
     margin: 4px 0 0;
     font-size: var(--text-xs);
-    color: var(--color-text-secondary);
-}
-
-.pt-draw-opts {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 8px;
-}
-
-.pt-draw-optlabel {
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
     color: var(--color-text-secondary);
 }
 

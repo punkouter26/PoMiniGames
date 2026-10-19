@@ -10,14 +10,15 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A finished match lingers for <see cref="FinishedLinger"/> so both corners can vote for the
-/// rematch and a player who reconnects after the bell still gets their result. The pump
-/// sweeps it after that.
+/// A finished match lingers for <see cref="FinishedLinger"/> so a player who reconnects after the
+/// bell still gets their result, and both corners can still report it (a 503 from the ingest is
+/// retried inside this window). The pump sweeps it after that. There is no rematch: the next
+/// fight starts from the lobby, on a fresh code.
 /// </para>
 /// </remarks>
 public sealed class PoBrawlMatchRegistry
 {
-    /// <summary>How long a finished match is kept for rematch votes and late result delivery.</summary>
+    /// <summary>How long a finished match is kept for late result delivery and the result ingest.</summary>
     public static readonly TimeSpan FinishedLinger = TimeSpan.FromSeconds(90);
 
     private readonly ConcurrentDictionary<string, PoBrawlMatchService> _byCode = new(StringComparer.OrdinalIgnoreCase);
@@ -31,19 +32,11 @@ public sealed class PoBrawlMatchRegistry
         return match;
     }
 
-    /// <summary>
-    /// Both corners asked for another round: the same roster (and fighters) on the same code. The
-    /// connections stay bound to the code, so the clients only have to call JoinMatch again.
-    /// </summary>
-    public PoBrawlMatchService? Rematch(string code) =>
-        _byCode.TryGetValue(code, out var old) && old.FinishedAtUtc is not null ? Start(code, old.Roster) : null;
-
     public PoBrawlMatchService? Get(string code) =>
         !string.IsNullOrWhiteSpace(code) && _byCode.TryGetValue(code, out var m) ? m : null;
 
     /// <summary>
-    /// The match still held under this id, or null once its FinishedLinger sweep
-    /// (or a rematch replacing it) removed it. The result ingest walks this rather than trusting
+    /// The match still held under this id, or null once its FinishedLinger sweep removed it. The result ingest walks this rather than trusting
     /// the client's story about the fight, and the registry is small — live and lingering fights only.
     /// </summary>
     public PoBrawlMatchService? FindByMatchId(string matchId) =>
@@ -54,7 +47,7 @@ public sealed class PoBrawlMatchRegistry
     /// <summary>Every match, running or lingering. The pump ticks the running ones.</summary>
     public IReadOnlyCollection<PoBrawlMatchService> All => _byCode.Values.ToArray();
 
-    /// <summary>Drop a match — only if it is still the one on that code (a rematch may have replaced it).</summary>
+    /// <summary>Drop a match — only if it is still the one on that code.</summary>
     public void Remove(PoBrawlMatchService match) =>
         _byCode.TryRemove(new KeyValuePair<string, PoBrawlMatchService>(match.GameCode, match));
 

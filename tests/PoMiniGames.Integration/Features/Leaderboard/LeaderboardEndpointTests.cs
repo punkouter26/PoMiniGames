@@ -47,21 +47,39 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
 
     // ── PoBrawl fastest-KO high scores ────────────────────────────────────
 
+    /// <summary>A client signed in as <paramref name="user"/> (FakeAuth: id = name = the header), armed.</summary>
+    private async Task<HttpClient> SignedInAsync(string user)
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Remove(FakeAuthHandler.UserHeader);
+        client.DefaultRequestHeaders.Add(FakeAuthHandler.UserHeader, user);
+        await client.ArmAntiforgeryAsync();
+        return client;
+    }
+
     [Fact]
     public async Task PoBrawlHighScores_PostRanksAscending_AndRejectsBadInput()
     {
         if (!_factory.DockerAvailable) return;
 
-        // Two valid submissions; the faster KO should rank ahead of the slower one.
+        // Two players; the faster KO should rank ahead of the slower one. The stored name is the
+        // claim name, so each needs its own identity.
+        var slowName = $"ko_slow_{Guid.NewGuid():N}"[..20];
+        var fastName = $"ko_fast_{Guid.NewGuid():N}"[..20];
+        using var slowClient = await SignedInAsync(slowName);
+        using var fastClient = await SignedInAsync(fastName);
         var slow = new { PlayerInitials = "SLW", KoTimeSeconds = 42.5, Character = "trump", Date = DateTime.UtcNow.ToString("o") };
         var fast = new { PlayerInitials = "FST", KoTimeSeconds = 7.25, Character = "obama", Date = DateTime.UtcNow.ToString("o") };
 
-        (await _client.PostAsJsonAsync("/api/pobrawl/highscores", slow)).StatusCode
+        (await slowClient.PostAsJsonAsync("/api/pobrawl/highscores", slow)).StatusCode
             .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
-        (await _client.PostAsJsonAsync("/api/pobrawl/highscores", fast)).StatusCode
+        (await fastClient.PostAsJsonAsync("/api/pobrawl/highscores", fast)).StatusCode
+            .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
+        // One row per player: a slower KO later must not add a row or replace the best.
+        (await slowClient.PostAsJsonAsync("/api/pobrawl/highscores", slow with { KoTimeSeconds = 55.0 })).StatusCode
             .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
 
-        var scores = await _client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>("/api/pobrawl/highscores");
+        var scores = await _client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>("/api/pobrawl/highscores?count=100000");
         scores.Should().NotBeNull();
         scores!.Should().NotBeEmpty();
 
@@ -69,14 +87,21 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
         var times = scores!.Select(s => s.GetProperty("koTimeSeconds").GetDouble()).ToList();
         times.Should().BeInAscendingOrder(because: "the fastest KO must rank first");
         times.Should().Contain(7.25).And.Contain(42.5);
+        scores.Where(s => s.GetProperty("playerInitials").GetString() == slowName)
+            .Select(s => s.GetProperty("koTimeSeconds").GetDouble())
+            .Should().Equal([42.5], "the board keeps each player's best KO, once");
 
         // A signed-in caller's typed name is only a fallback (the claim name is stored), so a
-        // blank one is accepted; a non-positive KO time is still rejected.
+        // blank one is accepted; a non-positive KO time is still rejected, and so is one faster
+        // than the engine's quickest possible KO (ScoreRules' 1.5 s floor).
         (await _client.PostAsJsonAsync("/api/pobrawl/highscores",
             new { PlayerInitials = "", KoTimeSeconds = 5.0 })).StatusCode
             .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
         (await _client.PostAsJsonAsync("/api/pobrawl/highscores",
             new { PlayerInitials = "ABC", KoTimeSeconds = 0.0 })).StatusCode
+            .Should().Be(HttpStatusCode.BadRequest);
+        (await _client.PostAsJsonAsync("/api/pobrawl/highscores",
+            new { PlayerInitials = "ABC", KoTimeSeconds = 1.2 })).StatusCode
             .Should().Be(HttpStatusCode.BadRequest);
     }
 
@@ -89,49 +114,51 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
 
         var name = $"ladder_test_{Guid.NewGuid():N}"[..24];
         var rival = $"ladder_riva_{Guid.NewGuid():N}"[..24];
+        using var nameClient = await SignedInAsync(name);
+        using var rivalClient = await SignedInAsync(rival);
 
-        using var nameClient = _factory.CreateClient();
-        nameClient.DefaultRequestHeaders.Remove(FakeAuthHandler.UserHeader);
-        nameClient.DefaultRequestHeaders.Add(FakeAuthHandler.UserHeader, name);
-        await nameClient.ArmAntiforgeryAsync();
+        async Task<System.Text.Json.JsonElement> Post(HttpClient client, object body, HttpStatusCode expected)
+        {
+            var response = await client.PostAsJsonAsync("/api/pobrawl/ladder", body);
+            response.StatusCode.Should().Be(expected);
+            return expected == HttpStatusCode.Created
+                ? await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()
+                : default;
+        }
 
-        using var rivalClient = _factory.CreateClient();
-        rivalClient.DefaultRequestHeaders.Remove(FakeAuthHandler.UserHeader);
-        rivalClient.DefaultRequestHeaders.Add(FakeAuthHandler.UserHeader, rival);
-        await rivalClient.ArmAntiforgeryAsync();
+        // The claim is not taken on trust: a first post claiming rung 4 is credited ONE rung (a
+        // run is won one fight at a time, and every win posts), and the Elo is clamped.
+        var first = await Post(nameClient, new { PlayerName = name, PresidentsBeaten = 4, Elo = 99_999 }, HttpStatusCode.Created);
+        first.GetProperty("presidentsBeaten").GetInt32().Should().Be(1, "one rung past the stored count, at most");
+        first.GetProperty("elo").GetInt32().Should().Be(3000, "the client's rating is clamped to a sane range");
 
-        // Best-progress semantics: 4 → then a worse run (2) must NOT overwrite it.
-        (await nameClient.PostAsJsonAsync("/api/pobrawl/ladder",
-            new { PlayerName = name, PresidentsBeaten = 4, Elo = 1300 })).StatusCode
-            .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
-        (await nameClient.PostAsJsonAsync("/api/pobrawl/ladder",
-            new { PlayerName = name, PresidentsBeaten = 2, Elo = 1250 })).StatusCode
-            .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
-        // A full clear posts the whole roster, not a literal 10. The ceiling used to be
-        // hardcoded at 10 while the client ladder walked all 15 fighters, so every rung past
-        // the tenth 400'd and the board silently froze one rung short of the roster.
-        (await rivalClient.PostAsJsonAsync("/api/pobrawl/ladder",
-            new { PlayerName = rival, PresidentsBeaten = PoBrawlRoster.Count, Elo = 1700 })).StatusCode
-            .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
+        // The next rung arrives sooner than any real fight could be won: refused, nothing moves.
+        await Post(nameClient, new { PlayerName = name, PresidentsBeaten = 2, Elo = 1250 }, HttpStatusCode.TooManyRequests);
+
+        // A worse run (an older count) never overwrites the best, and is not "too fast" either.
+        var held = await Post(nameClient, new { PlayerName = name, PresidentsBeaten = 0, Elo = 1250 }, HttpStatusCode.Created);
+        held.GetProperty("presidentsBeaten").GetInt32().Should().Be(1);
+
+        // A full-clear claim from a fresh identity is credited one rung too. The ceiling is the
+        // roster size, never a literal 10 (that froze the board one rung short of the roster).
+        (await Post(rivalClient, new { PlayerName = rival, PresidentsBeaten = PoBrawlRoster.Count, Elo = 1700 }, HttpStatusCode.Created))
+            .GetProperty("presidentsBeaten").GetInt32().Should().Be(1);
 
         // Read back through the UNIFIED board, not a PoBrawl-specific GET. That is the
         // only route the ladder is ever read over: /api/pobrawl/ladder is write-only
         // (see PoBrawlLeaderboardEndpoints), and GameOverModal's "Top 3 / Best rung"
-        // panel and the leaderboards list are both fed from here. Asserting against the
-        // route real users hit also covers BuildPoBrawlAsync's ranking, which the old
-        // PoBrawl-only GET did not exercise at all.
+        // panel and the leaderboards list are both fed from here.
         var board = await _client.GetFromJsonAsync<System.Text.Json.JsonElement>(
             "/api/leaderboards/pobrawl?limit=50");
         var entries = board.GetProperty("entries").EnumerateArray().ToList();
         entries.Should().NotBeEmpty();
 
         var mine = entries.Single(e => e.GetProperty("name").GetString() == name);
-        mine.GetProperty("value").GetDouble()
-            .Should().Be(4, because: "a worse later run must not overwrite the best");
+        mine.GetProperty("value").GetDouble().Should().Be(1, "the server's own count of climbs, not the claim");
         entries.Should().ContainSingle(e => e.GetProperty("name").GetString() == name,
             because: "the ladder keeps one row per player");
         mine.GetProperty("displayValue").GetString()
-            .Should().Be($"4/{PoBrawlRoster.Count}",
+            .Should().Be($"1/{PoBrawlRoster.Count}",
                 because: "the rung denominator tracks the roster, never a literal");
 
         // Ranked by presidents beaten, descending.
@@ -140,11 +167,8 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
 
         // Same rule as the KO board: a signed-in caller's blank typed name is fine (the claim
         // name is stored); an out-of-range count is still rejected.
-        (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
-            new { PlayerName = "", PresidentsBeaten = 3 })).StatusCode
-            .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
-        (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
-            new { PlayerName = "abc", PresidentsBeaten = PoBrawlRoster.Count + 1 })).StatusCode
-            .Should().Be(HttpStatusCode.BadRequest);
+        using var blankClient = await SignedInAsync($"ladder_blank_{Guid.NewGuid():N}"[..24]);
+        await Post(blankClient, new { PlayerName = "", PresidentsBeaten = 3 }, HttpStatusCode.Created);
+        await Post(blankClient, new { PlayerName = "abc", PresidentsBeaten = PoBrawlRoster.Count + 1 }, HttpStatusCode.BadRequest);
     }
 }

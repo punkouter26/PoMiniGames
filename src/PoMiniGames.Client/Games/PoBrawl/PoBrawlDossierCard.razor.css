@@ -141,3 +141,12 @@
     line-clamp: 3;
     overflow: hidden;
 }
+
+/* A phone: the compact card is who, office and style. The Wikipedia summary (and with it the
+   attribution it needs) waits for a wider screen, so the 1P intro fits without scrolling. */
+@media (max-width: 520px) {
+    .pbd-card--compact .pbd-summary,
+    .pbd-card--compact .pbd-source {
+        display: none;
+    }
+}

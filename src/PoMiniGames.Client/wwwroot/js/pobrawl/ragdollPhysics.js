@@ -72,6 +72,20 @@ const LAUNCH = {
   shinR:     { knock: 2.0, up: 0.2 },
 };
 
+// KO containment. The carried velocity (the fighter's walk + knockback at the killing blow)
+// reaches 20–38 m/s on a charged KO, which put the body through the rope walls and into the
+// crowd, out of the KO camera's frame. Each part's horizontal launch is capped at LAUNCH_MAX
+// (still a hard throw across the ring), and drive() keeps every part's centre inside RING_LIMIT
+// — just inside the rope walls' inner face (physics.js, 5.76) — with a damped bounce.
+const LAUNCH_MAX = 9;
+const RING_LIMIT = 5.6;      // a fighter on the ropes (root 5.2) KOs with no pop
+const WALL_BOUNCE = 0.3;
+
+function containAxis(p, v, axis) {
+  if (p[axis] > RING_LIMIT) { p[axis] = RING_LIMIT; if (v[axis] > 0) v[axis] *= -WALL_BOUNCE; }
+  else if (p[axis] < -RING_LIMIT) { p[axis] = -RING_LIMIT; if (v[axis] < 0) v[axis] *= -WALL_BOUNCE; }
+}
+
 // Rig hierarchy for drive(): joint → parent joint, in traversal order.
 const JOINT_PARENT = {
   hips: null, torso: 'hips', head: 'torso',
@@ -107,7 +121,7 @@ export class CannonRagdoll {
 
   // Build the skeleton from the rig's CURRENT world pose and launch it.
   // opts.velocity — fighter world velocity at the moment of the KO blow.
-  // opts.rng      — seeded RNG for the tumble jitter (demo reproducibility).
+  // opts.rng      — seeded RNG for the tumble jitter (seeded matches replay exactly).
   // opts.launch   — shape of the killing blow: { upMul, flip, spin,
   //                 knockMul, velMul }. upMul scales the vertical launch
   //                 (uppercuts loft the body), flip adds pitch angular
@@ -163,6 +177,11 @@ export class CannonRagdoll {
         L.up * upMul,
         vel.z * velMul + knockDir.z * L.knock * knockMul
       );
+      const h = Math.hypot(body.velocity.x, body.velocity.z);
+      if (h > LAUNCH_MAX) {
+        body.velocity.x *= LAUNCH_MAX / h;
+        body.velocity.z *= LAUNCH_MAX / h;
+      }
       body.angularVelocity.set(
         (rand() - 0.5) * 3 + flipAxisX * flip,
         (rand() - 0.5) * 2 + spin,
@@ -225,6 +244,13 @@ export class CannonRagdoll {
     const root = this.rig.root;
     const joints = this.rig.joints;
     const s = (this.rig.config && this.rig.config.heightScale) || 1;
+
+    // Inside the ring, whatever the solver did this step (see RING_LIMIT).
+    for (const part in this.bodies) {
+      const b = this.bodies[part];
+      containAxis(b.position, b.velocity, 'x');
+      containAxis(b.position, b.velocity, 'z');
+    }
 
     // Root: place so the hips pivot lands on the pelvis body (pivotToCenter
     // is zero for the pelvis, so body position == hips pivot).

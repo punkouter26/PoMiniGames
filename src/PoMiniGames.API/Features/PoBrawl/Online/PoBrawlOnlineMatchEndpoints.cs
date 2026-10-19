@@ -34,8 +34,9 @@ public static class PoBrawlOnlineMatchEndpoints
 {
     public static IEndpointRouteBuilder MapPoBrawlOnlineMatchEndpoints(this IEndpointRouteBuilder app)
     {
-        // POST — record a finished 1v1 match and increment both players' Elo. Answers 204:
-        // the ratings surface on the Online MMR board (/api/leaderboards).
+        // POST — record a finished 1v1 match and increment both players' Elo. Answers 204 once
+        // the swing is applied (or was already); 503 + Retry-After when the rating write did not
+        // land, so the client posts again. The ratings surface on the Online MMR board.
         app.MapPost("/pobrawl/matches",
             async (
                 [FromBody] PoBrawlMatchResultDto dto,
@@ -95,16 +96,40 @@ public static class PoBrawlOnlineMatchEndpoints
 
                 var log = loggerFactory.CreateLogger("PoBrawlOnlineMatches");
                 log.LogInformation(
-                    "PoBrawl online match POST user={UserId} matchId={MatchId} outcome={Outcome} duration={Duration}s forfeit={Forfeit}",
-                    userId, dto.MatchId, truth.Outcome, truth.DurationSeconds, truth.Forfeit);
+                    "PoBrawl online match POST user={UserId} matchId={MatchId} outcome={Outcome} duration={Duration}s forfeit={Forfeit} abandoned={Abandoned}",
+                    userId, dto.MatchId, truth.Outcome, truth.DurationSeconds, truth.Forfeit, truth.Abandoned);
+
+                // A fight one corner never arrived at (or both walked out of) was never fought:
+                // nothing to record, no rating to move.
+                if (truth.Abandoned)
+                {
+                    return Results.NoContent();
+                }
+
+                var localLost = truth.Outcome == PoBrawlOutcome.Loss;
+                var isDraw = truth.Outcome == PoBrawlOutcome.Draw;
+                var winnerPid = localLost ? truth.OpponentId : userId;
+                var loserPid = localLost ? userId : truth.OpponentId;
+
+                // Before any write. The lobby gives one principal one seat, but a roster made any
+                // other way must still be a 400 here, not a history row and a rating fighting itself.
+                if (string.Equals(PrincipalIds.Sanitize(winnerPid), PrincipalIds.Sanitize(loserPid), StringComparison.Ordinal))
+                {
+                    return Results.BadRequest(new { error = "opponent_is_self" });
+                }
+
+                // The moderated names, like every other board — the raw claim name and the lobby's
+                // copy of the opponent's never reach the Online MMR board as typed.
+                var ownName = BoardName(integrity, displayName, isGuest);
+                var opponentName = BoardName(integrity, truth.OpponentDisplayName, isGuest: false);
 
                 // History row per corner (per-owner idempotency inside). A retried POST lands
                 // here as a duplicate and is a no-op.
                 await matchHistory.RecordAsync(new MatchRecordRequest(
-                    Owner: integrity.ResolveDisplayName(displayName, isGuest ? "Guest" : "Player"),
+                    Owner: ownName,
                     Game: GameKey.PoBrawl.Value,
                     Mode: "multiplayer",
-                    OpponentName: truth.OpponentDisplayName,
+                    OpponentName: opponentName,
                     OpponentType: "guest",
                     Outcome: truth.Outcome.ToString().ToLowerInvariant(),
                     OwnerType: isGuest ? "guest" : "microsoft",
@@ -113,36 +138,57 @@ public static class PoBrawlOnlineMatchEndpoints
                 // The zero-sum Elo pair-write, exactly once per match. The winner/loser pair is
                 // mapped from the server's own result — the corner that happens to win the claim
                 // is irrelevant, both corners report the same outcome pair.
-                if (await matchHistory.TryClaimEloIncrementAsync(dto.MatchId, ct))
+                switch (await matchHistory.TryClaimEloIncrementAsync(dto.MatchId, ct))
                 {
-                    var localLost = truth.Outcome == PoBrawlOutcome.Loss;
-                    var isDraw = truth.Outcome == PoBrawlOutcome.Draw;
-                    var winnerPid = localLost ? truth.OpponentId : userId;
-                    var loserPid = localLost ? userId : truth.OpponentId;
-                    var winnerName = localLost ? truth.OpponentDisplayName : displayName;
-                    var loserName = localLost ? displayName : truth.OpponentDisplayName;
-
-                    // Reachable: lobby seats key on connection, so one player in two tabs can fill
-                    // both corners. That is a 400 here, not a rating row fighting itself.
-                    if (string.Equals(winnerPid, loserPid, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return Results.BadRequest(new { error = "opponent_is_self" });
-                    }
-
-                    await storage.RecordPoBrawlOnlineMatchAsync(
-                        winnerPrincipalId: PrincipalIds.Sanitize(winnerPid),
-                        loserPrincipalId: PrincipalIds.Sanitize(loserPid),
-                        winnerDisplayName: winnerName,
-                        loserDisplayName: loserName,
-                        isDraw: isDraw);
+                    case EloClaim.AlreadyClaimed:
+                        // The other corner (or a retry of ours) already applied the swing.
+                        return Results.NoContent();
+                    case EloClaim.Unavailable:
+                        return RetryLater(http);
                 }
 
-                // A lost claim means the other corner (or a retry of ours) already applied the swing.
+                var written = await storage.RecordPoBrawlOnlineMatchAsync(
+                    winnerPrincipalId: PrincipalIds.Sanitize(winnerPid),
+                    loserPrincipalId: PrincipalIds.Sanitize(loserPid),
+                    winnerDisplayName: localLost ? opponentName : ownName,
+                    loserDisplayName: localLost ? ownName : opponentName,
+                    isDraw: isDraw);
+                if (!written)
+                {
+                    // The claim is held but the ratings never moved (storage down, or a pair-write
+                    // that failed and was rolled back). Give the claim back so the retry this
+                    // answer asks for — or the other corner's POST — can apply it.
+                    await matchHistory.ReleaseEloIncrementAsync(dto.MatchId, ct);
+                    log.LogWarning("PoBrawl online Elo for {MatchId} did not land; claim released for a retry.", dto.MatchId);
+                    return RetryLater(http);
+                }
+
                 return Results.NoContent();
             })
             .RequireAuthorization()
             .RequireRateLimiting("highscores");
 
         return app;
+    }
+
+    /// <summary>
+    /// 503 with a Retry-After: the fight is still held (until FinishedLinger sweeps it), so the
+    /// same POST can land later. The history row is idempotent per corner, so a retry only adds
+    /// the rating swing.
+    /// </summary>
+    private static IResult RetryLater(HttpContext http)
+    {
+        http.Response.Headers.RetryAfter = "5";
+        return Results.Problem(
+            title: "Rating not recorded",
+            detail: "The rating store is unavailable right now; post the same result again shortly.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    /// <summary>A display name as the public boards store it: moderated, at most 24 characters.</summary>
+    private static string BoardName(ScoreIntegrityGuard integrity, string? name, bool isGuest)
+    {
+        var resolved = integrity.ResolveDisplayName(name, isGuest ? "Guest" : "Player").Trim();
+        return resolved.Length > 24 ? resolved[..24].TrimEnd() : resolved;
     }
 }

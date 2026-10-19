@@ -108,7 +108,12 @@
                        Player="@Player"
                        Outcome="@Outcome"
                        NewBest="@NewBest"
-                       BackTo="@BackTo" />
+                       BackTo="@BackTo"
+                       BackLabel="@BackLabel"
+                       OnPrimary="@OnPrimary"
+                       PrimaryLabel="@(PrimaryLabel ?? "Play again")"
+                       OnSecondary="@OnSecondary"
+                       SecondaryLabel="@SecondaryLabel" />
     }
 </div>
 </SwipeBack>
@@ -131,6 +136,14 @@
     // sub-lobby (e.g. PoCoupleQuiz lobby → "/couplequiz"). This makes every
     // game page identical on this dimension by default.
     [Parameter] public string BackTo { get; set; } = "/";
+    // The modal's leave button text when BackTo is not the home page ("Back to the lobby").
+    [Parameter] public string? BackLabel { get; set; }
+    // Optional in-place next step on the modal (GameOverModal.OnPrimary): a game that can
+    // replay without reloading its page leads with it. Unset, the modal is unchanged.
+    [Parameter] public EventCallback OnPrimary { get; set; }
+    [Parameter] public string? PrimaryLabel { get; set; }
+    [Parameter] public EventCallback OnSecondary { get; set; }
+    [Parameter] public string? SecondaryLabel { get; set; }
     [Parameter] public bool GameOver { get; set; }
     /// <summary>
     /// Milliseconds to wait after <see cref="GameOver"/> flips to

@@ -300,7 +300,7 @@ flowchart LR
 flowchart LR
     LAD["Ladder position<br/>(which president you face)"] --> RUNG["Rung 1 to 15"]
     RUNG --> ROW["Row in the LEVELS table"]
-    ROW --> K1["reactionMs: 560 down to 95"]
+    ROW --> K1["reactionMs: 700 down to 101"]
     ROW --> K2["blockP: 0.16 up to 0.97"]
     ROW --> K3["punishP: 0.14 up to 1.00"]
     ROW --> K4["comboP: 0.00 up to 0.90"]
@@ -326,10 +326,10 @@ world. The middle column is the closest real setting in this project.
 | **Exploration rate** | Epsilon / entropy | Chance the board CPU plays a random move on purpose. | 0.55 down to 0.05 (TicTacToe); 0.60 down to 0.00 (ConnectFive) | `StrengthForElo` in each AI file |
 | | | Chance a PoCabinet racer misjudges a corner and runs off the road. | `wildness` 0.03 to 0.14 for the four officials, 0.05 to 0.25 for the field (every car has some) | `js/pocabinet/physics.js` |
 | | | Steering wobble on a PoRacer bot. | `0.015 x (1.15 - CorneringSkill)` per tick | `PoRacerSim.cs` |
-| **Reaction time** | Decision period | Delay before a boxer makes a weighted choice. | 560 ms (rung 1) down to 95 ms (rung 15) | `js/pobrawl/ai.js` |
+| **Reaction time** | Decision period | Delay before a boxer makes a weighted choice. | 700 ms (rung 1) down to 101 ms (rung 15) | `js/pobrawl/ai.js` |
 | **How often it thinks** | Decision frequency | Ticks per second. | PoBrawl 60, PoJevArena sim 60 (one model call per unit per second), PoRacer 50, PoCabinet 30, PoEcosystem 20 (goals re-scored 4 times a second) | each engine's constants |
 | **Batch size** | Batch size | Units sent to Jev per request. | `MaxBatch = 8` | `PoJevArenaEndpoints.cs` |
-| **Aggression** | Reward weight | Boxer's attack appetite. | `aggro` 0.72 to 1.50 | `js/pobrawl/ai.js` |
+| **Aggression** | Reward weight | Boxer's attack appetite. | `aggro` 0.28 to 1.24 | `js/pobrawl/ai.js` |
 | | | PoRacer bot's risk on corners. | `Aggression` 0.30 to 0.95; tier `botCaution` 0.58 / 0.42 / 0.20 | `PoRacerAiDriver.cs`, `PoRacerRaceRegistry.cs` |
 | **Spending cap** | Compute budget | Hosted-model tokens per player per day. | `DailyTokensPerIdentity = 250000` | `appsettings.json` |
 | | | Jev decisions per player per day. | `DailyCallsPerIdentity = 5000` | `appsettings.json` |
@@ -356,7 +356,7 @@ There is no inspector panel. Settings are constants in source files; edit, rebui
 
 | To change | Edit | Notes |
 |---|---|---|
-| PoBrawl difficulty curve | `LEVELS` in `wwwroot/js/pobrawl/ai.js` | One row per rung. `reactionMs` lower is harder; the `P` values are chances from 0 to 1. |
+| PoBrawl difficulty curve | `LEVELS` in `wwwroot/js/pobrawl/ai.js` | One row per rung. `reactionMs` lower is harder; the `P` values are chances from 0 to 1; `maxCharge` caps how far the CPU winds a strike (0.15 at rung 1, full at rung 15). |
 | A president's fighting style | that president's block in `wwwroot/js/pobrawl/personalities.js` | `footwork`, three `aiPatterns`, and a `super`. The schema is documented at the top of the file. |
 | A president's body | `wwwroot/js/pobrawl/fighters.js` | `heightScale`, `buildScale`, `mass`, `attackPower`, `moveAccel`. |
 | Board-game CPU strength | `StrengthForElo` in `TicTacToeAI.cs` / `ConnectFiveAI.cs` | Rating thresholds map to search depth and blunder chance. |
@@ -458,7 +458,6 @@ Found while reading the code for this snapshot:
 - ConnectFive declares an 8-second thinking budget (`AiMoveBudgetMs`) that nothing enforces.
 - PoVoxelStrike monsters and PoRacer steering wobble use unseeded randomness, so their runs
   cannot be replayed exactly.
-- PoBrawl demo mode can pair in BOB, whom the server's rating endpoint rejects.
 
 ### 3.6 MarbleRace physics: Rapier migration plan
 
@@ -541,7 +540,7 @@ at once and must give bit-identical results everywhere.
 |---|---|---|
 | Sim (C#) | `Shared/Games/PoBrawlRollbackSim.cs` | 60 Hz frame step over a 26-int state: millimetres, energy in sixths of a point, a mulberry32 damage roll seeded by FNV-1a of the match id. No floats. |
 | Sim (JS) | `wwwroot/js/pobrawl/rollbackSim.js` | The same rules, line for line. A golden input script pins the final checksum in both test suites (`PoBrawlMatchServiceTests`, `tests/pobrawl-rollback.test.mjs`). |
-| Referee | `Features/PoBrawl/Online/PoBrawlMatchService.cs`, `PoBrawlMatchPump.cs` | Runs the C# sim on a Stopwatch clock (a catch-up loop, because Windows timers tick at ~15.6 ms). An input stamped for frame f is applied at max(f, server frame + 1) and never earlier than that side's previous input; the server never rewrites its own past. Owns presence, forfeits, rematches and the result. |
+| Referee | `Features/PoBrawl/Online/PoBrawlMatchService.cs`, `PoBrawlMatchPump.cs` | Runs the C# sim on a Stopwatch clock (a catch-up loop, because Windows timers tick at ~15.6 ms). An input stamped for frame f is applied at max(f, server frame + 1) and never earlier than that side's previous input; the server never rewrites its own past. Owns presence, forfeits and the result. The clock holds at frame 0 (`WaitingForOpponent`) until both corners have joined, then runs the 5 s pre-roll; a corner that never arrives within 25 s abandons the match (`Abandoned`, no Elo). Each corner may send at most 3 inputs per frame and 40 per second, and inputs stamped more than 2 s ahead are refused. There is no rematch: the result sends both players back to the lobby. |
 | Relay | `PoBrawlMatchHub.cs` | `SubmitInput` → `matchInput` to the whole group, sender included, carrying the frame actually used. `Ping` returns the server's frame clock. The pump sends `matchState` (full sim state, frame, checksum, presence) every 6th frame (10 Hz). |
 | Rollback | `wwwroot/js/pobrawl/rollbackSession.js` | Local input applied 2 frames ahead (`INPUT_DELAY`) and sent. Remote input predicted as "keep holding, press nothing". A late confirmed input rolls back to its frame and re-simulates from a 128-frame state ring (~2 s). A snapshot whose checksum differs from history replaces it and re-simulates. |
 | Presenter | `wwwroot/js/pobrawl/netplay.js` | Shows the session's state every render frame: fighters steer to the sim's X, each (corner, frame) swing is thrown once with the sim's verdict, HP and energy come from the sim, and a predicted KO waits for the server's word before it plays. |
@@ -579,7 +578,7 @@ grain, thick ink edges and speed lines out of the firing fighter. Every layer ke
 pixel's brightness, per spectacle.js's flicker rule. Reduced motion gets a weaker, shorter,
 motionless version; the low tier skips the edge taps and grain. Wall clock, no match RNG.
 
-**Tournament night.** The CPU bracket (Brawl's Demo mode, `/pobrawl/demo`; `/pobrawl/tournament` is the old address, `PoBrawlTournamentPage`) hands the
+**Tournament night.** The CPU bracket (the Brawl Cup, Brawl's Demo mode at `/pobrawl/demo`, `PoBrawlTournamentPage`; the old `/pobrawl/tournament` redirects there) hands the
 engine each bout's round and Elo expectation (`PoBrawlTournament.ExpectedP1`, the board's
 `EloMath` curve) as `PoBrawl.matchup`'s optional fifth argument `{ round, p1Expected }` (and the
 same keys on `PoBrawl.init`). `js/pobrawl/cup.js` turns them into the night: golden-hour light
@@ -599,7 +598,7 @@ champion, before the bracket and the result modal. Bracket "UPSET!" lines use
 `PoBrawlTournament.UpsetBelow` (winner's expectation ≤ 0.45). Reduced motion: end states only,
 a third of the confetti, no flashbulbs. No music: crowd, PA and effects only.
 
-**Broadcast director camera.** In the CPU-only modes (demo, tournament) `js/pobrawl/director.js`
+**Broadcast director camera.** In the CPU-only Cup (engine mode `'tournament'`) `js/pobrawl/director.js`
 drives the 'normal' camera while the phase is 'fighting' (`cinematics.js _updateCamera` calls
 `_directCamera`; the KO and super branches still win). It cuts between rigs computed from the
 fighters' positions: the house framing, wide establishing, low ringside, over-the-shoulder, a

@@ -95,29 +95,49 @@ public sealed class MatchHistoryRepository(TableServiceClient tableServiceClient
     /// marker the zero-sum rating pair-write ran twice (each corner's POST applied it). The
     /// history dedup above cannot arbitrate — its marker is keyed by owner, and neither of
     /// its outcomes is visible to callers. First POST in wins; every other caller skips the
-    /// increment and still gets the board back.
+    /// increment. A storage failure is its own answer, not "already claimed": folded into
+    /// false, a match whose claim could not even be written lost its Elo silently.
     /// </summary>
-    public async Task<bool> TryClaimEloIncrementAsync(string matchId, CancellationToken ct = default)
+    public async Task<EloClaim> TryClaimEloIncrementAsync(string matchId, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(matchId)) return false;
+        if (string.IsNullOrWhiteSpace(matchId)) return EloClaim.AlreadyClaimed;
         try
         {
             await EnsureTableAsync(ct);
-            var marker = new TableEntity("dedup:matchelo", IdempotencyKey(matchId));
-            await _table.AddEntityAsync(marker, ct);
-            return true;
+            await _table.AddEntityAsync(new TableEntity(EloClaimPartition, IdempotencyKey(matchId)), ct);
+            return EloClaim.Claimed;
         }
         catch (Azure.RequestFailedException ex) when (ex.Status == 409)
         {
-            return false; // The other corner (or a retry) already applied this match's Elo.
+            return EloClaim.AlreadyClaimed; // The other corner (or a retry) already applied this match's Elo.
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            // Storage down: no claim was taken, and the caller's Elo write would fail the
-            // same way — report unclaimed so nothing is applied from a half-working backend.
-            return false;
+            // Storage down: no claim was taken, and the Elo write would fail the same way.
+            return EloClaim.Unavailable;
         }
     }
+
+    /// <summary>
+    /// Give a claim back after the Elo write it guarded failed, so the next POST of the match (a
+    /// retry, or the other corner) can claim it and apply the swing. Best effort: if this delete
+    /// fails too, the match keeps its marker and its Elo is lost — the same outcome as before,
+    /// now only on a double failure.
+    /// </summary>
+    public async Task ReleaseEloIncrementAsync(string matchId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(matchId)) return;
+        try
+        {
+            await _table.DeleteEntityAsync(EloClaimPartition, IdempotencyKey(matchId), cancellationToken: ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            // Nothing more to do; see the summary.
+        }
+    }
+
+    private const string EloClaimPartition = "dedup:matchelo";
 
     // Stable Table-safe RowKey for a dedup marker derived from the client idempotency key.
     private static string IdempotencyKey(string matchId)
@@ -196,4 +216,17 @@ public sealed class MatchHistoryRepository(TableServiceClient tableServiceClient
         s = Regex.Replace(s ?? string.Empty, "<.*?>", string.Empty).Trim();
         return s.Length <= max ? s : s[..max];
     }
+}
+
+/// <summary>The outcome of <see cref="MatchHistoryRepository.TryClaimEloIncrementAsync"/>.</summary>
+public enum EloClaim
+{
+    /// <summary>This caller applies the match's Elo.</summary>
+    Claimed,
+
+    /// <summary>Someone already did (or is doing) it.</summary>
+    AlreadyClaimed,
+
+    /// <summary>Storage could not be reached: nothing was claimed, and the caller should ask for a retry.</summary>
+    Unavailable,
 }

@@ -9,7 +9,7 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// <summary>
 /// One in-process PoBrawl 1v1 match: the referee of a rollback fight. Owns the timeline (which
 /// frame each input happened on), the authoritative copy of the shared simulation, presence,
-/// forfeits, rematch votes and the result. Lifecycle: created by <see cref="PoBrawlMatchRegistry"/>
+/// forfeits and the result. Lifecycle: created by <see cref="PoBrawlMatchRegistry"/>
 /// when the host starts a match, and swept by the pump once it has lingered past
 /// <see cref="PoBrawlMatchRegistry.FinishedLinger"/>.
 /// </summary>
@@ -20,11 +20,14 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// timeline disagrees. Nothing here does fight maths of its own.
 /// </para>
 /// <para>
-/// <b>The server is the timeline authority.</b> Its frame clock runs in real time from creation
-/// (<see cref="ClockFrame"/>; the pump catches the sim up to it). An input stamped with client
-/// frame f is applied at max(f, <see cref="Frame"/> + 1, that side's previous input frame) and capped
-/// <see cref="MaxInputLeadFrames"/> ahead: the server never rewrites its own past, and each side's
-/// inputs stay in order. Every accepted input comes back from <see cref="SubmitInput"/> as a
+/// <b>The server is the timeline authority.</b> Its frame clock is held at 0 until BOTH corners have
+/// joined, then runs in real time (<see cref="ClockFrame"/>; the pump catches the sim up to it), so
+/// the pre-roll countdown starts when the second corner arrives, not when the lobby pressed start.
+/// An input stamped with client frame f is applied at max(f, <see cref="Frame"/> + 1, that side's
+/// previous input frame); one stamped more than <see cref="MaxInputLeadFrames"/> ahead is refused,
+/// as is a corner past <see cref="MaxInputsPerFrame"/> on one frame or <see cref="MaxInputsPerSecond"/>
+/// in a second of fight: the server never rewrites its own past, each side's inputs stay in order,
+/// and a flooding client cannot make the referee do unbounded work. Every accepted input comes back from <see cref="SubmitInput"/> as a
 /// <see cref="PoBrawlMatchInputEvent"/> carrying the frame actually used, which the hub broadcasts
 /// to the match — sender included, so a late input re-stamped here is corrected client-side.
 /// </para>
@@ -34,9 +37,11 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// result is built from this server's sim alone, and only its two corners can claim it.
 /// </para>
 /// <para>
-/// <b>Presence.</b> A corner is present while any match-hub connection is pinned to it. One that drops
-/// (or never arrives) gets a grace window and then forfeits; when its last connection goes, the
-/// server lets go of its keys with an input of its own (Sequence 0) so it does not march into the ropes.
+/// <b>Presence.</b> A corner is present while any match-hub connection is pinned to it. A corner that
+/// never arrives within <see cref="ArrivalGraceSeconds"/> abandons the fight — no winner, no rating:
+/// the corner that did turn up never fought anyone. One that drops mid-fight gets
+/// <see cref="ReconnectGraceSeconds"/> and then forfeits; when its last connection goes, the server
+/// lets go of its keys with an input of its own (Sequence 0) so it does not march into the ropes.
 /// </para>
 /// </remarks>
 public sealed class PoBrawlMatchService
@@ -51,19 +56,32 @@ public sealed class PoBrawlMatchService
     public const double MatchDurationSeconds = Sim.RoundFrames / (double)Sim.Hz;
 
     /// <summary>
-    /// Pre-roll before the bell: long enough for both pages to load the arena and play the
-    /// engine's 3.7 s countdown in step with it. The lobby's matches use this; tests start at 0.
+    /// Pre-roll before the bell, counted from the moment the second corner joins: long enough for
+    /// both pages to play the engine's 3.7 s countdown in step with it. The lobby's matches use
+    /// this; tests start at 0.
     /// </summary>
     public const double CountdownSeconds = 5.0;
 
     /// <summary>How long a corner that dropped mid-fight has to reconnect before it forfeits.</summary>
     public const double ReconnectGraceSeconds = 15.0;
 
-    /// <summary>How long a corner has to arrive at all (page load included) before it forfeits.</summary>
+    /// <summary>How long both corners have to arrive (page load included) before the fight is abandoned.</summary>
     public const double ArrivalGraceSeconds = 25.0;
 
-    /// <summary>Furthest ahead of the server's frame an input may be stamped (2 s); later stamps are pulled in.</summary>
+    /// <summary>Furthest ahead of the server's frame an input may be stamped (2 s); a later stamp is refused.</summary>
     public const int MaxInputLeadFrames = 2 * Sim.Hz;
+
+    /// <summary>
+    /// Inputs one corner may land on a single frame. They merge into one (the later held wins, a
+    /// press is kept), so a real client never needs more than a key change and a press.
+    /// </summary>
+    public const int MaxInputsPerFrame = 3;
+
+    /// <summary>
+    /// Inputs one corner may send per second of fight (60 frames). A client sends only on a change
+    /// — key down, key up — so even frantic mashing stays well under this.
+    /// </summary>
+    public const int MaxInputsPerSecond = 40;
 
     public string MatchId { get; }
     public string GameCode { get; }
@@ -84,15 +102,22 @@ public sealed class PoBrawlMatchService
         public bool EverConnected;
         /// <summary>Frames this corner has had no connection (reset on arrival).</summary>
         public long AbsentFrames;
-        public bool WantsRematch;
+        /// <summary>Inputs accepted per future frame, for <see cref="MaxInputsPerFrame"/>.</summary>
+        public readonly Dictionary<long, int> PerFrame = [];
+        /// <summary>The server frame the current one-second input window opened on, and its count.</summary>
+        public long WindowStartFrame;
+        public int WindowCount;
     }
 
     private readonly Corner _c1 = new();
     private readonly Corner _c2 = new();
     private PoBrawlSimState _sim;
     private readonly long _createdAt = Stopwatch.GetTimestamp();
+    /// <summary>When the second corner arrived and the clock started, or null while one is still awaited.</summary>
+    private long? _armedAt;
     private bool _finished;
     private bool _forfeit;
+    private bool _abandoned;
     private string _endEvent = "";
     private PoBrawlSide? _winner;
 
@@ -129,9 +154,48 @@ public sealed class PoBrawlMatchService
         get { lock (_stateLock) return _sim; }
     }
 
-    /// <summary>The real-time frame clock: frames since the match was created, fractional. The sim catches up to it.</summary>
-    public double ClockFrame(long nowTimestamp) =>
-        (nowTimestamp - _createdAt) * (double)Sim.Hz / Stopwatch.Frequency;
+    /// <summary>
+    /// The real-time frame clock: frames since both corners arrived, fractional, and 0 until then.
+    /// The sim catches up to it.
+    /// </summary>
+    public double ClockFrame(long nowTimestamp)
+    {
+        lock (_stateLock) return ClockFrameLocked(nowTimestamp);
+    }
+
+    private double ClockFrameLocked(long nowTimestamp) =>
+        _armedAt is { } armed ? Math.Max(0, nowTimestamp - armed) * (double)Sim.Hz / Stopwatch.Frequency : 0;
+
+    /// <summary>True until both corners have joined (and the clock has started).</summary>
+    public bool IsWaiting
+    {
+        get { lock (_stateLock) return _armedAt is null && !_finished; }
+    }
+
+    /// <summary>The Stopwatch timestamp the match was created at; the arrival grace runs from it.</summary>
+    public long CreatedAt => _createdAt;
+
+    private long _waitingNotice = -1;
+
+    /// <summary>
+    /// The pump's once-a-second waiting snapshot: true the first time it asks for a given whole
+    /// second waited, false after, so the held clock still sends one snapshot a second.
+    /// </summary>
+    public bool TryMarkWaitingNotice(long secondWaited)
+    {
+        lock (_stateLock)
+        {
+            if (secondWaited == _waitingNotice) return false;
+            _waitingNotice = secondWaited;
+            return true;
+        }
+    }
+
+    /// <summary>True when the fight ended without being fought: a corner never arrived, or both left.</summary>
+    public bool IsAbandoned
+    {
+        get { lock (_stateLock) return _abandoned; }
+    }
 
     public PoBrawlMatchClock Clock() => new()
     {
@@ -153,6 +217,11 @@ public sealed class PoBrawlMatchService
             corner.AbsentFrames = 0;
             // A fresh connection (a refresh, a reconnect) starts its own sequence numbers.
             corner.LastSequence = long.MinValue;
+            // Both corners here: start the clock, and with it the pre-roll countdown.
+            if (_armedAt is null && _c1.EverConnected && _c2.EverConnected && !_finished)
+            {
+                _armedAt = Stopwatch.GetTimestamp();
+            }
         }
     }
 
@@ -195,21 +264,7 @@ public sealed class PoBrawlMatchService
         }
     }
 
-    /// <summary>
-    /// A seated corner asks for the rematch. True once both have asked — the caller then starts
-    /// the next fight with the same roster and code. Spectators and a fight still running get false.
-    /// </summary>
-    public bool VoteRematch(string connectionId)
-    {
-        lock (_stateLock)
-        {
-            if (!_finished || !_connections.TryGetValue(connectionId, out var side)) return false;
-            CornerOf(side).WantsRematch = true;
-            return _c1.WantsRematch && _c2.WantsRematch;
-        }
-    }
-
-    /// <summary>The current snapshot (the pump's 10 Hz broadcast, a join, a rematch vote).</summary>
+    /// <summary>The current snapshot (the pump's 10 Hz broadcast, a join).</summary>
     public PoBrawlMatchState Snapshot()
     {
         lock (_stateLock) return SnapshotLocked();
@@ -224,7 +279,8 @@ public sealed class PoBrawlMatchService
     /// Accept the caller's input. The side is the connection's pinned one, whatever
     /// <see cref="PoBrawlMatchInput.ActorSide"/> claims. Returns the event to broadcast (with the
     /// frame the server applied it at), or null when refused: not seated, a finished fight, a
-    /// sequence number that is not newer, or an action outside the held / press sets.
+    /// sequence number that is not newer, an action outside the held / press sets, a stamp more
+    /// than <see cref="MaxInputLeadFrames"/> ahead, or a corner over its input budget.
     /// </summary>
     public PoBrawlMatchInputEvent? SubmitInput(string connectionId, PoBrawlMatchInput input)
     {
@@ -236,6 +292,16 @@ public sealed class PoBrawlMatchService
             if (_finished) return null;
             var corner = CornerOf(pinned);
             if (input.Sequence <= corner.LastSequence) return null; // stale or duplicated in flight
+            if (input.Frame > _sim.Frame + MaxInputLeadFrames) return null; // no honest clock is that far ahead
+            if (_sim.Frame - corner.WindowStartFrame >= Sim.Hz)
+            {
+                corner.WindowStartFrame = _sim.Frame;
+                corner.WindowCount = 0;
+            }
+            if (corner.WindowCount >= MaxInputsPerSecond) return null;
+            var frame = Math.Max(input.Frame, Math.Max(_sim.Frame + 1, corner.LastInputFrame));
+            if (corner.PerFrame.GetValueOrDefault(frame) >= MaxInputsPerFrame) return null;
+            corner.WindowCount++;
             corner.LastSequence = input.Sequence;
             return AcceptLocked(pinned, corner, input.Frame, input.Held, input.Press, input.Sequence);
         }
@@ -248,6 +314,7 @@ public sealed class PoBrawlMatchService
         var earliest = Math.Max(_sim.Frame + 1, corner.LastInputFrame);
         var frame = Math.Clamp(requested, earliest, Math.Max(earliest, _sim.Frame + MaxInputLeadFrames));
         corner.LastInputFrame = frame;
+        corner.PerFrame[frame] = corner.PerFrame.GetValueOrDefault(frame) + 1;
         var encoded = Sim.EncodeInput((int)held, press == PoBrawlMatchAction.Idle ? Sim.PressNone : (int)press);
         corner.Future[frame] = corner.Future.TryGetValue(frame, out var earlier) ? Sim.MergeInput(earlier, encoded) : encoded;
         return new PoBrawlMatchInputEvent
@@ -276,21 +343,54 @@ public sealed class PoBrawlMatchService
     }
 
     /// <summary>
-    /// Catch the sim up to <paramref name="targetFrame"/> (the pump passes the real-time clock).
-    /// Returns how many frames ran; stops early when the fight ends.
+    /// The pump's tick: while a corner is still awaited, abandon the fight once
+    /// <see cref="ArrivalGraceSeconds"/> have passed since it was created (returns 0 either way);
+    /// after that, catch the sim up to the real-time clock. Returns how many frames ran.
     /// </summary>
-    public int AdvanceTo(long targetFrame)
+    public int AdvanceToClock(long nowTimestamp)
     {
         lock (_stateLock)
         {
-            var ran = 0;
-            while (!_finished && _sim.Frame < targetFrame)
+            if (_finished) return 0;
+            if (_armedAt is null)
             {
-                StepLocked();
-                ran++;
+                if ((nowTimestamp - _createdAt) / (double)Stopwatch.Frequency >= ArrivalGraceSeconds)
+                {
+                    AbandonLocked();
+                }
+                return 0;
             }
-            return ran;
+            return AdvanceToLocked((long)Math.Floor(ClockFrameLocked(nowTimestamp)));
         }
+    }
+
+    /// <summary>
+    /// Catch the sim up to <paramref name="targetFrame"/>. Returns how many frames ran; stops early
+    /// when the fight ends. Tests drive the sim with this (and <see cref="Step"/>) directly.
+    /// </summary>
+    public int AdvanceTo(long targetFrame)
+    {
+        lock (_stateLock) return AdvanceToLocked(targetFrame);
+    }
+
+    private int AdvanceToLocked(long targetFrame)
+    {
+        var ran = 0;
+        while (!_finished && _sim.Frame < targetFrame)
+        {
+            StepLocked();
+            ran++;
+        }
+        return ran;
+    }
+
+    private void AbandonLocked()
+    {
+        _finished = true;
+        _abandoned = true;
+        _winner = null;
+        _endEvent = "abandoned";
+        FinishedAtUtc ??= DateTimeOffset.UtcNow;
     }
 
     private void StepLocked()
@@ -309,11 +409,16 @@ public sealed class PoBrawlMatchService
         if (_finished) FinishedAtUtc ??= DateTimeOffset.UtcNow;
     }
 
-    private static int TakeInput(Corner c, long frame) => c.Future.Remove(frame, out var input) ? input : 0;
+    private static int TakeInput(Corner c, long frame)
+    {
+        c.PerFrame.Remove(frame);
+        return c.Future.Remove(frame, out var input) ? input : 0;
+    }
 
     /// <summary>
     /// Advance each corner's absence clock and forfeit one that stayed away past its grace. Both gone
-    /// is an abandoned fight with no winner, which the registry simply drops.
+    /// is an abandoned fight with no winner, and so is one where either corner never arrived at all:
+    /// a win needs an opponent who actually turned up.
     /// </summary>
     private void TickPresenceLocked()
     {
@@ -324,10 +429,15 @@ public sealed class PoBrawlMatchService
         var gone1 = _c1.AbsentFrames >= GraceFrames(_c1);
         var gone2 = _c2.AbsentFrames >= GraceFrames(_c2);
         if (!gone1 && !gone2) return;
+        if ((gone1 && gone2) || !_c1.EverConnected || !_c2.EverConnected)
+        {
+            AbandonLocked();
+            return;
+        }
         _finished = true;
         _forfeit = true;
-        _winner = gone1 && gone2 ? null : gone1 ? PoBrawlSide.Player2 : PoBrawlSide.Player1;
-        _endEvent = _winner is null ? "abandoned" : "forfeit";
+        _winner = gone1 ? PoBrawlSide.Player2 : PoBrawlSide.Player1;
+        _endEvent = "forfeit";
     }
 
     private static long GraceFrames(Corner c) => (long)((c.EverConnected ? ReconnectGraceSeconds : ArrivalGraceSeconds) * Sim.Hz);
@@ -363,10 +473,12 @@ public sealed class PoBrawlMatchService
         Winner = _winner,
         Player1Connected = IsPresentLocked(PoBrawlSide.Player1),
         Player2Connected = IsPresentLocked(PoBrawlSide.Player2),
-        // Only while a corner is actually away (over a second): an arriving corner's clock runs from
-        // the start but is not news until someone else is waiting on it.
-        ForfeitInSeconds = ForfeitInLocked() is { } left && (_c1.AbsentFrames > Sim.Hz || _c2.AbsentFrames > Sim.Hz) ? left : null,
-        RematchVotes = (_c1.WantsRematch ? 1 : 0) + (_c2.WantsRematch ? 1 : 0),
+        // Waiting: how long the missing corner has left to arrive. Otherwise only while a corner is
+        // actually away (over a second).
+        ForfeitInSeconds = _armedAt is null && !_finished
+            ? Math.Max(0, Math.Round(ArrivalGraceSeconds - (Stopwatch.GetTimestamp() - _createdAt) / (double)Stopwatch.Frequency, 1))
+            : ForfeitInLocked() is { } left && (_c1.AbsentFrames > Sim.Hz || _c2.AbsentFrames > Sim.Hz) ? left : null,
+        WaitingForOpponent = _armedAt is null && !_finished,
     };
 
     /// <summary>
@@ -411,6 +523,12 @@ public sealed class PoBrawlMatchService
             snapshot = SnapshotLocked();
         }
         var opponent = localSide == PoBrawlSide.Player1 ? _p2 : _p1;
+        bool forfeit, abandoned;
+        lock (_stateLock)
+        {
+            forfeit = _forfeit;
+            abandoned = _abandoned;
+        }
         var outcome = !snapshot.Finished ? PoBrawlOutcome.Draw
             : snapshot.Winner is null ? PoBrawlOutcome.Draw
             : snapshot.Winner == localSide ? PoBrawlOutcome.Win
@@ -425,7 +543,8 @@ public sealed class PoBrawlMatchService
             Player2Hp = snapshot.Player2Hp,
             OpponentId = opponent.PrincipalId,
             OpponentDisplayName = opponent.DisplayName,
-            Forfeit = _forfeit,
+            Forfeit = forfeit,
+            Abandoned = abandoned,
         };
     }
 

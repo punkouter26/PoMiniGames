@@ -54,7 +54,7 @@ public sealed class PoBrawlNetSession : IAsyncDisposable
         _hub = HubConnectionFactory.Create(_endpoints.Hub("pobrawl/match-hub"));
         _subs.Add(_hub.On<PoBrawlMatchState>("matchState", s =>
         {
-            // Snapshots of the fight we joined only: a rematch's first frames can race its "rematch" call.
+            // Snapshots of the fight we joined only.
             if (Snapshot is not null && s.MatchId != Snapshot.MatchId) return;
             State = s;
             StateReceived?.Invoke(s);

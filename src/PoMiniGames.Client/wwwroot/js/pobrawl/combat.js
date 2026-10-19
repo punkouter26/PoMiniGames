@@ -53,6 +53,10 @@ export class CombatPlay {
     if (this.combatState !== COMBAT_STATES.STARTED) return 0;
     const p = this.players.get(playerId);
     if (!p || !p.alive) return 0;
+    // A NaN or negative amount from an upstream multiplier must be a no-op:
+    // NaN would poison health and read as dead (NaN > 0 is false), and a
+    // negative amount would heal.
+    if (!Number.isFinite(amount) || amount <= 0) return 0;
 
     const armorDamage = bypassArmor ? 0 : Math.min(p.armor, amount * this.armorAbsorption);
     const healthDamage = Math.min(p.health, amount - armorDamage);
@@ -94,10 +98,12 @@ export class CombatPlay {
 // combined status effect modifier for the current tick.
 //
 // Region damage thresholds (0..100):
-//   head  >= 70  → +flinch (longer hitstun)
-//   arms  >= 70  → -attack power
-//   legs  >= 70  → -move speed
-// Returns multipliers and additive flags the engine can apply.
+//   head  >= 40/70 → +flinch: seconds added to THIS fighter's hitstun
+//   arms  >= 30/70 → -attack power: scales the damage THIS fighter deals
+//   legs  >= 30/70 → -move speed
+// Every field describes the fighter whose regionDmg was passed in — the
+// attacker's own arms weaken the attacker's swings (hitResolution.js
+// _tryHit), the defender's head lengthens the defender's stun (_landHit).
 export function regionEffect(regionDmg) {
   let moveMul = 1.0;
   let atkMul = 1.0;

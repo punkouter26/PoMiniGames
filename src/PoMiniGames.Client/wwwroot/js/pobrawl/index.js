@@ -22,12 +22,13 @@ window.PoBrawl = {
     stats: () => SelectStage.stats(),
   },
   /**
-   * options: { mode: '1p'|'2p'|'demo'|'tournament'|'online', p1Character, p2Character, difficulty,
+   * options: { mode: '1p'|'2p'|'tournament'|'online', p1Character, p2Character, difficulty,
    *            training?: boolean (1P only),
    *            localSide?: 1|2 (online; 0 or absent = spectating), seed?,
    *            roundLabel? (tournament: the first bout's splash heading),
    *            round?: 0|1|2, p1Expected?: 0..1 (tournament: see matchup's `opts`),
-   *            director?: boolean, isoCam?: boolean (demo/tournament camera, default on) }
+   *            director?: boolean, isoCam?: boolean (tournament camera; default = the Full show) }
+   * The /pobrawl/demo route is the Cup: mode 'tournament'.
    */
   init(containerId, dotnetRef, options) {
     // The select screen's context must be gone before the arena takes its own.
@@ -55,8 +56,19 @@ window.PoBrawl = {
     if (p2Character) game.options.p2Character = p2Character;
     if (difficulty !== undefined && difficulty !== null) game.options.difficulty = difficulty;
     game._introLine = introLine || null;
-    game.resetMatch(false);
+    game.resetMatch();
   },
+  /**
+   * Pause menu (1P, training and 2P only; the engine ignores it anywhere else, and outside the
+   * countdown and the fight). Every change, from here, Escape/P or the window losing focus,
+   * is reported back through the page's [JSInvokable] OnPauseChanged(bool paused).
+   */
+  setPaused(paused) { if (game) game.setPaused(!!paused); },
+  /**
+   * Pause menu: run the current bout back from the countdown, same fighters and CPU rung, no
+   * re-init and no VS splash. Training: both fighters back on their marks. Unpauses.
+   */
+  restart() { if (game) game.restart(); },
   /**
    * Tournament: the next bout, both corners chosen by the page. Same re-use path as `next`
    * (no re-init), with the splash heading naming the round.
@@ -75,7 +87,7 @@ window.PoBrawl = {
     game._roundLabel = roundLabel || null;
     game._introLine = introLine || null;
     game.cupBout(opts || {});
-    game.resetMatch(false);
+    game.resetMatch();
   },
   /**
    * Tournament, between bouts: the bracket on the arena's jumbotrons until the next count
@@ -91,9 +103,9 @@ window.PoBrawl = {
     game.speed = m === 2 || m === 4 ? m : 1;
   },
   setMuted(muted) { if (game) game.setMuted(muted); },
-  /** Demo/tournament: the broadcast director camera (director.js). Player modes ignore it. */
+  /** Tournament: the broadcast director camera (director.js). Player modes ignore it. */
   setDirector(on) { if (game) game.setDirector(!!on); },
-  /** Demo/tournament: the picture-in-picture iso cam (medium/high tier, not on phones). */
+  /** Tournament: the picture-in-picture iso cam (medium/high tier, not on phones). */
   setIsoCam(on) { if (game) game.setIsoCam(!!on); },
   /** Diagnostics: the director's live shot and iso state, or null. `force` (a rig name) cuts to it — test hook. */
   director(force) { return game ? game.directorState(force) : null; },

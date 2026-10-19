@@ -14,15 +14,17 @@
 @inject SettingsService Settings
 @inject AuthStateService Auth
 @inject KioskCoordinator Kiosk
+@inject NavigationManager Nav
 
-@* Brawl's demo (/pobrawl/demo; /pobrawl/tournament is the old address): the CPU-only
-   knockout bracket. The literal route wins over PoBrawlPage's /pobrawl/{Mode}. Eight presidents are drawn at random, the seven bouts play out
+@* The Brawl Cup (/pobrawl/demo — the app-wide Demo tab; /pobrawl/tournament, the old address,
+   redirects here): the CPU-only knockout bracket. The literal routes win over PoBrawlPage's
+   /pobrawl/{Mode}. Eight presidents are drawn at random, the seven bouts play out
    in the same arena the other modes use (engine mode 'tournament': both corners CPU, the page
    picks every pairing through PoBrawl.matchup), and each result moves both fighters' Elo.
    This component shares PoBrawlPage's CSS scope (CssScope in the csproj), so the engine's DOM —
    splash, banner, captions — and the fight chrome are styled exactly as there. *@
 
-<PageTitle>Brawl Tournament · PoMiniGames</PageTitle>
+<PageTitle>Brawl Cup · PoMiniGames</PageTitle>
 
 <GameShell Title=@TitleContent
            Player="@_playerName"
@@ -44,7 +46,7 @@
                        Mode="GameIntro.IntroMode.Demo"
                        DemoDelayMs="4000"
                        Options="@DrawPreview"
-                       DialogLabel="Brawl demo: CPU tournament"
+                       DialogLabel="Brawl Cup: a CPU knockout"
                        CaptureKeys="false"
                        OnStart="StartAsync" />
         </div>
@@ -80,7 +82,9 @@
                                 @onclick="() => SetSpeedAsync(speed)">@(speed)×</button>
                     }
                 </span>
-                <button type="button" class="pb-seg pt-btn @(_bracketOpen ? "pt-seg--on" : "")"
+                @* The drawer never opens by itself (the arena's jumbotrons carry the bracket);
+                   a fresh result only makes this button glow until it is opened. *@
+                <button type="button" class="pb-seg pt-btn @(_bracketOpen ? "pt-seg--on" : "") @(_bracketFresh && !_bracketOpen ? "pt-btn--fresh" : "")"
                         aria-expanded="@(_bracketOpen ? "true" : "false")" aria-controls="pt-drawer"
                         @onclick="ToggleBracket">🗂 Bracket</button>
                 <button type="button" class="pb-seg pt-btn"
@@ -122,15 +126,13 @@
                     {
                         @NextBout
                     }
-                    else if (_drawerTab == "titles")
-                    {
-                        @TitlesList
-                    }
                     else
                     {
                         @Bracket
                     }
                 </div>
+                @* Cup titles live on Brawl HQ, with every other Brawl board. *@
+                <a class="pt-hq-link" href="/pobrawl/hq">📊 Cup titles and every board on Brawl HQ</a>
             </aside>
         }
     </div>
@@ -140,13 +142,13 @@
     private static readonly PoBrawlFighter[] Roster = [.. PoBrawlRoster.Fighters];
     private static readonly int[] Speeds = [1, 2, 4];
 
-    // Between bouts the bracket shows for this long before the next pairing. Fast-forward trims
-    // it only a little: the bracket is the part of a tournament worth reading.
+    // Between bouts the jumbotrons show the bracket for this long before the next pairing.
+    // Fast-forward trims it only a little: the bracket is the part of a tournament worth reading.
     private int BetweenBoutsMs => _speed switch { 4 => 2600, 2 => 3400, _ => 4200 };
-    // After the final, the bracket holds this long before the result modal covers it.
+    // After the final, the arena holds this long before the result modal covers it.
     private const int FinalHoldMs = 3500;
     // …and before that the arena crowns the champion (PoBrawl.ceremony): the belt comes
-    // down, three confetti volleys, the flashbulbs. The bracket stays closed so it shows.
+    // down, three confetti volleys, the flashbulbs.
     private const int CeremonyMs = 6500;
 
     private string _playerName = "";
@@ -164,6 +166,7 @@
 
     private bool _introDone;
     private bool _bracketOpen;
+    private bool _bracketFresh;   // a result landed since the drawer was last opened
     private bool _showFinal;
     private string _p1Char = "";
     private string _p2Char = "";
@@ -177,10 +180,11 @@
     // Bumped on dispose and on every new bout, so a pending between-bouts roll can tell it is stale.
     private int _generation;
 
-    // Tournament titles per fighter, kept in this browser across tournaments: "titles" in the standings.
+    // Tournament titles per fighter, kept in this browser across tournaments: "titles" in the
+    // standings (Brawl HQ lists them all).
     private Dictionary<string, int> _titles = [];
 
-    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoBrawl);
+    private static RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl Cup</span>;
 
     private static string Name(string? id) => id is null ? "TBD" : PoBrawlRoster.NameOf(id) ?? id;
 
@@ -233,15 +237,10 @@
     }
 
     // ── The drawer's tabs ──
-    private static readonly string[] DrawerTabs = ["bracket", "next", "titles"];
+    private static readonly string[] DrawerTabs = ["bracket", "next"];
     private string _drawerTab = "bracket";
 
-    private static string DrawerTabLabel(string tab) => tab switch
-    {
-        "next" => "Next bout",
-        "titles" => "Titles",
-        _ => "Bracket",
-    };
+    private static string DrawerTabLabel(string tab) => tab == "next" ? "Next bout" : "Bracket";
 
     private RenderFragment NextBout => @<div class="pt-next">
         @if (_cup?.Current is { } next)
@@ -259,24 +258,6 @@
         {
             <p class="pt-panel-next">The belt has a new owner: <b>@Name(_cup?.ChampionId)</b>.</p>
         }
-    </div>;
-
-    // Tournaments won in this browser, the same count the final standings show.
-    private RenderFragment TitlesList => @<div class="pt-titles">
-        @if (_titles.Count == 0)
-        {
-            <p class="pt-panel-next">No titles yet. This belt will be the first.</p>
-        }
-        else
-        {
-            <ol class="pt-titles-list">
-                @foreach (var (id, n) in _titles.OrderByDescending(kv => kv.Value).ThenBy(kv => Name(kv.Key)))
-                {
-                    <li><span class="pt-titles-name">@Name(id)</span><span class="pt-titles-n">@n @(n == 1 ? "title" : "titles")</span></li>
-                }
-            </ol>
-        }
-        <a class="pt-hq-link" href="/pobrawl/hq">📊 Every board on Brawl HQ</a>
     </div>;
 
     private RenderFragment HowItWorks => @<div>
@@ -306,21 +287,15 @@
             </ol>
             <p class="pt-draw-note">@(_ratingsLoaded ? "Starting Elo from the global Brawl fighter board." : "Loading ratings from the fighter board…")</p>
         }
-        <div class="pt-draw-opts">
-            <span class="pt-draw-optlabel">Speed</span>
-            <span class="app-seg" role="group" aria-label="Bout speed">
-                @foreach (var s in Speeds)
-                {
-                    var speed = s;
-                    <button type="button" class="app-seg__btn" aria-pressed="@(speed == _speed ? "true" : "false")"
-                            @onclick="() => _speed = speed">@(speed)×</button>
-                }
-            </span>
-        </div>
-        <label class="pt-draw-report">
-            <input type="checkbox" @bind="_report" />
-            <span>Report each bout to the global fighter Elo board</span>
-        </label>
+        @* The speed lives on the arena's bar alone. Reporting needs a signed-in visitor (the
+           POST is authorised), so a signed-out one is not offered a box that does nothing. *@
+        @if (Auth.IsAuthenticated)
+        {
+            <label class="pt-draw-report">
+                <input type="checkbox" @bind="_report" />
+                <span>Report each bout to the global fighter Elo board</span>
+            </label>
+        }
     </div>;
 
     // The board: quarterfinals, semifinals, final and the belt in four columns on a fixed
@@ -576,6 +551,15 @@
 
     protected override void OnInitialized()
     {
+        // The old address: one Cup URL, so links and history converge on /pobrawl/demo.
+        var uri = new Uri(Nav.Uri);
+        if (uri.AbsolutePath.TrimEnd('/').EndsWith("/tournament", StringComparison.OrdinalIgnoreCase))
+        {
+            Nav.NavigateTo("/pobrawl/demo" + uri.Query, replace: true);
+        }
+        // Under ?autoGuest=1 the guest session can settle after first render: the report
+        // box appears with it.
+        Auth.StateChanged += OnAuthChanged;
         _playerName = PlayerNameService.GetPlayerName();
         _titles = PoBrawlProgressBook.LoadTitles();
         _director = _isoCam = PoBrawlShowPrefs.IsFull;
@@ -650,7 +634,13 @@
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.setSpeed", speed); } catch { }
     }
 
-    private void ToggleBracket() => _bracketOpen = !_bracketOpen;
+    private void ToggleBracket()
+    {
+        _bracketOpen = !_bracketOpen;
+        if (_bracketOpen) _bracketFresh = false;
+    }
+
+    private void OnAuthChanged() => _ = InvokeAsync(StateHasChanged);
 
     // ── Engine callbacks (the same contract PoBrawlPage implements) ─────────
 
@@ -695,44 +685,32 @@
         var generation = ++_generation;
         await InvokeAsync(StateHasChanged);
 
-        // Let the KO cinematic finish (render clock, frozen in a background tab) before the
-        // bracket covers the ring — the same wait the 1P ladder makes.
-        for (var waits = 0; waits < 40; waits++)
-        {
-            string? phase;
-            try { phase = await JSRuntime.InvokeAsync<string?>("PoBrawl.phase"); }
-            catch { break; }
-            if (phase != "ko") break;
-            await Task.Delay(250);
-        }
-        if (generation != _generation) return;
-
-        // The arena's screens show the bracket (or, after the final, the champion) too.
+        // OnMatchEnd fires once the engine is in 'result' (the KO cinematic is over), so the
+        // jumbotrons switch to the bracket straight away.
+        // The arena's screens show the bracket (or, after the final, the champion). The drawer
+        // stays as the viewer left it — opening it here covered most of the arena after every
+        // bout; the Bracket button glows instead.
         await ShowJumbotronBracketAsync();
+        _bracketFresh = true;
         if (_cup.IsComplete)
         {
             SaveTitle(_cup.ChampionId!);
             _announcement = $"{Name(_cup.ChampionId)} wins the tournament.";
-            // The belt ceremony plays in the open arena first; then the bracket, then the modal.
+            // The belt ceremony plays in the open arena first; then the modal.
             try { await JSRuntime.InvokeVoidAsync("PoBrawl.ceremony", _cup.ChampionId); }
             catch (Exception ex) { Console.Error.WriteLine($"[pobrawl-cup] ceremony failed: {ex.Message}"); }
             await InvokeAsync(StateHasChanged);
             await Task.Delay(CeremonyMs);
             if (generation != _generation) return;
-            _bracketOpen = true;
-            _drawerTab = "bracket";
             _showFinal = true;   // GameShell holds FinalHoldMs, then the modal
             await InvokeAsync(StateHasChanged);
             return;
         }
-        _bracketOpen = true;
-        _drawerTab = "bracket";
         await InvokeAsync(StateHasChanged);
 
         await Task.Delay(BetweenBoutsMs);
         if (generation != _generation || _cup.Current is not { } next) return;
 
-        _bracketOpen = false;
         _freshIndex = -1;
         _p1Char = next.P1Id!;
         _p2Char = next.P2Id!;
@@ -755,6 +733,7 @@
     public async ValueTask DisposeAsync()
     {
         ++_generation;
+        Auth.StateChanged -= OnAuthChanged;
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
         _ref?.Dispose();
     }

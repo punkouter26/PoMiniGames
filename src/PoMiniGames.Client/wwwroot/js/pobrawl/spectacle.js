@@ -1,7 +1,7 @@
 // spectacle.js — shockwave, comic-book KO panel, press bursts, victory pyro, house
 // light kick, rematch rewind and result-screen shatter. Mixin (see mixin.js).
 // Presentation only: never touches sim state, and uses Math.random, never the
-// seeded match RNG, so demo replays and online lockstep are untouched.
+// seeded match RNG, so seeded replays and online lockstep are untouched.
 // Flicker rule: nothing here changes whole-frame brightness.
 import * as THREE from 'three';
 import { pressBurst } from './arena.js';

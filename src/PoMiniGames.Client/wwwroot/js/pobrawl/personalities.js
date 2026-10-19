@@ -214,11 +214,11 @@ export const PERSONALITIES = {
   },
 
   // ── Clinton — "Sax Solo" + "I Feel Your Pain" elbow flurry ─────────
-  // 1.5× windup. Every landed hit chains into an elbow flurry whose count grows
-  // with the opponent's recent misses.
+  // 1.5× windup. Every landed punch queues a follow-up elbow (3 dmg) that the
+  // guard stops like any other strike; up to six can be in flight.
   clinton: {
     onSwingP: { saxSoloWindupMul: 1.5 },
-    onHitChain: { name: 'feelYourPain', hits: 4, growthPerOppMiss: 1, growthCap: 6 },
+    onHitChain: { name: 'feelYourPain', elbowDmg: 3 },
     // SUPER: 1.6× next swing with auto-flurry chain and doubled windup.
     onSuper: { mode: 'saxSolo', nextSwingAtkMul: 1.6, chainHits: 4, saxSoloWindupMul: 2.0 },
     // FOOTWORK "the sway": rocks both directions, barely closing.
@@ -418,10 +418,10 @@ export const PERSONALITIES = {
   },
 
   // ── Nixon — "Tricky Dick" + "I Am Not a Crook" ────────────────────
-  // 25% of attacks are "dirty" (ignore 40% of block absorption). Once per round,
+  // 25% of attacks are "dirty": a quarter of those slip a held guard. Once per round,
   // a landed dirty hit may eye-gouge: brief input-blind on the defender.
   nixon: {
-    onSwingP: { dirtyChance: 0.25, dirtyBlockFraction: 0.40 },
+    onSwingP: { dirtyChance: 0.25, dirtyBlockFraction: 0.25 },
     oncePerRound: {
       name: 'eyeGouge',
       procChance: 0.30,
@@ -429,7 +429,7 @@ export const PERSONALITIES = {
       blindMissRate: 0.30,
     },
     // SUPER: next 3 swings are dirty; the first blinds 0.5 s on landing.
-    onSuper: { mode: 'notACrook', dirtySwings: 3, dirtyBlockFraction: 0.40, blindSecs: 0.5 },
+    onSuper: { mode: 'notACrook', dirtySwings: 3, blindSecs: 0.5 },
     // FOOTWORK "the sidle": creep in sideways, break off, reset on the other side.
     footwork: [{ secs: 0.50, move: 0, side: -1 }, { secs: 0.40, move: 1, side: -1 }, { secs: 0.45, move: -1 }, { secs: 0.35, move: 0, side: 1 }],
     // PATTERN "the sneak": fake disengage, then straight back in.
@@ -716,7 +716,6 @@ export function makePersonalityState(id) {
     habitatComboN: 0,      // carter 1→2→3→4 ladder
     habitatComboT: 0,      // carter last personal-land time
     lastHitWasSax: false,  // clinton sax solo tag
-    saxSinceMiss: 0,       // clinton counter count vs opp misses
     lbjMissKBUntil: 0,          // lbj "Treatment" miss-charge window
     lbjPumpSwingsLeft: 0,       // lbj "All the Way" remaining swing buffs
     jfkDashboardCount: 0,       // jfk "Camelot Glint" 4th-hit tracking

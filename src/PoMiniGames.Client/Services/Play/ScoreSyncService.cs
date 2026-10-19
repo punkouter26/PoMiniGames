@@ -160,10 +160,7 @@ public sealed class ScoreSyncService
     {
         PendingScoreKind.PoRacer => await SubmitPoRacerAsync(item.PayloadJson),
         PendingScoreKind.MarbleRace => await SubmitMarbleRaceAsync(item.PayloadJson),
-        PendingScoreKind.PoBrawl =>
-            await _api.SubmitPoBrawlHighScoreAsync(
-                JsonSerializer.Deserialize(item.PayloadJson, ApiJsonContext.Default.PoBrawlHighScore) ?? new PoBrawlHighScore()) is not null
-                ? Disposition.Synced : Disposition.Retry,
+        PendingScoreKind.PoBrawl => await SubmitPoBrawlAsync(item.PayloadJson),
         PendingScoreKind.PlayerStats => await SubmitPlayerStatsAsync(item.PayloadJson),
         PendingScoreKind.PoVoxelStrike => await SubmitPoVoxelStrikeAsync(item.PayloadJson),
         PendingScoreKind.PoCabinet => await SubmitPoCabinetAsync(item.PayloadJson),
@@ -179,6 +176,16 @@ public sealed class ScoreSyncService
         return result.IsSaved ? Disposition.Synced
             : result.ShouldRetry ? Disposition.Retry
             : Disposition.Drop;
+    }
+
+    private async Task<Disposition> SubmitPoBrawlAsync(string payloadJson)
+    {
+        PoBrawlHighScore? entry;
+        try { entry = JsonSerializer.Deserialize(payloadJson, ApiJsonContext.Default.PoBrawlHighScore); }
+        catch (JsonException) { return Disposition.Drop; } // malformed: unreplayable
+        if (entry is null) return Disposition.Drop;
+        var result = await _api.SubmitPoBrawlHighScoreAsync(entry);
+        return result.IsSaved ? Disposition.Synced : result.ShouldRetry ? Disposition.Retry : Disposition.Drop;
     }
 
     private async Task<Disposition> SubmitPoMuleAsync(string payloadJson)

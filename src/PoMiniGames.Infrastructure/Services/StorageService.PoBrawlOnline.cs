@@ -76,9 +76,10 @@ public partial class StorageService
     /// carries a single coherent rating concept. The match record itself lives in
     /// MatchHistory (see MatchHistoryEndpoints); this method only moves the rating.
     /// The self-fight guard lives in the only caller, PoBrawlOnlineMatchEndpoints, which
-    /// answers it with a 400.
+    /// answers it with a 400. Returns false when nothing (or a rolled-back half) was written:
+    /// the caller holds a once-per-match claim and must release it so a retry can land.
     /// </summary>
-    public async Task RecordPoBrawlOnlineMatchAsync(
+    public async Task<bool> RecordPoBrawlOnlineMatchAsync(
         string winnerPrincipalId, string loserPrincipalId,
         string winnerDisplayName, string loserDisplayName,
         bool isDraw)
@@ -90,7 +91,7 @@ public partial class StorageService
 
         if (!IsStorageAvailable())
         {
-            return;
+            return false;
         }
 
         var table = Table(PoBrawlPlayerEloTable);
@@ -132,14 +133,16 @@ public partial class StorageService
                         compensationFailure,
                         "PoBrawl online Elo: failed to compensate a half-applied match for {PrincipalId}; the rating pool is off by {Delta}.",
                         winnerPrincipalId, delta);
-                    return;
+                    return false;
                 }
                 throw;
             }
+            return true;
         }
         catch (Exception ex)
         {
             MarkUnavailable(ex);
+            return false;
         }
     }
 

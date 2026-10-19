@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -91,7 +92,7 @@ public class PoBrawlMatchServiceTests
     [InlineData(nameof(SubmitInput_OverridesActorWithPinnedSide))]
     [InlineData(nameof(Step_AppliesDamageDeterministically_PerMatchId))]
     [InlineData(nameof(Step_FinishesByKo_ThenReturnsNull_AndRejectsFurtherInputs))]
-    [InlineData(nameof(Lifecycle_PreRoll_SwingReport_Forfeit_AndRematchVotes))]
+    [InlineData(nameof(Lifecycle_PreRoll_SwingReport_Forfeit_AndArrival))]
     [InlineData(nameof(BuildResultFor_ShapesOutcomePerConnection))]
     [InlineData(nameof(Timeline_RestampsLateInputs_NeverRewritesThePast_AndKeepsEachSideInOrder))]
     [InlineData(nameof(Snapshot_CarriesThePackedSimAndItsChecksum))]
@@ -176,9 +177,10 @@ public class PoBrawlMatchServiceTests
     /// <summary>
     /// The match lifecycle in one scenario: the pre-roll holds the fight, each swing is recorded in
     /// the sim (the 3D view throws exactly that), a corner that stays away forfeits — the server
-    /// letting go of its keys on the way — and the rematch needs both corners' votes.
+    /// letting go of its keys on the way — the clock waits for both corners, and a corner that never
+    /// arrives abandons the fight instead of handing the other a win.
     /// </summary>
-    private void Lifecycle_PreRoll_SwingReport_Forfeit_AndRematchVotes()
+    private void Lifecycle_PreRoll_SwingReport_Forfeit_AndArrival()
     {
         // Pre-roll (1 s = 60 frames): nothing moves and a press made during the count is dropped.
         var counted = StartedMatch("count", countdownSeconds: 1);
@@ -220,11 +222,48 @@ public class PoBrawlMatchServiceTests
         end.Player2Held.Should().Be(PoBrawlMatchAction.Idle, "the dropped corner stopped walking");
         match.BuildResultFor("conn-1").Forfeit.Should().BeTrue();
 
-        // Rematch: P2 comes back after the bell; one vote is not enough, two start it.
-        match.RegisterConnection("conn-2", PoBrawlSide.Player2);
-        match.VoteRematch("conn-1").Should().BeFalse();
-        match.Snapshot().RematchVotes.Should().Be(1);
-        match.VoteRematch("conn-2").Should().BeTrue();
+        match.BuildResultFor("conn-1").Abandoned.Should().BeFalse("both corners fought before the drop");
+
+        // Arrival: the clock (and with it the countdown) is held until the second corner joins.
+        var later = Stopwatch.GetTimestamp() + 10 * Stopwatch.Frequency;
+        var waiting = new PoBrawlMatchService("wait", "BRAWL",
+            new[] { NewPlayer("conn-1", "alice", "Alice", PoBrawlRoster.Bob), NewPlayer("conn-2", "bob", "Bob", PoBrawlRoster.Bob) }, 1);
+        waiting.RegisterConnection("conn-1", PoBrawlSide.Player1);
+        waiting.IsWaiting.Should().BeTrue();
+        waiting.ClockFrame(later).Should().Be(0, "nobody is fighting yet");
+        waiting.AdvanceToClock(later).Should().Be(0);
+        waiting.Snapshot().WaitingForOpponent.Should().BeTrue();
+        waiting.Snapshot().ForfeitInSeconds.Should().BePositive("the corner that is here sees the arrival countdown");
+        waiting.RegisterConnection("conn-2", PoBrawlSide.Player2);
+        waiting.IsWaiting.Should().BeFalse();
+        waiting.ClockFrame(Stopwatch.GetTimestamp() + Stopwatch.Frequency).Should().BeApproximately(Sim.Hz, 6,
+            "the clock runs from the second arrival, not from the lobby's start");
+        waiting.AdvanceToClock(Stopwatch.GetTimestamp() + Stopwatch.Frequency / 2).Should().BeGreaterThan(0);
+        waiting.Snapshot().ElapsedSeconds.Should().BeLessThan(0, "the full pre-roll is still to come");
+
+        // A corner that never arrives: the fight is abandoned, never a win for the one who came.
+        var noShow = new PoBrawlMatchService("noshow", "BRAWL",
+            new[] { NewPlayer("conn-1", "alice", "Alice", PoBrawlRoster.Bob), NewPlayer("conn-2", "bob", "Bob", PoBrawlRoster.Bob) }, 1);
+        noShow.RegisterConnection("conn-1", PoBrawlSide.Player1);
+        var pastGrace = Stopwatch.GetTimestamp() + (long)((PoBrawlMatchService.ArrivalGraceSeconds + 1) * Stopwatch.Frequency);
+        noShow.AdvanceToClock(pastGrace).Should().Be(0);
+        noShow.FinishedAtUtc.Should().NotBeNull();
+        var abandoned = noShow.Snapshot();
+        abandoned.LastEvent.Should().Be("abandoned");
+        abandoned.Winner.Should().BeNull("a corner that never arrived is never beaten by forfeit");
+        var result = noShow.BuildResultFor("conn-1");
+        result.Abandoned.Should().BeTrue();
+        result.Outcome.Should().Be(PoBrawlOutcome.Draw);
+
+        // The same through the referee's own presence clock (a sim stepped with a corner never seen).
+        var stepped = new PoBrawlMatchService("stepped", "BRAWL",
+            new[] { NewPlayer("conn-1", "alice", "Alice", PoBrawlRoster.Bob), NewPlayer("conn-2", "bob", "Bob", PoBrawlRoster.Bob) });
+        stepped.RegisterConnection("conn-1", PoBrawlSide.Player1);
+        PoBrawlMatchState? last = null;
+        for (var i = 0; i < (PoBrawlMatchService.ArrivalGraceSeconds + 1) * Sim.Hz && last is not { Finished: true }; i++)
+            last = stepped.Step();
+        last!.LastEvent.Should().Be("abandoned");
+        last.Winner.Should().BeNull();
     }
 
     private void BuildResultFor_ShapesOutcomePerConnection()
@@ -271,8 +310,22 @@ public class PoBrawlMatchServiceTests
         match.SimState.P2.Held.Should().Be(Sim.HeldBlock, "two inputs on one frame merge: the later held wins");
         match.SimState.P2.SwingFrame.Should().Be(20, "and its press fires (a whiff from across the ring)");
 
-        Send(match, "conn-1", PoBrawlMatchAction.Idle, frame: 1_000_000)!.Frame
-            .Should().Be(match.Frame + PoBrawlMatchService.MaxInputLeadFrames, "a stamp far in the future is pulled in");
+        Send(match, "conn-1", PoBrawlMatchAction.Idle, frame: 1_000_000)
+            .Should().BeNull("a stamp far past the lead window is refused, not honoured");
+        Send(match, "conn-1", PoBrawlMatchAction.Idle, frame: match.Frame + PoBrawlMatchService.MaxInputLeadFrames)!.Frame
+            .Should().Be(match.Frame + PoBrawlMatchService.MaxInputLeadFrames, "the edge of the lead window still lands");
+
+        // Flooding: a corner gets MaxInputsPerFrame on one frame, and MaxInputsPerSecond a second.
+        var flood = StartedMatch("flood");
+        var target = flood.Frame + 10;
+        Enumerable.Range(0, PoBrawlMatchService.MaxInputsPerFrame + 2)
+            .Count(_ => Send(flood, "conn-1", PoBrawlMatchAction.Block, frame: target) is not null)
+            .Should().Be(PoBrawlMatchService.MaxInputsPerFrame, "inputs on one frame merge, so more are only work");
+        Enumerable.Range(0, 100)
+            .Count(i => Send(flood, "conn-2", PoBrawlMatchAction.Idle, frame: flood.Frame + 1 + i) is not null)
+            .Should().Be(PoBrawlMatchService.MaxInputsPerSecond, "a second of fight takes at most this many from a corner");
+        flood.AdvanceTo(flood.Frame + Sim.Hz);
+        Send(flood, "conn-2", PoBrawlMatchAction.Idle).Should().NotBeNull("the budget refills as the fight moves on");
         match.SubmitInput("conn-1", new PoBrawlMatchInput { Held = PoBrawlMatchAction.Idle, Frame = match.Frame + 1, Sequence = 1 })
             .Should().BeNull("a sequence number that is not newer is stale");
         match.SubmitInput("conn-2", new PoBrawlMatchInput { Held = PoBrawlMatchAction.Punch, Frame = match.Frame + 1, Sequence = ++_seq })

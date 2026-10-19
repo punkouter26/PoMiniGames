@@ -31,8 +31,12 @@ public sealed class PoBrawlDossierOptions
 /// static text; the endpoint answers 200 either way.</para>
 /// <para><b>Caching.</b> One enriched list per process, in <see cref="IMemoryCache"/>: a full
 /// success is kept for <see cref="PoBrawlDossierOptions.CacheHours"/>, a partial one for
-/// 15 minutes so a blip does not pin static text for a day. A gate makes concurrent first
-/// requests share one fetch (16 calls a day, well inside Wikimedia's limits).</para>
+/// 15 minutes so a blip does not pin static text for a day. Concurrent first requests share one
+/// refresh (16 calls a day, well inside Wikimedia's limits).</para>
+/// <para><b>Bounded wait.</b> A request waits at most <see cref="FirstLoadWait"/> for that refresh;
+/// past it, the static facts are served and the refresh carries on in the background to fill the
+/// cache for the next caller. Waiting on it outright let a hanging Wikipedia hold the fighter select
+/// for ~40 s (fifteen fetches, four at a time, each allowed its retries).</para>
 /// </remarks>
 public sealed class PoBrawlDossierService
 {
@@ -47,6 +51,9 @@ public sealed class PoBrawlDossierService
     /// <summary>Upper bound on the summary shown on a card.</summary>
     public const int MaxSummaryChars = 300;
 
+    /// <summary>The longest a request waits on a Wikipedia refresh before serving the static facts.</summary>
+    public static readonly TimeSpan FirstLoadWait = TimeSpan.FromSeconds(4);
+
     private const string CacheKey = "pobrawl:dossiers";
     private static readonly TimeSpan PartialCacheFor = TimeSpan.FromMinutes(15);
 
@@ -54,7 +61,8 @@ public sealed class PoBrawlDossierService
     private readonly IMemoryCache _cache;
     private readonly IOptionsMonitor<PoBrawlDossierOptions> _options;
     private readonly ILogger<PoBrawlDossierService> _logger;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _refreshLock = new();
+    private Task<IReadOnlyList<PoBrawlDossierDto>>? _refresh;
 
     public PoBrawlDossierService(
         IHttpClientFactory httpFactory,
@@ -78,22 +86,38 @@ public sealed class PoBrawlDossierService
         if (_cache.TryGetValue(CacheKey, out IReadOnlyList<PoBrawlDossierDto>? cached) && cached is not null)
             return cached;
 
+        var refresh = StartRefresh(options);
         try
         {
-            await _gate.WaitAsync(cancellationToken);
+            var first = await Task.WhenAny(refresh, Task.Delay(FirstLoadWait, cancellationToken));
+            if (first == refresh)
+                return await refresh;
         }
         catch (OperationCanceledException)
         {
-            return PoBrawlDossiers.StaticDtos();
+            // The caller left; the refresh carries on for the next one.
         }
+        return PoBrawlDossiers.StaticDtos();
+    }
 
+    /// <summary>The refresh in flight, or a new one. Never the request's token: it fills the cache for every later caller.</summary>
+    private Task<IReadOnlyList<PoBrawlDossierDto>> StartRefresh(PoBrawlDossierOptions options)
+    {
+        lock (_refreshLock)
+        {
+            if (_refresh is { IsCompleted: false } running) return running;
+            return _refresh = Task.Run(() => RefreshAsync(options));
+        }
+    }
+
+    private async Task<IReadOnlyList<PoBrawlDossierDto>> RefreshAsync(PoBrawlDossierOptions options)
+    {
         try
         {
-            if (_cache.TryGetValue(CacheKey, out cached) && cached is not null)
+            if (_cache.TryGetValue(CacheKey, out IReadOnlyList<PoBrawlDossierDto>? cached) && cached is not null)
                 return cached;
 
-            // Not the request's token: the fetch fills the cache for every later caller, so a
-            // visitor who navigates away must not throw the work away. The client timeout bounds it.
+            // The HTTP client's resilience timeouts bound each fetch.
             var dossiers = PoBrawlDossiers.StaticDtos();
             var enriched = 0;
             await Parallel.ForEachAsync(dossiers, new ParallelOptions { MaxDegreeOfParallelism = 4 },
@@ -113,9 +137,11 @@ public sealed class PoBrawlDossierService
             _cache.Set(CacheKey, result, lifetime);
             return result;
         }
-        finally
+        catch (Exception ex)
         {
-            _gate.Release();
+            // Never throws (see the class remarks): an unexpected failure is the static text.
+            _logger.LogWarning(ex, "PoBrawl dossiers: refresh failed; serving the static facts");
+            return PoBrawlDossiers.StaticDtos();
         }
     }
 

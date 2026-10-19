@@ -14,9 +14,12 @@ public static class PoBrawlDossierEndpoints
         app.MapGet("/api/pobrawl/dossier",
             async (PoBrawlDossierService dossiers, HttpContext http, CancellationToken cancellationToken) =>
             {
+                var list = await dossiers.GetAllAsync(cancellationToken);
                 // The list changes at most daily; let the browser and the PWA reuse it for an hour.
-                http.Response.Headers.CacheControl = "public, max-age=3600";
-                return Results.Ok(await dossiers.GetAllAsync(cancellationToken));
+                // Static facts served because Wikipedia was slow get five minutes, so the enriched
+                // copy the background refresh is filling reaches the page soon after.
+                http.Response.Headers.CacheControl = list.Any(d => d.FromWikipedia) ? "public, max-age=3600" : "public, max-age=300";
+                return Results.Ok(list);
             })
             .WithTags("PoBrawl")
             .WithName("GetPoBrawlDossiers")

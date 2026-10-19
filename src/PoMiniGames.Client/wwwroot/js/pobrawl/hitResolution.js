@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { setExpression } from './fighters.js';
 import { COMBAT_EVENTS, REGIONS, regionEffect } from './combat.js';
 import { PERSONALITIES } from './personalities.js';
-import { testAttackHit, testAttackBlocked, testAttackClash, regionForHurtBone } from './hitboxes.js';
+import { testAttackHit, guardCovers, testAttackClash, regionForHurtBone } from './hitboxes.js';
 import { SIM_DT, MAX_HP, ATTACKS, HEAVY_HIT_DMG } from './constants.js';
 
 // ── Dismemberment ─────────────────────────────────────────────────────────
@@ -110,6 +110,11 @@ const PERFECT_GUARD_STUN = 0.65;
 const COUNTER_WINDOW = 1.5;
 const COUNTER_ATK_MUL = 1.5;
 
+// Super meter per unit of HP lost (see _rollHitDamage). 1.6 fills it after
+// ~60 HP of damage: a comeback for the fighter who is losing, with the fight
+// still live enough for the super to matter.
+const SUPER_FILL_PER_HP = 1.6;
+
 // Scratch vectors.
 const _sweatPos = new THREE.Vector3();
 const _leverArm = new THREE.Vector3();
@@ -193,8 +198,11 @@ class HitResolutionMethods {
     // when at least one striker/hurt capsule pair intersects; the deepest
     // intersection wins for both location and region.
     // A KO'd body is invulnerable — wailing on a ragdoll would read as
-    // unfair and looks broken.
-    if (defender.state === 'ko') return;
+    // unfair and looks broken. A KO'd ATTACKER is out too: in a same-tick
+    // trade (game.js resolves both swings after both fighters tick) the first
+    // strike may already have ended the fight, and a dead man's punch landing
+    // a frame later would turn a clean KO into a double knockout.
+    if (defender.state === 'ko' || attacker.state === 'ko') return;
     // Online the server already decided this swing (netplay.js): land its verdict instead.
     if (this.online) return this._tryHitNet(attacker, defender, attack);
 
@@ -245,7 +253,11 @@ class HitResolutionMethods {
     const atkMass = attacker.rig.config.mass;
     const defMass = defender.rig.config.mass;
     const powerScale = attacker.rig.config.attackPower * (atkMass / defMass);
+    // Region wear cuts both ways and each half belongs to a different body:
+    // the ATTACKER's battered arms weaken the swing (atkMul), the DEFENDER's
+    // rattled head lengthens the stun it causes (flinchBonus, in _landHit).
     const effect = regionEffect(defender.regionDmg);
+    const atkMul = regionEffect(attacker.regionDmg).atkMul;
 
     // Region classifier — driven by which hurt capsule was actually
     // touched, not a Y-band heuristic. This is the whole point of the
@@ -259,7 +271,7 @@ class HitResolutionMethods {
     // Everything the steps below share about this one strike. `baseDmg` is filled
     // by _rollHitDamage and `torqueY` by _landHit; the KO hand-off reads both.
     const s = {
-      attacker, defender, attack, hit, phase, region, regionMod, effect,
+      attacker, defender, attack, hit, phase, region, regionMod, effect, atkMul,
       knockDir, impulseDir, chargeMul, atkMass, defMass, powerScale, dpos,
       baseDmg: 0, torqueY: 0,
     };
@@ -276,15 +288,17 @@ class HitResolutionMethods {
   // The guard branch. True when the swing was stopped (ordinary or perfect guard)
   // and the strike is fully resolved; false when it goes on to the damage roll.
   _resolveBlock(s) {
-    const { attacker, defender, attack, hit, phase, knockDir, chargeMul, defMass } = s;
-    // If the defender is blocking, only the guard capsules count — the hurt
-    // capsules still register the "near-miss" but the striker must explicitly
-    // touch the guard surface to count as blocked.
-    let blocked = defender.state === 'block' &&
-                  testAttackBlocked(attacker.rig, attack.name, phase, defender.rig);
+    const { attacker, defender, attack, hit, knockDir, chargeMul, defMass } = s;
+    // A held guard stops anything thrown from inside its arc (hitboxes.js
+    // guardCovers): what you pressed decides it, not whether the fist happened
+    // to graze a forearm. Only a strike from the flank or behind gets round it.
+    let blocked = defender.state === 'block'
+      && guardCovers(defender.rig, attacker.rig.root.position);
     // ── Nixon "Tricky Dick": 25% of attacks carry a dirty tag ────────
-    // When dirty is set on the swing commit, ~40% of the time the block
-    // simply slips — the swing connects through as if no guard were up.
+    // When dirty is set on the swing commit, `dirtyBlockFraction` (a
+    // quarter) of the time the block simply slips — the swing connects
+    // through as if no guard were up. Kept rare on purpose: a guard that
+    // fails often stops being a decision and becomes a coin toss.
     if (attacker._dirtySwing) {
       const dirtyCfg = PERSONALITIES.nixon?.onSwingP;
       if (dirtyCfg && this.rng.random() < dirtyCfg.dirtyBlockFraction) blocked = false;
@@ -367,11 +381,11 @@ class HitResolutionMethods {
   // damage, no reaction). Side effects that must happen before the number is
   // final — super-meter fill, consumed next-swing bonuses, the counter — live here.
   _rollHitDamage(s) {
-    const { attacker, defender, attack, hit, region, regionMod, effect, chargeMul, powerScale } = s;
-    // Damage rolls: ±2 variance, scaled by charge, mass ratio, attack power,
-    // region and the defender's existing region damage modifiers.
+    const { attacker, defender, attack, hit, region, regionMod, atkMul, chargeMul, powerScale } = s;
+    // Damage rolls: ±1 variance, scaled by charge, mass ratio, attack power,
+    // the struck region and the attacker's own arm wear.
     let baseDmg = (attack.dmg * chargeMul + this.rng.randint(-1, 1))
-      * effect.atkMul * regionMod * powerScale;
+      * atkMul * regionMod * powerScale;
 
     // ── Per-hit personality modifiers ─────────────────────────────────
     // 1) The attacker may be carrying a temporary atkMul (Reagan's "Morning
@@ -459,6 +473,8 @@ class HitResolutionMethods {
     // rolled damage reflects LBJ pump / JFK Glint / Truman stacks / FDR day,
     // and side-effect counter increments like Truman's defense stacks fire
     // synchronously). The helper returns the residual personality dmg mul.
+    // This is the ONLY call per landed hit: its side effects (a Clinton elbow
+    // queued, an LBJ pump swing spent, a JFK Glint counted) must not repeat.
     const extraMul = this._applyOnHitPersonalities(attacker, defender, region, baseDmg, hit, attack);
     baseDmg *= extraMul;
 
@@ -475,12 +491,14 @@ class HitResolutionMethods {
       this._commentate('counter', attacker, defender);
     }
 
-    // Super meter fill on damage taken. Pure damage ratio: a hit that costs
-    // 20% of HP fills ~ 1/5 of the meter — capped so a single massive hit
-    // can't overflow. Reading baseDmg / MAX_HP keeps the meter stable across
-    // character mass differences without per-president tuning.
+    // Super meter fill on damage taken. Damage ratio × SUPER_FILL_PER_HP: a
+    // hit that costs 20% of HP fills about a third of the meter — capped so a
+    // single massive hit can't overflow. Reading baseDmg / MAX_HP keeps the
+    // meter stable across character mass differences without per-president
+    // tuning. (At 1:1 the meter only filled on the blow that emptied the HP
+    // bar, so no super ever fired.)
     if (defender?.personality) {
-      const fill = Math.min(0.5, baseDmg / MAX_HP);
+      const fill = Math.min(0.5, SUPER_FILL_PER_HP * baseDmg / MAX_HP);
       defender.personality.superMeter = Math.min(1.0,
         (defender.personality.superMeter || 0) + fill);
     }
@@ -490,7 +508,7 @@ class HitResolutionMethods {
   // The landed hit: HP, scorecard, hitstun, knockback and spin, region wear and
   // dismemberment, and every piece of feedback the contact point earns.
   _landHit(s) {
-    const { attacker, defender, attack, hit, region, knockDir, impulseDir, chargeMul,
+    const { attacker, defender, attack, hit, region, effect, knockDir, impulseDir, chargeMul,
             atkMass, defMass, dpos, baseDmg } = s;
     const attPer = attacker.personality;
     // The training room never lets a hit kill (training.js): it tops the bar back up first.
@@ -506,6 +524,9 @@ class HitResolutionMethods {
     // the energy bar — only winding up or attacking moves it.
     defender.state = 'hitstun';
     defender.stateT = 0;
+    // A rattled head (regionEffect flinchBonus) stuns a little longer; game.js
+    // adds this to HITSTUN. Offline only — online the server owns the clock.
+    defender.hitstunBonus = this.online ? 0 : (effect?.flinchBonus || 0);
     defender.chargeName = null;
     defender.chargeAmt = 0;
     defender.animator.setCharge(null, 0);
@@ -574,9 +595,7 @@ class HitResolutionMethods {
     setExpression(defender.rig, 'hurt');
     defender.expressionT = 0.7;
 
-    // ── On-hit personality effects ─────────────────────────────────────
-    this._applyOnHitPersonalities(attacker, defender, region, baseDmg, hit, attack);
-
+    // On-hit personality effects already ran once, in _rollHitDamage.
     if (defender.controller.notifyHit) defender.controller.notifyHit();
     // Sparks + a real light flash at the contact point, not at the defender's root.
     this._spawnSparks(hit.point, region === REGIONS.HEAD ? 0xff5530 : 0xffc857,

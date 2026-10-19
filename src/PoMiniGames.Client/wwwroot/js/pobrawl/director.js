@@ -1,4 +1,4 @@
-// director.js — the broadcast director. In the CPU-only modes ('demo', 'tournament') nobody
+// director.js — the broadcast director. In the CPU-only mode ('tournament', the Cup) nobody
 // plays, so instead of the one fixed boom the camera cuts like a TV truck: a shot list of rigs,
 // a director that picks the next one from fight events and a shot clock, and a small
 // picture-in-picture "iso cam" on the fighter the main shot is not centred on.
@@ -8,7 +8,7 @@
 //   KO and super keep their own branches and always win — the director only drives the
 //   'normal' camera while the phase is 'fighting'. Player modes never reach this file.
 // Randomness: Math.random only. `this.rng` is the seeded match RNG; drawing from it here
-// would change demo replays and break online determinism.
+// would change seeded replays and break online determinism.
 
 import * as THREE from 'three';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
@@ -152,8 +152,7 @@ class DirectorMethods {
   }
 
   _directorAllowed() {
-    const m = this.options?.mode;
-    return m === 'demo' || m === 'tournament';
+    return this.options?.mode === 'tournament';
   }
 
   /** True when the director owns the camera this frame (cinematics.js _updateCamera). */

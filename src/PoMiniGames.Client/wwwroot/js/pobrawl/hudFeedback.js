@@ -23,7 +23,11 @@ const _dmgProj = new THREE.Vector3();
 
 class HudFeedbackMethods {
   _setBanner(text) {
-    if (this.banner && this.banner.textContent !== text) this.banner.textContent = text;
+    if (this.banner && this.banner.textContent !== text) {
+      this.banner.textContent = text;
+      // One surface per call: the caption bar steps aside for the same words (commentary.js).
+      if (text) this._captionYieldTo?.(text);
+    }
   }
 
   // ── Hit feedback: damage numbers + combo readout ─────────────────────
@@ -155,7 +159,7 @@ class HudFeedbackMethods {
     el.className = 'pb-dmg' + (extraClass ? ' ' + extraClass.trim() : '');
     el.textContent = text;
     // Horizontal jitter so a flurry into one capsule doesn't overprint into an
-    // unreadable smear. Seeded RNG, so a demo replay jitters identically.
+    // unreadable smear. Seeded RNG, so a seeded replay jitters identically.
     el.style.left = `${(_dmgProj.x * 0.5 + 0.5) * w + (this.rng.random() - 0.5) * 26}px`;
     el.style.top = `${(-_dmgProj.y * 0.5 + 0.5) * h}px`;
     this.fx.appendChild(el);

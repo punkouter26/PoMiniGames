@@ -16,6 +16,8 @@ public sealed class ScoreRulesTests
     [InlineData("pobrawl", 12.4, 60, ScoreVerdict.Plausible)]
     [InlineData("pobrawl", 12.4, 6, ScoreVerdict.Impossible)]
     [InlineData("pobrawl", 0.2, 60, ScoreVerdict.OutOfRange)]
+    [InlineData("pobrawl", 1.2, 60, ScoreVerdict.OutOfRange)]     // under the engine's fastest real KO
+    [InlineData("pobrawl", 1.8, 60, ScoreVerdict.Plausible)]      // a perfect-guard counter one-shot
     [InlineData("pobrawl", 700, 800, ScoreVerdict.OutOfRange)]
     [InlineData("poracer", 1.0, 1, ScoreVerdict.TooFast)]
     // Point boards: a rate ceiling, plus the absolute range.

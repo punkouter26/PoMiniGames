@@ -103,7 +103,8 @@ public sealed class PlayerDataService(
         new("PoVoxelStrikeHighScores", null, ["PlayerName"]),
         new("PoMuleHighScores", ["pomule"], ["PlayerName"]),
 
-        // The ladder keeps one row per player keyed by sanitised name (see StorageService).
+        // The ladder keeps one row per claim identity (UserId column, hashed RowKey); legacy rows
+        // from before that are keyed by the sanitised name and still matched by it.
         new("PoBrawlLadder", ["pobrawlladder"], ["PlayerName", "PlayerInitials"], RowKeyIsName: true),
 
         // The 1P ladder run (PoBrawlProgressStore): one row per claim identity, matched on UserId.

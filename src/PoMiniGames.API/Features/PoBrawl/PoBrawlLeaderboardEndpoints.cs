@@ -87,6 +87,12 @@ public static class PoBrawlLeaderboardEndpoints
             async (PoBrawlLadderEntry entry, HttpContext http, IStorageService storage,
                    ScoreIntegrityGuard integrity) =>
             {
+                // The row is keyed by the claim identity, never the display name: keyed by name,
+                // two accounts sharing one wrote onto the same row, and anyone could post as anyone.
+                var identity = RequestIdentity.Resolve(http.User);
+                if (string.IsNullOrWhiteSpace(identity.UserId))
+                    return Results.Unauthorized();
+
                 // Same rule as the KO board: the typed name is validated only when it is stored.
                 var claimName = ClaimName(http);
                 if (claimName is null && string.IsNullOrWhiteSpace(entry.PlayerName))
@@ -98,18 +104,30 @@ public static class PoBrawlLeaderboardEndpoints
                 if (entry.PresidentsBeaten < 0 || entry.PresidentsBeaten > PoBrawlRoster.Count)
                     return Results.BadRequest(new { error = $"Presidents beaten must be between 0 and {PoBrawlRoster.Count}" });
 
-                // No score guard here on purpose: the ladder accumulates rungs beaten rather
-                // than points or a time, so there is no rate for ScoreRules to check and the
-                // rung ceiling above already IS its whole range. The name still reaches a
-                // public board, so it is moderated like everywhere else.
+                // The claimed count is not taken on trust. The client posts once per win, so the
+                // store credits at most ONE rung past the row's own count, and only when the last
+                // climb is at least LadderMinRungInterval old. The check runs against the stored
+                // ladder row rather than the progress row, which the client saves fire-and-forget
+                // and which may not have landed yet. The name still reaches a public board, so
+                // it is moderated like everywhere else.
                 var name = StoredName(http, integrity, claimName, entry.PlayerName);
 
-                var saved = await storage.SavePoBrawlLadderAsync(entry with { PlayerName = name });
-                return Results.Created("/api/pobrawl/ladder", saved);
+                var (saved, verdict) = await storage.SavePoBrawlLadderAsync(
+                    identity.UserId, entry with { PlayerName = name }, LadderMinRungInterval);
+                return verdict switch
+                {
+                    PoBrawlLadderVerdict.TooFast => Results.Problem(
+                        title: "ladder_too_fast",
+                        detail: "That rung came sooner after the last one than a fight can be won.",
+                        statusCode: StatusCodes.Status429TooManyRequests),
+                    PoBrawlLadderVerdict.Unavailable => Results.StatusCode(StatusCodes.Status503ServiceUnavailable),
+                    _ => Results.Created("/api/pobrawl/ladder", saved),
+                };
             })
             .WithName("SavePoBrawlLadder")
             .WithSummary("Submit a player's presidents-ladder progress")
             .Produces<PoBrawlLadderEntry>(StatusCodes.Status201Created)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .RequireRateLimiting("highscores");
 
         // ── Demo-mode fighter Elo ─────────────────────────────────────────
@@ -117,38 +135,65 @@ public static class PoBrawlLeaderboardEndpoints
         // matches. Rates characters, not players — see PoBrawlFighterRating. WRITE ONLY,
         // like the ladder: the board is read at /api/leaderboards/pobrawldemo.
         app.MapPost("/pobrawl/elo",
-            async (PoBrawlDemoResultRequest request, IStorageService storage) =>
-            {
-                // The server owns the Elo arithmetic and the roster: the submission names
-                // only who fought and who won. Ratings are never accepted from the client,
-                // and an id outside the roster is rejected rather than creating a row —
-                // the rating partition stays bounded at the roster size.
-                if (!PoBrawlRoster.IsRateable(request.WinnerFighterId) ||
-                    !PoBrawlRoster.IsRateable(request.LoserFighterId))
-                {
-                    return Results.BadRequest(new { error = "Both fighters must be on the PoBrawl presidents roster" });
-                }
-
-                if (string.Equals(request.WinnerFighterId, request.LoserFighterId, StringComparison.OrdinalIgnoreCase))
-                {
-                    return Results.BadRequest(new { error = "A fighter cannot fight itself" });
-                }
-
-                await storage.RecordPoBrawlDemoResultAsync(
-                    request.WinnerFighterId, request.LoserFighterId, request.IsDraw);
-                return Results.NoContent();
-            })
+            (PoBrawlDemoResultRequest request, HttpContext http, IStorageService storage, PoBrawlDemoEloGate gate) =>
+                RecordDemoResultAsync(request, http, storage, gate))
             .WithTags("HighScores")
             .WithName("RecordPoBrawlDemoResult")
             .WithSummary("Record one CPU-vs-CPU demo match")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()
-            // 10/min is comfortably above the real demo cadence (a match runs tens of
-            // seconds), so a 429 here means something other than the kiosk is posting.
-            // A dropped match costs the board one sample and nothing else.
-            .RequireRateLimiting("highscores");
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            // Its own bucket: sharing "highscores" let a running kiosk starve the same
+            // player's KO and ladder posts. The per-identity pacing and daily cap live in
+            // PoBrawlDemoEloGate; this only shapes bursts.
+            .RequireRateLimiting("pobrawl-elo");
 
         return app;
+    }
+
+    /// <summary>
+    /// The shortest time between two ladder climbs. Between two real rungs sit a KO, its
+    /// cinematic, the 1.8 s result hold, the next fight's VS splash (1.3 s) and its 3.7 s
+    /// countdown, and the fastest possible KO (~1.7 s, see ScoreRules) — well over 8 s. Seven
+    /// leaves room for network jitter between the two posts.
+    /// </summary>
+    public static readonly TimeSpan LadderMinRungInterval = TimeSpan.FromSeconds(7);
+
+    private static async Task<IResult> RecordDemoResultAsync(
+        PoBrawlDemoResultRequest request, HttpContext http, IStorageService storage, PoBrawlDemoEloGate gate)
+    {
+        // The server owns the Elo arithmetic and the roster: the submission names only who
+        // fought and who won. Ratings are never accepted from the client, and an id outside the
+        // roster is rejected rather than creating a row — the rating partition stays bounded at
+        // the roster size.
+        var winner = PoBrawlRoster.IsRateable(request.WinnerFighterId) ? PoBrawlRoster.Canonicalize(request.WinnerFighterId) : null;
+        var loser = PoBrawlRoster.IsRateable(request.LoserFighterId) ? PoBrawlRoster.Canonicalize(request.LoserFighterId) : null;
+        if (winner is null || loser is null)
+        {
+            return Results.BadRequest(new { error = "Both fighters must be on the PoBrawl presidents roster" });
+        }
+
+        // Compared canonically: two spellings of one president are still one fighter, and the
+        // store would throw on the pair rather than answer 400.
+        if (string.Equals(winner, loser, StringComparison.Ordinal))
+        {
+            return Results.BadRequest(new { error = "A fighter cannot fight itself" });
+        }
+
+        // Validated first, so a malformed post never spends the caller's allowance.
+        var identity = RequestIdentity.Resolve(http.User).UserId;
+        if (gate.TryAdmit(string.IsNullOrWhiteSpace(identity) ? "anon" : identity) is { } refused)
+        {
+            return Results.Problem(
+                title: refused,
+                detail: refused == "demo_daily_cap"
+                    ? $"Each player reports at most {PoBrawlDemoEloGate.DailyCap} demo bouts a day."
+                    : "Demo bouts are reported one at a time, a few seconds apart.",
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
+
+        await storage.RecordPoBrawlDemoResultAsync(winner, loser, request.IsDraw);
+        return Results.NoContent();
     }
 
     /// <summary>The signed-in display name, or null when the typed name is all there is.</summary>

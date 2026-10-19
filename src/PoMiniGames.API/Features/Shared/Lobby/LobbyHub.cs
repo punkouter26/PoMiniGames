@@ -31,8 +31,16 @@ public abstract class LobbyHub<TPlayer, TRoom> : Hub
     /// <summary>Open the caller's seat. The game decides what its record carries (identity, fighter, seat number…).</summary>
     protected abstract (LobbyState<TPlayer> state, string message) OpenSeat(string displayName, bool isGuest);
 
-    /// <summary>Runs after the host's start is accepted and before <c>gameStarted</c> is broadcast.</summary>
-    protected abstract Task OnStartingAsync();
+    /// <summary>
+    /// Runs after the host's start is accepted and before <c>gameStarted</c> is sent, with the
+    /// roster the start gate passed. If it throws, the room is reset (<c>End</c>) so a failed
+    /// start can never leave the lobby wedged on its started flag.
+    /// </summary>
+    protected abstract Task OnStartingAsync(IReadOnlyList<TPlayer> roster);
+
+    /// <summary>Tells the room the game is on. Default: the whole lobby group, with the room's code.</summary>
+    protected virtual Task SendGameStartedAsync(IReadOnlyList<TPlayer> roster) =>
+        Clients.Group(_group).SendAsync("gameStarted", Lobby.GameCode);
 
     /// <summary>Toast text for the "starting" event, e.g. "Race starting…".</summary>
     protected abstract string StartingMessage { get; }
@@ -78,10 +86,22 @@ public abstract class LobbyHub<TPlayer, TRoom> : Hub
 
     public async Task StartGame()
     {
-        if (!Lobby.TryStart(Context.ConnectionId)) return;
-        await OnStartingAsync();
+        // The roster is captured under the room lock in the same step that sets the started flag:
+        // a seat leaving between the gate and the game's own read can no longer hand it a short one.
+        var roster = Lobby.TryStartWithRoster(Context.ConnectionId);
+        if (roster is null) return;
+        try
+        {
+            await OnStartingAsync(roster);
+        }
+        catch
+        {
+            Lobby.End();
+            await BroadcastStateAsync();
+            throw;
+        }
         await BroadcastEventAsync("starting", StartingMessage);
-        await Clients.Group(_group).SendAsync("gameStarted", Lobby.GameCode);
+        await SendGameStartedAsync(roster);
     }
 
     protected Task BroadcastStateAsync() => Clients.Group(_group).SendAsync("lobbyState", Lobby.State);

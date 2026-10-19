@@ -146,9 +146,18 @@ public partial class StorageService
             Character = e.GetString("Character") ?? "",
             Date = e.GetString("Date") ?? "",
         },
-        RowKeyFields: ["Character", "KoTimeSeconds", "PlayerInitials"],
+        // One row per player (the stored name is the claim name, moderated). Keyed on the time
+        // as well, every KO minted a row, so one account could post a hundred and push every
+        // other player off any read that ranks a bounded page of rows.
+        RowKeyFields: ["PlayerInitials"],
         // Fastest KO wins, oldest first as the tiebreaker.
-        Rank: s => s.OrderBy(x => x.KoTimeSeconds).ThenBy(x => x.Date));
+        Rank: s => s.OrderBy(x => x.KoTimeSeconds).ThenBy(x => x.Date))
+    {
+        // Best-result ratchet: a slower later KO must not erase a faster one.
+        ShouldOverwrite = (existing, incoming) =>
+            (incoming.TryGetValue("KoTimeSeconds", out var v) ? v as double? ?? double.MaxValue : double.MaxValue)
+                < (existing.GetDouble("KoTimeSeconds") ?? double.MaxValue),
+    };
 
     private static readonly HighScoreDescriptor<PoVoxelStrikeHighScore> PoVoxelStrikeScores = new(
         Table: PoVoxelStrikeTable,

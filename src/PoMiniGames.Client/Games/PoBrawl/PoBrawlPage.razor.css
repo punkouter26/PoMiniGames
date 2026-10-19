@@ -529,6 +529,32 @@
     100% { transform: none; opacity: 1; }
 }
 
+/* A phone: two cards side by side leave each about 110 px, too narrow for EISENHOWER at a
+   readable size (shrinking clipped it, wrapping read as "NIXO / N"). Stack them instead:
+   left corner, seal, right corner, each card the full width. */
+@media (max-width: 480px) {
+    .pb-canvas-host ::deep .pb-splash__cards {
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .pb-canvas-host ::deep .pb-splash__card {
+        width: min(78vw, 18rem);
+        min-width: 0;
+        padding: 0.45rem 0.75rem;
+    }
+
+    .pb-canvas-host ::deep .pb-splash__p1,
+    .pb-canvas-host ::deep .pb-splash__p2 {
+        font-size: clamp(1.1rem, 6.4vw, 1.6rem);
+    }
+
+    .pb-canvas-host ::deep .pb-splash__seal {
+        width: 40px;
+        margin: -4px 0;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .pb-canvas-host ::deep .pb-splash__card::before,
     .pb-canvas-host ::deep .pb-splash--visible .pb-splash__card--p1,
@@ -683,6 +709,122 @@
     outline-offset: 2px;
 }
 
+/* "Couldn't connect": Retry beside the way back. */
+.pb-net-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+}
+
+button.pb-net-btn {
+    border: 0;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.pb-net-btn--ghost {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+/* ── Pause: the touch button under the HUD, and the card over the frozen arena ── */
+.pb-pause-btn {
+    align-self: flex-end;
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    pointer-events: auto;
+    font: inherit;
+    font-size: 1.05rem;
+    line-height: 1;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(8, 12, 28, 0.72);
+    color: var(--pb-seg-ink);
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.pb-pause-btn:focus-visible {
+    outline: 2px solid var(--pb-gold);
+    outline-offset: 2px;
+}
+
+/* A mouse and keyboard have Escape and P. */
+@media (hover: hover) and (pointer: fine) {
+    .pb-pause-btn {
+        display: none;
+    }
+}
+
+.pb-pause {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 9;
+    width: min(20rem, calc(100% - 2 * var(--pb-gutter) - 24px));
+    display: grid;
+    gap: 10px;
+    padding: 16px 18px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 209, 102, 0.35);
+    background: rgba(11, 19, 48, 0.94);
+    color: var(--pb-card-ink);
+    text-align: center;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+
+.pb-pause-title {
+    margin: 0;
+    font-family: var(--pb-display);
+    font-size: 1.4rem;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    color: var(--pb-gold);
+}
+
+.pb-pause-actions {
+    display: grid;
+    gap: 6px;
+}
+
+.pb-pause-act {
+    min-height: 42px;
+    font: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    border-radius: var(--radius-pill);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--pb-ink);
+    cursor: pointer;
+}
+
+.pb-pause-act:hover {
+    border-color: rgba(255, 209, 102, 0.6);
+}
+
+.pb-pause-act:focus-visible {
+    outline: 2px solid var(--pb-gold);
+    outline-offset: 2px;
+}
+
+.pb-pause-act--go {
+    border-color: var(--pb-gold);
+    background: var(--pb-gold);
+    color: var(--pb-versus-ink);
+}
+
+.pb-pause-hint {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--pb-card-muted);
+}
+
 /* ── The ladder's ending card (full clear) — result modal, tokens. ── */
 .pb-ending {
     margin: 12px auto 0;
@@ -764,19 +906,6 @@
 .pb-ending-stats dd {
     margin: 0;
     font-weight: 700;
-}
-
-.pb-demo-badge {
-    position: absolute;
-    bottom: calc(var(--pb-gutter) + 10px);
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.6);
-    color: var(--pb-pill-ink);
-    font-size: 0.8rem;
-    padding: 4px 12px;
-    border-radius: var(--radius-pill);
-    pointer-events: none;
 }
 
 /* ── KO chromatic-aberration flash overlay ─────────────
@@ -1749,6 +1878,41 @@
         width: 38px;
         height: 38px;
         margin-top: -19px;
+    }
+}
+
+/* A short screen (1366×768 and the like): the 2P card has to fit whole, Dossiers row
+   included, without scrolling — shorter tiles and side cards, tighter gaps. */
+@media (max-height: 860px) {
+    .pb-select {
+        gap: 0.4rem;
+    }
+
+    .pb-select-grid {
+        gap: 5px;
+    }
+
+    :root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-tile {
+        min-height: 60px;
+    }
+
+    :root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-side {
+        min-height: 104px;
+    }
+
+    .pb-dossier-disclosure {
+        margin-top: 2px;
+    }
+
+    .pb-intro ::deep .gps-intro-card--twoplayer {
+        gap: 0.55rem;
+        padding-top: 1rem;
+        padding-bottom: 0.75rem;
+    }
+
+    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-controls,
+    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-options {
+        padding-top: 0.55rem;
     }
 }
 

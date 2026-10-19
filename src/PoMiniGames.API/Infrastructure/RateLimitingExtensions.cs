@@ -169,6 +169,22 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
+            // PoBrawl demo fighter Elo. Its own bucket so a kiosk (or a 4x tournament) reporting
+            // bouts cannot starve the same player's KO and ladder posts in "highscores". The real
+            // per-identity limits (a bout every 3 s, 40 a day) are PoBrawlDemoEloGate's; this
+            // only caps a burst at the gate's own pace.
+            opts.AddPolicy("pobrawl-elo", ctx =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: BuildPartitionKey(ctx),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        Window = TimeSpan.FromMinutes(1),
+                        PermitLimit = 20,
+                        AutoReplenishment = true,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0,
+                    }));
+
             // Browser error reports. Anonymous and outside the antiforgery scope, so
             // this limit is what stops the sink being used to fill the log. The page itself sends
             // at most ten per load, deduplicated; 20/min covers a couple of bad page loads.

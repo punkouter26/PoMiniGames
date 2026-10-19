@@ -33,7 +33,7 @@ public sealed class PoRacerLobbyHub : LobbyHub<PoRacerLobbyPlayer, PoRacerLobbyS
             await BroadcastStateAsync();
     }
 
-    protected override Task OnStartingAsync()
+    protected override Task OnStartingAsync(IReadOnlyList<PoRacerLobbyPlayer> roster)
     {
         _races.StartMultiplayer();
         return Task.CompletedTask;

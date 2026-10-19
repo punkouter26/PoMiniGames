@@ -4,7 +4,8 @@
 
 import * as THREE from 'three';
 import { PERSONALITIES } from './personalities.js';
-import { MAX_HP } from './constants.js';
+import { MAX_HP, ATTACKS } from './constants.js';
+import { guardCovers } from './hitboxes.js';
 import * as Quality from './quality.js';
 
 // Super ink (see _startSuperInk): seconds in / held / out, full and calm (reduced motion).
@@ -453,13 +454,9 @@ class PersonalityEffectsMethods {
       defender.slowMul = PERSONALITIES.carter.onSuper.slowMul || 0.55;
     }
 
-    // Clinton: a landed punch queues follow-up elbow ticks.
-    if (att?.id === 'clinton') {
-      const flourish = PERSONALITIES.clinton?.onHitChain;
-      if (flourish && attack.name === 'punch') {
-        const extra = Math.min(flourish.growthCap, flourish.hits + att.saxSinceMiss);
-        this._scheduleClintonFlourish(attacker, defender, extra, hit);
-      }
+    // Clinton: a landed punch queues a follow-up elbow.
+    if (att?.id === 'clinton' && attack.name === 'punch' && PERSONALITIES.clinton?.onHitChain) {
+      this._scheduleClintonFlourish(attacker, defender);
     }
 
     // Carter "Habitat for Humanity" combo ladder.
@@ -483,7 +480,7 @@ class PersonalityEffectsMethods {
       att.usedThisRound = true;
       const cfg = PERSONALITIES.nixon.oncePerRound;
       if (this.rng.random() < cfg.procChance) {
-        this._scheduleNixonBlind(defender);
+        this._scheduleNixonBlind(defender, cfg.blindSecs);
       }
     }
 
@@ -550,26 +547,27 @@ class PersonalityEffectsMethods {
     return personalityDmgMul;
   }
 
-  // Queues Clinton's elbow follow-ups on the attacker (capped at 6 pending).
-  _scheduleClintonFlourish(attacker, defender, extraCount, refHit) {
+  // Queues one of Clinton's elbow follow-ups on the attacker (capped at 6 pending).
+  _scheduleClintonFlourish(attacker, defender) {
     if (!attacker._clintonFlourish) attacker._clintonFlourish = [];
     if (attacker._clintonFlourish.length >= 6) return;
     attacker._clintonFlourish.push({
       target: defender.playerId,
-      damage: 3,                 // 3 dmg per elbow follow-up
+      damage: PERSONALITIES.clinton.onHitChain.elbowDmg || 3,
       at: this.t + 0.18 * (attacker._clintonFlourish.length + 1),
-      leashed: true,
     });
   }
 
-  // Nixon eye-gouge: 0.3 s input-blind flag on the defender, read by the controller.
-  _scheduleNixonBlind(target) {
-    const fighter = this.fighters.find((f) => f.playerId === target);
+  // Nixon eye-gouge: input-blind flag on the defender, read in game.js _tickFighting.
+  _scheduleNixonBlind(fighter, secs = 0.30) {
     if (!fighter) return;
-    fighter._inputBlindUntil = this.t + 0.30;
+    fighter._inputBlindUntil = this.t + secs;
   }
 
   // Lands due Clinton follow-ups while both fighters are upright and in range.
+  // An elbow is a strike like any other: a held guard facing Clinton stops it,
+  // and one that empties the bar goes through the normal KO hand-off
+  // (_resolveCombatEvents) rather than leaving a fighter standing on 0 HP.
   _tickClintonFlourish(f, dt) {
     if (!f._clintonFlourish || !f._clintonFlourish.length) return;
     const now = this.t;
@@ -577,11 +575,26 @@ class PersonalityEffectsMethods {
     for (let i = f._clintonFlourish.length - 1; i >= 0; i--) {
       const p = f._clintonFlourish[i];
       if (now < p.at) continue;
-      if (opp && opp.state !== 'ko' && f.state !== 'ko') {
-        const dist = f.rig.root.position.distanceTo(opp.rig.root.position);
-        if (dist < 2.5) this.combat.damage({ playerId: p.target, amount: p.damage, sourceId: f.playerId });
-      }
       f._clintonFlourish.splice(i, 1);
+      if (!opp || opp.playerId !== p.target || opp.state === 'ko' || f.state === 'ko'
+          || this.phase !== 'fighting') continue;
+      const fpos = f.rig.root.position;
+      const dpos = opp.rig.root.position;
+      if (fpos.distanceTo(dpos) >= 2.5) continue;
+      const point = new THREE.Vector3(dpos.x, dpos.y + 1.3, dpos.z);
+      if (opp.state === 'block' && guardCovers(opp.rig, fpos)) {
+        // Stopped on the guard: the blue spark of an ordinary block, nothing else.
+        this._spawnSparks(point, 0x9ad0ff, 4, 0.8);
+        this.audio?.block(point);
+        continue;
+      }
+      this.combat.damage({ playerId: p.target, amount: p.damage, sourceId: f.playerId });
+      this.hudDirty = true;
+      const knockDir = new THREE.Vector3(dpos.x - fpos.x, 0, dpos.z - fpos.z);
+      if (knockDir.lengthSq() > 1e-6) knockDir.normalize(); else knockDir.set(1, 0, 0);
+      this._resolveCombatEvents({
+        attack: ATTACKS.punch, hit: { point }, region: 'torso', knockDir, torqueY: 0, dpos,
+      });
     }
   }
 }

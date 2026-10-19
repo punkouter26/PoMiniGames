@@ -236,8 +236,20 @@ class AudioBus {
 
   getEnvelope() { return this._env; }
 
-  // Resume the context after a user gesture.
+  // Engine pause (game.js setPaused). The whole context is suspended rather than a gain ramp:
+  // the crowd loop, a held riser and any stinger already scheduled on the audio clock all
+  // freeze where they are and carry on from there on resume.
+  setPaused(p) {
+    this._paused = !!p;
+    if (!this.ctx) return;
+    try {
+      (this._paused ? this.ctx.suspend() : this.ctx.resume()).catch(() => { /* closed */ });
+    } catch { /* closed context */ }
+  }
+
+  // Resume the context after a user gesture (never while the engine is paused).
   async resume() {
+    if (this._paused) return;
     if (this._ensure() && this.ctx.state === 'suspended') {
       try { await this.ctx.resume(); } catch { /* noop */ }
     }

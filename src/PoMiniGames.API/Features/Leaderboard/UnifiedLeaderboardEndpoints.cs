@@ -4,6 +4,7 @@ using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Domain.Primitives;
+using PoMiniGames.Domain.Services;
 using PoRacerCatalog = PoMiniGames.Shared.Games.PoRacerCatalog;
 
 namespace PoMiniGames.Features.Leaderboard;
@@ -383,7 +384,9 @@ public static class UnifiedLeaderboardEndpoints
         // Two independent partition scans — fan out concurrently, this builder is
         // on the critical path of BuildAllAsync's WhenAll.
         var ladderTask = storage.GetPoBrawlLadderAsync(50);
-        var kosTask = storage.GetPoBrawlHighScoresAsync(50);
+        // Every KO row, not a top page: the tiebreak needs each ranked player's best, and the read
+        // scans the whole partition either way (see BuildPoBrawlKoAsync).
+        var kosTask = storage.GetPoBrawlHighScoresAsync(int.MaxValue);
         await Task.WhenAll(ladderTask, kosTask);
         var ladder = ladderTask.Result;
         var kos = kosTask.Result;
@@ -440,12 +443,15 @@ public static class UnifiedLeaderboardEndpoints
     /// </remarks>
     private static async Task<GameLeaderboardDto> BuildPoBrawlKoAsync(IStorageService storage, int limit)
     {
-        var kos = await storage.GetPoBrawlHighScoresAsync(100);
-
-        // One row per player: the table keeps every submitted time, and a player who has
-        // beaten twenty presidents would otherwise fill the whole top three themselves.
+        // Every row, then best-per-player. The storage read scans the whole partition anyway, so
+        // a bounded page saves nothing — and grouping only the top 100 rows let one account that
+        // filled them push every other player off the board. New rows are one per player already
+        // (StorageService's PoBrawlScores ratchet); rows from before that hold every KO posted.
+        var kos = await storage.GetPoBrawlHighScoresAsync(int.MaxValue);
         var entries = kos
-            .Where(k => k.KoTimeSeconds > 0 && !string.IsNullOrWhiteSpace(k.PlayerInitials))
+            // Legacy rows posted under the old 0.5 s floor stay in the table but not on the board.
+            .Where(k => ScoreRules.CheckValue(GameKey.PoBrawl, k.KoTimeSeconds) == ScoreVerdict.Plausible
+                        && !string.IsNullOrWhiteSpace(k.PlayerInitials))
             .GroupBy(k => k.PlayerInitials)
             .Select(g => new { Name = g.Key, Best = g.Min(k => k.KoTimeSeconds) })
             .OrderBy(x => x.Best)

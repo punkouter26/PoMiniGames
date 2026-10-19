@@ -3,7 +3,7 @@
 // impactBus.js owns the policy every rumble in the app goes through (the Haptics setting,
 // reduced haptics under reduced motion, rate and duty caps). This file owns WHO gets it:
 //
-//   • only a human-driven corner — never a CPU, so demo and tournament (CPU vs CPU) are silent;
+//   • only a human-driven corner — never a CPU, so the tournament (CPU vs CPU) is silent;
 //   • online, only the LOCAL corner (the remote player's hits are their own browser's business),
 //     and nobody while spectating;
 //   • on the pad driving that corner (gamepadBus KeyBridge slot), else, for player 1, the phone

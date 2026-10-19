@@ -95,10 +95,19 @@ public static class ScoreRules
         [GameKey.PoRacer] = new ScoreBounds(
             Min: 1, Max: 3_600, LowerIsBetter: true, MinPlaySeconds: 5, MaxPerSecond: 0),
 
-        // PoBrawl's board is fastest KO, so the score is again a duration. A KO cannot land
-        // before the round starts, and the 600s ceiling matches the other time boards.
+        // PoBrawl's board is fastest KO, so the score is again a duration, and the floor is the
+        // engine's fastest possible KO (wwwroot/js/pobrawl). Only 1P posts a KO, and 1P is always
+        // BOB (mass 1.0, power 1.0) against a president of mass >= 0.9, at 100 HP and no armour.
+        // The round clock starts at FIGHT, the corners open 3.2 m apart, and nothing moves before
+        // it. The biggest blow is a full-charge kick (15 x 4, +1 roll) to the head (x1.25) of the
+        // lightest president (x1.11): ~85, so two blows — and the full charge empties the bar, so
+        // the second waits on a regen. The one route to a single blow is a perfect-guard counter
+        // (x1.5) on a 0.7 s charge: the CPU has to walk in and swing first (~0.9 s), then 0.7 s of
+        // charge and the 0.12 s kick wind-up, ~1.7 s at the very least. 1.5 s sits just under that,
+        // so it never refuses a real KO, and refuses the sub-second times nobody can fight.
+        // The 600s ceiling matches the other time boards.
         [GameKey.PoBrawl] = new ScoreBounds(
-            Min: 0.5, Max: 600, LowerIsBetter: true, MinPlaySeconds: 3, MaxPerSecond: 0),
+            Min: 1.5, Max: 600, LowerIsBetter: true, MinPlaySeconds: 3, MaxPerSecond: 0),
     };
 
     /// <summary>The bounds for a board, or null when the board has no rules (unranked/CPU-driven).</summary>

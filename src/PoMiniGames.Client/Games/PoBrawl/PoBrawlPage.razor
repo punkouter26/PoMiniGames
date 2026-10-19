@@ -13,7 +13,6 @@
 @inject ApiService ApiService
 @inject GameResultService GameResults
 @inject IJSRuntime JSRuntime
-@inject KioskCoordinator Kiosk
 @inject SettingsService Settings
 @inject AuthStateService Auth
 @inject ApiEndpoints Endpoints
@@ -25,15 +24,19 @@
 <GameShell Title=@TitleContent
            Player="@_playerName"
            Elo="@(_mode == "1p" ? _rating.Elo : (int?)null)"
-           BackTo="/"
-           Stats="@(_mode == "1p" ? null : _statItems)"
-           GameOver="@(_phase == "result" && !_demo)"
+           BackTo="@(_mode == "online" ? "/pobrawl/multi" : "/")"
+           BackLabel="@(_mode == "online" ? "Back to the lobby" : null)"
+           GameOver="@(_phase == "result")"
            GameOverDelayMs="@LadderResultHoldMs"
            Fullscreen="true"
            GameKey="@(_mode == "1p" ? "pobrawlko" : null)"
            Outcome="@OutcomeForCue"
            RequiresWebGl="true"
            GameSummary="@GameSummaryContent"
+           OnPrimary="@ResultPrimary"
+           PrimaryLabel="@ResultPrimaryLabel"
+           OnSecondary="@ResultSecondary"
+           SecondaryLabel="Pick new fighters"
            Announcement="@_announcement">
     @if (!_introDone)
     {
@@ -52,6 +55,7 @@
                        StartHint="@null"
                        DialogLabel="@IntroDialogLabel"
                        CaptureKeys="false"
+                       ForwardOptionKeys="@(_mode == "2p")"
                        OnKey="OnIntroKey"
                        OnStart="OnIntroStartAsync" />
         </div>
@@ -65,7 +69,7 @@
         @* Top of the arena: the HUD, whose centre plate carries the mode's readout (ladder
            rung and votes, online signal), and under it only what has to be said in words. *@
         <div class="pb-top">
-            @if (_phase == "fighting" || _demo)
+            @if (_phase == "fighting")
             {
                 @* Its own component, so the engine's 4×/sec pump re-renders it alone. *@
                 <PoBrawlHud @ref="_hud"
@@ -76,11 +80,18 @@
                             Below="@HudBelow" />
             }
 
+            @* Touch players have no Esc or P: the pause button (the CSS hides it for a mouse). *@
+            @if (PauseAvailable && !_paused)
+            {
+                <button type="button" class="pb-pause-btn" aria-label="Pause" title="Pause (Esc or P)"
+                        @onmousedown:preventDefault="true" @onclick="PauseAsync">⏸</button>
+            }
+
             @* Online: joining, and anything the network is doing to the fight. *@
-            @if (_mode == "online" && !_netMissing && (!_everJoined || NetNotice is not null))
+            @if (_mode == "online" && !_netMissing && !_netConnectFailed && (!_everJoined || NetNotice is not null))
             {
                 <div class="pb-net-status" role="status">
-                    <span class="pb-net-pill @(_everJoined ? "pb-net-pill--warn" : "")">@(_everJoined ? NetNotice : "Joining the fight…")</span>
+                    <span class="pb-net-pill @(_everJoined && !NetWaiting ? "pb-net-pill--warn" : "")">@(_everJoined ? NetNotice : "Joining the fight…")</span>
                 </div>
             }
         </div>
@@ -92,17 +103,42 @@
             <PoBrawlCampaignMap @key="beaten" Beaten="beaten" Variant="interlude" />
         }
 
-        @if (_demo)
+        @if (_mode == "online" && _netConnectFailed)
         {
-            <div class="pb-demo-badge">🎮 Demo — CPU vs CPU</div>
+            @* The hub never answered (network, auth): the fight may well be there — offer a retry. *@
+            <div class="pb-net-missing" role="alert">
+                <h2>Couldn't connect</h2>
+                <p>@_netConnectError</p>
+                <div class="pb-net-actions">
+                    <button type="button" class="pb-net-btn" @onclick="RetryConnectAsync">↻ Retry</button>
+                    <a class="pb-net-btn pb-net-btn--ghost" href="/pobrawl/multi">Back to the lobby</a>
+                </div>
+            </div>
         }
-
-        @if (_mode == "online" && _netMissing)
+        else if (_mode == "online" && _netMissing)
         {
             <div class="pb-net-missing" role="status">
                 <h2>No fight here</h2>
                 <p>It already ended, or it never started.</p>
                 <a class="pb-net-btn" href="/pobrawl/multi">Back to the lobby</a>
+            </div>
+        }
+
+        @* Paused (1P, training, 2P): the engine froze the fight; it reports every change through
+           OnPauseChanged, its own Esc / P keys and the auto-pause on a hidden tab included. *@
+        @if (PauseAvailable && _paused)
+        {
+            @* data-pb-pause: the engine leaves Escape alone under any other modal, but this one
+               it closes with the same key (game.js _onPauseKey) — so the page handles no keys. *@
+            <div class="pb-pause" role="dialog" aria-modal="false" aria-labelledby="pb-pause-title" data-pb-pause>
+                <h2 id="pb-pause-title" class="pb-pause-title">Paused</h2>
+                <div class="pb-pause-actions">
+                    <button type="button" class="pb-pause-act pb-pause-act--go" @ref="_resumeButton"
+                            @onclick="ResumeAsync">▶ Resume</button>
+                    <button type="button" class="pb-pause-act" @onclick="RestartFightAsync">↺ Restart fight</button>
+                    <button type="button" class="pb-pause-act" @onclick="QuitFight">✕ Quit</button>
+                </div>
+                <p class="pb-pause-hint">Esc or P resumes</p>
             </div>
         }
 
@@ -126,12 +162,7 @@
 @code {
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoBrawl);
 
-    private string IntroDialogLabel => _mode switch
-    {
-        "2p" => "Brawl two-player setup",
-        "demo" => "Brawl demo intro",
-        _ => "Brawl intro",
-    };
+    private string IntroDialogLabel => _mode == "2p" ? "Brawl two-player setup" : "Brawl intro";
 
     // Whose pick a tap on the grid makes: player 1 until they lock, then player 2.
     private string SelectPrompt =>
@@ -139,10 +170,10 @@
         : !_p2Locked ? "Player 2 — tap your fighter (or ← / →, then K)"
         : "Both locked in — fight!";
 
-    // One legend for every mode (PoBrawlControls): 2P's split keys, demo's "no controls".
+    // One legend for every mode (PoBrawlControls): 2P's split keys, 1P's grid.
     private RenderFragment IntroControlsContent => @<PoBrawlControls Mode="@_mode" />;
 
-    // 2P gets the fighter select, 1P the training choice and its rung; demo gets neither.
+    // 2P gets the fighter select, 1P the training choice and its rung.
     private RenderFragment? IntroOptions => _mode switch
     {
         "2p" => SelectContent,
@@ -174,7 +205,9 @@
     // The empty .pb-select-portrait / .pb-select-hero spans are where selectStage.js paints
     // each president's live rig (one shared canvas over #pb-select-stage); without WebGL2 or
     // on the low tier they collapse and the tiles stay plain glass buttons.
-    private RenderFragment SelectContent => @<div class="pb-select" id="@SelectStageId">
+    // mousedown:preventDefault keeps a clicked tile or card from taking focus: the overlay keeps
+    // it, so both players' keys go on working and the arrows never scroll the card.
+    private RenderFragment SelectContent => @<div class="pb-select" id="@SelectStageId" @onmousedown:preventDefault="true">
         <div class="pb-select-sides">
             @SideCard(1)
             <span class="pb-select-vs" aria-hidden="true">VS</span>
@@ -182,15 +215,21 @@
         </div>
         <p class="pb-select-prompt">@SelectPrompt</p>
         <PoBrawlFighterGrid Fighters="@PickableRoster" P1Index="@_p1Sel" P2Index="@_p2Sel" OnPick="TapFighter" />
-        @* Each corner's highlighted fighter. Collapsed by default: the 2P card is already long. *@
-        <details class="pb-dossier-disclosure">
-            <summary>📁 Dossiers</summary>
-            <div class="pb-dossier-pair">
-                <PoBrawlDossierCard FighterId="@PickableRoster[_p1Sel].Id" Compact="true" />
-                <PoBrawlDossierCard FighterId="@PickableRoster[_p2Sel].Id" Compact="true" />
-            </div>
+        @* Each corner's highlighted fighter. Collapsed by default: the 2P card is already long.
+           The cards only exist while it is open, so a closed disclosure fetches nothing. *@
+        <details class="pb-dossier-disclosure" open="@_dossiersOpen">
+            <summary @onclick="() => _dossiersOpen = !_dossiersOpen" @onclick:preventDefault="true">📁 Dossiers</summary>
+            @if (_dossiersOpen)
+            {
+                <div class="pb-dossier-pair">
+                    <PoBrawlDossierCard FighterId="@PickableRoster[_p1Sel].Id" Compact="true" />
+                    <PoBrawlDossierCard FighterId="@PickableRoster[_p2Sel].Id" Compact="true" />
+                </div>
+            }
         </details>
     </div>;
+
+    private bool _dossiersOpen;
 
     private RenderFragment SideCard(int side)
     {
@@ -246,7 +285,8 @@
     // The result: one headline, the numbers that changed, then the detail behind tabs
     // (recap, the press conference, the ladder ending) so the shared modal stays short.
     // GameOverModal renders the board (1P: "pobrawlko", top 3 by fastest KO) below this.
-    // 1P passes no stats grid: its Elo and record ride the facts line, the rest is Brawl HQ.
+    // No stats grid in any mode: 1P's Elo and record ride the facts line (the rest is Brawl HQ),
+    // and 2P and online keep no record of their own — the 1P numbers would be someone else's.
     private RenderFragment GameSummaryContent => @<div class="pb-result">
         <div class="pb-result-line">@ResultLine()</div>
         @if (_mode == "1p")

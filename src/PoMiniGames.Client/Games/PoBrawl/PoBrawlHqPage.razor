@@ -13,7 +13,7 @@
 @* Brawl HQ: everything Brawl keeps about a player, on one page. Before it the numbers lived in
    five places: the 1P ladder rung, fastest KO and clears (this browser, and /api/pobrawl/progress
    when signed in), the 1P Elo in the result modal, the three server boards on /leaderboards, and
-   the tournament titles, which no screen listed at all. The data surfaces are Radzen (the select
+   the Cup titles, which no screen listed at all (HQ is now their one list). The data surfaces are Radzen (the select
    bar, the grid, the chart), loaded on demand the way PoMule does it: Radzen's theme is global
    CSS, so it is only on the page while this page is. The fight HUD stays custom. *@
 <GameShell Title=@TitleContent BackTo="/">
@@ -22,8 +22,9 @@
             <a class="app-btn app-btn--primary hq-continue" href="/pobrawl/1player">
                 🥊 @(_ladder == 0 && _rating.Wins == 0 ? "Start the ladder" : $"Continue the ladder · rung {_ladder + 1}")
             </a>
-            @* One way to the other modes: the intro card's mode pills (2P, Online, Demo, Cup). *@
-            <a class="app-btn app-btn--ghost hq-modes" href="/pobrawl">All modes</a>
+            @* The ladder's intro card carries the other modes' pills (2P, Online, Demo); the Cup
+               gets its own way in here, where its titles are kept. *@
+            <a class="app-btn app-btn--ghost hq-modes" href="/pobrawl/demo?autoGuest=1">🏆 Watch the Cup</a>
         </section>
 
         <div class="hq-grid">
@@ -57,7 +58,7 @@
                 {
                     @if (_titles.Count == 0)
                     {
-                        <p class="hq-empty">No tournament won in this browser yet. <a href="/pobrawl/demo">Run the Cup</a>.</p>
+                        <p class="hq-empty">No Cup won in this browser yet. <a href="/pobrawl/demo?autoGuest=1">Watch the Cup</a>.</p>
                     }
                     else
                     {
@@ -141,8 +142,8 @@
     {
         "pobrawl" => "Most presidents beaten in one run, everyone who has climbed the ladder.",
         "pobrawlko" => "The fastest knockouts on the 1P ladder.",
-        "pobrawldemo" => "The presidents themselves, rated by every demo and Cup bout.",
-        _ => "Tournaments won in this browser.",
+        "pobrawldemo" => "The presidents themselves, rated by every Cup bout.",
+        _ => "Cups won in this browser.",
     };
 
     private List<BoardRow> Rows => Current?.Entries

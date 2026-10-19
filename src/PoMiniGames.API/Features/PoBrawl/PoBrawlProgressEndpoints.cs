@@ -34,6 +34,9 @@ public static class PoBrawlProgressEndpoints
                 // size — read from PoBrawlRoster, never a literal (the ladder board's frozen-at-10 bug).
                 if (body.Rung < 0 || body.Rung >= PoBrawlRoster.Count || body.BestKoSeconds is < 0 or > 600 || body.Clears is < 0 or > 100_000)
                     return Results.BadRequest(new { error = "progress_out_of_range" });
+                // The merge lets the newer timestamp win the rung, so a stamp from the future would
+                // pin this save over every later one from any device. Never later than now.
+                body.UpdatedAtUnixMs = Math.Clamp(body.UpdatedAtUnixMs, 0, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 var saved = await store.SaveAsync(identity.UserId, body, ct);
                 return saved is null ? Results.StatusCode(StatusCodes.Status503ServiceUnavailable) : Results.Ok(saved);
             })

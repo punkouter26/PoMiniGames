@@ -205,14 +205,18 @@ class LightingMethods {
 
   // Shared radial-gradient texture for the fighters' contact-shadow blobs.
   // Override `opts.inner` / `opts.outer` to tint variants (e.g. AO discs
-  // want a harder black inner).
+  // want a harder black inner). One cached texture PER variant: a single-slot
+  // cache asked for the blob and the AO disc in turn missed every time, so each
+  // spawn built four fresh CanvasTextures that nothing ever disposed. Shared by
+  // every spawn, so materials never dispose their .map; _disposeBlobTextures does.
   _makeBlobTexture(opts = {}) {
     const inner = opts.inner || 'rgba(0,0,0,0.9)';
     const mid = opts.mid || 'rgba(0,0,0,0.45)';
     const outer = opts.outer || 'rgba(0,0,0,0)';
     const cacheKey = `${inner}|${mid}|${outer}`;
-    if (this._blobTexCache && this._blobTexCache.key === cacheKey) return this._blobTexCache.tex;
-    if (!this._blobTexCache) this._blobTexCache = {};
+    this._blobTexCache ??= new Map();
+    const hit = this._blobTexCache.get(cacheKey);
+    if (hit) return hit;
     const c = document.createElement('canvas');
     c.width = c.height = 128;
     const g = c.getContext('2d');
@@ -223,8 +227,13 @@ class LightingMethods {
     g.fillStyle = grad;
     g.fillRect(0, 0, 128, 128);
     const tex = new THREE.CanvasTexture(c);
-    this._blobTexCache = { key: cacheKey, tex };
+    this._blobTexCache.set(cacheKey, tex);
     return tex;
+  }
+
+  _disposeBlobTextures() {
+    for (const tex of this._blobTexCache?.values() || []) tex.dispose();
+    this._blobTexCache = null;
   }
 
   // Per-tick posture: head tracking toward the opponent, momentum lean from

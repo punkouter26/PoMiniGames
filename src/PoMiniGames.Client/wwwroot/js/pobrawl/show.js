@@ -36,16 +36,31 @@
 // charge aura. Full adds the dressing: balloons, LED boards, the instant replay and the result
 // glass (plus, elsewhere, the KO shatter and pyro, the comic KO words, the crowd's camera flashes,
 // the belt ceremony and the director's TV cuts — each gated on _fullShow()). A module that never
-// registered costs nothing: the bus only calls what registered, and _replayBegin answers false.
+// registered costs nothing: the bus only calls what registered, and _replayBegin is absent or
+// answers false.
+//
+// The four Full-only modules (~2,300 lines) are not even fetched under Simple: _initShow
+// import()s them the first time an engine boots with Full on (switching it on in the settings
+// sheet mid-session lands on the next fight, like every show setting), mixes them into the
+// game's prototype and runs their inits. The returned promise is part of the engine's warm-up
+// (game.js start), so their geometry and shaders compile under the VS splash, exactly as before.
 
 import { AudioShow } from './audioShow.js';
 import { ChargeAura } from './chargeAura.js';
-import { Balloons } from './balloons.js';
-import { LedBoards } from './ledBoards.js';
-import { Replay } from './replay.js';
-import { ResultGlass } from './resultGlass.js';
+import { mixin } from './mixin.js';
 
-export const SHOW_MODULES = [AudioShow, ChargeAura, Balloons, LedBoards, Replay, ResultGlass];
+export const SHOW_MODULES = [AudioShow, ChargeAura];
+
+// One fetch per page session, shared by every engine after it. Cleared on failure so a flaky
+// network gets another try at the next fight.
+let fullModules = null;
+function loadFullShow() {
+  fullModules ||= Promise.all([
+    import('./balloons.js'), import('./ledBoards.js'), import('./replay.js'), import('./resultGlass.js'),
+  ]).then(([b, l, r, g]) => [b.Balloons, l.LedBoards, r.Replay, g.ResultGlass])
+    .catch((e) => { fullModules = null; throw e; });
+  return fullModules;
+}
 
 /** True when the player chose the Full show in the settings sheet; Simple otherwise (and by default). */
 export function fullShow() {
@@ -57,12 +72,27 @@ function guard(label, fn, ...args) {
 }
 
 class ShowMethods {
+  /**
+   * Register the show modules. Returns a promise when the Full layers are still loading (the
+   * engine's warm-up waits on it), null when there is nothing to wait for.
+   */
   _initShow() {
     this._showFns = { ev: [], up: [], render: [], dispose: [] };
     // Read once per engine: a fight keeps the show it started with.
     this._showFull = fullShow();
-    const inits = [this._initAudioShow, this._initChargeAura];
-    if (this._showFull) inits.push(this._initBalloons, this._initLedBoards, this._initReplay, this._initResultGlass);
+    this._runShowInits([this._initAudioShow, this._initChargeAura]);
+    if (!this._showFull) return null;
+    return loadFullShow().then((mods) => {
+      if (this.disposed || !this._showFns) return;
+      mixin(Object.getPrototypeOf(this), ...mods);
+      this._runShowInits([this._initBalloons, this._initLedBoards, this._initReplay, this._initResultGlass]);
+    }).catch((e) => {
+      // The fight goes on as Simple: nothing registered, so nothing is called.
+      console.warn('[PoBrawl] Full show failed to load', e);
+    });
+  }
+
+  _runShowInits(inits) {
     for (const init of inits) {
       if (typeof init === 'function') guard('init', () => init.call(this));
     }

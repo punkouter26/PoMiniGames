@@ -296,11 +296,22 @@ class CinematicsMethods {
         // Cinematic KO shot: low, tight on the loser, slow push-in.
         const axis2 = p1.clone().sub(p2).normalize();
         const camSide = new THREE.Vector3(-axis2.z, 0, axis2.x);
-        const target = lp.clone().add(camSide.multiplyScalar(3.0));
-        target.y = 1.2;
-        // Keep the camera inside the ring footprint.
-        target.x = THREE.MathUtils.clamp(target.x, -(RING_HALF + 0.5), RING_HALF + 0.5);
-        target.z = THREE.MathUtils.clamp(target.z, -(RING_HALF + 0.5), RING_HALF + 0.5);
+        // Keep the camera inside the ring footprint. A body on the ropes would pin a clamped
+        // camera right on top of it (and out of frame), so shoot from the open side instead.
+        const lim = RING_HALF + 0.5;
+        const place = (dir) => {
+          const t = lp.clone().addScaledVector(dir, 3.0);
+          t.x = THREE.MathUtils.clamp(t.x, -lim, lim);
+          t.z = THREE.MathUtils.clamp(t.z, -lim, lim);
+          t.y = 1.2;
+          return t;
+        };
+        // Latched for the rest of the shot: flipping back and forth would swing the boom
+        // through the body.
+        let target = place(camSide);
+        if (this.cameraModeT <= dt) this._koFlip = false;
+        if (!this._koFlip && Math.hypot(target.x - lp.x, target.z - lp.z) < 2.2) this._koFlip = true;
+        if (this._koFlip) target = place(camSide.negate());
         this.camera.position.lerp(target, k);
         this.camera.lookAt(lp.x, 0.3, lp.z);
         this.camera.fov = this.fovBase + Math.max(0, 4 - this.cameraModeT * 1.4);

@@ -501,19 +501,29 @@ public class ApiService
         }
     }
 
-    public async Task<PoBrawlHighScore?> SubmitPoBrawlHighScoreAsync(PoBrawlHighScore entry)
+    /// <summary>
+    /// Submits a PoBrawl fastest KO. Same outcome contract as PoRacer: Saved / Rejected (a 4xx
+    /// other than 401, 408 and 429 — never retry) / Unavailable (park and replay).
+    /// </summary>
+    public async Task<ScoreSubmitResult<PoBrawlHighScore>> SubmitPoBrawlHighScoreAsync(PoBrawlHighScore entry)
     {
         try
         {
             // Stamp once; preserve across resync so the deterministic RowKey stays stable (no duplicates).
             if (string.IsNullOrEmpty(entry.Date))
                 entry = entry with { Date = DateTime.UtcNow.ToString("O") };
-            var response = await _http.PostAsJsonAsync("/api/pobrawl/highscores", entry, ApiJsonContext.Default.PoBrawlHighScore);
-            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoBrawlHighScore) : null;
+            using var response = await _http.PostAsJsonAsync("/api/pobrawl/highscores", entry, ApiJsonContext.Default.PoBrawlHighScore);
+            if (response.IsSuccessStatusCode)
+                return ScoreSubmitResult<PoBrawlHighScore>.Saved(await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoBrawlHighScore));
+            if (response.StatusCode is System.Net.HttpStatusCode.RequestTimeout or System.Net.HttpStatusCode.TooManyRequests or System.Net.HttpStatusCode.Unauthorized)
+                return ScoreSubmitResult<PoBrawlHighScore>.Unavailable(response.StatusCode);
+            if ((int)response.StatusCode is >= 400 and < 500)
+                return ScoreSubmitResult<PoBrawlHighScore>.Rejected(response.StatusCode);
+            return ScoreSubmitResult<PoBrawlHighScore>.Unavailable(response.StatusCode);
         }
         catch
         {
-            return null;
+            return ScoreSubmitResult<PoBrawlHighScore>.Unavailable(null);
         }
     }
 
@@ -524,7 +534,9 @@ public class ApiService
     /// <summary>
     /// Submits ladder progress. The server keeps one row per player with
     /// max-progress semantics, so a dropped submit self-heals on the next win —
-    /// no offline resync queue needed.
+    /// no offline resync queue needed. The 201 body is the STORED row, which can hold a lower
+    /// rung than claimed (the server caps the climb); a 429 (<c>ladder_too_fast</c>) or 503 is
+    /// just null. Neither is an error to the player: the local ladder stays authoritative for play.
     /// </summary>
     public async Task<PoBrawlLadderEntry?> SubmitPoBrawlLadderAsync(PoBrawlLadderEntry entry)
     {
@@ -532,7 +544,7 @@ public class ApiService
         {
             if (string.IsNullOrEmpty(entry.Date))
                 entry = entry with { Date = DateTime.UtcNow.ToString("O") };
-            var response = await _http.PostAsJsonAsync("/api/pobrawl/ladder", entry, ApiJsonContext.Default.PoBrawlLadderEntry);
+            using var response = await _http.PostAsJsonAsync("/api/pobrawl/ladder", entry, ApiJsonContext.Default.PoBrawlLadderEntry);
             return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoBrawlLadderEntry) : null;
         }
         catch
@@ -602,7 +614,8 @@ public class ApiService
     /// match, so a demo result replayed an hour later would be scored against ratings that
     /// have since moved — a wrong number is worse here than a missing one. Attract-mode
     /// matches are also effectively unlimited, so dropping the ones that fail costs the
-    /// board nothing but a little precision.
+    /// board nothing but a little precision. That includes the server's 429s
+    /// (<c>demo_too_fast</c>, <c>demo_daily_cap</c>): false, and the caller says nothing.
     /// </remarks>
     public async Task<bool> SubmitPoBrawlDemoResultAsync(PoBrawlDemoResultRequest request)
     {
@@ -622,22 +635,40 @@ public class ApiService
 
     /// <summary>
     /// Reports a finished 1v1 fight to /api/pobrawl/matches. The server reads only the match id,
-    /// records a MatchHistory row and applies the Elo swing once per match. True on success (204);
-    /// false on a rejection or a transport failure.
+    /// records a MatchHistory row and applies the Elo swing once per match. True on success (204).
+    /// A 503 (the Elo write failed; Retry-After: 5), a 408/429, another 5xx or a dead network is
+    /// retried with the same body until <see cref="OnlineMatchRetryBudget"/> runs out — the server
+    /// sweeps the finished fight after ~90 s, and a retried POST is idempotent. False on a
+    /// rejection (other 4xx) or once the budget is spent.
     /// </summary>
     public async Task<bool> SubmitPoBrawlOnlineMatchAsync(PoMiniGames.Shared.Games.PoBrawlMatchResultDto result)
     {
-        try
+        var deadline = DateTime.UtcNow + OnlineMatchRetryBudget;
+        while (true)
         {
-            using var response = await _http.PostAsJsonAsync(
-                "/api/pobrawl/matches", result, ApiJsonContext.Default.PoBrawlMatchResultDto);
-            return response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            return false;
+            TimeSpan wait;
+            try
+            {
+                using var response = await _http.PostAsJsonAsync(
+                    "/api/pobrawl/matches", result, ApiJsonContext.Default.PoBrawlMatchResultDto);
+                if (response.IsSuccessStatusCode) return true;
+                var status = (int)response.StatusCode;
+                if (status is >= 400 and < 500 and not 408 and not 429) return false;
+                wait = response.Headers.RetryAfter?.Delta ?? OnlineMatchRetryDefault;
+            }
+            catch
+            {
+                wait = OnlineMatchRetryDefault;
+            }
+            wait = TimeSpan.FromSeconds(Math.Clamp(wait.TotalSeconds, 1, 15));
+            if (DateTime.UtcNow + wait > deadline) return false;
+            await Task.Delay(wait);
         }
     }
+
+    // Inside the server's ~90 s hold on a finished fight, with room for the last request.
+    private static readonly TimeSpan OnlineMatchRetryBudget = TimeSpan.FromSeconds(80);
+    private static readonly TimeSpan OnlineMatchRetryDefault = TimeSpan.FromSeconds(5);
 
     // ─── Head-to-head match history ──────────────────────────────────────
 

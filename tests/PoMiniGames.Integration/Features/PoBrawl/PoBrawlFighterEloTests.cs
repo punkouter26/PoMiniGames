@@ -77,8 +77,21 @@ public sealed class PoBrawlFighterEloTests : IClassFixture<TestWebApplicationFac
         gain.Should().Be(drop,
             "the delta is rounded once and applied as +d/-d, so the rating pool is conserved exactly");
 
+        // ── One identity cannot steer the board ───────────────────────────
+        // Bouts from one caller are paced (PoBrawlDemoEloGate): the same pair posted straight
+        // back is refused rather than walking a favourite up the board.
+        var hammered = await client.PostAsJsonAsync(
+            "/api/pobrawl/elo", new { winnerFighterId = Winner, loserFighterId = Loser, isDraw = false });
+        hammered.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        (await EloOf(client, "FDR")).Should().Be(winnerAfter, "a refused bout moves nothing");
+
         // ── A draw is zero-sum too ────────────────────────────────────────
-        (await client.PostAsJsonAsync(
+        // From a second identity: the pacing above is per caller, not global.
+        using var other = _factory.CreateClient();
+        other.DefaultRequestHeaders.Remove(PoMiniGames.Features.Auth.FakeAuthHandler.UserHeader);
+        other.DefaultRequestHeaders.Add(PoMiniGames.Features.Auth.FakeAuthHandler.UserHeader, $"demo_{Guid.NewGuid():N}"[..20]);
+        await other.ArmAntiforgeryAsync();
+        (await other.PostAsJsonAsync(
             "/api/pobrawl/elo", new { winnerFighterId = Winner, loserFighterId = Loser, isDraw = true }))
             .StatusCode.Should().Be(HttpStatusCode.NoContent);
 

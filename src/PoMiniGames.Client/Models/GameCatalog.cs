@@ -120,8 +120,8 @@ public static class GameCatalog
             // fight. POST /api/pobrawl/matches feeds the per-player Elo table —
             // see Features/PoBrawl/Online.
             new(GameMode.Multiplayer, "/pobrawl/multi", RequiresNetwork: true),
-            // The demo is the CPU-only 8-fighter cup (PoBrawlTournamentPage); every bout
-            // feeds the fighter Elo board.
+            // The Demo tab is the Brawl Cup, the CPU-only 8-fighter knockout
+            // (PoBrawlTournamentPage); every bout feeds the fighter Elo board.
             new(GameMode.Demo, "/pobrawl/demo?autoGuest=1"),
         ]),
 

@@ -92,7 +92,7 @@ public enum PoBrawlMatchAction
 /// <summary>
 /// Server snapshot of the match, broadcast ~10 Hz on the match group: the full sim state at
 /// <see cref="Frame"/> (so a client can check its own history against it and a spectator or late
-/// joiner can start from it), plus the presence, forfeit and rematch facts only the server knows.
+/// joiner can start from it), plus the presence and forfeit facts only the server knows.
 /// </summary>
 public sealed class PoBrawlMatchState
 {
@@ -133,10 +133,16 @@ public sealed class PoBrawlMatchState
     /// <summary>Whether each corner has a live connection. A dropped corner has a grace window to come back.</summary>
     public bool Player1Connected { get; set; } = true;
     public bool Player2Connected { get; set; } = true;
-    /// <summary>Seconds until a dropped corner forfeits, or null when both are here.</summary>
+    /// <summary>
+    /// Seconds until a dropped corner forfeits — or, while <see cref="WaitingForOpponent"/>, until a
+    /// corner that has not arrived abandons the fight. Null when both are here.
+    /// </summary>
     public double? ForfeitInSeconds { get; set; }
-    /// <summary>How many corners have asked for a rematch since the bell (0–2).</summary>
-    public int RematchVotes { get; set; }
+    /// <summary>
+    /// True until both corners have joined the match hub. The clock is held at frame 0 meanwhile
+    /// (Ping answers ClockFrame 0), and the pre-roll countdown starts the moment the second arrives.
+    /// </summary>
+    public bool WaitingForOpponent { get; set; }
 }
 
 
@@ -147,7 +153,7 @@ public sealed class PoBrawlMatchState
 public sealed class PoBrawlMatchSnapshot
 {
     public string MatchId { get; set; } = "";
-    /// <summary>The match code — the rematch and the reconnect both find the fight by it.</summary>
+    /// <summary>The match code — a reconnect finds the fight by it.</summary>
     public string GameCode { get; set; } = "";
     public PoBrawlMatchPlayerInfo Player1 { get; set; } = new("", "");
     public PoBrawlMatchPlayerInfo Player2 { get; set; } = new("", "");
@@ -181,4 +187,9 @@ public sealed class PoBrawlMatchResult
     public string OpponentDisplayName { get; set; } = "";
     /// <summary>True when the fight ended because one corner never came back from a disconnect.</summary>
     public bool Forfeit { get; set; }
+    /// <summary>
+    /// True when the fight never really happened: a corner never arrived, or both walked out.
+    /// <see cref="Outcome"/> is then Draw, and the result ingest records nothing and moves no rating.
+    /// </summary>
+    public bool Abandoned { get; set; }
 }

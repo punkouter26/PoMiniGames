@@ -92,8 +92,22 @@ export class KeyboardController {
     this._onUp = (e) => {
       this.down.delete(e.code);
     };
+    // A window that loses focus (alt-tab, a tab switch, a phone call) never sees the key-ups:
+    // without this, D held through an alt-tab walks the fighter into the ropes until it is
+    // pressed again. game.js also calls releaseAll() when it pauses.
+    this._onLost = () => this.releaseAll();
+    this._onVis = () => { if (document.hidden) this.releaseAll(); };
     window.addEventListener('keydown', this._onDown);
     window.addEventListener('keyup', this._onUp);
+    window.addEventListener('blur', this._onLost);
+    document.addEventListener('visibilitychange', this._onVis);
+  }
+
+  /** Let go of every held key and drop any queued press. */
+  releaseAll() {
+    this.down.clear();
+    this.punchQueued = false;
+    this.kickQueued = false;
   }
 
   update(ctx) {
@@ -136,6 +150,8 @@ export class KeyboardController {
   dispose() {
     window.removeEventListener('keydown', this._onDown);
     window.removeEventListener('keyup', this._onUp);
+    window.removeEventListener('blur', this._onLost);
+    document.removeEventListener('visibilitychange', this._onVis);
   }
 }
 

@@ -75,35 +75,12 @@ public sealed class PoCabinetTrack
         Id = def.Id;
         HalfWidth = def.TrackWidth * 0.5;
         var world = PoCabinetTrackGeometry.BuildStaticWorld(def);
-        var xy = PoCabinetTrackGeometry.BuildCenterlineXY(def);
-        Count = xy.Length / 2;
-        _x = new double[Count];
-        _y = new double[Count];
-        for (int i = 0; i < Count; i++)
-        {
-            _x[i] = xy[i * 2];
-            _y[i] = xy[i * 2 + 1];
-        }
-
-        _segLen = new double[Count];
-        _cum = new double[Count + 1];
-        _tx = new double[Count];
-        _ty = new double[Count];
-        for (int i = 0; i < Count; i++)
-        {
-            int j = (i + 1) % Count;
-            double dx = _x[j] - _x[i], dy = _y[j] - _y[i];
-            double len = Math.Sqrt(dx * dx + dy * dy);
-            _segLen[i] = len;
-            _cum[i + 1] = _cum[i] + len;
-            _tx[i] = len > 1e-9 ? dx / len : 1;
-            _ty[i] = len > 1e-9 ? dy / len : 0;
-        }
-        Length = _cum[Count];
-        var z = PoCabinetTrackGeometry.BuildCenterlineValues(def.KnotZ, def.StepsPerSegment, 1);
-        var bank = PoCabinetTrackGeometry.BuildCenterlineValues(def.KnotBank, def.StepsPerSegment, 3);
-        _z = z.Length == Count ? z : null;
-        _bank = bank.Length == Count ? bank : null;
+        var line = new PoCabinetCenterline(world.CenterXY);
+        Count = line.Count;
+        (_x, _y, _segLen, _cum, _tx, _ty) = (line.X, line.Y, line.SegLen, line.Cum, line.Tx, line.Ty);
+        Length = line.Length;
+        _z = world.CenterZ.Count == Count ? [.. world.CenterZ] : null;
+        _bank = world.CenterBank.Count == Count ? [.. world.CenterBank] : null;
 
         // Point-to-point (the Playground run): the lap ends at the finish knot instead of back
         // at the line, and a finished car rolls on into the run-out and parks half way down
@@ -116,22 +93,8 @@ public sealed class PoCabinetTrack
             ? (_cum[def.FinishKnot * def.StepsPerSegment] + _cum[def.HiddenFromKnot * def.StepsPerSegment]) / 2
             : 0;
 
-        // Curvature at each point: heading change across it over the mean adjacent segment
-        // length, then a 3-point average — the raw spline samples are noisy enough that the AI
-        // would otherwise brake for kinks that are not corners.
-        var raw = new double[Count];
-        for (int i = 0; i < Count; i++)
-        {
-            int p = (i - 1 + Count) % Count;
-            double d = WrapAngle(Atan2(_ty[i], _tx[i]) - Atan2(_ty[p], _tx[p]));
-            double span = Math.Max(1e-6, (_segLen[p] + _segLen[i]) * 0.5);
-            raw[i] = Math.Abs(d) / span;
-        }
-        _curv = new double[Count];
-        for (int i = 0; i < Count; i++)
-        {
-            _curv[i] = (raw[(i - 1 + Count) % Count] + raw[i] + raw[(i + 1) % Count]) / 3.0;
-        }
+        // How sharp each corner is, whichever way it turns: what the AI brakes for.
+        _curv = line.Curvature(unsigned: true);
 
         _hw = world.HalfWidths.Count == Count ? [.. world.HalfWidths] : Enumerable.Repeat(HalfWidth, Count).ToArray();
         _runoffLeft = world.RunoffLeft.Count == Count ? [.. world.RunoffLeft] : new int[Count];
@@ -185,9 +148,6 @@ public sealed class PoCabinetTrack
 
     /// <summary>The road dividers, in the world's order.</summary>
     public IReadOnlyList<PoCabinetTrackIsland> Islands => _islands;
-
-    /// <summary>The divider standing on sample <paramref name="i"/>, or null. Mirrors track.js <c>islandAt</c>.</summary>
-    public PoCabinetTrackIsland? IslandAt(int i) => _islandOf[i] >= 0 ? _islands[_islandOf[i]] : null;
 
     /// <summary>
     /// What the road itself does to grip at sample <paramref name="i"/>, <paramref name="lateral"/>
@@ -342,67 +302,5 @@ public sealed class PoCabinetTrack
     {
         double d = distance % Length;
         return d < 0 ? d + Length : d;
-    }
-
-    // ── Trig the sim can rely on ────────────────────────────────────────────
-    // Sin, Cos and Atan2 built from + − × ÷, floor and sqrt only, which IEEE 754 pins to the
-    // last bit, so this process and every browser get the SAME double. Math.Sin and friends
-    // are not pinned (Chrome and node differed by one ulp sixteen ticks into a race), and a
-    // 100-car field is chaotic enough to turn one ulp into a different race by the first
-    // corner — which PoCabinetLapVerifier would then time as a crash. Everything that feeds
-    // the simulation uses these. Mirrored operation for operation in track.js.
-
-    private const double HalfPi = Math.PI / 2;
-
-    /// <summary>sin(a + quarter·π/2): reduce to within π/4 of a multiple of π/2, then the Taylor series.</summary>
-    private static double SinShifted(double a, int quarter)
-    {
-        double k = Math.Floor(a / HalfPi + 0.5);
-        double r = a - k * HalfPi;
-        double r2 = r * r;
-        double q = (((k + quarter) % 4) + 4) % 4;
-        if (q == 0 || q == 2)
-        {
-            double s = r * (1 - r2 / 6 * (1 - r2 / 20 * (1 - r2 / 42 * (1 - r2 / 72 * (1 - r2 / 110 * (1 - r2 / 156 * (1 - r2 / 210)))))));
-            return q == 0 ? s : -s;
-        }
-        double c = 1 - r2 / 2 * (1 - r2 / 12 * (1 - r2 / 30 * (1 - r2 / 56 * (1 - r2 / 90 * (1 - r2 / 132 * (1 - r2 / 182 * (1 - r2 / 240)))))));
-        return q == 1 ? c : -c;
-    }
-
-    public static double Sin(double a) => SinShifted(a, 0);
-
-    public static double Cos(double a) => SinShifted(a, 1);
-
-    /// <summary>atan z for |z| ≤ 1: halve the angle three times, then the series.</summary>
-    private static double AtanUnit(double z)
-    {
-        double t = z / (1 + Math.Sqrt(1 + z * z));
-        t = t / (1 + Math.Sqrt(1 + t * t));
-        t = t / (1 + Math.Sqrt(1 + t * t));
-        double t2 = t * t;
-        return 8 * t * (1 - t2 * (1.0 / 3 - t2 * (1.0 / 5 - t2 * (1.0 / 7 - t2 * (1.0 / 9 - t2 * (1.0 / 11 - t2 * (1.0 / 13 - t2 / 15)))))));
-    }
-
-    public static double Atan2(double y, double x)
-    {
-        double ax = Math.Abs(x), ay = Math.Abs(y);
-        if (ax >= ay)
-        {
-            if (ax == 0) return 0;
-            double a = AtanUnit(y / x);
-            return x > 0 ? a : y >= 0 ? a + Math.PI : a - Math.PI;
-        }
-        double b = AtanUnit(x / y);
-        return y > 0 ? HalfPi - b : -HalfPi - b;
-    }
-
-    /// <summary>Signed angle normalised to (-π, π].</summary>
-    public static double WrapAngle(double a)
-    {
-        a %= 2 * Math.PI;
-        if (a > Math.PI) a -= 2 * Math.PI;
-        if (a <= -Math.PI) a += 2 * Math.PI;
-        return a;
     }
 }

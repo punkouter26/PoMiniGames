@@ -54,8 +54,6 @@ namespace PoMiniGamesClient.Services.Http;
 // PoCabinet: the per-track leaderboard ratchets on lap time;
 // the request shape carries only the score + the contextual track/position,
 // identity is resolved server-side.
-[JsonSerializable(typeof(PoCabinetHighScore))]
-[JsonSerializable(typeof(PoCabinetHighScore[]))]
 [JsonSerializable(typeof(PoCabinetHighScoreRequest))]
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoCabinetLobbySummary))]
 [JsonSerializable(typeof(PoBrawlHighScore))]

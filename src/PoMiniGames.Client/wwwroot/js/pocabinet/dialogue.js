@@ -5,22 +5,11 @@
 // race view that fades in on each line and fades out after a short delay.
 //
 // API:
-//   const handle = dialogue.mount(parentEl, officialId);
-//   dialogue.show(handle, text, { durationMs });
+//   const handle = dialogue.mount(parentEl);
+//   dialogue.show(handle, name, text);   — name: the official's display name (PoCabinetCatalog.Officials)
 //   dialogue.unmount(handle);
 
-const BUBBLE_FADE_MS = 220;
-const DEFAULT_VISIBLE_MS = 2400;
-
-// Per-official name shown above the bubble. The wire shape sends the canonical
-// id ("sean-s"); the client resolves a display name locally so the wire stays
-// small and one place owns the copy.
-const OFFICIAL_DISPLAY_NAMES = Object.freeze({
-    'sean-s': 'Sean S.',
-    'steve-b': 'Steve B.',
-    'bill-b': 'Bill B.',
-    'mike-p': 'Mike P.',
-});
+const VISIBLE_MS = 2400;
 
 class DialogueHandle {
     constructor(root, nameEl, bodyEl) {
@@ -31,21 +20,16 @@ class DialogueHandle {
         this.hideTimer = null;
     }
 
-    show(text, durationMs = DEFAULT_VISIBLE_MS) {
+    show(name, text) {
         if (this.disposed || !this.root) return;
-        if (this.hideTimer) {
-            clearTimeout(this.hideTimer);
-            this.hideTimer = null;
-        }
+        if (this.hideTimer) clearTimeout(this.hideTimer);
+        this.nameEl.textContent = name || '';
         this.bodyEl.textContent = text || '';
         this.root.classList.add('pocabinet-dialogue--visible');
-        this.hideTimer = setTimeout(() => this.hide(), durationMs);
-    }
-
-    hide() {
-        if (this.disposed || !this.root) return;
-        this.root.classList.remove('pocabinet-dialogue--visible');
-        this.hideTimer = null;
+        this.hideTimer = setTimeout(() => {
+            this.hideTimer = null;
+            if (!this.disposed) this.root.classList.remove('pocabinet-dialogue--visible');
+        }, VISIBLE_MS);
     }
 
     dispose() {
@@ -56,7 +40,7 @@ class DialogueHandle {
     }
 }
 
-export function mount(parent, officialId) {
+export function mount(parent) {
     if (typeof parent === 'string') parent = document.getElementById(parent);
     if (!parent) throw new Error('pocabinet/dialogue: parent element is required');
 
@@ -67,7 +51,6 @@ export function mount(parent, officialId) {
 
     const nameEl = document.createElement('div');
     nameEl.className = 'pocabinet-dialogue__name';
-    nameEl.textContent = OFFICIAL_DISPLAY_NAMES[officialId] || officialId || '';
 
     const bodyEl = document.createElement('div');
     bodyEl.className = 'pocabinet-dialogue__body';
@@ -85,17 +68,7 @@ export function unmount(handle) {
 }
 
 /** Show a line on the bubble; facade for window.PoCabinet.showDialogue. */
-export function show(handle, text, durationMs) {
+export function show(handle, name, text) {
     if (!handle) return;
-    handle.show(text, durationMs);
-}
-
-/** Hide the bubble immediately; facade for window.PoCabinet.hideDialogue. */
-export function hide(handle) {
-    if (!handle) return;
-    handle.hide();
-}
-
-export function officialName(officialId) {
-    return OFFICIAL_DISPLAY_NAMES[officialId] || officialId || '';
+    handle.show(name, text);
 }

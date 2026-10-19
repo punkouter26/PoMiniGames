@@ -2,7 +2,7 @@
 //
 // Shared surface kit for PoCabinet's PBR pass: procedural textures (generated
 // once per page, no image assets — the service-worker precache stays small) and
-// small onBeforeCompile hooks layered onto MeshStandardMaterial:
+// small onBeforeCompile hooks layered onto MeshStandardMaterial (chained by util.js addHook):
 //
 //   asphalt()   — aggregate colour, a height-derived normal map and a roughness map
 //   grass()     — two-tone blade-scale colour + normal map
@@ -11,76 +11,12 @@
 //   wind()      — vertex sway for foliage (instanced or not), driven by one clock
 //   water()     — animated wave normals for pools
 //
-// `clock.value` is advanced once per frame by scene.js. Hooks chain: each
-// material keeps a list and one onBeforeCompile runs them in order.
+// `clock.value` is advanced once per frame by scene.js.
 
 import * as THREE from 'three';
+import { hash, fbm, dataTexture, normalMap, addHook, clamp01 } from './util.js';
 
 export const clock = { value: 0 };
-
-// ── Tileable value-noise fbm ────────────────────────────────────────────────
-
-function hash(x, y, seed) {
-    let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(seed, 1442695041);
-    h = Math.imul(h ^ (h >>> 13), 1274126177);
-    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-
-/** size×size fbm in [0,1], periodic so it tiles; `base` = cells across the lowest octave. */
-function fbm(size, base, octaves, seed) {
-    const out = new Float32Array(size * size);
-    let amp = 0.5, total = 0;
-    for (let o = 0; o < octaves; o++) {
-        const cells = base << o;
-        for (let y = 0; y < size; y++) {
-            const fy = y / size * cells, y0 = Math.floor(fy), ty = fy - y0;
-            const sy = ty * ty * (3 - 2 * ty);
-            for (let x = 0; x < size; x++) {
-                const fx = x / size * cells, x0 = Math.floor(fx), tx = fx - x0;
-                const sx = tx * tx * (3 - 2 * tx);
-                const a = hash(x0 % cells, y0 % cells, seed + o), b = hash((x0 + 1) % cells, y0 % cells, seed + o);
-                const c = hash(x0 % cells, (y0 + 1) % cells, seed + o), d = hash((x0 + 1) % cells, (y0 + 1) % cells, seed + o);
-                out[y * size + x] += amp * ((a + (b - a) * sx) * (1 - sy) + (c + (d - c) * sx) * sy);
-            }
-        }
-        total += amp;
-        amp *= 0.5;
-    }
-    for (let i = 0; i < out.length; i++) out[i] /= total;
-    return out;
-}
-
-function dataTexture(data, size, srgb) {
-    const t = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.magFilter = THREE.LinearFilter;
-    t.minFilter = THREE.LinearMipmapLinearFilter;
-    t.generateMipmaps = true;
-    t.anisotropy = 8;
-    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
-    t.needsUpdate = true;
-    return t;
-}
-
-/** Tangent-space normal map from a periodic height field. */
-function normalMap(h, size, strength) {
-    const out = new Uint8Array(size * size * 4);
-    for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-            const l = h[y * size + (x - 1 + size) % size], r = h[y * size + (x + 1) % size];
-            const u = h[((y - 1 + size) % size) * size + x], d = h[((y + 1) % size) * size + x];
-            let nx = (l - r) * strength, ny = (u - d) * strength, nz = 1;
-            const len = Math.hypot(nx, ny, nz);
-            nx /= len; ny /= len; nz /= len;
-            const i = (y * size + x) * 4;
-            out[i] = (nx * 0.5 + 0.5) * 255;
-            out[i + 1] = (ny * 0.5 + 0.5) * 255;
-            out[i + 2] = (nz * 0.5 + 0.5) * 255;
-            out[i + 3] = 255;
-        }
-    }
-    return out;
-}
 
 let asphaltSet = null;
 /** { map, normalMap, roughnessMap } — neutral grey, tinted by the material colour. */
@@ -92,7 +28,7 @@ export function asphalt() {
     for (let i = 0; i < S * S; i++) {
         const stone = hash(i % S, (i / S) | 0, 5);
         const speck = stone > 0.985 ? 0.2 : stone < 0.02 ? -0.14 : 0;
-        const v = Math.min(1, Math.max(0, 0.8 + (low[i] - 0.5) * 0.22 + (grit[i] - 0.5) * 0.3 + speck));
+        const v = clamp01(0.8 + (low[i] - 0.5) * 0.22 + (grit[i] - 0.5) * 0.3 + speck);
         col[i * 4] = col[i * 4 + 1] = col[i * 4 + 2] = v * 255;
         col[i * 4 + 3] = 255;
         rough[i * 4 + 1] = (0.78 + (grit[i] - 0.5) * 0.25 - speck * 0.4) * 255;
@@ -140,17 +76,6 @@ export function noise() {
 }
 
 // ── Hooks ────────────────────────────────────────────────────────────────────
-
-function addHook(material, key, fn) {
-    if (!material.userData.hooks) {
-        material.userData.hooks = [];
-        material.onBeforeCompile = (shader) => { for (const h of material.userData.hooks) h.fn(shader); };
-        material.customProgramCacheKey = () => material.userData.hooks.map(h => h.key).join('|');
-    }
-    material.userData.hooks.push({ key, fn });
-    material.needsUpdate = true;
-    return material;
-}
 
 const WORLD_VARYING_V = `
 varying vec3 vPcWorld;
@@ -260,4 +185,3 @@ export function mirrorDecal(material) {
     return material;
 }
 
-/** MeshStandardMaterial shorthand. */

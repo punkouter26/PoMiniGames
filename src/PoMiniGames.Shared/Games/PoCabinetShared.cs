@@ -5,25 +5,17 @@ namespace PoMiniGames.Shared.Games;
 // ──────────────────────────────  Career state  ──────────────────────────────
 
 /// <summary>
-/// Player's championship progress. Persisted client-side via Blazored.LocalStorage
-/// (T7) and optionally synced to the server via <c>/api/pocabinet/career</c> (T4).
+/// Player's campaign progress, kept in this browser's localStorage (PoCabinetCareerState).
+/// Winning the trophy also wins the gold livery badge: they are one unlock.
 /// </summary>
 public sealed class PoCabinetCareerDto
 {
-    public int CurrentStageIndex { get; set; }   // 0 = Capitol, 1 = Mar-a-Lago, 2 = Press Briefing, 3 = Playground (final)
+    /// <summary>Index into the campaign stages (<see cref="PoCabinetCatalog.StageIndexOf"/>).</summary>
+    public int CurrentStageIndex { get; set; }
     public bool TrophyUnlocked { get; set; }
-    public bool GoldLiveryUnlocked { get; set; }
     public IReadOnlyList<int> CompletedStages { get; set; } = new List<int>();
-    public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 
-    public static PoCabinetCareerDto New() => new()
-    {
-        CurrentStageIndex = 0,
-        TrophyUnlocked = false,
-        GoldLiveryUnlocked = false,
-        CompletedStages = new List<int>(),
-        UpdatedAtUtc = DateTimeOffset.UtcNow,
-    };
+    public static PoCabinetCareerDto New() => new();
 }
 
 // ──────────────────────────────  Atmosphere wire  ──────────────────────────────
@@ -98,7 +90,6 @@ public sealed class PoCabinetCarState
 public sealed class PoCabinetDialogueEvent
 {
     public string OfficialId { get; set; } = "";
-    public string Kind { get; set; } = "PreRace";
     public string Text { get; set; } = "";
     public long RaceTick { get; set; }
 }
@@ -124,17 +115,16 @@ public sealed class PoCabinetRaceSnapshot
     public IReadOnlyList<PoCabinetCarState> Cars { get; set; } = new List<PoCabinetCarState>();
     public PoCabinetDialogueEvent? LatestDialogue { get; set; }
     public PoCabinetStaticWorld? Static { get; set; }
-    // The player's best lap, populated on the solo path
-    // (the JS ticker) and on the server path (the registry). The page reads
-    // this value on `Finished=true` to compute the leaderboard submission.
+    /// <summary>Solo races only (race.js): the player's best lap, which the page submits at the
+    /// finish. Online the best lap comes in the <c>RaceFinished</c> result instead.</summary>
     public double? BestLapSeconds { get; set; }
 }
 
 /// <summary>
 /// Static world payload — sent once on join, and built locally for solo races, both via
 /// <see cref="PoCabinetTrackGeometry.BuildStaticWorld"/>. CenterXY is a flat double array
-/// (PoRacer pattern). WallsXY is unused: walls are the centerline offset by TrackWidth/2 plus
-/// the run-off, which both physics implementations derive themselves.
+/// (PoRacer pattern). There are no wall points: walls are the centerline offset by the half
+/// width plus the run-off, which both physics implementations derive themselves.
 /// </summary>
 public sealed class PoCabinetStaticWorld
 {
@@ -142,7 +132,6 @@ public sealed class PoCabinetStaticWorld
     public string TrackName { get; set; } = "";
     public PoCabinetAtmosphereWire Atmosphere { get; set; } = new();
     public IReadOnlyList<double> CenterXY { get; set; } = new List<double>();
-    public IReadOnlyList<double> WallsXY { get; set; } = new List<double>();
     public double TrackWidth { get; set; }
     public double MinX { get; set; }
     public double MinY { get; set; }
@@ -209,17 +198,12 @@ public sealed class PoCabinetIslandWire
 // ──────────────────────────────  Player input  ──────────────────────────────
 
 /// <summary>
-/// One tick of player intent. Analog fields (keyboard ramp, gamepad, touch) win; the digital
-/// Up/Down/Left/Right flags remain for callers that only have keys. Steer is +1 = right,
-/// i.e. the heading-increasing direction in the sim's frame. Seq increases by one per client
-/// tick and is echoed back as <see cref="PoCabinetCarState.AckSeq"/>.
+/// One tick of player intent, analog whatever the device (input.js ramps the keyboard). Steer is
+/// +1 = right, i.e. the heading-increasing direction in the sim's frame. Seq increases by one per
+/// client tick and is echoed back as <see cref="PoCabinetCarState.AckSeq"/>.
 /// </summary>
 public sealed class PoCabinetInput
 {
-    public bool Up { get; set; }
-    public bool Down { get; set; }
-    public bool Left { get; set; }
-    public bool Right { get; set; }
     public double Throttle { get; set; }
     public double Brake { get; set; }
     public double Steer { get; set; }
@@ -236,7 +220,6 @@ public sealed class PoCabinetLobbySeat
 {
     public string SeatId { get; set; } = "";
     public string DisplayName { get; set; } = "";
-    public bool IsGuest { get; set; }
     public bool IsReady { get; set; }
     public bool IsHost { get; set; }
     public string Color { get; set; } = "";
@@ -248,8 +231,12 @@ public sealed class PoCabinetLobbyView
     /// <summary>Internal id of the lobby's race (what <c>JoinRace</c> takes). Never shown — there are no join codes.</summary>
     public string Code { get; set; } = "";
     public string TrackId { get; set; } = PoCabinetCatalog.DefaultTrackId;
-    /// <summary>AI officials the host asked for; the race seats min(BotCount, free seats).</summary>
+    /// <summary>AI officials the host asked for; the race seats <see cref="BotSeats"/> of them.</summary>
     public int BotCount { get; set; }
+    /// <summary>The officials that fit: min(BotCount, free seats).</summary>
+    public int BotSeats { get; set; }
+    /// <summary>The host may start: everyone is ready and there are two cars, counting the AI.</summary>
+    public bool Startable { get; set; }
     /// <summary>True while a race for this lobby is running; the lobby reopens when it ends.</summary>
     public bool InRace { get; set; }
     public IReadOnlyList<PoCabinetLobbySeat> Players { get; set; } = new List<PoCabinetLobbySeat>();
@@ -267,8 +254,7 @@ public sealed record PoCabinetLobbySummary(int Players, bool InRace, string? Tra
 
 public sealed record PoCabinetFinalResult(
     string GameCode,
-    IReadOnlyList<PoCabinetFinalEntry> Standings,
-    DateTimeOffset FinishedAtUtc);
+    IReadOnlyList<PoCabinetFinalEntry> Standings);
 
 /// <summary>
 /// One finisher. <see cref="TotalTimeSeconds"/> is race time from GO to the line (-1 when the
@@ -278,46 +264,9 @@ public sealed record PoCabinetFinalResult(
 public sealed record PoCabinetFinalEntry(
     int Position,
     string Name,
-    string OfficialId,
     bool IsPlayer,
     bool Finished,
     double TotalTimeSeconds,
     double BestLapSeconds = -1,
     int CarId = -1,
     bool Wrecked = false);
-
-// ──────────────────────────────  Banter + debrief  ──────────────────────────────
-
-/// <summary>
-/// The officials' scripted radio lines (<see cref="PoCabinetTalkService.Banter"/>): official id →
-/// kind (<c>preRace</c>, <c>passed</c>, <c>lead</c>, <c>finish</c>) → lines. The solo race picks
-/// from it in the browser; no request is made.
-/// </summary>
-public sealed class PoCabinetBanterPool
-{
-    public Dictionary<string, Dictionary<string, List<string>>> Lines { get; set; } = new();
-}
-
-/// <summary>
-/// Numbers only (<see cref="PoCabinetTalkService.Debrief(PoCabinetDebriefRequest)"/>) — they are
-/// clamped first and the tips are written from them. <see cref="SectorDeltas"/> is seconds vs the personal-best lap per third of the
-/// lap (+ = slower); empty when there is no reference lap. Percentages are 0–100;
-/// <see cref="WorstPointPct"/> is where on the lap the most time went (-1 = unknown).
-/// </summary>
-public sealed record PoCabinetDebriefRequest(
-    string TrackId,
-    int Position,
-    int TotalCars,
-    double BestLapSeconds,
-    double PbSeconds,
-    double[] SectorDeltas,
-    int FullThrottlePct,
-    int BrakePct,
-    int TopKmh,
-    int SlowestKmh,
-    int WorstPointPct,
-    int WallHits,
-    int Laps);
-
-/// <summary>The race engineer's read: a satirical headline and up to three concrete tips.</summary>
-public sealed record PoCabinetDebriefReply(string Headline, IReadOnlyList<string> Tips);

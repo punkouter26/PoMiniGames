@@ -32,7 +32,6 @@ export function attachInput(opts) {
         touch: { steer: 0, gas: 0, brake: 0, used: false },
         tilt: { steer: 0, enabled: false },
         padStartWas: false,
-        padConnected: false,
         options: { steerMode: 'pad', touch: 'auto', sensitivity: 1 },
         lastRumble: 0,
     };
@@ -185,10 +184,8 @@ export function attachInput(opts) {
             state.padStartWas = start;
             if (b[3]?.pressed && !state.padCamWas) o.onCamera?.();
             state.padCamWas = !!b[3]?.pressed;
-            state.padConnected = true;
             return { gp, throttle, brake, steer };
         }
-        state.padConnected = false;
         return null;
     };
 
@@ -243,8 +240,6 @@ export function attachInput(opts) {
             state.options.sensitivity = Math.min(1.5, Math.max(0.5, Number(s.steerSensitivity) || 1));
             refreshTouchVisibility();
         },
-
-        get gamepadConnected() { return state.padConnected; },
 
         detach() {
             for (const c of cleanups.splice(0)) { try { c(); } catch { /* ignore */ } }

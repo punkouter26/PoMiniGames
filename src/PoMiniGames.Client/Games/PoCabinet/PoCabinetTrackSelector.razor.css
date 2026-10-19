@@ -1,0 +1,172 @@
+/* PoCabinetTrackSelector — its own scoped styles (split from PoCabinetPage.razor.css). Shared
+   bits (muted text, status lines, sector chips, screen-reader text) stay on the page as ::deep. */
+
+/* ─── Track selector ─────────────────────────────────────────────────────── */
+/* One row a track: accent, name, length · difficulty, best lap, campaign tag. A phone wraps
+   it to two lines (name + tag, then meta + best). */
+.pocabinet-track-selector {
+    display: grid;
+    gap: 0.35rem;
+}
+
+.pocabinet-track {
+    display: grid;
+    grid-template-columns: 6px minmax(0, 1fr) auto auto 6.6rem;
+    grid-template-areas: "sw title meta best stage";
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+    min-height: 2.75rem;
+    padding: 0.4rem 0.75rem 0.4rem 0.5rem;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: var(--radius-md, 6px);
+    background: var(--color-surface);
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+}
+
+.pocabinet-track:hover {
+    border-color: color-mix(in srgb, var(--accent) 60%, var(--color-border));
+}
+
+.pocabinet-track--selected {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, var(--color-surface));
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.pocabinet-track__swatch {
+    grid-area: sw;
+    align-self: stretch;
+    border-radius: 3px;
+    background: var(--accent);
+}
+
+.pocabinet-track__title { grid-area: title; font-size: 0.98rem; }
+
+.pocabinet-track__meta,
+.pocabinet-track__best {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.pocabinet-track__meta { grid-area: meta; }
+
+.pocabinet-track__best { grid-area: best; color: var(--color-text); font-variant-numeric: tabular-nums; }
+
+.pocabinet-track__best--none { color: var(--color-text-muted); }
+
+/* Campaign: the four stages, then the trophy and the gold livery, in one bar. */
+.pocabinet-campaign {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.82rem;
+}
+
+.pocabinet-campaign__step {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0.2rem 0.5rem 0.2rem 0.2rem;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: 999px;
+    color: var(--color-text-muted);
+}
+
+.pocabinet-campaign__dot {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    width: 1.45rem;
+    height: 1.45rem;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--color-text) 10%, transparent);
+    color: var(--color-text);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.pocabinet-campaign__name { white-space: nowrap; }
+
+.pocabinet-campaign__step--done { color: var(--color-text); }
+
+.pocabinet-campaign__step--done .pocabinet-campaign__dot {
+    background: var(--color-primary);
+    color: var(--color-on-primary, white);
+}
+
+.pocabinet-campaign__step--active {
+    border-color: var(--color-primary);
+    color: var(--color-text);
+    font-weight: 600;
+}
+
+.pocabinet-campaign__reward {
+    flex: none;
+    font-size: 1.1rem;
+    filter: grayscale(1);
+    opacity: 0.45;
+}
+
+.pocabinet-campaign__reward--won {
+    filter: none;
+    opacity: 1;
+}
+
+/* Each track row's campaign tag, right-aligned. */
+.pocabinet-track__stage {
+    grid-area: stage;
+    justify-self: end;
+    padding: 0.1rem 0.5rem;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: 999px;
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+}
+
+.pocabinet-track__stage--active {
+    border-color: var(--color-primary);
+    color: var(--color-text);
+    font-weight: 600;
+}
+
+.pocabinet-track__stage--done {
+    background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+    color: var(--color-text);
+}
+
+@media (max-width: 640px) {
+    .pocabinet-track-selector { gap: 0.25rem; }
+    .pocabinet-track {
+        grid-template-columns: 6px minmax(0, 1fr) auto;
+        grid-template-areas: "sw title stage" "sw meta best";
+        row-gap: 0.05rem;
+        min-height: 0;
+        padding: 0.28rem 0.65rem 0.28rem 0.45rem;
+        line-height: 1.2;
+    }
+    .pocabinet-campaign__step { flex: 1 1 auto; justify-content: center; padding: 0.15rem; }
+    .pocabinet-campaign__dot { width: 1.3rem; height: 1.3rem; }
+    .pocabinet-campaign__name { display: none; }
+}
+
+.pocabinet-track-select {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.pocabinet-track-select select {
+    flex: 1 1 auto;
+    min-height: 2.5rem;
+    font: inherit;
+}

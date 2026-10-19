@@ -83,9 +83,11 @@ public class PoCabinetRouteUiTests
         }
         else
         {
-            var trackButtons = await page.Locator(".pocabinet-track").CountAsync();
-            trackButtons.Should().Be(6,
-                "the track selector must render Capitol, Mar-a-Lago, Press Briefing, Playground, Senate Hill and the daily circuit");
+            await page.Locator(".pocabinet-track").First.WaitForAsync(new() { Timeout = 30_000 });
+            var ids = await page.Locator(".pocabinet-track").EvaluateAllAsync<string[]>(
+                "els => els.map(e => e.getAttribute('data-track-id'))");
+            ids.Should().Equal(["capitol", "maralago", "pressbriefing", "playground", "senate", PoMiniGames.Shared.Games.PoCabinetDailyTrack.TodayId(DateTime.UtcNow)],
+                "the track selector renders the five themed tracks and today's daily circuit, in campaign order");
         }
     }
 }

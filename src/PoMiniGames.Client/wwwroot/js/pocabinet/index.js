@@ -8,53 +8,63 @@
 // Contract surface (called from src/PoMiniGames.Client/Games/PoCabinet/...):
 //   PoCabinet.mount(canvasId, world) -> sceneHandle      — world = PoCabinetStaticWorld
 //   PoCabinet.unmount(handle)
-//   PoCabinet.mountDialogue(parentId, officialId) / showDialogue / hideDialogue / unmountDialogue
-//   PoCabinet.officialName(officialId)
+//   PoCabinet.mountDialogue(parentId) / showDialogue(handle, name, text) / unmountDialogue
 //   PoCabinet.mountMinimap(canvasId, world, opts) / unmountMinimap(handle)
-//   PoCabinet.mountEnvironment(sceneHandle) / unmountEnvironment(handle)
+//   PoCabinet.mountEnvironment(sceneHandle, weather) / unmountEnvironment(handle)
 //
 //   PoCabinet.startRace(dotnetRef, scene, minimap, opts)  — race.js driver
-//   PoCabinet.stopRace() / pauseRace() / resumeRace()
+//   PoCabinet.stopRace() / pauseRace() / resumeRace()      — each also suspends/resumes the audio
 //   PoCabinet.pushServerSnapshot(snap)                     — multiplayer
-//   PoCabinet.updateRaceSettings(settings) / cycleCamera()
+//   PoCabinet.cycleCamera()
 //   PoCabinet.showTelemetry(canvasId) -> summary text
 //   PoCabinet.startReplay() / replayCommand(cmd, value) / stopReplay()
 //   PoCabinet.recordClip() -> 'shared' | 'downloaded' | 'unavailable'
 //   PoCabinet.lapProof() -> { inputs, wet }               — solo score verification
 //   PoCabinet.setBanter(lines)                             — officials' radio (scripted pool; text only)
 //
-//   PoCabinet.loadSettings() / saveSettings(patch) / applySettings(scene, settings)
+//   PoCabinet.applySettings(scene, settings)               — settings are Blazor's (PoCabinetUiSettings)
 //   PoCabinet.getRecords(trackId) / recordTrackResult(trackId, bestLap, sectors)
-//   PoCabinet.initAudio() / setAudioSuspended(bool) / countdownBeep / blip / lapChime / fanfare
+//   PoCabinet.initAudio() / countdownBeep / blip / lapChime / fanfare
 //   PoCabinet.shareResult(payload)
 //   PoCabinet.showModal(id)                                — pause dialog (focus trap, inert page)
 
 import { mount as sceneMount, unmount as sceneUnmount } from './scene.js';
-import { mount as mountDialogue, unmount as unmountDialogue, show, hide, officialName } from './dialogue.js';
+import { mount as mountDialogue, unmount as unmountDialogue, show } from './dialogue.js';
 import {
     startRace, stopRace, pauseRace, resumeRace, pushServerSnapshot, updateRaceSettings, cycleCamera,
     showTelemetry, startReplay, replayCommand, stopReplay, recordClip, lapProof, setBanter,
 } from './race.js';
-import { loadSettings, saveSettings, getRecords, recordTrackResult } from './settings.js';
+import { getRecords, recordTrackResult } from './records.js';
 import * as audio from './audio.js';
 import { mountMinimap, unmountMinimap } from './minimap.js';
 import { mountEnvironment, unmountEnvironment } from './environment.js';
+import { shareOrDownload } from './util.js';
 
 const api = {
     mount: sceneMount,
     unmount: sceneUnmount,
     mountDialogue,
-    showDialogue: (handle, text, durationMs) => show(handle, text, durationMs),
-    hideDialogue: hide,
+    /** One line from an official: names the speaker, shows the bubble, plays the radio blip. */
+    showDialogue(handle, name, text) {
+        show(handle, name, text);
+        audio.blip();
+    },
     unmountDialogue,
-    officialName,
 
     startRace,
-    stopRace,
-    pauseRace,
-    resumeRace,
+    stopRace() {
+        stopRace();
+        audio.setSuspended(true);
+    },
+    pauseRace() {
+        pauseRace();
+        audio.setSuspended(true);
+    },
+    resumeRace() {
+        resumeRace();
+        audio.setSuspended(false);
+    },
     pushServerSnapshot,
-    updateRaceSettings,
     cycleCamera,
     showTelemetry,
     startReplay,
@@ -64,15 +74,15 @@ const api = {
     lapProof,
     setBanter,
 
-    loadSettings,
-    saveSettings,
     getRecords,
     recordTrackResult,
 
-    initAudio: audio.init,
-    setAudioSuspended: audio.setSuspended,
+    /** The Start click: create or resume the AudioContext (it needs a user gesture). */
+    initAudio() {
+        audio.init();
+        audio.setSuspended(false);
+    },
     countdownBeep: audio.countdownBeep,
-    blip: audio.blip,
     lapChime: audio.lapChime,
     fanfare: audio.fanfare,
 
@@ -93,30 +103,11 @@ const api = {
     mountEnvironment,
     unmountEnvironment,
 
-    /** Push persisted prefs into the live scene, audio graph and race driver. */
+    /** Push the player's settings into the live scene, audio graph and race driver. */
     applySettings(sceneHandle, settings) {
         if (sceneHandle && !sceneHandle.disposed) sceneHandle.applyView(settings);
-        audio.setVolume(settings?.masterVolume);
-        audio.setMuted(settings?.muted);
         audio.setMusicEnabled(settings?.music !== false);
         updateRaceSettings(settings);
-    },
-
-    /**
-     * Unlock the AudioContext on the first user gesture. Covers entry paths
-     * that never click "Start race" (auto-starting demo, guests joining a
-     * multiplayer race from a link).
-     */
-    armAudioOnGesture() {
-        if (armAudioInstalled) return;
-        armAudioInstalled = true;
-        const unlock = () => {
-            audio.init();
-            window.removeEventListener('pointerdown', unlock);
-            window.removeEventListener('keydown', unlock);
-        };
-        window.addEventListener('pointerdown', unlock, { once: true });
-        window.addEventListener('keydown', unlock, { once: true });
     },
 
     /**
@@ -171,26 +162,21 @@ const api = {
             g.fillText('PoMiniGames · Cabinet', 70, 575);
 
             const blob = await new Promise(resolve => c.toBlob(resolve, 'image/png'));
-            if (!blob) return 'unavailable';
-            const file = new File([blob], 'pocabinet-result.png', { type: 'image/png' });
-            if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                await navigator.share({ files: [file], title: 'Cabinet — race result' });
-                return 'shared';
-            }
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = 'pocabinet-result.png';
-            a.click();
-            window.setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-            return 'downloaded';
-        } catch (e) {
-            // A user-cancelled share sheet (AbortError) is not a failure.
-            if (e && e.name === 'AbortError') return 'shared';
+            return await shareOrDownload(blob, 'pocabinet-result.png', 'Cabinet — race result');
+        } catch {
             return 'unavailable';
         }
     },
 };
 
-let armAudioInstalled = false;
-
 window.PoCabinet = api;
+
+// Entry paths with no Start click (the self-starting demo, a guest landing in a
+// multiplayer race) still unlock the AudioContext on the player's first gesture.
+const unlockAudio = () => {
+    audio.init();
+    window.removeEventListener('pointerdown', unlockAudio);
+    window.removeEventListener('keydown', unlockAudio);
+};
+window.addEventListener('pointerdown', unlockAudio);
+window.addEventListener('keydown', unlockAudio);

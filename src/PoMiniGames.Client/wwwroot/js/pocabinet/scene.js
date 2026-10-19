@@ -39,15 +39,19 @@
 // Camera: third person only. 'chase' (close), 'far' (high and
 // long) and 'tv' (trackside cameras handing off along the lap).
 //
-// Quality is automatic (there are no render quality or FOV settings):
-// the loop watches the frame rate and steps the pixel ratio, bloom depth, shadow map
-// and grass down a tier after a sustained dip below 45 fps. It never steps back up
-// mid-race; a remount starts at 'high' again.
+// Quality follows the app's tier (qualityTiers.js, window.PoQuality: the player's choice in
+// Settings, else what the device can take): a mount starts there and a change of it applies at
+// once. Under it, the loop watches the frame rate and steps the pixel ratio, bloom depth,
+// shadow map and grass down a tier after a sustained dip below 45 fps; it never steps back up
+// on its own mid-race.
 //
-// `handle.fx` is the per-frame bag race.js and environment.js write into (speed,
-// rain, flash, shake, kerb rumble, slow motion, focus); the loop turns it into
-// FOV kick, camera shake and the shadow/grass follow, and fills in the sun's
-// screen position and exposure for the post pass.
+// Weather (setWeather, from environment.js) is the scene's: fog, sky and light, the wet
+// asphalt and run-off, the falling-rain streaks and the lens drops (fx.rain). `raining` is
+// the live flag the render and audio layers read.
+//
+// `handle.fx` is the per-frame bag race.js writes into (speed, flash, shake, kerb rumble,
+// slow motion, focus); the loop turns it into FOV kick, camera shake and the shadow/grass
+// follow, and fills in the sun's screen position and exposure for the post pass.
 //
 // API surface:
 //   const handle = await mount(canvas, world);
@@ -69,8 +73,7 @@ import { asphalt, grass as grassTextures, macro, clock, reflective } from './mat
 import { Terrain, themeOf, isPlayground, wallFace } from './terrain.js';
 import { Trackside } from './trackside.js';
 import { gravel, sand, limitStripes } from './surfaces.js';
-
-export const WORLD_SCALE = 10;
+import { WORLD_SCALE, roadPlane, canvasTexture } from './util.js';
 
 const SUN_BASE = 3.2;
 const HEMI_BASE = 0.7;
@@ -79,11 +82,34 @@ const SHADOW_EXTENT = 38;
 const GRASS_BLADES = { low: 0, medium: 14000, high: 36000 };
 const SHADOW_SIZE = { low: 1024, medium: 1536, high: 2048 };
 
+/** Reduced motion: <html data-motion> (the OS preference or the app's settings switch). */
+const calm = () => document.documentElement.dataset.motion === 'reduce';
+
 function hex(value, fallback) {
     try { return new THREE.Color(value || fallback); } catch { return new THREE.Color(fallback); }
 }
 
 const RENDER_SCALE = { low: 0.6, medium: 0.8, high: 1 };
+
+/** The app's quality tier (qualityTiers.js), or 'high' where it is not loaded. */
+function appTier() {
+    const t = window.PoQuality?.tier?.();
+    return RENDER_SCALE[t] ? t : 'high';
+}
+
+// Mounted scenes follow a change of the app's tier. PoQuality has no unsubscribe, so one
+// listener serves every mount and a disposed scene leaves the set.
+const liveScenes = new Set();
+let tierListening = false;
+function followAppTier(handle) {
+    liveScenes.add(handle);
+    if (tierListening || !window.PoQuality?.onChange) return;
+    tierListening = true;
+    window.PoQuality.onChange(() => {
+        const t = appTier();
+        for (const h of liveScenes) h.applyTier(t);
+    });
+}
 const PIP_WIDTH = 0.26;   // of the canvas width
 
 // Playground Marble Run: wwwroot/models/playground.glb (metres, +Y up) drawn at 50× around
@@ -157,6 +183,7 @@ class SceneHandle {
         this.sunDirVisual = null;
         this.sunVisibility = 0;
         this.raining = false;
+        this.rain = null;         // the falling-rain streaks while it rains (setRainStreaks)
         this.fx = {
             speed: 0, rain: 0, flash: 0, slow: 0,
             shake: 0, rumble: 0, reduced: false, focus: null,
@@ -200,6 +227,7 @@ class SceneHandle {
             this.autoQuality(dt);
             try {
                 this.applyFx(dt);
+                this.updateRain(dt);
                 this.followShadow();
                 this.grass?.update(this.camera);
                 this.sky?.update(this.camera, this.scene.fog, now / 1000);
@@ -411,13 +439,11 @@ class SceneHandle {
         this.fx.sun = { x: p.x * 0.5 + 0.5, y: p.y * 0.5 + 0.5, v: vis * fade };
     }
 
-    /** Apply player view preferences (reduced motion, racing line). */
+    /** Apply player view preferences (racing line; reduced motion is the platform's). */
     applyView(opts) {
         if (this.disposed) return;
         const o = opts && typeof opts === 'object' ? opts : {};
-        // The game's own setting, or the platform's (<html data-motion>: the OS preference
-        // or the settings sheet's switch).
-        this.fx.reduced = !!o.reducedMotion || document.documentElement.dataset.motion === 'reduce';
+        this.fx.reduced = calm();
         this.setRacingLine(!!o.racingLine);
     }
 
@@ -433,10 +459,15 @@ class SceneHandle {
         f.time = 0;
         f.slow = rate < 45 ? f.slow + 1 : 0;
         if (f.slow < 3) return;
-        f.slow = 0;
-        const next = this.quality === 'high' ? 'medium' : 'low';
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * RENDER_SCALE[next]);
-        this.setQuality(next);
+        this.applyTier(this.quality === 'high' ? 'medium' : 'low');
+    }
+
+    /** Switch the whole frame to tier `q`: pixel ratio, bloom depth, shadow map, grass. */
+    applyTier(q) {
+        if (this.disposed || !RENDER_SCALE[q]) return;
+        this.fps.slow = 0;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * RENDER_SCALE[q]);
+        this.setQuality(q);
         this.resize();
     }
 
@@ -484,13 +515,15 @@ class SceneHandle {
         this.fx.exposure = 1;
         this.fx.bloomThreshold = 1.1;
         this.sky?.setRain(rain);
+        this.fx.rain = rain ? 1 : 0;   // lens drops (postfx.js)
+        this.wetRoad(rain);
+        this.setRainStreaks(rain);
         // The post pass's reflections: wet asphalt is a blurred mirror; dry, the road only marks
         // itself (0.02) so the far tarmac can shimmer like a mirage on a clear day.
         this.roadRefl.value = rain ? 0.55 : 0.02;
         this.fx.skyColor = fog.clone();
         this.fx.mirage = rain ? 0 : 1;
-        // Standing water, the rubbered line drying first, and wet gravel and run-off tarmac
-        // (environment.js wets the road itself).
+        // Standing water, the rubbered line drying first, and wet gravel and run-off tarmac.
         this.trackside?.setWet(rain);
         this.trackside?.setRubber(this.trackside.level, rain);
         const r = this.runoffMats;
@@ -501,6 +534,65 @@ class SceneHandle {
             }
         }
         this.captureEnvironment();
+    }
+
+    /**
+     * Wet asphalt: darker and near-mirror, so the sky reflects in it through the environment
+     * map (and the post pass's SSR, roadRefl above). The dry values are kept on the material,
+     * which setTrack rebuilds, so a new track always starts from its own dry look.
+     */
+    wetRoad(rain) {
+        const m = this.roadMesh?.material;
+        if (!m || !m.isMeshStandardMaterial) return;
+        const dry = m.userData.dry || (m.userData.dry = {
+            color: m.color.clone(), roughness: m.roughness, env: m.envMapIntensity, ns: m.normalScale.clone(),
+        });
+        m.color.copy(dry.color).multiplyScalar(rain ? 0.55 : 1);
+        m.roughness = rain ? 0.3 : dry.roughness;
+        m.envMapIntensity = rain ? 1.6 : dry.env;
+        if (rain) m.normalScale.set(0.35, 0.35); else m.normalScale.copy(dry.ns);
+    }
+
+    /** Falling rain: a camera-parented LineSegments streak field, recycled in a box ahead of it. */
+    setRainStreaks(rain) {
+        if (!rain) {
+            if (!this.rain) return;
+            this.camera.remove(this.rain.lines);
+            this.rain.lines.geometry.dispose();
+            this.rain.lines.material.dispose();
+            this.rain = null;
+            return;
+        }
+        if (this.rain) return;
+        const count = calm() ? 120 : 320;
+        const positions = new Float32Array(count * 6);
+        const dropY = new Float32Array(count);
+        for (let i = 0; i < count; i++) {
+            const x = (Math.random() * 2 - 1) * 16, y = Math.random() * 12, z = -Math.random() * 26;
+            dropY[i] = y;
+            positions.set([x, y, z, x, y - 0.55, z], i * 6);
+        }
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        const lines = new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ color: 0x9db8d8, transparent: true, opacity: 0.42 }));
+        lines.frustumCulled = false;
+        this.camera.add(lines);
+        this.rain = { lines, dropY, count };
+    }
+
+    updateRain(dt) {
+        const r = this.rain;
+        if (!r || !(dt > 0)) return;
+        const attr = r.lines.geometry.attributes.position, pos = attr.array;
+        const fall = (calm() ? 9 : 22) * Math.min(dt, 0.05);
+        for (let i = 0; i < r.count; i++) {
+            let y = r.dropY[i] - fall;
+            if (y < -1) y += 12;
+            r.dropY[i] = y;
+            pos[i * 6 + 1] = y;
+            pos[i * 6 + 4] = y - 0.55;
+        }
+        attr.needsUpdate = true;
     }
 
     /** Rubber down on the racing line (0..1, track.js rubberAt) and whether it is raining. */
@@ -866,10 +958,12 @@ class SceneHandle {
     dispose() {
         if (this.disposed) return;
         this.disposed = true;
+        liveScenes.delete(this);
         window.removeEventListener('resize', this._onResize);
         this.stopLoop();
         this._frameCbs.clear();
         this.disposeTrackMeshes();
+        this.setRainStreaks(false);
         this.envTarget?.dispose();
         this.pmrem.dispose();
         this.post?.dispose();
@@ -896,16 +990,6 @@ function scaleUv(geom, su, sv) {
     const uv = geom.attributes.uv;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
     uv.needsUpdate = true;
-}
-
-/** World height of the road at centerline sample `k` (0 on a flat track). */
-function roadHeight(track, k) {
-    return track.z ? track.z[k] / WORLD_SCALE : 0;
-}
-
-/** Height the road's bank adds `lat` sim units off the centerline at sample `k` (world units). */
-function bankHeight(track, k, lat) {
-    return track.bank ? track.bank[k] * lat / WORLD_SCALE : 0;
 }
 
 /**
@@ -940,11 +1024,10 @@ function ribbon(track, fromLat, toLat, height, tile, pick = (i) => track.drawn(i
         const k = i % n;
         const nx = -track.ty[k], ny = track.tx[k];
         const x = track.x[k], y = track.y[k];
-        const h = height + roadHeight(track, k);
         const a = from(k), b = to(k);
         const ax = (x + nx * a) / WORLD_SCALE, az = (y + ny * a) / WORLD_SCALE;
         const bx = (x + nx * b) / WORLD_SCALE, bz = (y + ny * b) / WORLD_SCALE;
-        positions.push(ax, h + bankHeight(track, k, a), az, bx, h + bankHeight(track, k, b), bz);
+        positions.push(ax, height + roadPlane(track, k, a) / WORLD_SCALE, az, bx, height + roadPlane(track, k, b) / WORLD_SCALE, bz);
         if (opts.worldTile) {
             uvs.push(ax / opts.worldTile, az / opts.worldTile, bx / opts.worldTile, bz / opts.worldTile);
         } else {
@@ -1001,7 +1084,7 @@ function barrier(track, lateral, s, height, thick) {
         const u = (i === n ? track.length : track.cum[k]) / 80;
         const face = lat(k);
         // The top follows the plane at the face, so the wall stands level across its thickness.
-        const base = roadHeight(track, k) + bankHeight(track, k, face);
+        const base = roadPlane(track, k, face) / WORLD_SCALE;
         rows.forEach(([dl, h], r) => {
             const l = face + dl;
             positions.push((track.x[k] + nx * l) / WORLD_SCALE, base + h, (track.y[k] + ny * l) / WORLD_SCALE);
@@ -1027,21 +1110,16 @@ const barrierTextures = new Map();
 function barrierTexture(accentHex) {
     const key = accentHex || '#c6a35a';
     if (barrierTextures.has(key)) return barrierTextures.get(key);
-    const c = document.createElement('canvas');
-    c.width = 256; c.height = 64;
-    const g = c.getContext('2d');
-    for (let i = 0; i < 4; i++) {
-        g.fillStyle = i % 2 ? '#e9e6df' : key;
-        g.fillRect(i * 64, 0, 64, 52);
-    }
-    g.fillStyle = '#3a3c40';
-    g.fillRect(0, 52, 256, 12);
-    g.fillStyle = 'rgba(0,0,0,0.18)';
-    g.fillRect(0, 0, 256, 4);
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.anisotropy = 8;
+    const tex = canvasTexture(256, 64, (g) => {
+        for (let i = 0; i < 4; i++) {
+            g.fillStyle = i % 2 ? '#e9e6df' : key;
+            g.fillRect(i * 64, 0, 64, 52);
+        }
+        g.fillStyle = '#3a3c40';
+        g.fillRect(0, 52, 256, 12);
+        g.fillStyle = 'rgba(0,0,0,0.18)';
+        g.fillRect(0, 0, 256, 4);
+    }, { repeat: 's', anisotropy: 8 });
     barrierTextures.set(key, tex);
     return tex;
 }
@@ -1087,7 +1165,7 @@ function racingLineMesh(track) {
     const c = new THREE.Color();
     for (let i = 0; i <= track.count; i++) {
         const k = i % track.count;
-        positions.push(track.x[k] / WORLD_SCALE, 0.065 + roadHeight(track, k), track.y[k] / WORLD_SCALE);
+        positions.push(track.x[k] / WORLD_SCALE, 0.065 + roadPlane(track, k, 0) / WORLD_SCALE, track.y[k] / WORLD_SCALE);
         let kappa = 0;
         for (let j = 0; j < 8; j++) kappa = Math.max(kappa, track.curvatureAt((k + j) % track.count));
         const vMax = Math.sqrt(GRIP_ACCEL * 0.9 / Math.max(kappa, 1e-5));
@@ -1154,6 +1232,8 @@ export async function mount(canvas, world) {
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         console.warn('pocabinet/scene: post-processing unavailable', e);
     }
+    handle.applyTier(appTier());
+    followAppTier(handle);
     handle.setTrack(world);
     const start = handle.track.pointAt(-40);
     handle.setView({ x: start.x, y: start.y, h: handle.track.heightAt(-40) / WORLD_SCALE, heading: Math.atan2(start.ty, start.tx), mode: 'chase', snap: true });

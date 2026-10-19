@@ -6,65 +6,7 @@
 // black chevrons on a divider's nose, and a soft-edged board atlas for trackside signs.
 // Generated once per page from a fixed hash (never Math.random), cached per module.
 
-import * as THREE from 'three';
-
-function hash(x, y, seed) {
-    let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(seed, 1442695041);
-    h = Math.imul(h ^ (h >>> 13), 1274126177);
-    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-
-/** Periodic value-noise fbm, size × size in [0, 1]. */
-function fbm(size, base, octaves, seed) {
-    const out = new Float32Array(size * size);
-    let amp = 0.5, total = 0;
-    for (let o = 0; o < octaves; o++) {
-        const cells = base << o;
-        for (let y = 0; y < size; y++) {
-            const fy = y / size * cells, y0 = Math.floor(fy), ty = fy - y0, sy = ty * ty * (3 - 2 * ty);
-            for (let x = 0; x < size; x++) {
-                const fx = x / size * cells, x0 = Math.floor(fx), tx = fx - x0, sx = tx * tx * (3 - 2 * tx);
-                const a = hash(x0 % cells, y0 % cells, seed + o), b = hash((x0 + 1) % cells, y0 % cells, seed + o);
-                const c = hash(x0 % cells, (y0 + 1) % cells, seed + o), d = hash((x0 + 1) % cells, (y0 + 1) % cells, seed + o);
-                out[y * size + x] += amp * ((a + (b - a) * sx) * (1 - sy) + (c + (d - c) * sx) * sy);
-            }
-        }
-        total += amp;
-        amp *= 0.5;
-    }
-    for (let i = 0; i < out.length; i++) out[i] /= total;
-    return out;
-}
-
-function dataTex(data, size, srgb) {
-    const t = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.magFilter = THREE.LinearFilter;
-    t.minFilter = THREE.LinearMipmapLinearFilter;
-    t.generateMipmaps = true;
-    t.anisotropy = 8;
-    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
-    t.needsUpdate = true;
-    return t;
-}
-
-function normalFrom(h, size, strength) {
-    const out = new Uint8Array(size * size * 4);
-    for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-            const l = h[y * size + (x - 1 + size) % size], r = h[y * size + (x + 1) % size];
-            const u = h[((y - 1 + size) % size) * size + x], d = h[((y + 1) % size) * size + x];
-            let nx = (l - r) * strength, ny = (u - d) * strength;
-            const len = Math.hypot(nx, ny, 1);
-            const i = (y * size + x) * 4;
-            out[i] = (nx / len * 0.5 + 0.5) * 255;
-            out[i + 1] = (ny / len * 0.5 + 0.5) * 255;
-            out[i + 2] = (1 / len * 0.5 + 0.5) * 255;
-            out[i + 3] = 255;
-        }
-    }
-    return out;
-}
+import { hash, fbm, dataTexture as dataTex, normalMap as normalFrom, canvasTexture, clamp01 } from './util.js';
 
 const cache = new Map();
 function once(key, make) {
@@ -132,17 +74,8 @@ export function sand() {
     });
 }
 
-/** A canvas texture (sRGB, repeating along v). */
-function canvasTex(w, h, draw, repeat = true) {
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    draw(c.getContext('2d'), w, h);
-    const t = new THREE.CanvasTexture(c);
-    t.colorSpace = THREE.SRGBColorSpace;
-    if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.anisotropy = 8;
-    return t;
-}
+/** A canvas texture (sRGB, repeating both ways unless `repeat` is false). */
+const canvasTex = (w, h, draw, repeat = true) => canvasTexture(w, h, draw, { repeat, anisotropy: 8 });
 
 /** Track-limit stripes painted on tarmac run-off: blocks of `a` and `b` along v. */
 export function limitStripes(a, b) {
@@ -180,14 +113,14 @@ export function patchMask(kind) {
         if (kind === 'dust') {
             const a = fbm(S, 4, 4, 401), b = fbm(S, 32, 2, 409);
             for (let i = 0; i < S * S; i++) {
-                const v = Math.min(1, Math.max(0, (a[i] - 0.38) * 2.6)) * (0.6 + b[i] * 0.6);
+                const v = clamp01((a[i] - 0.38) * 2.6) * (0.6 + b[i] * 0.6);
                 data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = v * 255;
                 data[i * 4 + 3] = 255;
             }
         } else if (kind === 'puddle') {
             const a = fbm(S, 3, 4, 421);
             for (let i = 0; i < S * S; i++) {
-                const v = Math.min(1, Math.max(0, (a[i] - 0.48) * 5));
+                const v = clamp01((a[i] - 0.48) * 5);
                 data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = v * 255;
                 data[i * 4 + 3] = 255;
             }
@@ -195,13 +128,12 @@ export function patchMask(kind) {
             // dirt: mostly covered, thinning at the gaps
             const a = fbm(S, 6, 4, 431), b = fbm(S, 48, 2, 433);
             for (let i = 0; i < S * S; i++) {
-                const v = Math.min(1, Math.max(0, (a[i] - 0.25) * 3)) * (0.75 + b[i] * 0.25);
+                const v = clamp01((a[i] - 0.25) * 3) * (0.75 + b[i] * 0.25);
                 data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = v * 255;
                 data[i * 4 + 3] = 255;
             }
         }
-        const t = dataTex(data, S, false);
-        return t;
+        return dataTex(data, S, false);
     });
 }
 

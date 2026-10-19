@@ -22,41 +22,12 @@ public static class PoCabinetTrackFeatures
 
     public static void Fill(PoCabinetStaticWorld world, PoCabinetTrackDefinition def, double[] xy)
     {
-        int n = xy.Length / 2;
+        var centerline = new PoCabinetCenterline(xy);
+        int n = centerline.Count;
         int steps = def.StepsPerSegment;
-        var x = new double[n];
-        var y = new double[n];
-        for (int i = 0; i < n; i++)
-        {
-            x[i] = xy[i * 2];
-            y[i] = xy[i * 2 + 1];
-        }
-        var segLen = new double[n];
-        var cum = new double[n + 1];
-        var tx = new double[n];
-        var ty = new double[n];
-        for (int i = 0; i < n; i++)
-        {
-            int j = (i + 1) % n;
-            double dx = x[j] - x[i], dy = y[j] - y[i];
-            double len = Math.Sqrt(dx * dx + dy * dy);
-            segLen[i] = len;
-            cum[i + 1] = cum[i] + len;
-            tx[i] = len > 1e-9 ? dx / len : 1;
-            ty[i] = len > 1e-9 ? dy / len : 0;
-        }
-        double length = cum[n];
-
-        // Signed curvature (+ = a right-hander, heading increasing), smoothed over three samples.
-        var raw = new double[n];
-        for (int i = 0; i < n; i++)
-        {
-            int p = (i - 1 + n) % n;
-            double d = Wrap(PoCabinetDetMath.Atan2(ty[i], tx[i]) - PoCabinetDetMath.Atan2(ty[p], tx[p]));
-            raw[i] = d / Math.Max(1e-6, (segLen[p] + segLen[i]) * 0.5);
-        }
-        var curv = new double[n];
-        for (int i = 0; i < n; i++) curv[i] = (raw[(i - 1 + n) % n] + raw[i] + raw[(i + 1) % n]) / 3.0;
+        var cum = centerline.Cum;
+        double length = centerline.Length;
+        var curv = centerline.Curvature(unsigned: false);
 
         int hiddenFrom = def.HiddenFromKnot * steps, hiddenTo = def.HiddenToKnot * steps;
         bool Drawn(int i) => !(i >= hiddenFrom && i < hiddenTo);
@@ -186,13 +157,5 @@ public static class PoCabinetTrackFeatures
     private static IEnumerable<int> Range(int from, int to, int n)
     {
         for (int i = from; i != to; i = (i + 1) % n) yield return i;
-    }
-
-    private static double Wrap(double a)
-    {
-        a %= 2 * Math.PI;
-        if (a > Math.PI) a -= 2 * Math.PI;
-        if (a <= -Math.PI) a += 2 * Math.PI;
-        return a;
     }
 }

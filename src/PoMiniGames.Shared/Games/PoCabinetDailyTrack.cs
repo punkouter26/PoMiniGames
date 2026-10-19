@@ -173,33 +173,17 @@ public static class PoCabinetDailyTrack
         return t;
     }
 
-    private static double Length(double[] xy)
-    {
-        int n = xy.Length / 2;
-        double len = 0;
-        for (int i = 0; i < n; i++)
-        {
-            int j = (i + 1) % n;
-            double dx = xy[j * 2] - xy[i * 2], dy = xy[j * 2 + 1] - xy[i * 2 + 1];
-            len += Math.Sqrt(dx * dx + dy * dy);
-        }
-        return len;
-    }
+    private static double Length(double[] xy) => new PoCabinetCenterline(xy).Length;
 
     /// <summary>No corner tighter than a car can take, and no stretch of the course near another:
     /// two parts of the lap further apart along it than a few road widths must be further apart on
     /// the ground than both run-offs and a gap.</summary>
     private static bool Valid(double[] xy, double hw)
     {
-        int n = xy.Length / 2;
-        var cum = new double[n + 1];
-        for (int i = 0; i < n; i++)
-        {
-            int j = (i + 1) % n;
-            double dx = xy[j * 2] - xy[i * 2], dy = xy[j * 2 + 1] - xy[i * 2 + 1];
-            cum[i + 1] = cum[i] + Math.Sqrt(dx * dx + dy * dy);
-        }
-        double length = cum[n];
+        var line = new PoCabinetCenterline(xy);
+        int n = line.Count;
+        var cum = line.Cum;
+        double length = line.Length;
         for (int i = 0; i < n; i++)
         {
             int p = (i - 1 + n) % n, q = (i + 1) % n;

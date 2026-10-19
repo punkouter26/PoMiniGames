@@ -6,7 +6,8 @@
 //
 // Autoplay policy: an AudioContext must be created or resumed inside a user
 // gesture. init() is called from the page's "Start race" click (or the first
-// gesture, via armAudioOnGesture); every other entry point no-ops until then.
+// gesture: index.js unlocks it on the first pointer or key press); every other entry point
+// no-ops until then.
 //
 // Graph:  voices ─┬──────────────────────────► sfx bus ─┐
 //                 └► reverb send ─► convolver A ─► wet A ┤
@@ -17,8 +18,8 @@
 //   • music — the adaptive score (music.js, owned here): race state in through setMusic and
 //     musicStinger, ducked by the player engine's load and by every impact, off with the
 //     `music` setting (setMusicEnabled). Its bus joins before the slow-mo lowpass, so the
-//     photo-finish slow motion dips it with everything else; volume, mute and the pause
-//     duck are the master's.
+//     photo-finish slow motion dips it with everything else; the app's volume and mute
+//     and the pause duck are the master's.
 //   • acoustic space — the engine, rivals, squeal, scrape, pops and impacts also feed a
 //     convolution reverb whose impulse responses are made here at init (decaying stereo
 //     noise, one shape per zone: 'stand' a big wide slap off the grandstand, 'metal' a tight
@@ -56,9 +57,10 @@
 // All continuous controls are setTargetAtTime, so per-frame calls never click.
 
 import { Music } from './music.js';
+import { lcg, clamp01 } from './util.js';
 
 let ctx = null;            // AudioContext, created on first user gesture
-let master = null;         // master GainNode (volume / mute / pause duck)
+let master = null;         // master GainNode (mix level, app volume / mute, pause duck)
 let bus = null;            // everything feeds this
 let slowFilter = null;     // slow-mo lowpass
 let noiseBuffer = null;    // 2 s of white noise, shared by every noise source
@@ -85,8 +87,7 @@ let lastWhoosh = 0;
 const rivals = new Map();  // id -> rival voice
 const pops = [];           // exhaust-pop events for the flame visuals: { id, strength }
 
-let volume = 0.7;
-let muted = false;
+const VOLUME = 0.7;        // the game's mix level under the app's volume
 let suspended = false;     // pause-menu duck (distinct from browser suspend)
 let slowAmount = 0;
 let lastShutter = 0;
@@ -128,11 +129,8 @@ function makeNoiseBuffer(context) {
     const length = context.sampleRate * 2;
     const buffer = context.createBuffer(1, length, context.sampleRate);
     const data = buffer.getChannelData(0);
-    let seed = 0x2f6b1d;
-    for (let i = 0; i < length; i++) {
-        seed = (seed * 1664525 + 1013904223) >>> 0;
-        data[i] = (seed / 4294967296) * 2 - 1;
-    }
+    const rnd = lcg(0x2f6b1d);
+    for (let i = 0; i < length; i++) data[i] = rnd() * 2 - 1;
     return buffer;
 }
 
@@ -335,8 +333,8 @@ function makeIR(shape) {
     const sr = ctx.sampleRate;
     const n = Math.ceil(shape.dur * sr);
     const buf = ctx.createBuffer(2, n, sr);
-    let seed = shape.seed;
-    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 * 2 - 1; };
+    const unit = lcg(shape.seed);
+    const rnd = () => unit() * 2 - 1;
     const fadeFrom = Math.floor(n * 0.9);
     for (let ch = 0; ch < 2; ch++) {
         const d = buf.getChannelData(ch);
@@ -388,8 +386,7 @@ function buildSurface() {
     const sr = ctx.sampleRate, n = sr * 2;
     const gb = ctx.createBuffer(1, n, sr);
     const d = gb.getChannelData(0);
-    let seed = 0x5eed;
-    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    const rnd = lcg(0x5eed);
     for (let g = 0; g < 140; g++) {
         const at = Math.floor(rnd() * (n - 800)), len = Math.floor(sr * (0.003 + rnd() * 0.01));
         const amp = 0.3 + rnd() * 0.7, bright = 0.25 + rnd() * 0.7;
@@ -475,29 +472,17 @@ export function init() {
 
 // This engine keeps its own AudioContext (world-space panners and a listener on the
 // car), so it is not under the app's master gain and follows the app-wide volume and
-// mute by asking the shared bus, on top of the game's own volume setting.
+// mute by asking the shared bus.
 function applyMasterGain() {
     if (!master) return;
     const app = window.PoAudioBus;
     const appMuted = app?.isMuted?.() === true;
     const appVolume = app?.getVolume?.() ?? 1;
-    const target = (muted || suspended || appMuted) ? 0 : volume * appVolume;
+    const target = (suspended || appMuted) ? 0 : VOLUME * appVolume;
     master.gain.setTargetAtTime(target, ctx.currentTime, 0.05);
 }
 if (typeof window !== 'undefined') {
     window.addEventListener('po-audio-change', () => { if (ctx) applyMasterGain(); });
-}
-
-/** Merge persisted audio prefs (called from settings apply). */
-export function setVolume(v) {
-    const n = Number(v);
-    if (Number.isFinite(n)) volume = Math.min(1, Math.max(0, n));
-    if (ctx) applyMasterGain();
-}
-
-export function setMuted(m) {
-    muted = !!m;
-    if (ctx) applyMasterGain();
 }
 
 /** Pause-menu duck: true = silence everything without tearing down nodes. */
@@ -526,7 +511,7 @@ export function setMusicEnabled(on) {
  */
 export function updateEngine(speedKmh, throttle = 0, phase = 'race') {
     const kmh = Math.max(0, Number(speedKmh) || 0);
-    const thr = Math.min(1, Math.max(0, Number(throttle) || 0));
+    const thr = clamp01(Number(throttle) || 0);
     const now = ctx ? ctx.currentTime : performance.now() / 1000;
     const dt = player.lastT ? Math.min(0.1, Math.max(0, now - player.lastT)) : 0;
     player.lastT = now;
@@ -666,7 +651,7 @@ function burst(type, freq, q, dur, peak, at, dest) {
 /** Tire squeal. `amount` 0..1 (true = 1); pitch rises with speed. */
 export function setSqueal(amount, speedKmh = 150) {
     if (!ctx || !squeal) return;
-    const a = amount === true ? 1 : Math.min(1, Math.max(0, Number(amount) || 0));
+    const a = amount === true ? 1 : clamp01(Number(amount) || 0);
     const t = ctx.currentTime;
     squeal.gain.gain.setTargetAtTime(a * 0.07, t, 0.06);
     const s01 = Math.min(1, (Number(speedKmh) || 0) / 280);
@@ -676,7 +661,7 @@ export function setSqueal(amount, speedKmh = 150) {
 /** Metal-on-barrier grind while the car rides the wall. */
 export function setScrape(amount) {
     if (!ctx || !scrape) return;
-    scrape.gain.gain.setTargetAtTime(Math.min(1, Math.max(0, amount)) * 0.06, ctx.currentTime, 0.05);
+    scrape.gain.gain.setTargetAtTime(clamp01(amount) * 0.06, ctx.currentTime, 0.05);
 }
 
 /** Kerb buzz. The rate follows speed, as stripes pass under the tyres faster. */
@@ -691,7 +676,7 @@ export function setKerb(on, speedKmh) {
 export function setWallProximity(amount, side) {
     if (!ctx || !wallFx) return;
     const t = ctx.currentTime;
-    const a = Math.min(1, Math.max(0, Number(amount) || 0));
+    const a = clamp01(Number(amount) || 0);
     wallFx.wet.gain.setTargetAtTime(a * 0.55, t, 0.08);
     if (wallFx.pan) wallFx.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, Number(side) || 0)) * 0.8, t, 0.1);
 }
@@ -699,18 +684,18 @@ export function setWallProximity(amount, side) {
 /** Rain on the roof, 0..1. */
 export function setRain(level) {
     if (!ctx || !rain) return;
-    rain.gain.gain.setTargetAtTime(Math.min(1, Math.max(0, Number(level) || 0)) * 0.035, ctx.currentTime, 0.6);
+    rain.gain.gain.setTargetAtTime(clamp01(Number(level) || 0) * 0.035, ctx.currentTime, 0.6);
 }
 
 /** Slow motion 0..1: lowpass the whole mix and drop every engine's pitch. */
 export function setSlowMo(amount) {
-    slowAmount = Math.min(1, Math.max(0, Number(amount) || 0));
+    slowAmount = clamp01(Number(amount) || 0);
     if (!ctx || !slowFilter) return;
     const cutoff = 20000 * Math.pow(650 / 20000, slowAmount);
     slowFilter.frequency.setTargetAtTime(cutoff, ctx.currentTime, 0.08);
 }
 
-/** Silence everything race-owned (engine, beds, rivals). Rain belongs to the environment. */
+/** Silence everything race-owned (engine, beds, rivals). Rain belongs to the weather (environment.js). */
 export function silenceRace() {
     updateEngine(0, 0, 'off');
     setSqueal(0);
@@ -747,7 +732,7 @@ export function musicStinger() {
 export function setAcoustics(zone, wet) {
     if (!ctx || !verb || !irs?.[zone]) return;
     const t = ctx.currentTime;
-    const w = Math.min(1, Math.max(0, Number(wet) || 0));
+    const w = clamp01(Number(wet) || 0);
     if (zone !== verb.slots[verb.active].zone && t - verb.switchAt > 1) {
         const next = 1 - verb.active;
         const s = verb.slots[next];
@@ -780,7 +765,7 @@ export function setSurface(kind, speedKmh, wet = false, puddle = 0) {
     surf.sandGrains.gain.setTargetAtTime(on('sand') * 0.12 * s01, t, 0.08);
     surf.grass.gain.setTargetAtTime(on('grass') * (0.012 + 0.04 * s01), t, 0.08);
     // Wet tarmac: spray hiss with speed; a puddle throws a fuller, lower splash.
-    const p = Math.min(1, Math.max(0, Number(puddle) || 0));
+    const p = clamp01(Number(puddle) || 0);
     const wetOn = wet && kind === 'road' ? moving : 0;
     surf.wet.gain.setTargetAtTime(wetOn * (s01 * s01 * 0.05 + p * s01 * 0.09), t, p > 0 ? 0.03 : 0.15);
     surf.wetHp.frequency.setTargetAtTime(2400 - p * 1700, t, 0.05);
@@ -792,7 +777,7 @@ export function setSurface(kind, speedKmh, wet = false, puddle = 0) {
  * the wind roars back with a whoosh, panned to `side` (−1 left … +1 right: where the car went).
  */
 export function setDraft(amount, side = 0) {
-    const d = Math.min(1, Math.max(0, Number(amount) || 0));
+    const d = clamp01(Number(amount) || 0);
     draftAmt = d;
     if (!ctx || !road) return;
     const t = ctx.currentTime;
@@ -823,42 +808,6 @@ function whoosh(strength, side) {
     const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
     if (pan) { pan.pan.value = Math.max(-1, Math.min(1, Number(side) || 0)) * 0.7; g.connect(pan); pan.connect(bus); } else g.connect(bus);
     src.start(t, Math.random() * 1.2, 0.9);
-}
-
-let meters = null;
-function rmsDb(an) {
-    const a = new Float32Array(an.fftSize);
-    an.getFloatTimeDomainData(a);
-    let s = 0;
-    for (const v of a) s += v * v;
-    return Math.round(10 * Math.log10(s / a.length + 1e-12));
-}
-
-/** For the harness: what the new layers are doing (music/reverb levels in dBFS, meters made on first call). */
-export function debugState() {
-    if (!ctx) return null;
-    if (!meters) {
-        meters = { music: ctx.createAnalyser(), verb: ctx.createAnalyser(), master: ctx.createAnalyser() };
-        for (const m of Object.values(meters)) m.fftSize = 2048;
-        musicBus.connect(meters.music);
-        for (const s of verb.slots) s.wet.connect(meters.verb);
-        master.connect(meters.master);
-    }
-    return {
-        state: ctx.state, time: +ctx.currentTime.toFixed(2),
-        db: { music: rmsDb(meters.music), verb: rmsDb(meters.verb), master: rmsDb(meters.master) },
-        verb: verb && {
-            active: verb.active, zones: verb.slots.map(s => s.zone),
-            wet: verb.slots.map(s => +s.wet.gain.value.toFixed(3)),
-        },
-        draft: +draftAmt.toFixed(3), windLp: Math.round(road.windLp.frequency.value), lastWhoosh: +lastWhoosh.toFixed(2),
-        surface: surf && {
-            gravel: +surf.gravel.gain.value.toFixed(3), sand: +surf.sand.gain.value.toFixed(3),
-            grass: +surf.grass.gain.value.toFixed(3), wet: +surf.wet.gain.value.toFixed(3),
-            grainRate: +surf.grains.playbackRate.value.toFixed(2),
-        },
-        music: music?.debug() ?? null,
-    };
 }
 
 // ── Rivals: positional engines with Doppler ──────────────────────────────────
@@ -1007,7 +956,7 @@ function buildCrowd() {
 export function setCrowd(level, pos) {
     if (!ctx || !crowd) return;
     const t = ctx.currentTime;
-    const l = Math.min(1, Math.max(0, Number(level) || 0));
+    const l = clamp01(Number(level) || 0);
     crowd.gain.gain.setTargetAtTime(l > 0 ? 0.05 + l * 0.22 : 0, t, 0.35);
     crowd.f1.frequency.setTargetAtTime(480 + l * 220, t, 0.4);
     if (pos) setPannerPosition(crowd.panner, pos.x, pos.y ?? 2, pos.z);

@@ -16,8 +16,8 @@
 //     officialId, finished), pushed ~15 Hz.
 //
 // Accessibility: the canvas is aria-hidden (decorative); the HUD position
-// readout remains the accessible source of truth. When colorSafe is on, the
-// markers use the Okabe-Ito colorblind-safe palette in a fixed per-official
+// readout remains the accessible source of truth. When the app's colour-safe switch is on
+// (<html data-colorsafe="1">, read every draw), the markers use the Okabe-Ito colorblind-safe palette in a fixed per-official
 // order so hue alone is never the only signal.
 
 const MARGIN = 14;           // px padding around the track path
@@ -34,8 +34,6 @@ class MinimapHandle {
     constructor(canvas, centerline, opts) {
         this.canvas = canvas;
         this.ctx2d = canvas.getContext('2d');
-        // The game's own setting, or the platform's (<html data-colorsafe>, the settings sheet).
-        this.colorSafe = !!(opts && opts.colorSafe) || document.documentElement.dataset.colorsafe === '1';
         this.accent = (opts && opts.accent) || '#d4af37';
         // Point-to-point: the centerline handed in is start → finish, not a loop.
         this.open = !!(opts && opts.open);
@@ -94,6 +92,11 @@ class MinimapHandle {
             tctx.arc(x, y, (i === 0 ? 3.4 : 2.2) * dpr, 0, Math.PI * 2);
             tctx.fill();
         }
+    }
+
+    /** The app's colour-safe switch (<html data-colorsafe>), live. */
+    get colorSafe() {
+        return document.documentElement.dataset.colorsafe === '1';
     }
 
     /** The road to scale (a darker band, its width per sample) and any dividers on it. */
@@ -238,7 +241,7 @@ class MinimapHandle {
  * Mount a minimap onto a canvas element.
  * @param {HTMLCanvasElement|string} canvas the element or its DOM id
  * @param {{centerXY:number[]}|Array<[number,number]|{X:number,Y:number}>} worldOrCenterline
- * @param {{ accent?: string, colorSafe?: boolean }} opts
+ * @param {{ accent?: string }} opts
  */
 export function mountMinimap(canvas, worldOrCenterline, opts) {
     if (typeof canvas === 'string') canvas = document.getElementById(canvas);

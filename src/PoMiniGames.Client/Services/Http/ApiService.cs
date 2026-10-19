@@ -388,25 +388,23 @@ public class ApiService
     /// the payload is malformed, never as 5xx — replaying a 4xx would only
     /// replay the rejection, so a parked score only fires on genuine unavailability.
     /// </summary>
-    public async Task<ScoreSubmitResult<PoCabinetHighScore>> SubmitPoCabinetHighScoreAsync(PoCabinetHighScoreRequest entry)
+    public async Task<ScoreSubmitResult<object>> SubmitPoCabinetHighScoreAsync(PoCabinetHighScoreRequest entry)
     {
         try
         {
+            // The stored row is not read back: the page already shows the result.
             var response = await _http.PostAsJsonAsync(
                 "/api/pocabinet/scores", entry, ApiJsonContext.Default.PoCabinetHighScoreRequest);
 
             if (response.IsSuccessStatusCode)
-            {
-                var saved = await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoCabinetHighScore);
-                return ScoreSubmitResult<PoCabinetHighScore>.Saved(saved);
-            }
+                return ScoreSubmitResult<object>.Saved(null);
             if ((int)response.StatusCode is >= 400 and < 500)
-                return ScoreSubmitResult<PoCabinetHighScore>.Rejected(response.StatusCode);
-            return ScoreSubmitResult<PoCabinetHighScore>.Unavailable(response.StatusCode);
+                return ScoreSubmitResult<object>.Rejected(response.StatusCode);
+            return ScoreSubmitResult<object>.Unavailable(response.StatusCode);
         }
         catch
         {
-            return ScoreSubmitResult<PoCabinetHighScore>.Unavailable(null);
+            return ScoreSubmitResult<object>.Unavailable(null);
         }
     }
 

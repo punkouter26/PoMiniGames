@@ -20,10 +20,10 @@
 import * as THREE from 'three';
 import { GRIP_ACCEL } from './physics.js';
 import { asphalt, water, mirrorDecal } from './materials.js';
-import { roadPlane, wallFace } from './terrain.js';
+import { wallFace } from './terrain.js';
+import { WORLD_SCALE as WS, roadPlane } from './util.js';
 import { gravel, patchMask, repairs, chevrons, boardAtlas, arrowSign, jokerPanel } from './surfaces.js';
 
-const WS = 10;
 /** Samples over which a divider tapers (track.js ISLAND_TAPER). */
 const TAPER = 4;
 const ISLAND_HEIGHT = 0.75;
@@ -407,7 +407,7 @@ export class Trackside {
  * direction (+1 right-hander) and whether the straight before it is fast enough that a car
  * has to brake for it.
  */
-export function findCorners(track) {
+function findCorners(track) {
     const n = track.count;
     const cap = 1 / track.halfWidth;
     const v = new Float64Array(n);

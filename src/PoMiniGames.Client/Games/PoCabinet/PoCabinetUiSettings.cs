@@ -4,39 +4,60 @@ using System.Text.Json;
 namespace PoMiniGamesClient.Games.PoCabinet;
 
 /// <summary>
-/// Player-tunable presentation settings for PoCabinet, mirrored from the JS
-/// store (<c>wwwroot/js/pocabinet/settings.js</c>). JavaScript owns the disk
-/// format (localStorage + sanitisation); this class is the Blazor-side view
-/// model the settings panel binds to. Both directions go through the
-/// source-generated <see cref="PoCabinetJsonContext"/> (camelCase), so a property
-/// here IS its JS key: there is no hand-written key list to drift.
+/// Player-tunable settings for PoCabinet, the settings panel's view model and the one owner of
+/// their <c>localStorage</c> entry (<see cref="StorageKey"/>). The engine never reads the store:
+/// the page hands it these values (<see cref="ToJs"/>). Both directions go through the
+/// source-generated <see cref="PoCabinetJsonContext"/> (camelCase), so a property here IS its JS
+/// key. The defaults are the simplest race: clear weather, a light steering assist, no extras.
 /// </summary>
 public sealed class PoCabinetUiSettings
 {
+    public const string StorageKey = "pocabinet.settings.v1";
+
     // No volume, mute, reduced-motion or colour-safe here: those are the app's
-    // settings, not Cabinet's. settings.js ignores any value an older build stored for them.
+    // settings, not Cabinet's, and the engine reads them from the app.
     /// <summary>The adaptive race score (pocabinet/music.js). On by default; an older store without the key reads as on.</summary>
     public bool Music { get; set; } = true;
     public double HudScale { get; set; } = 1;
+    /// <summary>"clear" or "rain" (rain also lowers grip).</summary>
     public string Weather { get; set; } = "clear";
     public string TouchControls { get; set; } = "auto";
     public string SteerMode { get; set; } = "pad";
     public double SteerSensitivity { get; set; } = 1;
-    public string SteeringAssist { get; set; } = "off";
+    /// <summary>"off", "light" or "strong": blend the steering toward the centre line.</summary>
+    public string SteeringAssist { get; set; } = "light";
     public bool AutoBrake { get; set; }
     public bool RacingLine { get; set; }
 
-    /// <summary>Parse the stored JSON; defaults for anything missing, unknown keys ignored.</summary>
+    /// <summary>Parse the stored JSON; defaults for anything missing or out of range, unknown keys ignored.</summary>
     public static PoCabinetUiSettings FromJson(string? json)
     {
-        if (string.IsNullOrWhiteSpace(json)) return new();
-        try { return JsonSerializer.Deserialize(json, PoCabinetJsonContext.Default.PoCabinetUiSettings) ?? new(); }
-        catch (JsonException) { return new(); }
+        PoCabinetUiSettings s;
+        try { s = string.IsNullOrWhiteSpace(json) ? new() : JsonSerializer.Deserialize(json, PoCabinetJsonContext.Default.PoCabinetUiSettings) ?? new(); }
+        catch (JsonException) { s = new(); }
+        var d = new PoCabinetUiSettings();
+        // A stale or hand-edited store can never poison a session. ("auto" weather, live D.C.,
+        // was removed 2026-10-19: it reads as clear.)
+        s.Weather = OneOf(s.Weather, d.Weather, "clear", "rain");
+        s.TouchControls = OneOf(s.TouchControls, d.TouchControls, "auto", "on", "off");
+        s.SteerMode = OneOf(s.SteerMode, d.SteerMode, "pad", "tilt");
+        s.SteeringAssist = OneOf(s.SteeringAssist, d.SteeringAssist, "off", "light", "strong");
+        s.HudScale = Clamp(s.HudScale, 0.8, 1.3, d.HudScale);
+        s.SteerSensitivity = Clamp(s.SteerSensitivity, 0.5, 1.5, d.SteerSensitivity);
+        return s;
     }
 
-    /// <summary>The camelCase shape <c>PoCabinet.saveSettings</c>/<c>applySettings</c> read.</summary>
+    public string ToJson() => JsonSerializer.Serialize(this, PoCabinetJsonContext.Default.PoCabinetUiSettings);
+
+    /// <summary>The camelCase shape <c>PoCabinet.applySettings</c> and <c>startRace</c> read.</summary>
     public JsonElement ToJs() => JsonSerializer.SerializeToElement(this, PoCabinetJsonContext.Default.PoCabinetUiSettings);
 
     /// <summary>HudScale formatted invariantly for the <c>--pocabinet-hud</c> CSS custom property.</summary>
     public string HudScaleCss => HudScale.ToString(CultureInfo.InvariantCulture);
+
+    private static string OneOf(string? value, string fallback, params string[] allowed) =>
+        value is not null && allowed.Contains(value) ? value : fallback;
+
+    private static double Clamp(double value, double lo, double hi, double fallback) =>
+        double.IsFinite(value) ? Math.Clamp(value, lo, hi) : fallback;
 }

@@ -1,0 +1,49 @@
+@*
+    PoCabinetBroadcast — the demo's TV graphics (broadcast.js): a timing tower, a callout, a
+    caption for the car on screen and the frame round the picture-in-picture. Every data-bc text
+    node is rendered EMPTY on purpose and written by JS a few times a second, like the gauge, so
+    Blazor owns no text that JS changes. aria-hidden: an attract loop; the page's announcer
+    covers the finish.
+*@
+
+<div id="pocabinetBroadcast" class="pocabinet-bc" aria-hidden="true">
+    <div class="pocabinet-bc__tower">
+        <div class="pocabinet-bc__head"><span class="pocabinet-bc__live">Live</span><span class="pocabinet-bc__lap" data-bc="lap"></span></div>
+        @* Blazor's own text (broadcast.js never touches it): where the race is. *@
+        <div class="pocabinet-bc__venue">@TrackName</div>
+        <ol class="pocabinet-bc__rows">
+            @for (var i = 0; i < Rows; i++)
+            {
+                <li class="pocabinet-bc__row" data-bc-row data-state="off">
+                    <span class="pocabinet-bc__rpos" data-bc="rpos"></span>
+                    <span class="pocabinet-bc__rchip" data-bc="rchip"></span>
+                    <span class="pocabinet-bc__rcode" data-bc="rcode"></span>
+                    <span class="pocabinet-bc__rgap" data-bc="rgap"></span>
+                </li>
+            }
+        </ol>
+    </div>
+    <div class="pocabinet-bc__callout" data-bc="callout" data-show="off">
+        <b class="pocabinet-bc__ck" data-bc="ck"></b><span class="pocabinet-bc__ct" data-bc="ct"></span>
+    </div>
+    <div class="pocabinet-bc__lower" data-bc="lower" data-show="off">
+        <span class="pocabinet-bc__shot" data-bc="shot"></span>
+        <span class="pocabinet-bc__who">
+            <span class="pocabinet-bc__pos" data-bc="pos"></span>
+            <span class="pocabinet-bc__chip" data-bc="chip"></span>
+            <span class="pocabinet-bc__name" data-bc="name"></span>
+            <span class="pocabinet-bc__style" data-bc="style"></span>
+        </span>
+        <span class="pocabinet-bc__meta" data-bc="meta"></span>
+    </div>
+    <div class="pocabinet-bc__pip" data-bc="pip" data-show="off">
+        <span class="pocabinet-bc__piplabel" data-bc="piplabel"></span>
+    </div>
+</div>
+
+@code {
+    /// <summary>The timing tower rows: the top ten, a gap, and the car on screen when it is further back (broadcast.js).</summary>
+    private const int Rows = 12;
+
+    [Parameter] public string TrackName { get; set; } = "";
+}

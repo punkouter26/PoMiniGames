@@ -58,8 +58,8 @@ const WALL_RESTITUTION = 0.25;
 const WALL_FRICTION = 0.85;
 const CONTACT_SPEED_FLOOR = REVERSE_MAX * 1.5;
 /** Hull: a spine of ±HULL_HALF along the heading, HULL_RADIUS thick (39 x 17 overall). */
-export const HULL_HALF = 11;
-export const HULL_RADIUS = 8.5;
+const HULL_HALF = 11;
+const HULL_RADIUS = 8.5;
 const CONTACT_RESTITUTION = 0.2;
 /** Yaw inertia over mass: the square of a 39 x 17 body's radius of gyration. */
 const YAW_INERTIA = 150;
@@ -112,8 +112,9 @@ const RUN_ON = 30;
  * speed and throws the car sideways (out, away from the apex). Gravel and tarmac run-off
  * are deeper than grass: the barrier stands RUN_OFF_WIDE out there.
  */
-export const SURF_ROAD = 0, SURF_KERB = 1, SURF_SAUSAGE = 2, SURF_GRASS = 3, SURF_GRAVEL = 4, SURF_RUNOFF = 5;
-export const RUN_OFF_WIDE = 40;
+const SURF_ROAD = 0;
+export const SURF_KERB = 1, SURF_SAUSAGE = 2, SURF_GRASS = 3, SURF_GRAVEL = 4, SURF_RUNOFF = 5;
+const RUN_OFF_WIDE = 40;
 /** How far an apex kerb reaches onto the tarmac, and out past the edge line (sim units). */
 export const KERB_INNER = 5;
 export const KERB_OUTER = 12;
@@ -135,7 +136,7 @@ const AI_RANGE = 170;
 const GRID_COLUMN = 22;
 const GRID_ROW = 50;
 /** Solo and demo races: 99 rivals and the player. */
-export const SOLO_RIVALS = 99;
+const SOLO_RIVALS = 99;
 /** The player's grid slot in a solo race: mid-pack, quicker cars ahead and slower behind.
  *  Rival i of soloField() takes slot i, or i + 1 from here back. */
 export const PLAYER_SLOT = 50;
@@ -284,7 +285,7 @@ export function surfaceAt(track, i, lateral) {
  * Track limits: all four wheels past the edge of the track (the kerb counts as track), i.e.
  * the car's flank is beyond it. Mirrors PoCabinetPhysics.Beyond.
  */
-export function beyondLimits(track, i, lateral) {
+function beyondLimits(track, i, lateral) {
     const s = lateral > 0 ? 1 : -1;
     const k = track.kerbs[i];
     const edge = track.hwAt(i) + (k !== 0 && (k > 0 ? 1 : -1) === s ? KERB_OUTER : 0);
@@ -317,7 +318,7 @@ export function copyBody(src, dst) {
 }
 
 /** Race conditions for step(): rain, and how much rubber is down (track.js rubberAt). */
-export const DRY = Object.freeze({ wet: false, rubber: 0 });
+const DRY = Object.freeze({ wet: false, rubber: 0 });
 
 // Where race.js wants every hit reported, for the dents (render only: nothing reads it back).
 let hitSink = null;
@@ -601,7 +602,7 @@ export function resolveContacts(track, cars) {
 }
 
 /** Columns of the starting grid: as many as the tarmac takes, at least two. */
-export function gridColumns(track) {
+function gridColumns(track) {
     return Math.max(2, Math.floor(track.halfWidth * 1.6 / GRID_COLUMN) + 1);
 }
 
@@ -611,7 +612,7 @@ export function gridColumns(track) {
  * into each other (Press Briefing turns 130° in thirty units at its line), so the row moves
  * back to where the road has straightened. Mirrors PoCabinetPhysics.GridBack.
  */
-export function gridBack(track, row) {
+function gridBack(track, row) {
     const limit = 1 / (track.halfWidth * 1.5);
     let back = 18;
     for (let r = 0; back < track.length; ) {

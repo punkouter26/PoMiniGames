@@ -1,11 +1,12 @@
 namespace PoMiniGames.Shared.Games;
 
 /// <summary>
-/// Display metadata for the four themed PoCabinet tracks. Geometry (knots, width,
-/// atmosphere) lives next door in <see cref="PoCabinetTrackGeometry"/>, keyed by the same ids.
-/// Track ids are lower-case, kebab-friendly strings safe for URL paths.
+/// Display metadata for the themed PoCabinet tracks: the card's name, blurb, accent colour,
+/// length and difficulty. Geometry (knots, width, atmosphere) lives next door in
+/// <see cref="PoCabinetTrackGeometry"/>, keyed by the same ids. Track ids are lower-case,
+/// kebab-friendly strings safe for URL paths.
 /// </summary>
-public sealed record PoCabinetTrackInfo(string Id, string Name, string Description);
+public sealed record PoCabinetTrackInfo(string Id, string Name, string Description, string Accent, int LengthKm, string Difficulty);
 
 public static class PoCabinetCatalog
 {
@@ -39,32 +40,73 @@ public static class PoCabinetCatalog
     /// <summary>Default track when none is specified (matches the championship opening leg).</summary>
     public const string DefaultTrackId = "capitol";
 
+    /// <summary>AI officials a multiplayer host can add to the grid.</summary>
+    public const int MaxBots = 4;
+
+    /// <summary>A multiplayer seat's paint when the player sent none.</summary>
+    public const string DefaultSeatColor = "#3a7d44";
+
+    /// <summary>The four AI officials, id and display name, in seat order. Their driving is
+    /// PoCabinetPersonality.Roster on the server and physics.js OFFICIALS in the browser.</summary>
+    public static IReadOnlyList<(string Id, string Name)> Officials { get; } =
+    [
+        ("sean-s", "Sean S."),
+        ("steve-b", "Steve B."),
+        ("bill-b", "Bill B."),
+        ("mike-p", "Mike P."),
+    ];
+
+    /// <summary>An official's display name (the dialogue bubble, the grid); the id when unknown.</summary>
+    public static string OfficialName(string? id)
+    {
+        foreach (var (officialId, name) in Officials)
+        {
+            if (officialId == id) return name;
+        }
+        return id ?? "";
+    }
+
     public static IReadOnlyList<PoCabinetTrackInfo> Tracks { get; } = Array.AsReadOnly(new[]
     {
         new PoCabinetTrackInfo(
             "capitol",
             "Capitol Speedway",
-            "Asphalt oval framed by marble columns and gold trim. Government-building backdrop."),
+            "Asphalt oval framed by marble columns and gold trim. Government-building backdrop.",
+            "#d4af37", 3, "Easy"),
         new PoCabinetTrackInfo(
             "maralago",
             "Mar-a-Lago Grand Prix",
-            "Palm-lined beachside course with golf-course greens and ocean mist."),
+            "Palm-lined beachside course with golf-course greens and ocean mist.",
+            "#2e7d4f", 4, "Medium"),
         new PoCabinetTrackInfo(
             "pressbriefing",
             "Press Briefing 500",
-            "Podium-shaped stadium with press-box grandstands and klieg lights."),
+            "Podium-shaped stadium with press-box grandstands and klieg lights.",
+            "#c0392b", 3, "Hard"),
         new PoCabinetTrackInfo(
             "playground",
             "Playground Marble Run",
-            "Point-to-point down a giant play structure's marble run: off the top, round the banked turns, down the slide to the finish tray. One run."),
+            "Point-to-point down a giant play structure's marble run: off the top, round the banked turns, down the slide to the finish tray. One run.",
+            "#f39c12", 3, "Medium"),
         new PoCabinetTrackInfo(
             "senate",
             "Senate Hill",
-            "Autumn hill road course: a climb to a blind crest, a banked downhill hairpin, the esses, a filibuster chicane with raised kerbs and a split sweeper with a joker lane."),
+            "Autumn hill road course: a climb to a blind crest, a banked downhill hairpin, the esses, a filibuster chicane with raised kerbs and a split sweeper with a joker lane.",
+            "#b3541e", 4, "Hard"),
     });
 
     /// <summary>The tracks that are campaign stages, in stage order (the first four of <see cref="Tracks"/>).</summary>
     public const int CampaignStages = 4;
+
+    /// <summary>The campaign stage a track is (0-based), or -1 for a free race.</summary>
+    public static int StageIndexOf(string? trackId)
+    {
+        for (int i = 0; i < CampaignStages; i++)
+        {
+            if (string.Equals(Tracks[i].Id, trackId, StringComparison.OrdinalIgnoreCase)) return i;
+        }
+        return -1;
+    }
 
     public static PoCabinetTrackInfo GetTrack(string? id) =>
         PoCabinetDailyTrack.TryParse(id, out var day) ? Daily(day)
@@ -80,7 +122,16 @@ public static class PoCabinetCatalog
     public static PoCabinetTrackInfo Daily(DateOnly day) => new(
         PoCabinetDailyTrack.IdFor(day),
         PoCabinetDailyTrack.NameFor(day),
-        "Today's circuit, generated from the date: a new layout every day, the same hills, corners and run-off for every player, with its own leaderboard.");
+        "Today's circuit, generated from the date: a new layout every day, the same hills, corners and run-off for every player, with its own leaderboard.",
+        "#7b61ff", 3, "New every day");
+
+    /// <summary>A lap or race time as the HUD, the cards and the results show it: m:ss.s.</summary>
+    public static string FormatLap(double seconds)
+    {
+        if (double.IsNaN(seconds) || seconds < 0) return "0:00.0";
+        var minutes = (int)(seconds / 60);
+        return $"{minutes}:{seconds - minutes * 60:00.0}";
+    }
 
     /// <summary>Today's daily circuit (UTC).</summary>
     public static PoCabinetTrackInfo Today(DateTime utcNow) => Daily(DateOnly.FromDateTime(utcNow));

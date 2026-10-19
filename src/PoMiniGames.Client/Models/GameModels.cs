@@ -81,32 +81,18 @@ public class PlayerStatsDto
 }
 
 /// <summary>
-/// PoCabinet: the lap time the server ratchets on
-/// <c>POST /api/pocabinet/scores</c>. Identity fields
-/// (<c>PlayerDisplayName</c> / <c>UserId</c> / <c>IsGuest</c>) are resolved
-/// server-side from the auth cookie, so the payload is intentionally minimal —
-/// no field that an attacker could vary to insert duplicate rows.
+/// PoCabinet: a finished race for <c>POST /api/pocabinet/scores</c>. Identity (name, user id,
+/// guest) is resolved server-side from the auth cookie, so the payload has no field an attacker
+/// could vary to insert duplicate rows.
 /// </summary>
-public sealed class PoCabinetHighScore
-{
-    public string PlayerInitials { get; set; } = "";
-    public string UserId { get; set; } = "";
-    public bool IsGuest { get; set; }
-    public string TrackId { get; set; } = "capitol";
-    public double BestLapSeconds { get; set; }
-    public int FinalPosition { get; set; }
-    public DateTimeOffset AchievedAtUtc { get; set; }
-}
-
 /// <param name="Inputs">Solo lap proof: the base64 per-tick control log from
-/// <c>PoCabinet.lapProof()</c>, which the server re-simulates to time the lap itself. Null for
-/// a multiplayer race — the server's own sim already timed it.</param>
+/// <c>PoCabinet.lapProof()</c>, which the server re-simulates to time the lap and place itself.
+/// Null for a multiplayer race — the server's own sim already timed it.</param>
 /// <param name="Wet">Solo lap proof: the race ran in rain (lower grip).</param>
 public sealed record PoCabinetHighScoreRequest(
     string TrackId,
     double BestLapSeconds,
     int FinalPosition,
-    bool IsGuest,
     string GameCode = "",
     string? Inputs = null,
     bool Wet = false);

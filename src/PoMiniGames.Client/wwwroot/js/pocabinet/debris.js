@@ -37,8 +37,8 @@
 import * as THREE from 'three';
 import { wallFace } from './terrain.js';
 import { surfaceAt, SURF_GRAVEL, SURF_GRASS } from './physics.js';
+import { WORLD_SCALE as WS } from './util.js';
 
-const WS = 10;
 const STEP = 1 / 60;
 const MAX_STEPS = 6;
 const GRAVITY = 11;
@@ -651,16 +651,4 @@ export function clearDebris() {
     if (kinds) for (const m of kinds) { m.count = 0; m.parent?.remove(m); }
     world = null;
     acc = 0;
-}
-
-/** How many pieces there are, and how many asleep (for probes; `awake`: list the others). */
-export function debrisStats(awake = false) {
-    let asleep = 0, parts = 0;
-    const list = [];
-    for (const b of bodies) {
-        if (b.asleep) asleep++;
-        else if (awake) list.push({ kind: b.kind, v: b.v.toArray().map(x => +x.toFixed(3)), w: b.w.toArray().map(x => +x.toFixed(2)), p: b.p.toArray().map(x => +x.toFixed(3)), sink: +b.sink.toFixed(2) });
-        if (b.kind === PART) parts++;
-    }
-    return awake ? { count: bodies.length, asleep, parts, tier: tier(), awake: list } : { count: bodies.length, asleep, parts, tier: tier() };
 }

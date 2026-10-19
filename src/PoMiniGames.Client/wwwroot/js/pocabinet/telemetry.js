@@ -59,7 +59,7 @@ function fillGaps(arr) {
 
 /**
  * The numbers the post-race debrief is written from (the page hands them to
- * PoCabinetTalkService.Debrief, in the browser). `reference` may be null.
+ * PoCabinetTalk.DebriefFor, in the browser). `reference` may be null.
  *   sectorDeltas   seconds vs the reference per third of the lap (+ = slower), or []
  *   worstPointPct  where on the lap the most time went vs the reference (-1 = none)
  *   fullThrottlePct / brakePct   share of the lap flat out / on the brakes

@@ -24,7 +24,6 @@ namespace PoMiniGames.Features.PoCabinet;
 public sealed class PoCabinetLobbyService
 {
     public const int MaxPlayers = PoCabinetCatalog.CarCount;
-    public const int MaxBots = 4;
     public const int DefaultBots = 3;
 
     /// <summary>
@@ -41,7 +40,7 @@ public sealed class PoCabinetLobbyService
     /// nobody is in it. Idempotent for a player already seated (a reconnect or a rematch
     /// return). Null when a race is running or all eight seats are taken.
     /// </summary>
-    public Lobby? Join(string playerId, string displayName, bool isGuest, string? trackId = null,
+    public Lobby? Join(string playerId, string displayName, string? trackId = null,
         string? color = null, string? connectionId = null)
     {
         lock (_gate)
@@ -60,7 +59,7 @@ public sealed class PoCabinetLobbyService
             if (lobby.Players.Count >= MaxPlayers) return null;
 
             // The host is ready by definition; everyone else readies up.
-            var player = new LobbyPlayer(playerId, displayName, isGuest, isReady: lobby.HostId == playerId) { Color = SanitizeColor(color) };
+            var player = new LobbyPlayer(playerId, displayName, isReady: lobby.HostId == playerId) { Color = SanitizeColor(color) };
             if (connectionId is not null) player.Connections.Add(connectionId);
             lobby.Players.Add(player);
             return lobby;
@@ -96,20 +95,8 @@ public sealed class PoCabinetLobbyService
         lock (_gate)
         {
             if (HostedIdle(hostId) is not { } lobby) return false;
-            lobby.BotCount = Math.Clamp(count, 0, MaxBots);
+            lobby.BotCount = Math.Clamp(count, 0, PoCabinetCatalog.MaxBots);
             return true;
-        }
-    }
-
-    /// <summary>
-    /// True if the host can begin: every seated human is ready and the grid would hold at least
-    /// two cars once the AI officials are counted — a lone host with bots on can race.
-    /// </summary>
-    public bool CanStart(string hostId)
-    {
-        lock (_gate)
-        {
-            return _lobby is { } lobby && CanStartLocked(lobby, hostId);
         }
     }
 
@@ -118,8 +105,8 @@ public sealed class PoCabinetLobbyService
     {
         lock (_gate)
         {
-            // CanStartLocked refuses a started lobby, so a second Start is a no-op.
-            if (_lobby is not { } lobby || !CanStartLocked(lobby, hostId)) return null;
+            // Startable refuses a started lobby, so a second Start is a no-op.
+            if (_lobby is not { } lobby || lobby.HostId != hostId || !Startable(lobby)) return null;
             lobby.IsStarted = true;
             return lobby;
         }
@@ -177,18 +164,6 @@ public sealed class PoCabinetLobbyService
         }
     }
 
-    /// <summary>The lobby, or null while nobody is in it.</summary>
-    public Lobby? Current
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return _lobby;
-            }
-        }
-    }
-
     /// <summary>Head count for the start card: no names, so anyone may read it.</summary>
     public PoCabinetLobbySummary Summary()
     {
@@ -211,12 +186,13 @@ public sealed class PoCabinetLobbyService
                 Code = RaceId,
                 TrackId = lobby.TrackId,
                 BotCount = lobby.BotCount,
+                BotSeats = EffectiveBots(lobby),
+                Startable = Startable(lobby),
                 InRace = lobby.IsStarted,
                 Players = lobby.Players.Select(p => new PoCabinetLobbySeat
                 {
                     SeatId = SeatIdFor(p.PlayerId),
                     DisplayName = p.DisplayName,
-                    IsGuest = p.IsGuest,
                     IsReady = p.IsReady,
                     IsHost = p.PlayerId == lobby.HostId,
                     Color = p.Color,
@@ -237,13 +213,13 @@ public sealed class PoCabinetLobbyService
             if (_lobby is not { } lobby) return [];
             var grid = lobby.Players
                 .Select(p => new PoCabinetDriver(p.PlayerId, p.DisplayName, IsPlayer: true,
-                    Color: string.IsNullOrEmpty(p.Color) ? "#3a7d44" : p.Color, Personality: null))
+                    Color: string.IsNullOrEmpty(p.Color) ? PoCabinetCatalog.DefaultSeatColor : p.Color, Personality: null))
                 .ToList();
             var roster = PoCabinetPersonality.Roster;
             for (int i = 0; i < EffectiveBots(lobby); i++)
             {
                 var o = roster[i];
-                grid.Add(new PoCabinetDriver($"bot-{i}", o.Name, IsPlayer: false, o.Color, o.Personality,
+                grid.Add(new PoCabinetDriver($"bot-{i}", PoCabinetCatalog.OfficialName(o.Id), IsPlayer: false, o.Color, o.Personality,
                     o.MaxSpeed, o.CorneringSkill, o.Id));
             }
             return grid;
@@ -260,12 +236,13 @@ public sealed class PoCabinetLobbyService
     private static int EffectiveBots(Lobby lobby) =>
         Math.Min(lobby.BotCount, Math.Max(0, MaxPlayers - lobby.Players.Count));
 
-    private static bool CanStartLocked(Lobby lobby, string hostId)
-    {
-        if (lobby.IsStarted || lobby.HostId != hostId) return false;
-        if (lobby.Players.Count == 0 || lobby.Players.Count + EffectiveBots(lobby) < 2) return false;
-        return lobby.Players.All(p => p.IsReady);
-    }
+    /// <summary>The host can begin: every seated human is ready and the grid would hold at least
+    /// two cars once the AI officials are counted (a lone host with bots on can race).</summary>
+    private static bool Startable(Lobby lobby) =>
+        !lobby.IsStarted
+        && lobby.Players.Count > 0
+        && lobby.Players.Count + EffectiveBots(lobby) >= 2
+        && lobby.Players.All(p => p.IsReady);
 
     private Lobby? HostedIdle(string hostId) =>
         _lobby is { IsStarted: false } lobby && lobby.HostId == hostId ? lobby : null;
@@ -307,18 +284,16 @@ public sealed class PoCabinetLobbyService
 
     public sealed class LobbyPlayer
     {
-        public LobbyPlayer(string playerId, string displayName, bool isGuest, bool isReady)
+        public LobbyPlayer(string playerId, string displayName, bool isReady)
         {
             PlayerId = playerId;
             DisplayName = displayName;
-            IsGuest = isGuest;
             IsReady = isReady;
         }
 
         /// <summary>Claim-derived identity (never sent to other clients — see <see cref="SeatIdFor"/>).</summary>
         public string PlayerId { get; }
         public string DisplayName { get; }
-        public bool IsGuest { get; }
         public bool IsReady { get; set; }
         public string Color { get; set; } = "";
         /// <summary>Live SignalR connections for this player (tabs, reconnects).</summary>

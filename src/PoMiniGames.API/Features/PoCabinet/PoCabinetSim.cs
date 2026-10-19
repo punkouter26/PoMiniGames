@@ -75,17 +75,16 @@ public sealed class PoCabinetSim
 
     public PoCabinetTrack Track => _track;
 
-    /// <summary>Total laps configured for this race (the track's own count unless overridden).</summary>
-    public int TotalLaps { get; init; }
+    /// <summary>Laps in this race: the track's own count.</summary>
+    public int TotalLaps { get; }
 
     /// <summary>Grid countdown before GO. 0 = cars move on the first tick (tests, demos).</summary>
     public double CountdownSeconds { get; init; }
 
     /// <summary>Weather grip factor. Multiplayer always races dry: the rain in the browser is
     /// cosmetic online, because prediction must run the server's numbers.</summary>
-    public double Grip { get; init; } = 1;
+    private const double Grip = 1;
 
-    public int CarCount => _cars.Count;
     public bool IsFinished { get; private set; }
 
     /// <summary>Seconds since GO; negative during the countdown.</summary>
@@ -97,14 +96,14 @@ public sealed class PoCabinetSim
     public int CountdownRemaining => Started ? 0 : (int)Math.Ceiling(-ElapsedRaceTime);
 
     /// <summary>Dialogue raised since the registry last took it (null = nothing new).</summary>
-    public PoCabinetDialogueEvent? PendingDialogue { get; private set; }
+    private PoCabinetDialogueEvent? _pendingDialogue;
 
     public int? CarIdForOwner(string ownerId) => _byOwnerId.TryGetValue(ownerId, out var car) ? car.Id : null;
 
     public PoCabinetDialogueEvent? TakeDialogue()
     {
-        var d = PendingDialogue;
-        PendingDialogue = null;
+        var d = _pendingDialogue;
+        _pendingDialogue = null;
         return d;
     }
 
@@ -159,35 +158,21 @@ public sealed class PoCabinetSim
         foreach (var car in _cars)
         {
             if (car.Wrecked && car.WreckedAt < 0) car.WreckedAt = ElapsedRaceTime;
-            if (car.Finished || car.Wrecked) continue;
-            while (car.Distance >= (car.LapsDone + 1) * _track.LapLength)
+            car.CountLaps(_track, tickStart, stepDt, TotalLaps, (crossedAt, finished) =>
             {
-                double boundary = (car.LapsDone + 1) * _track.LapLength;
-                double span = car.Distance - car.PrevDistance;
-                double frac = span > 1e-9 ? Math.Clamp((boundary - car.PrevDistance) / span, 0, 1) : 1;
-                double crossedAt = tickStart + frac * stepDt;
-                double lapTime = crossedAt - car.LapStartTime;
-                car.LapStartTime = crossedAt;
-                car.LastLapSeconds = lapTime;
-                // A lap that broke track limits does not count toward the best.
-                if (!car.LapInvalid && (car.BestLapSeconds <= 0 || lapTime < car.BestLapSeconds)) car.BestLapSeconds = lapTime;
-                car.LapInvalid = false;
-                car.LapsDone++;
-                if (car.LapsDone >= TotalLaps)
+                if (!finished)
                 {
-                    car.Finished = true;
-                    car.FinishTime = crossedAt;
-                    car.FinishOrder = ++_finishOrder;
-                    if (_firstFinishAt < 0)
-                    {
-                        _firstFinishAt = ElapsedRaceTime;
-                        if (!car.IsPlayer) Say(DialogueKind.RaceFinish, car);
-                    }
-                    break;
+                    if (!car.IsPlayer && Rank(car) == 1) Say(DialogueKind.LapFinish, car);
+                    return;
                 }
-                if (!car.IsPlayer && Rank(car) == 1) Say(DialogueKind.LapFinish, car);
-            }
-            if (car.Wide) car.LapInvalid = true;
+                car.FinishTime = crossedAt;
+                car.FinishOrder = ++_finishOrder;
+                if (_firstFinishAt < 0)
+                {
+                    _firstFinishAt = ElapsedRaceTime;
+                    if (!car.IsPlayer) Say(DialogueKind.RaceFinish, car);
+                }
+            });
         }
 
         var order = Standings();
@@ -217,14 +202,12 @@ public sealed class PoCabinetSim
         Standings().Select((c, i) => new PoCabinetFinalEntry(
             Position: i + 1,
             Name: c.Name,
-            OfficialId: c.OfficialId,
             IsPlayer: c.IsPlayer,
             Finished: c.Finished,
             TotalTimeSeconds: c.Finished ? Math.Round(c.FinishTime, 3) : -1,
             BestLapSeconds: c.BestLapSeconds > 0 ? Math.Round(c.BestLapSeconds, 3) : -1,
             CarId: c.Id,
-            Wrecked: c.Wrecked && !c.Finished)).ToList(),
-        DateTimeOffset.UtcNow);
+            Wrecked: c.Wrecked && !c.Finished)).ToList());
 
     public IReadOnlyList<SimCar> SnapshotCars() => _cars;
 
@@ -239,17 +222,16 @@ public sealed class PoCabinetSim
     private void Say(DialogueKind kind, SimCar? speaker)
     {
         if (speaker is null || speaker.IsPlayer) return;
-        PendingDialogue = new PoCabinetDialogueEvent
+        _pendingDialogue = new PoCabinetDialogueEvent
         {
             OfficialId = speaker.OfficialId,
-            Kind = kind.ToString(),
             Text = PoCabinetDialogue.PickLine(speaker.OfficialId, kind, _tickCount),
             RaceTick = _tickCount,
         };
     }
 
-    /// <summary>Per-car race state on top of the physical body. Public so the wire DTO can read it.</summary>
-    public sealed class SimCar : PoCabinetCarBody
+    /// <summary>Per-car race state on top of the lap count. Public so the wire DTO can read it.</summary>
+    public sealed class SimCar : PoCabinetRacer
     {
         public int Id { get; init; }
         public required string OwnerId { get; init; }
@@ -260,22 +242,56 @@ public sealed class PoCabinetSim
         public PoCabinetPersonality? Personality { get; init; }
         public double MaxSpeed { get; init; }
         public double CorneringSkill { get; init; }
-        public int LapsDone { get; set; }
         /// <summary>Current lap (1-based). Reads TotalLaps + 1 once finished, as it always has.</summary>
         public int Lap => LapsDone + 1;
-        public double LapStartTime { get; set; }
-        public double LastLapSeconds { get; set; }
-        public double BestLapSeconds { get; set; }
-        /// <summary>This lap has broken track limits (all four wheels past the edge): it will not count as a best.</summary>
-        public bool LapInvalid { get; set; }
-        public bool Finished { get; set; }
         public double FinishTime { get; set; }
         public int FinishOrder { get; set; }
         /// <summary>Race time the car was wrecked at (-1 = still running).</summary>
         public double WreckedAt { get; set; } = -1;
         public int AckSeq { get; set; }
         public int Position { get; set; }
-        internal double PrevDistance { get; set; }
+    }
+}
+
+/// <summary>
+/// A car's lap count on top of its physical body: the multiplayer sim and the solo lap verifier
+/// both keep it, the same way race.js <c>lapBookkeeping</c> does.
+/// </summary>
+public abstract class PoCabinetRacer : PoCabinetCarBody
+{
+    public int LapsDone { get; set; }
+    public double LapStartTime { get; set; }
+    public double BestLapSeconds { get; set; }
+    /// <summary>This lap has broken track limits (all four wheels past the edge): it will not count as a best.</summary>
+    public bool LapInvalid { get; set; }
+    public bool Finished { get; set; }
+    internal double PrevDistance { get; set; }
+
+    /// <summary>
+    /// Count the lines this tick's movement crossed. Each crossing is timed to the moment the race
+    /// distance passed it inside the tick, not rounded to the tick; <paramref name="onLine"/> hears
+    /// each one (its race time, and whether it finished the race). A wrecked or finished car
+    /// counts nothing.
+    /// </summary>
+    internal void CountLaps(PoCabinetTrack track, double tickStart, double stepDt, int totalLaps, Action<double, bool>? onLine = null)
+    {
+        if (Finished || Wrecked) return;
+        while (Distance >= (LapsDone + 1) * track.LapLength)
+        {
+            double boundary = (LapsDone + 1) * track.LapLength;
+            double span = Distance - PrevDistance;
+            double frac = span > 1e-9 ? Math.Clamp((boundary - PrevDistance) / span, 0, 1) : 1;
+            double crossedAt = tickStart + frac * stepDt;
+            double lapTime = crossedAt - LapStartTime;
+            LapStartTime = crossedAt;
+            if (!LapInvalid && (BestLapSeconds <= 0 || lapTime < BestLapSeconds)) BestLapSeconds = lapTime;
+            LapInvalid = false;
+            LapsDone++;
+            Finished = LapsDone >= totalLaps;
+            onLine?.Invoke(crossedAt, Finished);
+            if (Finished) break;
+        }
+        if (Wide) LapInvalid = true;
     }
 }
 
@@ -324,15 +340,15 @@ public sealed record PoCabinetPersonality(
             CollisionTolerance: 0.3, DraftingAffinity: 0.95, Wildness: 0.08, Aggression: 0.85, Twitch: 0.45, Seed: 204);
     }
 
-    /// <summary>The AI roster in seat order: id, display name, colour, line, pace and cornering.
-    /// Top speeds sit a few percent under a player's, and the cornering margin keeps them off
-    /// the grip limit, so a clean human lap wins.</summary>
-    public static IReadOnlyList<(string Id, string Name, string Color, PoCabinetPersonality Personality, double MaxSpeed, double CorneringSkill)> Roster { get; } =
+    /// <summary>The AI roster in seat order (<see cref="PoCabinetCatalog.Officials"/>, which has
+    /// their names): id, colour, line, pace and cornering. Top speeds sit a few percent under a
+    /// player's, and the cornering margin keeps them off the grip limit, so a clean human lap wins.</summary>
+    public static IReadOnlyList<(string Id, string Color, PoCabinetPersonality Personality, double MaxSpeed, double CorneringSkill)> Roster { get; } =
     [
-        ("sean-s", "Sean S.", "#3470d8", Officials.SeanS, PoCabinetPhysics.MaxSpeed * 0.93, 0.62),
-        ("steve-b", "Steve B.", "#5e4b8b", Officials.SteveB, PoCabinetPhysics.MaxSpeed * 0.95, 0.55),
-        ("bill-b", "Bill B.", "#a02c2c", Officials.BillB, PoCabinetPhysics.MaxSpeed * 0.91, 0.70),
-        ("mike-p", "Mike P.", "#1c8054", Officials.MikeP, PoCabinetPhysics.MaxSpeed * 0.96, 0.60),
+        ("sean-s", "#3470d8", Officials.SeanS, PoCabinetPhysics.MaxSpeed * 0.93, 0.62),
+        ("steve-b", "#5e4b8b", Officials.SteveB, PoCabinetPhysics.MaxSpeed * 0.95, 0.55),
+        ("bill-b", "#a02c2c", Officials.BillB, PoCabinetPhysics.MaxSpeed * 0.91, 0.70),
+        ("mike-p", "#1c8054", Officials.MikeP, PoCabinetPhysics.MaxSpeed * 0.96, 0.60),
     ];
 
     /// <summary>

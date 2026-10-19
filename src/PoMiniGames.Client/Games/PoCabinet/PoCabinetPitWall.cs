@@ -7,7 +7,7 @@ public sealed record PoCabinetLastRace(string TrackId, int Position, int TotalCa
 
 /// <summary>
 /// The start card's read of what this browser already knows: the personal best per track
-/// (settings.js owns <c>pocabinet.records.v1</c>; this only reads it) and the last race.
+/// (records.js owns <c>pocabinet.records.v1</c>; this only reads it) and the last race.
 /// Plain localStorage strings, parsed here, so the card needs no engine import.
 /// </summary>
 public static class PoCabinetPitWall
@@ -16,7 +16,7 @@ public static class PoCabinetPitWall
     public const string LastRaceKey = "pocabinet.lastrace.v1";
     public const string PaintKey = "pocabinet.paintshop.v1";
 
-    /// <summary>Best lap per track id from settings.js's records store; unset or corrupt tracks are left out.</summary>
+    /// <summary>Best lap per track id from records.js's store; unset or corrupt tracks are left out.</summary>
     public static Dictionary<string, double> ParseBestLaps(string? json)
     {
         var bests = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);

@@ -5,23 +5,11 @@ namespace PoMiniGames.Features.PoCabinet;
 /// <summary>Resolved per-tick controls: throttle and brake in [0, 1], steer in [-1, 1] (+ = right).</summary>
 public readonly record struct PoCabinetControls(double Throttle, double Brake, double Steer)
 {
-    /// <summary>Analog fields win when any is set; otherwise the digital key flags map to full travel.</summary>
-    public static PoCabinetControls From(PoCabinetInput? input)
-    {
-        if (input is null) return default;
-        bool analog = input.Throttle != 0 || input.Brake != 0 || input.Steer != 0;
-        if (analog)
-        {
-            return new PoCabinetControls(
-                Clamp01(input.Throttle),
-                Clamp01(input.Brake),
-                Math.Clamp(double.IsFinite(input.Steer) ? input.Steer : 0, -1, 1));
-        }
-        return new PoCabinetControls(
-            input.Up ? 1 : 0,
-            input.Down ? 1 : 0,
-            (input.Right ? 1 : 0) - (input.Left ? 1 : 0));
-    }
+    /// <summary>A player's analog input, clamped; no input coasts.</summary>
+    public static PoCabinetControls From(PoCabinetInput? input) => input is null ? default : new PoCabinetControls(
+        Clamp01(input.Throttle),
+        Clamp01(input.Brake),
+        Math.Clamp(double.IsFinite(input.Steer) ? input.Steer : 0, -1, 1));
 
     private static double Clamp01(double v) => double.IsFinite(v) ? Math.Clamp(v, 0, 1) : 0;
 }
@@ -41,10 +29,7 @@ public class PoCabinetCarBody
     /// <summary>Unwrapped race distance: starts negative on the grid, one lap = track length.</summary>
     public double Distance { get; set; }
     public double Lateral { get; set; }
-    public bool OnGrass { get; set; }
     public bool Sliding { get; set; }
-    /// <summary>Speed lost into the barrier on the last step (0 = no hit) — drives rumble.</summary>
-    public double WallImpact { get; set; }
     /// <summary>Sideways speed a contact left behind, units/s (+ = to the car's right). The tyres scrub it off.</summary>
     public double Slip { get; set; }
     /// <summary>Yaw rate a contact left behind, rad/s. Bleeds off the same way.</summary>
@@ -237,7 +222,7 @@ public static class PoCabinetPhysics
         double nx = -proj.Ty * s, ny = proj.Tx * s;
         st.X -= nx * excess;
         st.Y -= ny * excess;
-        double ch = PoCabinetTrack.Cos(st.Heading), sh = PoCabinetTrack.Sin(st.Heading);
+        double ch = PoCabinetDetMath.Cos(st.Heading), sh = PoCabinetDetMath.Sin(st.Heading);
         double vx = ch * st.V2 - sh * st.Slip, vy = sh * st.V2 + ch * st.Slip;
         double vn = vx * nx + vy * ny;
         if (vn > 0)
@@ -249,10 +234,9 @@ public static class PoCabinetPhysics
             vx = tx * WallFriction - nx * vn * WallRestitution;
             vy = ty * WallFriction - ny * vn * WallRestitution;
             double speed = Math.Sqrt(vx * vx + vy * vy);
-            if (speed > 1) st.Heading = st.V2 >= 0 ? PoCabinetTrack.Atan2(vy, vx) : PoCabinetTrack.Atan2(-vy, -vx);
+            if (speed > 1) st.Heading = st.V2 >= 0 ? PoCabinetDetMath.Atan2(vy, vx) : PoCabinetDetMath.Atan2(-vy, -vx);
             st.V2 = st.V2 >= 0 ? speed : -speed;
             st.Slip = 0; // the car leaves the barrier pointing the way it is going
-            car.WallImpact = Math.Max(car.WallImpact, vn);
         }
     }
 
@@ -282,7 +266,7 @@ public static class PoCabinetPhysics
         double top = MaxSpeed * (1 - TopLoss * car.Engine);
         grip = grip * (1 - GripLoss * car.Damage);
         // How steep the way it is pointing, how banked.
-        double roadDot = seg >= 0 ? PoCabinetTrack.Cos(car.Heading) * track.TangentX(seg) + PoCabinetTrack.Sin(car.Heading) * track.TangentY(seg) : 0;
+        double roadDot = seg >= 0 ? PoCabinetDetMath.Cos(car.Heading) * track.TangentX(seg) + PoCabinetDetMath.Sin(car.Heading) * track.TangentY(seg) : 0;
         double slope = seg >= 0 ? track.Grade(seg) * roadDot : 0;
         double bank = seg >= 0 ? track.Bank(seg) : 0;
 
@@ -348,7 +332,7 @@ public static class PoCabinetPhysics
         if (Math.Abs(slip) > SlipSliding) car.Sliding = true;
 
         double heading = car.Heading + (omega + spin) * dt;
-        double ch = PoCabinetTrack.Cos(heading), sh = PoCabinetTrack.Sin(heading);
+        double ch = PoCabinetDetMath.Cos(heading), sh = PoCabinetDetMath.Sin(heading);
         var st = new StepState
         {
             X = car.X + (ch * v2 - sh * slip) * dt,
@@ -361,7 +345,6 @@ public static class PoCabinetPhysics
         // ── Track: the barriers at the edge of the run-off (deeper where it is gravel or
         // tarmac), and a road divider, faced from whichever side the car is on ──
         var proj = track.Project(st.X, st.Y, car.SegHint);
-        car.WallImpact = 0;
         int side = proj.Lateral > 0 ? 1 : -1;
         double wallLat = WallAt(track, proj.Index, side);
         if (Math.Abs(proj.Lateral) > wallLat)
@@ -383,20 +366,19 @@ public static class PoCabinetPhysics
 
         car.X = st.X;
         car.Y = st.Y;
-        car.Heading = PoCabinetTrack.WrapAngle(st.Heading);
+        car.Heading = PoCabinetDetMath.WrapAngle(st.Heading);
         car.Speed = st.V2;
         car.Slip = st.Slip;
         car.Spin = spin;
         car.SegHint = proj.Index;
         car.Lateral = proj.Lateral;
-        car.OnGrass = Math.Abs(proj.Lateral) > track.HalfWidthAt(proj.Index);
         car.Surface = SurfaceAt(track, proj.Index, proj.Lateral);
         car.Wide = Beyond(track, proj.Index, proj.Lateral);
         AdvanceDistance(track, car, proj.Along);
     }
 
     /// <summary>Unwrap the loop position into race distance (so reversing over the line un-counts it).</summary>
-    public static void AdvanceDistance(PoCabinetTrack track, PoCabinetCarBody car, double along)
+    private static void AdvanceDistance(PoCabinetTrack track, PoCabinetCarBody car, double along)
     {
         double delta = along - car.Along;
         double half = track.Length * 0.5;
@@ -417,8 +399,8 @@ public static class PoCabinetPhysics
         double reach = (HullHalf + HullRadius) * 2;
         double dx = b.X - a.X, dy = b.Y - a.Y;
         if (dx > reach || dx < -reach || dy > reach || dy < -reach) return false;
-        double ahx = PoCabinetTrack.Cos(a.Heading), ahy = PoCabinetTrack.Sin(a.Heading);
-        double bhx = PoCabinetTrack.Cos(b.Heading), bhy = PoCabinetTrack.Sin(b.Heading);
+        double ahx = PoCabinetDetMath.Cos(a.Heading), ahy = PoCabinetDetMath.Sin(a.Heading);
+        double bhx = PoCabinetDetMath.Cos(b.Heading), bhy = PoCabinetDetMath.Sin(b.Heading);
         // Closest points of the two spines: a + s·ha and b + t·hb, s and t in ±HullHalf.
         double dot = ahx * bhx + ahy * bhy;
         double da = -(ahx * dx + ahy * dy), db = -(bhx * dx + bhy * dy);
@@ -482,8 +464,8 @@ public static class PoCabinetPhysics
                 b.X += nx * push;
                 b.Y += ny * push;
 
-                double ahx = PoCabinetTrack.Cos(a.Heading), ahy = PoCabinetTrack.Sin(a.Heading);
-                double bhx = PoCabinetTrack.Cos(b.Heading), bhy = PoCabinetTrack.Sin(b.Heading);
+                double ahx = PoCabinetDetMath.Cos(a.Heading), ahy = PoCabinetDetMath.Sin(a.Heading);
+                double bhx = PoCabinetDetMath.Cos(b.Heading), bhy = PoCabinetDetMath.Sin(b.Heading);
                 // Each hull's velocity at the contact point: forward speed, slip to its right, spin.
                 double vax = ahx * a.Speed - ahy * a.Slip - a.Spin * ray, vay = ahy * a.Speed + ahx * a.Slip + a.Spin * rax;
                 double vbx = bhx * b.Speed - bhy * b.Slip - b.Spin * rby, vby = bhy * b.Speed + bhx * b.Slip + b.Spin * rbx;
@@ -575,7 +557,7 @@ public static class PoCabinetPhysics
         var p = track.PointAt(track.Length - back);
         car.X = p.X + -p.Ty * lateral;
         car.Y = p.Y + p.Tx * lateral;
-        car.Heading = PoCabinetTrack.Atan2(p.Ty, p.Tx);
+        car.Heading = PoCabinetDetMath.Atan2(p.Ty, p.Tx);
         car.Speed = 0;
         car.Slip = 0;
         car.Spin = 0;
@@ -585,7 +567,6 @@ public static class PoCabinetPhysics
         car.SegHint = proj.Index;
         car.Along = proj.Along;
         car.Lateral = proj.Lateral;
-        car.OnGrass = false;
         car.Surface = SurfRoad;
         car.Wide = false;
         // Race distance starts negative: the slot's own distance behind the line, corrected by

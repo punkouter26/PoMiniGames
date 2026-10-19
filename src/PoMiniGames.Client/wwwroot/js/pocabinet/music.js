@@ -87,7 +87,6 @@ export class Music {
         this.offAt = 0;
         this.timer = null;
         this.lastT = 0;
-        this.stats = { notes: 0, kicks: 0, hats: 0, claps: 0, stings: 0 };
         this.build();
     }
 
@@ -289,7 +288,6 @@ export class Music {
         if (sw.cancelAndHoldAtTime) sw.cancelAndHoldAtTime(t); else sw.cancelScheduledValues(t);
         sw.setValueAtTime(420, t);
         sw.exponentialRampToValueAtTime(20000, t + 1.3);
-        this.stats.stings++;
     }
 
     /** Silence now (race torn down, results, replay). The next grid starts it again. */
@@ -429,7 +427,6 @@ export class Music {
         g.setValueAtTime(0, t);
         g.linearRampToValueAtTime(0.11 * vel, t + 0.004);
         g.setTargetAtTime(0, t + 0.01, 0.06);
-        this.stats.notes++;
     }
 
     bassNote(midi, t, len, vel) {
@@ -462,17 +459,14 @@ export class Music {
         m.setValueAtTime(1, t);
         m.linearRampToValueAtTime(0.62, t + 0.01);
         m.setTargetAtTime(1, t + 0.03, 0.08);
-        this.stats.kicks++;
     }
 
     hat(t, vel, open) {
         this.noiseHit(t, 'highpass', 7200, 0.7, open ? 0.22 : 0.035, 0.05 * vel, this.drumLayer);
-        this.stats.hats++;
     }
 
     clap(t) {
         for (const dt of [0, 0.011, 0.022]) this.noiseHit(t + dt, 'bandpass', 1700, 0.9, 0.12, 0.09, this.drumLayer);
-        this.stats.claps++;
     }
 
     crash(t, vel) {
@@ -490,20 +484,5 @@ export class Music {
         g.gain.setTargetAtTime(0, t + 0.002, dur / 5);
         src.connect(f); f.connect(g); g.connect(dest);
         src.start(t, Math.random() * 1.5, dur + 0.05);
-    }
-
-    /** For the harness: what the score is doing. */
-    debug() {
-        return {
-            enabled: this.enabled, running: this.running, paused: this.paused, phase: this.phase,
-            battle: +this.battle.toFixed(3), drive: +this.drive.toFixed(3), finalLap: this.finalLap, key: this.key,
-            ending: !!this.ending, done: this.done, step: this.step,
-            layers: {
-                pad: +this.padLayer.gain.value.toFixed(3), pulse: +this.pulseLayer.gain.value.toFixed(3),
-                bass: +this.bassLayer.gain.value.toFixed(3), drums: +this.drumLayer.gain.value.toFixed(3),
-            },
-            duck: { load: +this.loadDuck.gain.value.toFixed(3), hit: +this.hitDuck.gain.value.toFixed(3) },
-            sweep: Math.round(this.sweep.frequency.value), stats: { ...this.stats },
-        };
     }
 }

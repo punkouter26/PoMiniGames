@@ -17,22 +17,11 @@ public enum DialogueKind
 /// Scripted dialogue pools per official. Hand-authored; no AI generation per
 /// ADR-4 (and per the user's explicit "No AI — scripted dialogue only" choice
 /// in Phase 0). The lines are deliberately short, satirical, and avoid slurs
-/// or targeted harassment of any named real person — the E2E-API contract
-/// test asserts no banned-token scan finds a match across the four pools.
+/// or targeted harassment of any named real person: they are reviewed by hand.
 /// </summary>
 public static class PoCabinetDialogue
 {
-    /// <summary>Defensive content tokens that must never appear in any pool line. Lowercase.</summary>
-    public static readonly IReadOnlySet<string> BannedTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        // Common slurs / harassment markers. The list is intentionally short — the
-        // framework's content policy forbids targeted harassment; we filter the most
-        // obvious markers and rely on human review of the pool itself for nuance.
-        "slur-placeholder-1",
-        "slur-placeholder-2",
-    };
-
-    /// <summary>Per-official, per-kind dialogue pools. Empty list = no lines (caller falls back).</summary>
+    /// <summary>Per-official, per-kind dialogue pools.</summary>
     public static IReadOnlyDictionary<string, IReadOnlyDictionary<DialogueKind, IReadOnlyList<string>>> Pools { get; } =
         new Dictionary<string, IReadOnlyDictionary<DialogueKind, IReadOnlyList<string>>>
         {
@@ -176,19 +165,10 @@ public static class PoCabinetDialogue
             },
         };
 
-    /// <summary>Generic fallback lines when a pool has no entry for the kind. Idempotent, key-stable.</summary>
-    public static IReadOnlyDictionary<DialogueKind, string> Fallbacks { get; } = new Dictionary<DialogueKind, string>
-    {
-        [DialogueKind.PreRace] = "...",
-        [DialogueKind.PositionChange] = "...",
-        [DialogueKind.LapFinish] = "...",
-        [DialogueKind.RaceFinish] = "...",
-    };
-
     /// <summary>
     /// Select a line for <paramref name="officialId"/> + <paramref name="kind"/> at race tick
     /// <paramref name="raceTick"/>. Deterministic: same (official, kind, tick) → same line, regardless of
-    /// call count. Pool exhaustion falls back to <see cref="Fallbacks"/>.
+    /// call count. Empty when the official has no line for it (the page shows nothing).
     /// </summary>
     public static string PickLine(string officialId, DialogueKind kind, int raceTick)
     {
@@ -196,32 +176,12 @@ public static class PoCabinetDialogue
             !byKind.TryGetValue(kind, out var pool) ||
             pool.Count == 0)
         {
-            return Fallbacks.TryGetValue(kind, out var fb) ? fb : "...";
+            return "";
         }
         // FNV-1a, not HashCode.Combine: the latter is seeded randomly per process, so the
         // "same race, same script" promise held only until the next restart, and the
         // tick-0 vs tick-999 contract test failed whenever that process's seed collided.
         var hash = StableHash.AddBytes(StableHash.Add(StableHash.Of(officialId), (uint)kind), raceTick);
         return StableHash.Pick(pool, hash);
-    }
-
-    /// <summary>True if every line in every pool passes the banned-token scan.</summary>
-    public static bool PoolContentIsClean()
-    {
-        foreach (var (_, byKind) in Pools)
-        {
-            foreach (var (_, lines) in byKind)
-            {
-                foreach (var line in lines)
-                {
-                    foreach (var banned in BannedTokens)
-                    {
-                        if (line.Contains(banned, StringComparison.OrdinalIgnoreCase))
-                            return false;
-                    }
-                }
-            }
-        }
-        return true;
     }
 }

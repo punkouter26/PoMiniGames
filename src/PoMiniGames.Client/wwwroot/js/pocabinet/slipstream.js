@@ -20,6 +20,7 @@
 
 import * as THREE from 'three';
 import * as ph from './physics.js';
+import { WORLD_SCALE as WS } from './util.js';
 
 const CAR_LEN = 39;          // sim units, nose to tail (physics.js hull)
 const WAKE_LEN = 170;        // sim units behind a car's tail that still tow
@@ -188,7 +189,7 @@ export class Slipstream {
         group.updateWorldMatrix(true, false);
         this.mesh.matrix.copy(group.matrixWorld);
         this.mesh.matrixWorldNeedsUpdate = true;
-        const gap = Math.hypot(lead.render.x - focus.render.x, lead.render.y - focus.render.y) / 10;
+        const gap = Math.hypot(lead.render.x - focus.render.x, lead.render.y - focus.render.y) / WS;
         const u = this.material.uniforms;
         u.uFollow.value = -gap;
         u.uLen.value = Math.max(4, gap + 2.6);
@@ -200,7 +201,7 @@ export class Slipstream {
         // The haze plume: the leader's tail to the follower's nose.
         const tail = new THREE.Vector3(TAIL_X, 0.6, 0).applyMatrix4(group.matrixWorld);
         const h = focus.render.heading;
-        const nose = new THREE.Vector3(focus.render.x / 10 + Math.cos(h) * 1.9, focus.render.h + 0.6, focus.render.y / 10 + Math.sin(h) * 1.9);
+        const nose = new THREE.Vector3(focus.render.x / WS + Math.cos(h) * 1.9, focus.render.h + 0.6, focus.render.y / WS + Math.sin(h) * 1.9);
         (fx.haze || (fx.haze = [])).push({ x: tail.x, y: tail.y, z: tail.z, tx: nose.x, ty: nose.y, tz: nose.z, radius: 1.1, strength: this.draft * 1.6 });
     }
 

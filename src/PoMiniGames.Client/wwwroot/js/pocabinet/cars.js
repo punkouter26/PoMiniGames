@@ -53,6 +53,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TessellateModifier } from 'three/addons/modifiers/TessellateModifier.js';
 import { LivingPaint, livingPaint, paintSeed } from './paint.js';
 import { throwPiece } from './debris.js';
+import { WORLD_SCALE as WS, addHook, canvasTexture } from './util.js';
 
 const WHEEL_R = 0.36;
 const WHEELS = [[1.2, 0.8, true], [1.2, -0.8, true], [-1.22, 0.8, false], [-1.22, -0.8, false]];
@@ -215,18 +216,14 @@ function geometry(index) {
 
 let shadowTex = null;
 function contactShadowTexture() {
-    if (shadowTex) return shadowTex;
-    const c = document.createElement('canvas');
-    c.width = 128; c.height = 64;
-    const g = c.getContext('2d');
-    const grd = g.createRadialGradient(64, 32, 4, 64, 32, 62);
-    grd.addColorStop(0, 'rgba(0,0,0,0.85)');
-    grd.addColorStop(0.55, 'rgba(0,0,0,0.45)');
-    grd.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = grd;
-    g.fillRect(0, 0, 128, 64);
-    shadowTex = new THREE.CanvasTexture(c);
-    return shadowTex;
+    return shadowTex || (shadowTex = canvasTexture(128, 64, (g) => {
+        const grd = g.createRadialGradient(64, 32, 4, 64, 32, 62);
+        grd.addColorStop(0, 'rgba(0,0,0,0.85)');
+        grd.addColorStop(0.55, 'rgba(0,0,0,0.45)');
+        grd.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = grd;
+        g.fillRect(0, 0, 128, 64);
+    }, { srgb: false }));
 }
 
 // Shared (colour-independent) materials.
@@ -256,7 +253,7 @@ const MAX_CRUSH = 0.62;    // no vertex is pushed further than this (the body is
  * simply skips that part.
  */
 function damageable(material, d, lamp) {
-    material.onBeforeCompile = (shader) => {
+    return addHook(material, 'pocabinet-damage', (shader) => {
         shader.uniforms.uDentP = d.dentP;
         shader.uniforms.uDentD = d.dentD;
         shader.uniforms.uParts = d.parts;
@@ -370,9 +367,7 @@ roughnessFactor = mix(roughnessFactor, 0.9, max(smoothstep(0.1, 0.7, vDamage), u
 #ifdef USE_CLEARCOAT
 material.clearcoat *= (1.0 - smoothstep(0.1, 0.6, vDamage)) * (1.0 - uScorch);
 #endif`);
-    };
-    material.customProgramCacheKey = () => 'pocabinet-damage';
-    return material;
+    });
 }
 
 const HEAD_DAY = new THREE.Color('#fff4dc').multiplyScalar(1.2);
@@ -436,9 +431,8 @@ function debrisGeometry(style, id) {
     return entry;
 }
 
-// Torn-off parts and lost wheels become rigid bodies in debris.js, which flies, bounces, rolls
-// and settles them, lets the cars kick them about, caps them and clears them away.
-export { updateDebris, clearDebris } from './debris.js';
+// Torn-off parts and lost wheels become rigid bodies in debris.js (throwPiece), which flies,
+// bounces, rolls and settles them, lets the cars kick them about, caps them and clears them away.
 
 const _m = new THREE.Matrix4();
 const _r = new THREE.Matrix4();
@@ -546,7 +540,7 @@ class CarHandle {
      */
     addHit(fwd, side, nx, ny, strength) {
         if (this.disposed) return false;
-        return this.hit(fwd / 10, side / 10, nx, ny, strength);
+        return this.hit(fwd / WS, side / WS, nx, ny, strength);
     }
 
     /** Dent the body at local (x, z), crushed along local (dx, dz). The car's right is +Z. */
@@ -734,8 +728,8 @@ class CarHandle {
     update(snap) {
         if (this.disposed || !snap) return;
         const now = performance.now();
-        const x = snap.x / 10, z = snap.y / 10;
-        const speed = (Number(snap.speedKmh) || 0) / 2 / 10;     // world units/s
+        const x = snap.x / WS, z = snap.y / WS;
+        const speed = (Number(snap.speedKmh) || 0) / 2 / WS;     // world units/s
         this.group.position.set(x, Number(snap.h) || 0, z);
         // Yaw, then the road's slope about the car's own lateral axis, then its bank about
         // the car's length (+ roll = right side up; the car's right is local +Z).
@@ -910,7 +904,7 @@ export class CarCrowd {
         };
         this.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.15 });
         // Per instance: the parts it has lost (bit id − 1) fold away, and a wreck is sooted.
-        this.material.onBeforeCompile = (shader) => {
+        addHook(this.material, 'pocabinet-crowd', (shader) => {
             shader.vertexShader = shader.vertexShader
                 .replace('#include <common>', `#include <common>
 attribute vec2 aPart;
@@ -926,7 +920,7 @@ if (crowdPart > 0.5 && mod(floor(aLost / exp2(crowdPart - 1.0)), 2.0) > 0.5) tra
 varying float vScorch;`)
                 .replace('#include <color_fragment>', `#include <color_fragment>
 diffuseColor.rgb *= 1.0 - 0.55 * vScorch;`);
-        };
+        });
         this.max = max;
         this.meshes = STYLES.map((_, style) => {
             const g = geometry(style);

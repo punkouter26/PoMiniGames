@@ -23,7 +23,7 @@
         <select value="@SelectedTrackId" @onchange="e => SelectTrack(e.Value?.ToString() ?? PoCabinetCatalog.DefaultTrackId)">
             @foreach (var track in AllTracks)
             {
-                <option value="@track.Id">@track.Name · @TrackMeta(track.Id)</option>
+                <option value="@track.Id">@track.Name · @TrackMeta(track)</option>
             }
         </select>
     </label>
@@ -46,9 +46,9 @@ else
                 title="@(Career.Current.TrophyUnlocked ? "Trophy won" : $"Trophy: a top-{PoCabinetCatalog.CampaignTrophyPlace} finish in the final stage")">
                 🏆<span class="pocabinet-sr">@(Career.Current.TrophyUnlocked ? "Trophy won" : "Trophy not won yet")</span>
             </li>
-            <li class="pocabinet-campaign__reward @(Career.Current.GoldLiveryUnlocked ? "pocabinet-campaign__reward--won" : null)"
-                title="Gold livery @(Career.Current.GoldLiveryUnlocked ? "unlocked" : "locked")">
-                🎨<span class="pocabinet-sr">Gold livery @(Career.Current.GoldLiveryUnlocked ? "unlocked" : "locked")</span>
+            <li class="pocabinet-campaign__reward @(Career.Current.TrophyUnlocked ? "pocabinet-campaign__reward--won" : null)"
+                title="Gold livery @(Career.Current.TrophyUnlocked ? "unlocked" : "locked: it comes with the trophy")">
+                🎨<span class="pocabinet-sr">Gold livery @(Career.Current.TrophyUnlocked ? "unlocked" : "locked")</span>
             </li>
         </ol>
     }
@@ -68,13 +68,13 @@ else
                     aria-checked="@(isSelected ? "true" : "false")"
                     data-track-id="@track.Id"
                     title="@track.Description"
-                    style="--accent: @TrackAccent(track.Id);"
+                    style="--accent: @track.Accent;"
                     @onclick="() => SelectTrack(track.Id)">
                 <span class="pocabinet-track__swatch" aria-hidden="true"></span>
                 <strong class="pocabinet-track__title">@track.Name</strong>
-                <span class="pocabinet-track__meta">@TrackMeta(track.Id)</span>
+                <span class="pocabinet-track__meta">@TrackMeta(track)</span>
                 <span class="pocabinet-track__best @(best > 0 ? null : "pocabinet-track__best--none")">
-                    @(best > 0 ? $"PB {FormatLap(best)}" : "No lap yet")
+                    @(best > 0 ? $"PB {PoCabinetCatalog.FormatLap(best)}" : "No lap yet")
                 </span>
                 @if (campaign is { } note)
                 {
@@ -94,18 +94,8 @@ else
     [Parameter] public bool Campaign { get; set; }
     /// <summary>Lobby host: a dropdown instead of rows.</summary>
     [Parameter] public bool Compact { get; set; }
-    /// <summary>This browser's best lap per track id (settings.js records); absent = no lap yet.</summary>
+    /// <summary>This browser's best lap per track id (records.js); absent = no lap yet.</summary>
     [Parameter] public IReadOnlyDictionary<string, double>? BestLaps { get; set; }
-
-    private static readonly Dictionary<string, (string Accent, int LengthKm, string Difficulty)> TrackInfo =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["capitol"] = ("#d4af37", 3, "Easy"),
-            ["maralago"] = ("#2e7d4f", 4, "Medium"),
-            ["pressbriefing"] = ("#c0392b", 3, "Hard"),
-            ["playground"] = ("#f39c12", 3, "Medium"),
-            ["senate"] = ("#b3541e", 4, "Hard"),
-        };
 
     /// <summary>The fixed tracks, then today's daily circuit (UTC), which changes at midnight.</summary>
     private static IReadOnlyList<PoCabinetTrackInfo> AllTracks =>
@@ -117,15 +107,9 @@ else
 
     public void Dispose() => Career.Changed -= OnCareerChanged;
 
-    private static string TrackAccent(string id) =>
-        PoCabinetDailyTrack.TryParse(id, out _) ? "#7b61ff"
-        : TrackInfo.TryGetValue(id, out var info) ? info.Accent : "#888";
-
-    private static string TrackMeta(string id) =>
-        PoCabinetDailyTrack.TryParse(id, out _) ? "New every day · 3 km"
-        : !TrackInfo.TryGetValue(id, out var info) ? ""
-        : PoCabinetTrackGeometry.Get(id).Laps == 1 ? $"One run · {info.Difficulty}"
-        : $"{info.LengthKm} km · {info.Difficulty}";
+    private static string TrackMeta(PoCabinetTrackInfo track) =>
+        PoCabinetTrackGeometry.Get(track.Id).Laps == 1 ? $"One run · {track.Difficulty}"
+        : $"{track.LengthKm} km · {track.Difficulty}";
 
     /// <summary>"Mar-a-Lago Grand Prix" → "Mar-a-Lago": the bar has room for one word a stage.</summary>
     private static string ShortName(string name) => name.Split(' ')[0];
@@ -143,12 +127,6 @@ else
         if (Career.Current.CompletedStages.Contains(stage)) return ("done", $"Stage {stage + 1} cleared");
         if (stage == Career.Current.CurrentStageIndex) return ("active", $"Stage {stage + 1}: a top-{PoCabinetCatalog.CampaignPassPlace} finish advances");
         return ("free", $"Stage {stage + 1}: a free race for now");
-    }
-
-    private static string FormatLap(double seconds)
-    {
-        var minutes = (int)(seconds / 60);
-        return $"{minutes}:{seconds - minutes * 60:00.0}";
     }
 
     private Task SelectTrack(string id)

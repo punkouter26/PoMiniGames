@@ -26,37 +26,56 @@
 // the road (debris.js), leaving with the car's speed and out of the side that was hit, over a
 // puff of paint dust; confetti() — the podium shower over the line.
 //
-// Smoke, dust, spray and fire go through puff(): on the 'medium' and 'high' quality tiers
-// they are GPU particles (gpuParticles.js: simulated in float textures, lit by the sun,
-// pushed around by the nearest cars), on 'low' (or where float render targets are missing
-// or a shader fails) the CPU pool below. syncGpu() follows the scene's tier, so a mid-race
-// step down rebuilds or drops the GPU system. Stones, debris, confetti and sparks stay on
-// the CPU pools on every tier.
+// Smoke, dust and spray go through puff(), which scales each request by the scene's quality
+// tier (read every call, so a mid-race step down takes effect at once): 'high' throws two
+// longer-lived, jittered puffs per request (big, soft, hanging tyre and crash smoke), 'medium'
+// one longer-lived puff carrying more of the opacity, 'low' the request as it is. Puffs are
+// soft point sprites broken up by the shared noise texture (materials.js noise), so a cloud
+// reads lumpy rather than as discs; stones, paint flakes and confetti in the same pool stay
+// solid. Nothing is emitted further than PUFF_RANGE from the camera. Fire is HDR sparks off the
+// bonnet (the bloom catches them). Rain spray follows the scene's weather live.
 
 import * as THREE from 'three';
 import { wrapAngle } from './track.js';
-import { GpuParticles, PUFF } from './gpuParticles.js';
 import { throwChunks } from './debris.js';
+import { noise } from './materials.js';
 import { GRIP_ACCEL, CAR_RADIUS, hullContact, wallAt, surfaceAt, SURF_GRASS, SURF_GRAVEL, SURF_SAUSAGE } from './physics.js';
+import { WORLD_SCALE as WS } from './util.js';
 
-const WS = 10;
-const MAX_SMOKE = 900;
+const MAX_SMOKE = 4096;         // the high tier's two puffs per request at a 100-car start
 const SMOKE_RANGE = 180;        // world units from the camera: further off, a wreck's smoke is not drawn
+const PUFF_RANGE = 250;         // and no puff of any kind is emitted
 const MAX_SPARKS = 360;
 const MAX_SKID = 2600;          // quads in the skid-mark ring buffer
 const SKID_W = 0.14;            // half tyre width, world units
 const SKID_Y = 0.055;
 const REAR = 1.2, TRACK_HALF = 0.72;
 
+/** Puff kinds (tyre smoke, grass and gravel dust, kerb grit, rain spray, engine and wreck smoke). */
+const PUFF = { TYRE: 0, DUST: 1, GRIT: 2, SPRAY: 3, ENGINE: 4, WRECK: 5 };
+// Per kind, on top of the request: puffs per request on 'high', and the life, end-size and
+// opacity multipliers 'medium' and 'high' apply; `spread` is the jitter radius (world units).
+const KIND = [
+    { n: 2, life: 2.0, size: 1.15, alpha: 1.0, spread: 0.3 },     // tyre smoke: hangs and spreads
+    { n: 2, life: 1.7, size: 1.05, alpha: 0.8, spread: 0.35 },    // grass / gravel dust
+    { n: 2, life: 1.2, size: 1.0, alpha: 0.8, spread: 0.3 },      // kerb grit
+    { n: 2, life: 1.1, size: 1.0, alpha: 0.8, spread: 0.3 },      // rain spray
+    { n: 2, life: 1.5, size: 1.0, alpha: 0.8, spread: 0.2 },      // engine smoke
+    { n: 2, life: 1.5, size: 1.2, alpha: 0.75, spread: 0.3 },     // wreck smoke
+];
+
 const POINT_VERT = /* glsl */ `
 attribute float aSize;
 attribute float aAlpha;
 attribute vec3 aColor;
+attribute float aSeed;
 uniform float uScale;
 varying float vAlpha;
 varying vec3 vColor;
+varying float vSeed;
 void main() {
     vColor = aColor;
+    vSeed = aSeed;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     // Fade out right at the lens: a puff beside the cockpit would otherwise fill the screen.
     vAlpha = aAlpha * smoothstep(1.2, 4.5, -mv.z);
@@ -64,15 +83,33 @@ void main() {
     gl_Position = projectionMatrix * mv;
 }`;
 
+// A puff (vSeed >= 0): a soft ball whose edge and density the noise texture breaks up, a
+// different patch of it per particle, turning as it fades, lit from above. A solid bit
+// (vSeed < 0: stones, flakes, confetti) stays a plain soft dot.
 const SMOKE_FRAG = /* glsl */ `
+uniform sampler2D uNoise;
 varying float vAlpha;
 varying vec3 vColor;
+varying float vSeed;
 void main() {
     vec2 c = gl_PointCoord - 0.5;
     float d = length(c);
-    float a = smoothstep(0.5, 0.05, d) * vAlpha;
+    float a, lit;
+    if (vSeed < 0.0) {
+        a = smoothstep(0.5, 0.05, d);
+        lit = 0.85 + 0.25 * (0.5 - c.y);
+    } else {
+        float ang = vSeed * 6.2831853 + vAlpha * 1.5;
+        vec2 q = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * c;
+        vec4 n = texture2D(uNoise, q * 0.55 + vSeed * vec2(17.31, 9.17));
+        vec4 m = texture2D(uNoise, q * 1.3 + vSeed * vec2(5.13, 23.7));
+        float edge = 0.5 - 0.2 * (1.0 - n.r);
+        a = smoothstep(edge, edge * 0.15, d) * (0.6 + 0.8 * n.g * (0.5 + m.a));
+        lit = 0.78 + 0.32 * (0.5 - c.y) + 0.18 * (m.b - 0.5);
+    }
+    a *= vAlpha;
     if (a < 0.004) discard;
-    gl_FragColor = vec4(vColor * (0.85 + 0.25 * (0.5 - c.y)), a);
+    gl_FragColor = vec4(vColor * lit, a);
     #include <colorspace_fragment>
 }`;
 
@@ -104,17 +141,20 @@ class Pool {
         this.drag = new Float32Array(max);
         this.grav = new Float32Array(max);
         this.floor = new Float32Array(max);
+        this.seed = new Float32Array(max).fill(-1);
         this.next = 0;
         this.live = 0;
+        this.spawned = false;
         const geom = new THREE.BufferGeometry();
         geom.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
         geom.setAttribute('aSize', new THREE.BufferAttribute(this.size, 1).setUsage(THREE.DynamicDrawUsage));
         geom.setAttribute('aAlpha', new THREE.BufferAttribute(this.alpha, 1).setUsage(THREE.DynamicDrawUsage));
         geom.setAttribute('aColor', new THREE.BufferAttribute(this.color, 3).setUsage(THREE.DynamicDrawUsage));
+        geom.setAttribute('aSeed', new THREE.BufferAttribute(this.seed, 1).setUsage(THREE.DynamicDrawUsage));
         this.material = new THREE.ShaderMaterial({
             vertexShader: POINT_VERT,
             fragmentShader: frag,
-            uniforms: { uScale: { value: 400 } },
+            uniforms: { uScale: { value: 400 }, uNoise: { value: noise() } },
             transparent: true,
             depthWrite: false,
             blending,
@@ -125,10 +165,15 @@ class Pool {
         this.geom = geom;
     }
 
-    /** `floor`: the ground height the particle bounces on (world units; default just under it). */
-    spawn(x, y, z, vx, vy, vz, life, s0, s1, a0, r, g, b, drag, grav, floor = y - 0.25) {
+    /**
+     * `floor`: the ground height the particle bounces on (world units; default just under it).
+     * `seed` >= 0 draws it as a puff (its own patch of the noise), < 0 as a solid dot.
+     */
+    spawn(x, y, z, vx, vy, vz, life, s0, s1, a0, r, g, b, drag, grav, floor = y - 0.25, seed = -1) {
         const i = this.next;
         this.floor[i] = floor + 0.02;
+        this.seed[i] = seed;
+        this.spawned = true;
         this.next = (this.next + 1) % this.max;
         const k = i * 3;
         this.pos[k] = x; this.pos[k + 1] = y; this.pos[k + 2] = z;
@@ -140,6 +185,7 @@ class Pool {
     }
 
     step(dt) {
+        if (!this.live && !this.spawned) return;
         let live = 0;
         for (let i = 0; i < this.max; i++) {
             if (this.life[i] <= 0) { this.alpha[i] = 0; continue; }
@@ -160,7 +206,8 @@ class Pool {
         a.position.needsUpdate = true;
         a.aSize.needsUpdate = true;
         a.aAlpha.needsUpdate = true;
-        a.aColor.needsUpdate = true;
+        if (this.spawned) { a.aColor.needsUpdate = true; a.aSeed.needsUpdate = true; }
+        this.spawned = false;
     }
 
     dispose() {
@@ -237,13 +284,12 @@ class CarFx {
     /**
      * @param sceneHandle scene.js SceneHandle
      * @param track       runtime track (track.js)
-     * @param opts        { grip, raining, groundHex }
+     * @param opts        { grip, groundHex } (race.js keeps `grip` current)
      */
     constructor(sceneHandle, track, opts = {}) {
         this.sh = sceneHandle;
         this.track = track;
         this.grip = Number(opts.grip) || 1;
-        this.raining = !!opts.raining;
         this.dust = new THREE.Color(opts.groundHex || '#6b6040').lerp(new THREE.Color('#c8b890'), 0.45);
         // Gravel traps: grey-brown stones and pale dust; Mar-a-Lago's are beach sand.
         this.beach = track.theme === 'maralago';
@@ -259,38 +305,34 @@ class CarFx {
         this.state = new Map();
         this.pairs = new Map();
         this.size = new THREE.Vector2();
-        this.gpu = null;          // gpuParticles.js, while the tier runs it
-        this.gpuTier = null;      // the tier it was last built (or tried) for
         this.disposed = false;
     }
 
-    /** GPU smoke on 'medium' / 'high', the CPU pool on 'low' or if it cannot run (no retry). */
-    syncGpu() {
-        if (this.gpu?.failed) {
-            console.warn('pocabinet/fx: GPU particle shaders failed, using the CPU pools');
-            this.gpu.dispose();
-            this.gpu = null;
-        }
-        const q = this.sh.quality;
-        const want = q === 'high' || q === 'medium' ? q : null;
-        if (want === this.gpuTier) return;
-        this.gpu?.dispose();
-        this.gpu = null;
-        this.gpuTier = want;
-        if (!want) return;
-        try {
-            this.gpu = new GpuParticles(this.sh, want);
-            this.group.add(this.gpu.mesh);
-        } catch (e) {
-            this.gpu = null;
-            console.warn('pocabinet/fx: GPU particles unavailable, using the CPU pools', e);
-        }
-    }
+    /** The scene's weather, live (environment.js sets it; a remount mid-race changes it). */
+    get raining() { return !!this.sh.raining; }
 
-    /** Smoke, dust or spray of `kind` (PUFF): the GPU system when it runs, else the CPU pool. */
+    /** Smoke, dust or spray of `kind` (PUFF), scaled by the quality tier (see the header). */
     puff(kind, x, y, z, vx, vy, vz, life, s0, s1, a0, r, g, b, drag, grav, floor) {
-        if (this.gpu) this.gpu.emit(kind, x, y, z, vx, vy, vz, life, s0, s1, a0, r, g, b, drag, grav, floor);
-        else this.smoke.spawn(x, y, z, vx, vy, vz, life, s0, s1, a0, r, g, b, drag, grav, floor);
+        const cam = this.sh.camera?.position;
+        if (cam && (x - cam.x) ** 2 + (z - cam.z) ** 2 > PUFF_RANGE * PUFF_RANGE) return;
+        const q = this.sh.quality;
+        const rnd = Math.random;
+        if (q !== 'high' && q !== 'medium') {
+            this.smoke.spawn(x, y, z, vx, vy, vz, life, s0, s1, a0, r, g, b, drag, grav, floor, rnd());
+            return;
+        }
+        const k = KIND[kind] || KIND[0];
+        const n = q === 'high' ? k.n : 1;
+        // One puff on medium carries more of the opacity two would.
+        const alpha = a0 * k.alpha * (q === 'high' ? 1 : 1.4);
+        const spread = k.spread + s0 * 0.35;
+        for (let i = 0; i < n; i++) {
+            const ox = (rnd() - 0.5) * 2 * spread, oy = (rnd() - 0.5) * spread, oz = (rnd() - 0.5) * 2 * spread;
+            this.smoke.spawn(x + ox, y + oy, z + oz,
+                vx + (rnd() - 0.5) + ox * 0.6, vy * (0.7 + rnd() * 0.6), vz + (rnd() - 0.5) + oz * 0.6,
+                life * k.life * (0.75 + rnd() * 0.5), s0 * (0.7 + rnd() * 0.5), s1 * k.size * (0.65 + rnd() * 0.6),
+                alpha * (0.7 + rnd() * 0.6), r, g, b, drag, grav, floor, rnd());
+        }
     }
 
     /** Burst of smoke off the rear wheels for `seconds` (launch at GO). */
@@ -380,7 +422,6 @@ class CarFx {
     update(dt, cars, opts = {}) {
         const events = { contacts: [], scraping: new Map(), walls: [] };
         if (this.disposed || dt <= 0) return events;
-        this.syncGpu();
         const t = this.track;
         const skidsOn = opts.skids !== false;
         const rnd = Math.random;
@@ -564,17 +605,7 @@ class CarFx {
                         1.8 + rnd() * 1.4, 0.5, c.wrecked ? 3.4 + rnd() * 1.2 : 1.8 + engine * 1.2,
                         c.wrecked ? 0.5 : 0.22 + engine * 0.22, shade, shade, shade * 1.03, 0.7, -0.5, up);
                 }
-                if (burning && this.gpu && rnd() < dt * 40) {
-                    // GPU fire: HDR flame licking up off the bonnet, cooling into black smoke;
-                    // the odd ember stays a spark.
-                    this.gpu.emit(PUFF.FIRE, bx + (rnd() - 0.5) * 0.7, up + 0.6 + rnd() * 0.2, bz + (rnd() - 0.5) * 0.7,
-                        vx * 0.2 + (rnd() - 0.5) * 0.6, 1.2 + rnd() * 1.2, vz * 0.2 + (rnd() - 0.5) * 0.6,
-                        0.6 + rnd() * 0.45, 0.35 + rnd() * 0.2, 2.4 + rnd() * 0.8, 0.42, 0.05, 0.045, 0.04, 1.6, -2.2, up);
-                    if (rnd() < 0.2) {
-                        this.sparks.spawn(bx + (rnd() - 0.5) * 0.6, up + 0.7, bz + (rnd() - 0.5) * 0.6,
-                            (rnd() - 0.5) * 1.2, 2 + rnd() * 2, (rnd() - 0.5) * 1.2, 0.5 + rnd() * 0.4, 0.14, 0.05, 1, 1, 0.55, 0.12, 1.2, -1, up);
-                    }
-                } else if (burning && rnd() < dt * 45) {
+                if (burning && rnd() < dt * 45) {
                     const k = rnd();
                     this.sparks.spawn(bx + (rnd() - 0.5) * 0.6, up + 0.6 + rnd() * 0.2, bz + (rnd() - 0.5) * 0.6,
                         (rnd() - 0.5) * 0.8, 1.5 + rnd() * 1.8, (rnd() - 0.5) * 0.8,
@@ -612,9 +643,6 @@ class CarFx {
 
         this.smoke.step(dt);
         this.sparks.step(dt);
-        if (this.gpu) {
-            try { this.gpu.step(dt, cars); } catch (e) { this.gpu.failed = true; console.warn('pocabinet/fx: GPU particle step failed', e); }
-        }
         this.skids.flush();
         this.updateScale();
         return events;
@@ -640,8 +668,6 @@ class CarFx {
         this.group.parent?.remove(this.group);
         this.smoke.dispose();
         this.sparks.dispose();
-        this.gpu?.dispose();
-        this.gpu = null;
         this.skids.dispose();
         this.state.clear();
     }

@@ -1,0 +1,200 @@
+@*
+    PoCabinetResults — the race's results, inside the shared end-of-game modal's summary (the page
+    wraps it in the modal's section). Two columns: the result and the field on the left, the
+    telemetry on the right; the actions carry the ways on (race again, next stage, replay, share),
+    and the modal's own button goes to the hub. The telemetry canvas is drawn by race.js
+    (PoCabinet.showTelemetry) once this renders.
+*@
+
+@using PoMiniGames.Shared.Games
+
+<header class="pocabinet-results__hero">
+    @if (!IsSpectating)
+    {
+        <p class="pocabinet-results__place">P<strong>@Position</strong><small>/@TotalCars</small></p>
+    }
+    <div class="pocabinet-results__headline">
+        <h2>@(AwaitingFinal ? "You're home — waiting for the field…" : "Race finished") <span class="pocabinet-muted">· @TrackName</span></h2>
+        <p class="pocabinet-results__chips">
+            @if (IsPersonalBest)
+            {
+                <span class="pocabinet-chip pocabinet-chip--pb" role="status">★ New personal best</span>
+            }
+            else if (PreviousBest > 0)
+            {
+                <span class="pocabinet-chip">Personal best @PoCabinetCatalog.FormatLap(PreviousBest)</span>
+            }
+            @if (CampaignNote is { } note)
+            {
+                <span class="pocabinet-chip @(note.Good ? "pocabinet-chip--good" : null)">@note.Text</span>
+            }
+        </p>
+    </div>
+</header>
+@if (Debrief is { } debrief)
+{
+    <section class="pocabinet-debrief" aria-label="Race engineer">
+        <p class="pocabinet-debrief__headline">📰 @debrief.Headline</p>
+        <ul class="pocabinet-debrief__tips">
+            @foreach (var tip in debrief.Tips)
+            {
+                <li>@tip</li>
+            }
+        </ul>
+    </section>
+}
+<div class="pocabinet-results__grid">
+    <div class="pocabinet-results__col">
+        @if (Standings is { Count: > 0 } standings)
+        {
+            <ol class="pocabinet-standings" aria-label="Standings">
+                @foreach (var (entry, idx) in standings.Take(3).Select((c, i) => (c, i)))
+                {
+                    <li class="pocabinet-standings__podium @(entry.IsLocal ? "pocabinet-standings__me" : null)">
+                        <span class="pocabinet-standings__pos" aria-hidden="true">@(idx == 0 ? "🥇" : idx == 1 ? "🥈" : "🥉")</span>
+                        <span class="pocabinet-sr">P@(idx + 1)</span>
+                        <span class="pocabinet-standings__name">@entry.Name</span>
+                        <span class="pocabinet-standings__detail">@entry.Detail</span>
+                    </li>
+                }
+                @foreach (var (place, entry) in BelowPodium(standings))
+                {
+                    @if (entry is null)
+                    {
+                        <li class="pocabinet-standings__gap" aria-hidden="true">⋯</li>
+                    }
+                    else
+                    {
+                        @* The place is written out: with gaps in the list the markers (hidden by the reset anyway) would lie. *@
+                        <li class="@(entry.IsLocal ? "pocabinet-standings__me" : null)">
+                            <span class="pocabinet-standings__pos">P@(place)</span>
+                            <span class="pocabinet-standings__name">@entry.Name</span>
+                            <span class="pocabinet-standings__detail">@entry.Detail</span>
+                        </li>
+                    }
+                }
+            </ol>
+        }
+        @if (Laps.LapRows > 0)
+        {
+            @* Each lap's sectors and time in one table. Green: a personal-best sector; violet: this race's best. *@
+            <table class="pocabinet-laps">
+                <caption>Your laps</caption>
+                <thead><tr><th scope="col">Lap</th><th scope="col">S1</th><th scope="col">S2</th><th scope="col">S3</th><th scope="col">Time</th></tr></thead>
+                <tbody>
+                    @for (var i = 0; i < Laps.LapRows; i++)
+                    {
+                        var row = i;
+                        var sectors = row < Laps.LapSectors.Count ? Laps.LapSectors[row] : null;
+                        var time = row < Laps.LapTimes.Count ? Laps.LapTimes[row] : 0;
+                        var deleted = row < Laps.LapDeleted.Count && Laps.LapDeleted[row];
+                        <tr class="@(time > 0 && time == Laps.BestValidLap ? "pocabinet-laps__best" : null)">
+                            <th scope="row">@(row + 1)</th>
+                            @for (var s = 0; s < 3; s++)
+                            {
+                                var t = sectors?[s];
+                                <td><span class="pocabinet-sector @Laps.SectorClass(t, s)">@(t is { } v ? PoCabinetCatalog.FormatLap(v) : "—")</span></td>
+                            }
+                            <td class="@(deleted ? "pocabinet-lap--deleted" : null)" title="@(deleted ? "Deleted: track limits" : null)">@(time > 0 ? PoCabinetCatalog.FormatLap(time) : "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+    @if (!IsSpectating)
+    {
+        <div class="pocabinet-telemetry">
+            <h3>Telemetry — best lap@(HasReferenceLap ? " vs your personal best" : "")</h3>
+            <canvas id="pocabinetTelemetry" class="pocabinet-telemetry__chart" role="img"
+                    aria-label="@(TelemetrySummary ?? "Speed, time delta and pedal trace for your best lap")"></canvas>
+            @if (!string.IsNullOrEmpty(TelemetrySummary))
+            {
+                <p class="pocabinet-telemetry__summary">@TelemetrySummary</p>
+            }
+        </div>
+    }
+</div>
+@if (!string.IsNullOrEmpty(Status))
+{
+    <p class="pocabinet-status" role="status">@Status</p>
+}
+<div class="pocabinet-actions pocabinet-results__more">
+    @if (IsMultiplayer)
+    {
+        <button class="app-btn app-btn--primary" @onclick="OnBackToLobby">Back to lobby</button>
+    }
+    else
+    {
+        @* The modal's own "Play again" reloads to the start card (another track); this
+           one re-grids this track at once. *@
+        <button class="app-btn app-btn--primary" @onclick="OnRaceAgain">Same track again</button>
+        @if (NextStageTrackId is { } next)
+        {
+            <button class="app-btn app-btn--primary" @onclick="() => OnRaceTrack.InvokeAsync(next)">Next stage: @PoCabinetCatalog.GetTrack(next).Name</button>
+        }
+    }
+    <button class="app-btn app-btn--secondary" @onclick="OnReplay">Watch replay</button>
+    @if (!IsSpectating)
+    {
+        @* One menu for Cabinet's own keepsakes. Not "Share": the modal has its own. *@
+        <details class="pocabinet-share">
+            <summary class="app-btn app-btn--secondary">Card or clip</summary>
+            <div class="pocabinet-share__menu">
+                <button type="button" class="app-btn app-btn--secondary" @onclick="OnShareCard">Result card (image)</button>
+                <button type="button" class="app-btn app-btn--secondary" @onclick="OnShareClip">Best-lap clip (video)</button>
+            </div>
+        </details>
+    }
+</div>
+
+@code {
+    /// <summary>One results row: name plus a short detail (finish time, "You", "AI official").</summary>
+    public sealed record Row(string Name, string Detail, bool IsLocal);
+
+    [Parameter, EditorRequired] public PoCabinetLapBook Laps { get; set; } = new();
+    [Parameter] public List<Row>? Standings { get; set; }
+    [Parameter] public int Position { get; set; }
+    [Parameter] public int TotalCars { get; set; }
+    [Parameter] public string TrackName { get; set; } = "";
+    [Parameter] public bool IsSpectating { get; set; }
+    [Parameter] public bool IsMultiplayer { get; set; }
+    /// <summary>Online: the local car is home but the server has not called the race yet.</summary>
+    [Parameter] public bool AwaitingFinal { get; set; }
+    [Parameter] public bool IsPersonalBest { get; set; }
+    [Parameter] public double PreviousBest { get; set; }
+    /// <summary>What this race did for the campaign (1P, a stage track), as a chip.</summary>
+    [Parameter] public (string Text, bool Good)? CampaignNote { get; set; }
+    [Parameter] public PoCabinetTalk.Debrief? Debrief { get; set; }
+    [Parameter] public string? TelemetrySummary { get; set; }
+    [Parameter] public bool HasReferenceLap { get; set; }
+    [Parameter] public string? Status { get; set; }
+    /// <summary>The campaign's next open stage, once this race cleared the one before it.</summary>
+    [Parameter] public string? NextStageTrackId { get; set; }
+
+    [Parameter] public EventCallback OnBackToLobby { get; set; }
+    [Parameter] public EventCallback OnRaceAgain { get; set; }
+    [Parameter] public EventCallback<string> OnRaceTrack { get; set; }
+    [Parameter] public EventCallback OnReplay { get; set; }
+    [Parameter] public EventCallback OnShareCard { get; set; }
+    [Parameter] public EventCallback OnShareClip { get; set; }
+
+    /// <summary>
+    /// The standings below the podium. A solo field is a hundred rows, so only the places round
+    /// the player (two either side) are listed; a gap shows as a null row. A multiplayer-sized
+    /// field (twelve or fewer) is listed whole.
+    /// </summary>
+    private static IEnumerable<(int Place, Row? Row)> BelowPodium(List<Row> standings)
+    {
+        var mine = standings.FindIndex(r => r.IsLocal);
+        var last = 3;
+        for (var i = 3; i < standings.Count; i++)
+        {
+            if (standings.Count > 12 && (mine < 0 || Math.Abs(i - mine) > 2)) continue;
+            if (i > last) yield return (0, null);
+            yield return (i + 1, standings[i]);
+            last = i + 1;
+        }
+        if (last < standings.Count) yield return (0, null);
+    }
+}

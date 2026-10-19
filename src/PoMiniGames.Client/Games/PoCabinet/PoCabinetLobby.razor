@@ -54,7 +54,7 @@
                     </span>
                 </div>
             }
-            @for (var i = view.Players.Count + BotSeats(view).Count; i < PoCabinetCatalog.CarCount; i++)
+            @for (var i = view.Players.Count + view.BotSeats; i < PoCabinetCatalog.CarCount; i++)
             {
                 <div class="pocabinet-seat pocabinet-seat--empty"><span>Open seat</span></div>
             }
@@ -69,10 +69,10 @@
                     <div class="pocabinet-stepper" role="group" aria-labelledby="pocabinet-bots-label">
                         <button type="button" aria-label="Fewer AI officials" disabled="@(view.BotCount <= 0)" @onclick="() => SetBotsAsync(view.BotCount - 1)">−</button>
                         <output aria-live="polite">@view.BotCount</output>
-                        <button type="button" aria-label="More AI officials" disabled="@(view.BotCount >= 4)" @onclick="() => SetBotsAsync(view.BotCount + 1)">+</button>
+                        <button type="button" aria-label="More AI officials" disabled="@(view.BotCount >= PoCabinetCatalog.MaxBots)" @onclick="() => SetBotsAsync(view.BotCount + 1)">+</button>
                     </div>
                 </div>
-                <button class="app-btn app-btn--primary pocabinet-lobby__start" disabled="@(!CanStart(view) || _busy)" @onclick="StartAsync">
+                <button class="app-btn app-btn--primary pocabinet-lobby__start" disabled="@(!view.Startable || _busy)" @onclick="StartAsync">
                     @StartLabel(view)
                 </button>
             }
@@ -117,8 +117,6 @@
     [Parameter] public EventCallback OnExit { get; set; }
     /// <summary>Car &amp; settings: the page owns the one drawer.</summary>
     [Parameter] public EventCallback OnOpenSettings { get; set; }
-
-    private static readonly string[] OfficialNames = ["Sean S.", "Steve B.", "Bill B.", "Mike P."];
 
     private PoCabinetLobbyView? _view;
     private string? _error;
@@ -171,21 +169,16 @@
 
     private PoCabinetLobbySeat? MySeat(PoCabinetLobbyView view) => MySeatIn(view, Session.MySeatId);
 
-    private static List<string> BotSeats(PoCabinetLobbyView view) =>
-        OfficialNames.Take(Math.Min(view.BotCount, Math.Max(0, PoCabinetCatalog.CarCount - view.Players.Count))).ToList();
+    /// <summary>The officials the server will seat (it says how many fit), by name.</summary>
+    private static IEnumerable<string> BotSeats(PoCabinetLobbyView view) =>
+        PoCabinetCatalog.Officials.Take(view.BotSeats).Select(o => o.Name);
 
     /// <summary>The server's sanitised hex, or the grid's default green when the player sent none.</summary>
-    private static string SeatColor(string? hex) => string.IsNullOrEmpty(hex) ? "#3a7d44" : hex;
-
-    /// <summary>Mirrors PoCabinetLobbyService.CanStart: everyone ready, and two cars counting the AI.</summary>
-    private static bool CanStart(PoCabinetLobbyView view) =>
-        !view.InRace
-        && view.Players.Count + BotSeats(view).Count >= 2
-        && view.Players.All(p => p.IsReady);
+    private static string SeatColor(string? hex) => string.IsNullOrEmpty(hex) ? PoCabinetCatalog.DefaultSeatColor : hex;
 
     private static string StartLabel(PoCabinetLobbyView view) =>
         view.InRace ? "Race running…"
-        : view.Players.Count + BotSeats(view).Count < 2 ? "Add an AI official or wait for a friend"
+        : view.Players.Count + view.BotSeats < 2 ? "Add an AI official or wait for a friend"
         : view.Players.All(p => p.IsReady) ? "Start race"
         : "Waiting for everyone to ready up…";
 
@@ -199,7 +192,7 @@
 
     private Task SetTrackAsync(string trackId) => RunAsync(() => Session.SetTrackAsync(trackId));
 
-    private Task SetBotsAsync(int count) => RunAsync(() => Session.SetBotsAsync(Math.Clamp(count, 0, 4)));
+    private Task SetBotsAsync(int count) => RunAsync(() => Session.SetBotsAsync(Math.Clamp(count, 0, PoCabinetCatalog.MaxBots)));
 
     private Task ToggleReadyAsync() => RunAsync(() => Session.ToggleReadyAsync());
 

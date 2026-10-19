@@ -18,8 +18,8 @@
 
 import * as THREE from 'three';
 import { runOffAt } from './physics.js';
+import { WORLD_SCALE as WS, hash, fnv1a, clamp01 } from './util.js';
 
-const WS = 10;
 const CELL = 15;          // sim units per grid cell near the track
 const FINE_PAD = 800;     // fine grid this far past the centerline's bounds
 const FAR_PAD = 9000;     // then coarser and coarser out to here
@@ -38,7 +38,7 @@ const HILLS = {
     senate: { near: 170, far: 400 },
 };
 
-export const THEMES = new Set(['capitol', 'maralago', 'pressbriefing', 'senate', 'playground']);
+const THEMES = new Set(['capitol', 'maralago', 'pressbriefing', 'senate', 'playground']);
 
 /** The scenery theme a track is dressed in: its own word, else its id, else Capitol. */
 export function themeOf(track) {
@@ -53,33 +53,22 @@ export function isPlayground(track) {
     return (Number(track?.roadFrom) || 0) > 0 || track?.id === 'playground';
 }
 
-/** Road plane height (sim units) at sample `i`, `lat` sim units right of the centerline. */
-export function roadPlane(track, i, lat) {
-    return (track.z ? track.z[i] : 0) + (track.bank ? track.bank[i] * lat : 0);
-}
-
 /** Lateral of the barrier's face at sample `i` on `side` (+1 right), sim units, unsigned. */
 export function wallFace(track, i, side) {
     return track.hwAt(i) + runOffAt(track, i, side);
 }
 
 function smoothstep(a, b, x) {
-    const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+    const t = clamp01((x - a) / (b - a));
     return t * t * (3 - 2 * t);
-}
-
-function hash2(x, y, seed) {
-    let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(seed, 1442695041);
-    h = Math.imul(h ^ (h >>> 13), 1274126177);
-    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
 function vnoise(x, y, seed) {
     const x0 = Math.floor(x), y0 = Math.floor(y);
     const fx = x - x0, fy = y - y0;
     const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
-    const a = hash2(x0, y0, seed), b = hash2(x0 + 1, y0, seed);
-    const c = hash2(x0, y0 + 1, seed), d = hash2(x0 + 1, y0 + 1, seed);
+    const a = hash(x0, y0, seed), b = hash(x0 + 1, y0, seed);
+    const c = hash(x0, y0 + 1, seed), d = hash(x0 + 1, y0 + 1, seed);
     return (a + (b - a) * sx) * (1 - sy) + (c + (d - c) * sx) * sy;
 }
 
@@ -93,12 +82,6 @@ function fbm(x, y, wave, seed) {
         f *= 2.1;
     }
     return s / total;
-}
-
-function seedOf(text) {
-    let h = 2166136261;
-    for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
-    return (h >>> 0) % 100000;
 }
 
 /** Grid axis: fine from lo - FINE_PAD to hi + FINE_PAD, then growing steps out to FAR_PAD. */
@@ -142,7 +125,7 @@ export class Terrain {
         this.bounds = { minX, maxX, minY, maxY };
         this.base = zSum / n;
         this.hills = HILLS[theme] || HILLS.capitol;
-        this.seed = seedOf(`pocabinet-terrain:${track.id}`);
+        this.seed = fnv1a(`pocabinet-terrain:${track.id}`) % 100000;
 
         // Per-sample barrier (outer face + shoulder) either side, and the plane's height.
         this.wallL = new Float64Array(n);
@@ -212,7 +195,7 @@ export class Terrain {
                 const dx = x - t.x[i], dy = y - t.y[i];
                 const a = dx * t.tx[i] + dy * t.ty[i];
                 const l = -dx * t.ty[i] + dy * t.tx[i];
-                const u = Math.min(1, Math.max(0, a / len));
+                const u = clamp01(a / len);
                 const along = a - u * len;
                 const wall = l > 0
                     ? this.wallR[i] + (this.wallR[j] - this.wallR[i]) * u

@@ -2,10 +2,11 @@ namespace PoMiniGames.Shared.Games;
 
 /// <summary>
 /// Sin, Cos and Atan2 from + − × ÷, floor and sqrt only, which IEEE 754 pins to the last bit.
-/// Track geometry is built from the same code in the browser (Mono on WebAssembly) and on the
-/// server (CoreCLR), whose Math.Sin / Math.Atan2 may disagree in the last bit; a kerb or a knot
-/// built from that one bit apart would be a different track to the lap verifier. Same
-/// operations, in the same order, as PoCabinetTrack's and track.js's own.
+/// Math.Sin and friends are not pinned: Chrome and node differed by one ulp sixteen ticks into a
+/// race, Mono on WebAssembly and CoreCLR can too, and a 100-car field is chaotic enough to turn
+/// one ulp into a different race by the first corner, which the lap verifier would then time as
+/// a crash. So everything that feeds the track geometry or the simulation uses these, on the
+/// server, in Blazor, and operation for operation in track.js.
 /// </summary>
 public static class PoCabinetDetMath
 {
@@ -50,5 +51,14 @@ public static class PoCabinetDetMath
         }
         double b = AtanUnit(x / y);
         return y > 0 ? HalfPi - b : -HalfPi - b;
+    }
+
+    /// <summary>Signed angle normalised to (-π, π].</summary>
+    public static double WrapAngle(double a)
+    {
+        a %= 2 * Math.PI;
+        if (a > Math.PI) a -= 2 * Math.PI;
+        if (a <= -Math.PI) a += 2 * Math.PI;
+        return a;
     }
 }

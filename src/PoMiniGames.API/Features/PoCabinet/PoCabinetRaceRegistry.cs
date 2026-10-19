@@ -81,8 +81,6 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
         _logger.LogInformation("PoCabinet race {Code} created with {Count} cars on {Track}", code, drivers.Count, trackId);
     }
 
-    public bool IsRunning(string code) => _races.ContainsKey(code);
-
     /// <summary>
     /// The best lap this host's own sim timed for <paramref name="playerId"/> in their last
     /// finished race — the proof behind a multiplayer leaderboard submit. One use: taking it
@@ -198,7 +196,7 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
                 {
                     if (car.IsPlayer && car.BestLapSeconds > 0)
                     {
-                        var timed = new VerifiedLap(session.Sim.TrackId, car.BestLapSeconds, now);
+                        var timed = new VerifiedLap(session.Sim.TrackId, car.BestLapSeconds, now, car.Position);
                         _verifiedLaps[car.OwnerId] = timed;
                         // Not awaited: this is the 30 Hz tick, and the store logs its own failures.
                         _ = _store?.SaveAsync(StoreGame, car.OwnerId, timed);
@@ -295,7 +293,9 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
 
     private sealed record Binding(string Code, string? PlayerId);
 
-    public sealed record VerifiedLap(string TrackId, double BestLapSeconds, DateTimeOffset At);
+    /// <summary>A lap this host's sim timed, and where the driver finished (0 = not recorded: a
+    /// lap stored by an older build).</summary>
+    public sealed record VerifiedLap(string TrackId, double BestLapSeconds, DateTimeOffset At, int Position = 0);
 
     private sealed class RaceSession(string code, PoCabinetSim sim, DateTimeOffset createdAt)
     {

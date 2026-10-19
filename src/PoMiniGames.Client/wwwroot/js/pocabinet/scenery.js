@@ -22,20 +22,19 @@
 // module (a handful of small canvases) and live for the page.
 
 import * as THREE from 'three';
-import { KERB_INNER, KERB_OUTER, raised } from './kerbs.js';
+import { KERB_INNER, KERB_OUTER } from './physics.js';
+import { raised } from './kerbs.js';
 import { wind, water } from './materials.js';
-import { themeOf, roadPlane, wallFace } from './terrain.js';
+import { themeOf, wallFace } from './terrain.js';
+import { WORLD_SCALE as WS, fnv1a, roadPlane, canvasTexture } from './util.js';
 
-const WS = 10; // sim → world (scene.js WORLD_SCALE)
 /** A raised kerb's hump starts this far past the edge line (sim units); the flat band stops there. */
 const SAUSAGE_FROM = 2;
 
 // ── Small helpers ────────────────────────────────────────────────────────────
 
 function seededRng(text) {
-    let h = 2166136261;
-    for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
-    let s = h >>> 0;
+    let s = fnv1a(text);
     return () => {
         s = (s + 0x6d2b79f5) >>> 0;
         let t = s;
@@ -71,69 +70,55 @@ const yawTo = (dx, dz) => Math.atan2(dx, dz);
 
 let glowTex = null;
 function glowTexture() {
-    if (glowTex) return glowTex;
-    const c = document.createElement('canvas');
-    c.width = c.height = 64;
-    const g = c.getContext('2d');
-    const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    grd.addColorStop(0, 'rgba(255,255,255,1)');
-    grd.addColorStop(0.25, 'rgba(255,255,255,0.55)');
-    grd.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = grd;
-    g.fillRect(0, 0, 64, 64);
-    glowTex = new THREE.CanvasTexture(c);
-    glowTex.colorSpace = THREE.SRGBColorSpace;
-    return glowTex;
+    return glowTex || (glowTex = canvasTexture(64, 64, (g) => {
+        const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+        grd.addColorStop(0, 'rgba(255,255,255,1)');
+        grd.addColorStop(0.25, 'rgba(255,255,255,0.55)');
+        grd.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = grd;
+        g.fillRect(0, 0, 64, 64);
+    }));
 }
 
 const textTextures = new Map();
 function textTexture(text, bg, fg, w = 512, h = 128) {
     const key = `${text}|${bg}|${fg}|${w}x${h}`;
     if (textTextures.has(key)) return textTextures.get(key);
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    const g = c.getContext('2d');
-    g.fillStyle = bg;
-    g.fillRect(0, 0, w, h);
-    g.strokeStyle = fg;
-    g.globalAlpha = 0.5;
-    g.lineWidth = 6;
-    g.strokeRect(8, 8, w - 16, h - 16);
-    g.globalAlpha = 1;
-    let size = Math.floor(h * 0.5);
-    g.font = `800 ${size}px system-ui, sans-serif`;
-    while (size > 12 && g.measureText(text).width > w - 48) {
-        size -= 2;
+    const tex = canvasTexture(w, h, (g) => {
+        g.fillStyle = bg;
+        g.fillRect(0, 0, w, h);
+        g.strokeStyle = fg;
+        g.globalAlpha = 0.5;
+        g.lineWidth = 6;
+        g.strokeRect(8, 8, w - 16, h - 16);
+        g.globalAlpha = 1;
+        let size = Math.floor(h * 0.5);
         g.font = `800 ${size}px system-ui, sans-serif`;
-    }
-    g.fillStyle = fg;
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillText(text, w / 2, h / 2 + 2);
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 4;
+        while (size > 12 && g.measureText(text).width > w - 48) {
+            size -= 2;
+            g.font = `800 ${size}px system-ui, sans-serif`;
+        }
+        g.fillStyle = fg;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(text, w / 2, h / 2 + 2);
+    }, { anisotropy: 4 });
     textTextures.set(key, tex);
     return tex;
 }
 
 let flagTex = null;
 function flagTexture() {
-    if (flagTex) return flagTex;
-    const c = document.createElement('canvas');
-    c.width = 190; c.height = 100;
-    const g = c.getContext('2d');
-    for (let i = 0; i < 13; i++) {
-        g.fillStyle = i % 2 ? '#f4f4f4' : '#b22234';
-        g.fillRect(0, i * 100 / 13, 190, 100 / 13 + 1);
-    }
-    g.fillStyle = '#3c3b6e';
-    g.fillRect(0, 0, 76, 54);
-    g.fillStyle = '#ffffff';
-    for (let r = 0; r < 5; r++) for (let k = 0; k < 6; k++) g.fillRect(6 + k * 12, 6 + r * 10, 3, 3);
-    flagTex = new THREE.CanvasTexture(c);
-    flagTex.colorSpace = THREE.SRGBColorSpace;
-    return flagTex;
+    return flagTex || (flagTex = canvasTexture(190, 100, (g) => {
+        for (let i = 0; i < 13; i++) {
+            g.fillStyle = i % 2 ? '#f4f4f4' : '#b22234';
+            g.fillRect(0, i * 100 / 13, 190, 100 / 13 + 1);
+        }
+        g.fillStyle = '#3c3b6e';
+        g.fillRect(0, 0, 76, 54);
+        g.fillStyle = '#ffffff';
+        for (let r = 0; r < 5; r++) for (let k = 0; k < 6; k++) g.fillRect(6 + k * 12, 6 + r * 10, 3, 3);
+    }));
 }
 
 const BILLBOARDS = {

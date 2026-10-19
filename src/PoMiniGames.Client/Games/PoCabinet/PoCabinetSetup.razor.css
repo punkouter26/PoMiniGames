@@ -1,0 +1,163 @@
+/* PoCabinetSetup — its own scoped styles (split from PoCabinetPage.razor.css). Shared
+   bits (muted text, status lines, sector chips, screen-reader text) stay on the page as ::deep. */
+
+.pocabinet-setup {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    grid-template-areas: "tracks garage" "status status";
+    gap: 0.75rem 1.25rem;
+    align-items: start;
+    text-align: left;
+}
+
+.pocabinet-setup--solo-pane {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "garage" "status";
+}
+
+.pocabinet-setup__tracks { grid-area: tracks; display: grid; gap: 0.5rem; }
+
+.pocabinet-setup__garage { grid-area: garage; display: grid; gap: 0.6rem; }
+
+.pocabinet-setup > .pocabinet-status { grid-area: status; margin: 0; }
+
+.pocabinet-setup__tabs { display: none; grid-area: tabs; }
+
+/* Phones: the two halves are tabs, so each one fits the sheet without scrolling. */
+@media (max-width: 760px) {
+    .pocabinet-setup {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "tabs" "tracks" "garage" "status";
+        gap: 0.5rem;
+    }
+    .pocabinet-setup__tabs {
+        display: flex;
+        padding: 2px;
+        border: 1px solid var(--color-border, transparent);
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--color-text) 5%, transparent);
+    }
+    .pocabinet-setup__tabs button {
+        flex: 1 1 0;
+        min-height: 2.25rem;
+        border: 0;
+        border-radius: 999px;
+        background: none;
+        color: inherit;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+    }
+    .pocabinet-setup__tabs button[aria-selected="true"] {
+        background: var(--color-primary);
+        color: var(--color-on-primary, white);
+    }
+    .pocabinet-setup--tab-tracks .pocabinet-setup__garage { display: none; }
+    .pocabinet-setup--tab-garage .pocabinet-setup__tracks { display: none; }
+/* Online has no tabs and no tracks: the garage always shows. */
+    .pocabinet-setup--solo-pane .pocabinet-setup__garage { display: grid; }
+}
+
+/* The garage: your car, its paint, the settings drawer, the last race, who is online. */
+.pocabinet-garage__car {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.pocabinet-garage__preview {
+    flex: none;
+    width: 3.6rem;
+    height: 2.3rem;
+    border-radius: var(--radius-md, 8px);
+    background: var(--swatch);
+    border: 1px solid var(--color-border, transparent);
+    box-shadow: inset 0 -6px 10px rgba(0, 0, 0, 0.18);
+}
+
+.pocabinet-garage__name { display: grid; line-height: 1.25; }
+
+.pocabinet-garage__name span { color: var(--color-text-muted); font-size: 0.88rem; }
+
+.pocabinet-garage__settings {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "label chev" "sum chev";
+    align-items: center;
+    column-gap: 0.5rem;
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: var(--radius-md, 8px);
+    background: var(--color-surface);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.pocabinet-garage__settings:hover { border-color: var(--color-primary); }
+
+.pocabinet-garage__label { grid-area: label; font-weight: 600; }
+
+.pocabinet-garage__settings .pocabinet-muted { grid-area: sum; font-size: 0.85rem; }
+
+.pocabinet-garage__chev { grid-area: chev; font-size: 1.5rem; line-height: 1; color: var(--color-text-muted); }
+
+.pocabinet-garage__tiles {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+.pocabinet-tile {
+    display: grid;
+    align-content: start;
+    gap: 0.1rem;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: var(--radius-md, 8px);
+    background: color-mix(in srgb, var(--color-text) 4%, transparent);
+    color: inherit;
+    text-decoration: none;
+}
+
+.pocabinet-tile--link:hover { border-color: var(--color-primary); }
+
+.pocabinet-tile__label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+.pocabinet-tile strong { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+
+.pocabinet-tile small { font-size: 0.75em; color: var(--color-text-muted); }
+
+.pocabinet-tile .pocabinet-muted { font-size: 0.85rem; line-height: 1.3; }
+
+.pocabinet-setup__garage .pocabinet-link { justify-self: start; }
+
+.pocabinet-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.25rem;
+    padding: 0 0.4rem;
+    background: none;
+    border: 0;
+    /* The accent, not --color-primary (the solid fill colour, too dark to be text here). */
+    color: var(--color-accent);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+}
+
+@media (pointer: coarse) {
+    .pocabinet-link {
+        min-height: 44px;
+    }
+}

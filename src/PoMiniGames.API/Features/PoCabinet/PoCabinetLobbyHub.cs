@@ -29,7 +29,7 @@ public sealed class PoCabinetLobbyHub(PoCabinetLobbyService lobbies, PoCabinetRa
     public async Task<PoCabinetLobbyView?> Join(string displayName, string? trackId, string? color)
     {
         var me = Caller(displayName);
-        var seated = lobbies.Join(me.Id, me.Name, me.IsGuest, trackId, color, Context.ConnectionId) is not null;
+        var seated = lobbies.Join(me.Id, me.Name, trackId, color, Context.ConnectionId) is not null;
         await Groups.AddToGroupAsync(Context.ConnectionId, PoCabinetRaceRegistry.LobbyGroup);
         if (seated) await BroadcastAsync();
         return lobbies.View(seated ? me.Id : null);
@@ -82,7 +82,7 @@ public sealed class PoCabinetLobbyHub(PoCabinetLobbyService lobbies, PoCabinetRa
             : Clients.Group(PoCabinetRaceRegistry.LobbyGroup).SendAsync("LobbyState", view);
     }
 
-    private (string Id, string Name, bool IsGuest) Caller(string? requestedName)
+    private (string Id, string Name) Caller(string? requestedName)
     {
         var identity = RequestIdentity.Resolve(Context.User);
         if (string.IsNullOrEmpty(identity.UserId))
@@ -91,7 +91,7 @@ public sealed class PoCabinetLobbyHub(PoCabinetLobbyService lobbies, PoCabinetRa
         var name = identity.IsAuthenticated && !string.IsNullOrWhiteSpace(identity.DisplayName)
             ? identity.DisplayName
             : typed ?? (string.IsNullOrWhiteSpace(identity.DisplayName) ? "Player" : identity.DisplayName);
-        return (identity.UserId, name.Length > 24 ? name[..24] : name, identity.IsGuest);
+        return (identity.UserId, name.Length > 24 ? name[..24] : name);
     }
 
     private static string? SanitizeName(string? name)

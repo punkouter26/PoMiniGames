@@ -1,17 +1,18 @@
 // pocabinet/reflections.js
 //
-// Wet-road light reflections. The wet asphalt in environment.js only
-// mirrors the sky (its env map is a sky capture), so a lamp or a tail light never
-// showed in it. This draws what a camera actually sees on wet tarmac: each light
-// smeared into a long streak running from under it toward the viewer, broken into
-// shimmering bands by the rain.
+// Wet-road tail-light reflections for the frames without screen-space reflections: the 'low'
+// quality tier (postfx.js runs no SSR there) and a scene with no post pass at all. On medium
+// and high the SSR pass already mirrors the tail lights in the wet asphalt, so this stays
+// hidden; it also hides whenever the road is dry. Both are read live each frame (the scene's
+// tier steps down mid-race, the weather can change mid-race).
 //
-// One instanced quad per light, aimed in the vertex shader (no per-frame matrix
-// work): every car's tail lights, brighter under braking (the game is always day,
-// so there are no lamp or headlight sources).
-// Additive over the road, depth-tested so cars occlude it. Render-only: it reads the
-// poses race.js already drew. Each streak lies on the road under its car (the car's own
-// height: hills and banking), not at sea level.
+// What a camera sees on wet tarmac: each light smeared into a long streak running from under
+// it toward the viewer, broken into shimmering bands by the rain. One instanced quad per light,
+// aimed in the vertex shader (no per-frame matrix work): every car's tail lights, brighter
+// under braking (the game is always day, so there are no lamp or headlight sources).
+// Additive over the road, depth-tested so cars occlude it. Render-only: it reads the poses
+// race.js already drew. Each streak lies on the road under its car (the car's own height:
+// hills and banking), not at sea level.
 
 import * as THREE from 'three';
 
@@ -96,6 +97,10 @@ export class WetReflections {
      */
     update(timeSeconds, cars) {
         if (this.disposed) return;
+        const sh = this.sh;
+        const on = !!sh.raining && (sh.quality === 'low' || !sh.post);
+        this.mesh.visible = on;
+        if (!on) return;
         const L = this.light.array, C = this.color.array, G = this.ground.array;
         let n = 0;
         const put = (x, z, h, intensity, c, ground) => {

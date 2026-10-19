@@ -9,32 +9,27 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Features.PoCabinet;
 
 /// <summary>
-/// PoCabinet score endpoints. Anonymous reads (per-track leaderboards);
-/// authenticated best-lap submissions guarded by the <c>pocabinet</c> rate-limit
-/// policy.
+/// PoCabinet score endpoints: the start card's anonymous lobby head count, and authenticated
+/// best-lap submissions guarded by the <c>pocabinet</c> rate-limit policy. There is no read of
+/// the stored laps: the app has no Cabinet board.
 ///
 /// <para>
-/// <b>Every stored lap is server-computed.</b> A solo submission carries its
+/// <b>Every stored lap and place is server-computed.</b> A solo submission carries its
 /// input log and <see cref="PoCabinetLapVerifier"/> re-runs the race; a multiplayer one is
 /// looked up from the result the server's own sim produced
-/// (<see cref="PoCabinetRaceRegistry.TakeVerifiedLap"/>). The claimed
-/// <see cref="PoCabinetScoreDto.BestLapSeconds"/> is only compared and logged. A submission
-/// with neither proof is refused with 422, which the client treats as final (not parked).
+/// (<see cref="PoCabinetRaceRegistry.TakeVerifiedLapAsync"/>). The claimed
+/// <see cref="PoCabinetScoreDto.BestLapSeconds"/> is only compared and logged, and a claimed
+/// place better than the server's is ignored. A submission with neither proof is refused with
+/// 422, which the client treats as final (not parked).
 /// </para>
 /// </summary>
 public static class PoCabinetScoreEndpoints
 {
     public static void MapPoCabinetScoreEndpoints(this IEndpointRouteBuilder app)
     {
-        // Mounted under gameApi (which has the /api prefix) — paths below are RELATIVE.
-        // Anonymous reads — bounded by leaderboard-read (60/min). RequireAuthorization is
-        // skipped here because gameApi has it; an anonymous read on /api/{game}/scores
-        // would otherwise 401, which anonymous reads must not do.
-        app.MapGet("/pocabinet/scores", GetScoresAsync)
-            .AllowAnonymous()
-            .RequireRateLimiting("leaderboard-read");
-
-        // The start card's "Online now" tile: a head count of the one lobby, no names.
+        // Mounted under gameApi (which has the /api prefix and requires authorization) — paths
+        // below are RELATIVE. The start card's "Online now" tile: a head count of the one lobby,
+        // no names, so anonymous and bounded by leaderboard-read (60/min).
         app.MapGet("/pocabinet/lobby", (PoCabinetLobbyService lobbies) => Results.Ok(lobbies.Summary()))
             .AllowAnonymous()
             .RequireRateLimiting("leaderboard-read");
@@ -42,16 +37,6 @@ public static class PoCabinetScoreEndpoints
         // Authenticated writes — bounded by pocabinet (10/min, same shape as highscores).
         app.MapPost("/pocabinet/scores", PostScoreAsync)
             .RequireRateLimiting("pocabinet");
-    }
-
-    private static async Task<IResult> GetScoresAsync(
-        [FromQuery(Name = "track")] string? track,
-        StorageService storage,
-        CancellationToken ct)
-    {
-        var resolved = ResolveTrack(track);
-        var rows = await storage.GetPoCabinetHighScoresAsync(limit: 10, trackId: resolved);
-        return Results.Ok(rows);
     }
 
     private static async Task<IResult> PostScoreAsync(
@@ -78,18 +63,23 @@ public static class PoCabinetScoreEndpoints
         var trackId = ResolveTrack(dto.TrackId);
 
         double verifiedLap;
+        int verifiedPlace;
         if (!string.IsNullOrEmpty(dto.Inputs))
         {
             var inputs = PoCabinetLapVerifier.Decode(dto.Inputs);
             if (inputs is null)
                 return Results.ValidationProblem(new Dictionary<string, string[]> { [nameof(dto.Inputs)] = ["Malformed input log."] });
-            verifiedLap = PoCabinetLapVerifier.Replay(trackId, dto.Wet, inputs);
+            (verifiedLap, verifiedPlace) = PoCabinetLapVerifier.Replay(trackId, dto.Wet, inputs);
         }
         else
         {
             var lap = await races.TakeVerifiedLapAsync(userId, ct);
             verifiedLap = lap is not null && lap.TrackId == trackId ? lap.BestLapSeconds : -1;
+            verifiedPlace = lap?.Position ?? 0;
         }
+        // The worse of the claim and the replay: the race after the log ends (a wreck, the field
+        // still finishing) can only cost places, and a claim can never buy one.
+        var place = Math.Max(dto.FinalPosition, verifiedPlace);
         if (verifiedLap <= 0)
         {
             log.LogWarning("PoCabinet score refused: unverifiable lap user={UserId} track={Track} claimed={T}s",
@@ -110,7 +100,7 @@ public static class PoCabinetScoreEndpoints
 
         log.LogInformation(
             "PoCabinet score POST user={UserId} guest={Guest} track={Track} t={T}s pos={Pos}",
-            userId, isGuest, trackId, verifiedLap, dto.FinalPosition);
+            userId, isGuest, trackId, verifiedLap, place);
 
         PoCabinetHighScore saved;
         try
@@ -121,7 +111,7 @@ public static class PoCabinetScoreEndpoints
                 UserId = userId,
                 TrackId = trackId,
                 BestLapSeconds = verifiedLap,
-                FinalPosition = dto.FinalPosition,
+                FinalPosition = place,
                 IsGuest = isGuest,
                 Date = (dto.AchievedAtUtc == default ? DateTimeOffset.UtcNow : dto.AchievedAtUtc)
                     .ToString("yyyy-MM-ddTHH:mm:ssZ"),

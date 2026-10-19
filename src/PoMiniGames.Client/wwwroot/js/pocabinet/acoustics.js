@@ -22,8 +22,8 @@ import * as ph from './physics.js';
 import * as audio from './audio.js';
 import { battleGap, BATTLE_LOST } from './broadcast.js';
 import { currentEnvironment } from './environment.js';
+import { WORLD_SCALE as WS } from './util.js';
 
-const WS = 10;                 // sim units per world unit
 const GANTRY_AT = 20;          // scenery.js buildGantry: the gantry stands this far along the lap
 const GANTRY_REACH = 45;       // sim units either side of it that ring
 const STAND_NEAR = 12;         // world units from the grandstand's centre: full slap
@@ -42,7 +42,6 @@ export class Acoustics {
         this.covered = coverMap(t);
         this.walls = !(t.roadFrom > 0);         // the Playground's deck has no barrier walls
         this.beach = t.theme === 'maralago';
-        this.wet = !!currentEnvironment().raining;
         this.puddles = t.patches.filter(p => p.kind === 'puddle');
         let lo = Infinity, hi = -Infinity;
         if (t.z) for (let i = 0; i < t.count; i++) { lo = Math.min(lo, t.z[i]); hi = Math.max(hi, t.z[i]); }
@@ -53,6 +52,9 @@ export class Acoustics {
         this.finished = false;
         this.raceStartAt = 0;
     }
+
+    /** Raining now: read live, so a weather change mid-race reaches the tyres' hiss and the puddles. */
+    get wet() { return currentEnvironment().raining; }
 
     /** Per frame from race.js effects(). `ear` may be null. */
     update(ear, racing, preStart) {

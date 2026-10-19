@@ -37,6 +37,7 @@
 import * as THREE from 'three';
 import { clock, noise } from './materials.js';
 import { SURF_GRASS, SURF_GRAVEL, SURF_RUNOFF } from './physics.js';
+import { fnv1a, addHook } from './util.js';
 
 // Shared by every car: the rain, the quality tier, this track's dust colour.
 const G = {
@@ -97,18 +98,11 @@ export class LivingPaint {
         // Rain rinses a little of the grass and dust off; most of it stays for the race.
         if (wet) { d.y *= Math.exp(-dt * 0.004); d.z *= Math.exp(-dt * 0.008); }
     }
-
-    /** Set the dirt outright, 0..1 each (a replay or a probe). */
-    set({ road = this.dirt.x, grass = this.dirt.y, dust = this.dirt.z } = {}) {
-        this.dirt.set(road, grass, dust, 0);
-    }
 }
 
 /** A stable 0..64 seed from a car's id or name. */
 export function paintSeed(key) {
-    let h = 2166136261;
-    for (const ch of String(key)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
-    return ((h >>> 0) % 4096) / 64;
+    return (fnv1a(key) % 4096) / 64;
 }
 
 const GLSL_COMMON = /* glsl */`
@@ -400,11 +394,8 @@ const GLSL_GLINT = /* glsl */`
  * LivingPaint; every car shares the programs (one cache key per kind).
  */
 export function livingPaint(material, kind, paint) {
-    const before = material.onBeforeCompile;
-    const key = material.customProgramCacheKey();
     const define = kind === 'paint' ? 'PC_PAINT' : kind === 'glass' ? 'PC_GLASS' : 'PC_TRIM';
-    material.onBeforeCompile = (shader, renderer) => {
-        before.call(material, shader, renderer);
+    return addHook(material, `paint-${kind}`, (shader) => {
         if (!G.noise) G.noise = { value: noise() };
         Object.assign(shader.uniforms, paint.uniforms, {
             uPcNoise: G.noise, uPcWet: G.wet, uPcQuality: G.quality, uPcTime: clock, uPcDust: G.dust,
@@ -421,8 +412,5 @@ export function livingPaint(material, kind, paint) {
             frag = frag.replace('#include <lights_physical_pars_fragment>', lights.replace(GLINT_AT, GLINT_AT + GLSL_GLINT));
         }
         shader.fragmentShader = frag;
-    };
-    material.customProgramCacheKey = () => `${key}-paint-${kind}`;
-    material.needsUpdate = true;
-    return material;
+    });
 }

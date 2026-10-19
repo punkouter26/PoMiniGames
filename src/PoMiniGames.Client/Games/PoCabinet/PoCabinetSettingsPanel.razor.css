@@ -1,0 +1,158 @@
+/* PoCabinetSettingsPanel — its own scoped styles (split from PoCabinetPage.razor.css). Shared
+   bits (muted text, status lines, sector chips, screen-reader text) stay on the page as ::deep. */
+.pocabinet-secondary {
+    background: transparent;
+    color: var(--color-text, inherit);
+    border: 1px solid var(--color-border, currentColor);
+    border-radius: var(--radius-md, 6px);
+    padding: 0.45rem 0.9rem;
+    margin-top: 0.75rem;
+    cursor: pointer;
+    font: inherit;
+}
+
+/* ─── Settings panel: four groups of rows ─────────────────────────────────── */
+.pocabinet-settings {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.pocabinet-settings__group {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0.6rem 0 0.75rem;
+    border: 0;
+    border-top: 1px solid var(--color-border, transparent);
+}
+
+.pocabinet-settings__group:first-child { border-top: 0; }
+
+.pocabinet-settings__group legend {
+    padding: 0.4rem 0 0.2rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+.pocabinet-settings__row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    min-height: 2.5rem;
+}
+
+.pocabinet-settings__row > span:first-child {
+    flex: 1 1 8rem;
+}
+
+.pocabinet-settings__row small {
+    display: block;
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+}
+
+.pocabinet-settings__row input[type="range"] {
+    flex: 1 1 8rem;
+    accent-color: var(--color-primary);
+    min-height: 2rem;
+}
+
+.pocabinet-settings__value {
+    min-width: 3.2em;
+    text-align: right;
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+}
+
+/* A row of radio pills: one bordered strip, the checked pill filled. */
+.pocabinet-pills {
+    display: inline-flex;
+    padding: 2px;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-text) 5%, transparent);
+}
+
+.pocabinet-pill {
+    position: relative;
+    cursor: pointer;
+}
+
+.pocabinet-pill input {
+    position: absolute;
+    opacity: 0;
+    inset: 0;
+    margin: 0;
+    cursor: pointer;
+}
+
+.pocabinet-pill span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2rem;
+    padding: 0 0.8rem;
+    border-radius: 999px;
+    font-size: 0.88rem;
+    white-space: nowrap;
+}
+
+.pocabinet-pill input:checked + span {
+    background: var(--color-primary);
+    color: var(--color-on-primary, white);
+    font-weight: 600;
+}
+
+.pocabinet-pill input:focus-visible + span {
+    outline: 2px solid var(--color-focus, currentColor);
+    outline-offset: 1px;
+}
+
+/* A checkbox drawn as a switch. */
+.pocabinet-switch {
+    appearance: none;
+    -webkit-appearance: none;
+    flex: none;
+    position: relative;
+    width: 2.6rem;
+    height: 1.5rem;
+    margin: 0;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-text) 22%, transparent);
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.pocabinet-switch::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: calc(1.5rem - 6px);
+    height: calc(1.5rem - 6px);
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    transition: transform 0.15s ease;
+}
+
+.pocabinet-switch:checked { background: var(--color-primary); }
+
+.pocabinet-switch:checked::after { transform: translateX(1.1rem); }
+
+.pocabinet-switch:focus-visible {
+    outline: 2px solid var(--color-focus, currentColor);
+    outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+    .pocabinet-secondary,
+    .pocabinet-pill span,
+    .pocabinet-settings__row input[type="range"] {
+        min-height: 44px;
+    }
+}

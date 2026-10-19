@@ -1,3 +1,5 @@
+using PoMiniGames.Shared.Games;
+
 namespace PoMiniGames.Features.PoCabinet;
 
 /// <summary>
@@ -76,7 +78,7 @@ public static class PoCabinetAiDriver
             _nearGap = nearGap = new double[near.Length];
         }
         double half = track.Length * 0.5;
-        double hx = PoCabinetTrack.Cos(car.Heading), hy = PoCabinetTrack.Sin(car.Heading);
+        double hx = PoCabinetDetMath.Cos(car.Heading), hy = PoCabinetDetMath.Sin(car.Heading);
         PoCabinetCarBody? ahead = null, blocker = null;
         double gap = double.MaxValue, blockGap = double.MaxValue;
         bool left = false, right = false;
@@ -159,8 +161,8 @@ public static class PoCabinetAiDriver
         var p = track.PointAt(car.Along + look);
         double tx = p.X + -p.Ty * lateralTarget;
         double ty = p.Y + p.Tx * lateralTarget;
-        double desired = PoCabinetTrack.Atan2(ty - car.Y, tx - car.X);
-        double err = PoCabinetTrack.WrapAngle(desired - car.Heading);
+        double desired = PoCabinetDetMath.Atan2(ty - car.Y, tx - car.X);
+        double err = PoCabinetDetMath.WrapAngle(desired - car.Heading);
         // A smooth driver feeds the lock in; a twitchy one saws at it and weaves.
         double steer = Math.Min(1, Math.Max(-1, err * (1.8 + 1.6 * personality.Twitch)));
         if (v < 0) steer = -steer; // rolling backwards inverts the lock (see PoCabinetPhysics.Step)
@@ -218,7 +220,7 @@ public static class PoCabinetAiDriver
         var p = track.PointAt(car.Along + 30 + Math.Abs(v) * 0.3);
         double tx = p.X + -p.Ty * target;
         double ty = p.Y + p.Tx * target;
-        double steer = Math.Min(1, Math.Max(-1, PoCabinetTrack.WrapAngle(PoCabinetTrack.Atan2(ty - car.Y, tx - car.X) - car.Heading) * 2.4));
+        double steer = Math.Min(1, Math.Max(-1, PoCabinetDetMath.WrapAngle(PoCabinetDetMath.Atan2(ty - car.Y, tx - car.X) - car.Heading) * 2.4));
         if (v < 0) steer = -steer;
         bool clear = Math.Abs(car.Lateral) > track.HalfWidthAt(seg) + PoCabinetPhysics.WreckClear;
         return new PoCabinetControls(clear ? 0 : 1, clear && v > 0.5 ? 0.6 : 0, steer);

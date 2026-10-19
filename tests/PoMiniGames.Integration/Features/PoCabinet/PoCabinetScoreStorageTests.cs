@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Models;
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.PoCabinet;
@@ -9,14 +11,12 @@ using PoMiniGames.TestUtilities;
 namespace PoMiniGames.Integration.Features.PoCabinet;
 
 /// <summary>
-/// PoCabinet score round-trip against a real Azurite container through the full HTTP
-/// path. Four claims:
+/// PoCabinet score round-trip against a real Azurite container: submitted through the full HTTP
+/// path, read back from storage (the app has no read endpoint: there is no Cabinet board). Four claims:
 /// <list type="number">
 ///   <item>Only verified laps are stored: a bare claim with no input log is refused (422),
-///         and a proof's stored time is the server's replay, whatever the claim says.</item>
-///   <item>A best lap submitted on <c>capitol</c> survives a fresh
-///         <c>GET /api/pocabinet/scores?track=capitol</c> on the same host. Cross-Azurite
-///         session round-trip — the row lives in the table the descriptor declared.</item>
+///         and a proof's stored time and place are the server's replay, whatever the claim says.</item>
+///   <item>A best lap submitted on <c>capitol</c> is in the table the descriptor declared.</item>
 ///   <item>Track partitioning is real: the same player on Capitol and Mar-a-Lago
 ///         gets two distinct rows; a Capitol submission does not appear in the
 ///         Mar-a-Lago board.</item>
@@ -81,9 +81,11 @@ public sealed class PoCabinetScoreStorageTests : IClassFixture<TestWebApplicatio
             };
         }
         double Lap(string proofName) => Math.Round(PoCabinetLapProofs.Get(proofName).JsBestLap, 3);
-        async Task<double> StoredAsync(string track) =>
-            (await client.GetFromJsonAsync<List<PoCabinetHighScore>>($"/api/pocabinet/scores?track={track}"))!
-                .First(s => s.PlayerName == resolvedPlayer).BestLapSeconds;
+        var storage = _factory.Services.GetRequiredService<IStorageService>();
+        async Task<List<PoCabinetHighScore>> BoardAsync(string track) =>
+            await storage.GetPoCabinetHighScoresAsync(limit: 1000, trackId: track);
+        async Task<PoCabinetHighScore> RowAsync(string track) => (await BoardAsync(track)).First(s => s.PlayerName == resolvedPlayer);
+        async Task<double> StoredAsync(string track) => (await RowAsync(track)).BestLapSeconds;
 
         // ── No proof: a bare claimed time is refused, not stored ─────────────
         var bare = Submit("capitol-clean", 1);
@@ -99,12 +101,16 @@ public sealed class PoCabinetScoreStorageTests : IClassFixture<TestWebApplicatio
         firstPost.StatusCode.Should().Be(HttpStatusCode.Created);
         (await StoredAsync("capitol")).Should().BeApproximately(Lap("capitol-clean"), 0.001,
             "the server stores the lap it re-timed, and resolves identity from auth, not the wire name");
+        var clean = PoCabinetLapProofs.Get("capitol-clean");
+        var replayedPlace = PoCabinetLapVerifier.Replay(clean.TrackId, clean.Wet, PoCabinetLapVerifier.Decode(clean.Inputs)!).Position;
+        (await RowAsync("capitol")).FinalPosition.Should().Be(Math.Max(1, replayedPlace),
+            "a claimed P1 is stored as the place the replay finished in");
 
         // ── Mar-a-Lago lap for the same player (no partition leak) ─────────
         (await client.PostAsJsonAsync("/api/pocabinet/scores", Submit("maralago-clean", 2))).StatusCode
             .Should().Be(HttpStatusCode.Created);
         (await StoredAsync("maralago")).Should().BeApproximately(Lap("maralago-clean"), 0.001);
-        var marBoard = await client.GetFromJsonAsync<List<PoCabinetHighScore>>("/api/pocabinet/scores?track=maralago");
+        var marBoard = await BoardAsync("maralago");
         var capitolLap = Lap("capitol-clean");
         marBoard!.Should().NotContain(s => Math.Abs(s.BestLapSeconds - capitolLap) < 0.001,
             "the Capitol lap must not appear on the Mar-a-Lago board");

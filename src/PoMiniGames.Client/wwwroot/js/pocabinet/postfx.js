@@ -39,8 +39,8 @@
 // under them down instead of blending it up (trackside.js), so standing water is a mirror.
 // Ordinary transparent things (smoke, the rubbered line) blend it back toward 1.
 //
-// `fx` is SceneHandle.fx — the per-frame bag race.js / environment.js write and
-// scene.js fills (sun position, exposure). Reduced motion zeroes the speed effects, the
+// `fx` is SceneHandle.fx — the per-frame bag race.js writes and
+// scene.js fills (sun position, exposure, rain). Reduced motion zeroes the speed effects, the
 // motion blur and the haze. `fx.movers` is the list of car groups race.js draws in full.
 // Quality 'low' | 'medium' | 'high' sets the bloom depth and which depth passes run; 'low'
 // is the frame it always was.

@@ -1,0 +1,255 @@
+/* PoCabinetResults — its own scoped styles (split from PoCabinetPage.razor.css). Shared
+   bits (muted text, status lines, sector chips, screen-reader text) stay on the page as ::deep. */
+
+.pocabinet-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+}
+
+/* ─── Results: podium, confetti, PB, laps ────────────────────────────────── */
+/* ─── Telemetry chart ─────────────────────────────────────────────────────── */
+.pocabinet-telemetry {
+    margin-top: 1rem;
+}
+
+.pocabinet-telemetry h3 {
+    margin: 0 0 0.4rem 0;
+    font-size: 0.95rem;
+}
+
+.pocabinet-telemetry__chart {
+    display: block;
+    width: 100%;
+    height: 240px;
+    border-radius: var(--radius-md, 6px);
+    border: 1px solid var(--color-border, transparent);
+    background: var(--color-background, transparent);
+}
+
+.pocabinet-telemetry__summary {
+    margin: 0.5rem 0 0;
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+/* Standings: the podium (medals) and the rows below it in one compact list. No markers:
+   each row writes its own place, and the list has gaps in it. */
+.pocabinet-standings {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: var(--radius-md, 8px);
+    overflow: hidden;
+}
+
+.pocabinet-standings > li {
+    display: grid;
+    grid-template-columns: 2.6rem minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.9rem;
+}
+
+.pocabinet-standings > li:nth-child(even) {
+    background: color-mix(in srgb, var(--color-text) 4%, transparent);
+}
+
+.pocabinet-standings__podium { font-weight: 600; }
+
+.pocabinet-standings__pos {
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-muted);
+}
+
+.pocabinet-standings__name {
+    overflow-wrap: anywhere;
+}
+
+.pocabinet-standings__detail {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    text-align: right;
+}
+
+/* The 100-car solo field lists the top ten and the places round the player. */
+.pocabinet-standings > .pocabinet-standings__gap {
+    display: block;
+    padding: 0 0.7rem;
+    text-align: center;
+    letter-spacing: 0.3em;
+    color: var(--color-text-muted);
+}
+
+.pocabinet-standings > .pocabinet-standings__me {
+    background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+    box-shadow: inset 3px 0 0 var(--color-primary);
+    font-weight: 700;
+}
+
+/* Every lap: its three sectors and its time. */
+.pocabinet-laps {
+    width: 100%;
+    margin-top: 0.75rem;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.pocabinet-laps caption {
+    text-align: left;
+    padding-bottom: 0.35rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+.pocabinet-laps th,
+.pocabinet-laps td {
+    padding: 0.2rem 0.3rem;
+    text-align: center;
+}
+
+.pocabinet-laps thead th {
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    border-bottom: 1px solid var(--color-border, transparent);
+}
+
+.pocabinet-laps tbody th { color: var(--color-text-muted); font-weight: 600; }
+
+.pocabinet-laps td:last-child { font-weight: 700; text-align: right; }
+
+.pocabinet-laps .pocabinet-sector { min-width: 0; width: 100%; font-size: 0.8rem; }
+
+/* The fastest lap that counted: a star, not a colour (no green on white passes AA). */
+.pocabinet-laps__best td:last-child::before { content: "★ "; }
+
+.pocabinet-actions {
+    align-items: center;
+}
+
+.pocabinet-results__more {
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+/* The hero row: your place, big, then the headline and what the race earned. */
+.pocabinet-results__hero {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem 1.1rem;
+}
+
+.pocabinet-results__place {
+    flex: none;
+    margin: 0;
+    padding: 0.3rem 0.8rem;
+    border-radius: var(--radius-md, 10px);
+    background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+    font-size: 1.1rem;
+    font-weight: 700;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+
+.pocabinet-results__place strong { font-size: 2.2rem; }
+
+.pocabinet-results__place small { font-size: 0.85rem; color: var(--color-text-muted); }
+
+.pocabinet-results__headline { display: grid; gap: 0.35rem; min-width: 0; }
+
+.pocabinet-results__headline h2 { margin: 0; font-size: 1.3rem; }
+
+.pocabinet-results__headline h2 .pocabinet-muted { font-size: 0.95rem; }
+
+.pocabinet-results__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin: 0;
+}
+
+.pocabinet-results__chips:empty { display: none; }
+
+.pocabinet-chip {
+    padding: 0.15rem 0.6rem;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: 999px;
+    font-size: 0.85rem;
+}
+
+.pocabinet-chip--pb,
+.pocabinet-chip--good {
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+    font-weight: 700;
+}
+
+.pocabinet-results__grid {
+    display: grid;
+    gap: 0.75rem 1.5rem;
+    margin-top: 0.75rem;
+}
+
+@media (min-width: 900px) {
+    .pocabinet-results__grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: start; }
+    .pocabinet-telemetry { margin-top: 0; }
+}
+
+.pocabinet-share > summary.app-btn { cursor: pointer; }
+
+.pocabinet-share {
+    position: relative;
+}
+
+.pocabinet-share > summary {
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+}
+
+.pocabinet-share > summary::-webkit-details-marker { display: none; }
+
+.pocabinet-share__menu {
+    position: absolute;
+    bottom: calc(100% + 0.4rem);
+    /* Opens leftward: the button can sit at the right edge of a phone. */
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.5rem;
+    min-width: 13rem;
+    border-radius: var(--radius-md, 8px);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border, transparent);
+    box-shadow: var(--shadow-card, 0 8px 24px rgba(0, 0, 0, 0.25));
+    z-index: 2;
+}
+
+.pocabinet-debrief {
+    margin: 0.75rem 0 0.25rem;
+    padding: 0.6rem 0.85rem;
+    border-radius: var(--radius-md, 8px);
+    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+}
+
+.pocabinet-debrief__headline {
+    margin: 0 0 0.35rem;
+    font-weight: 700;
+}
+
+.pocabinet-debrief__tips {
+    margin: 0;
+    padding-left: 1.2rem;
+    line-height: 1.4;
+}

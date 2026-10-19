@@ -14,10 +14,9 @@
 
 import * as THREE from 'three';
 import { clock, noise } from './materials.js';
-import { KERB_OUTER } from './kerbs.js';
-import { runOffAt } from './physics.js';
+import { runOffAt, KERB_OUTER } from './physics.js';
+import { WORLD_SCALE as WS, addHook } from './util.js';
 
-const WS = 10;
 const TILE = 44;
 
 function roadMask(track, margin, keepOut, playground) {
@@ -125,7 +124,7 @@ export class Grass {
             uPcNoise: { value: noise() },
             uPcTime: clock,
         };
-        this.material.onBeforeCompile = (shader) => {
+        addHook(this.material, 'pocabinet-grass', (shader) => {
             Object.assign(shader.uniforms, uniforms);
             shader.vertexShader = `
 uniform vec3 uCenter;
@@ -169,8 +168,7 @@ varying float vBlade;
             shader.fragmentShader = 'varying float vBlade;\n' + shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
     diffuseColor.rgb *= mix(0.35, 1.25, vBlade);
     diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.15, 1.1, 0.7), vBlade * vBlade * 0.5);`);
-        };
-        this.material.customProgramCacheKey = () => 'pocabinet-grass';
+        });
         this.mesh = new THREE.Mesh(bladeGeometry(count), this.material);
         this.mesh.name = 'pocabinet-grass';
         this.mesh.frustumCulled = false;

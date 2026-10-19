@@ -32,8 +32,8 @@ namespace PoMiniGames.Features.PoCabinet;
 public static class PoCabinetLapVerifier
 {
     /// <summary>race.js <c>MAX_RECORD_FRAMES</c>: eight minutes of ticks.</summary>
-    public const int MaxTicks = 30 * 60 * 8;
-    public const int BytesPerTick = 6;
+    private const int MaxTicks = 30 * 60 * 8;
+    private const int BytesPerTick = 6;
     /// <summary>race.js: solo rain grip (<c>currentEnvironment().raining ? 0.85 : 1</c>).</summary>
     public const double WetGrip = 0.85;
     private const double Countdown = 3;
@@ -64,15 +64,17 @@ public static class PoCabinetLapVerifier
     }
 
     /// <summary>
-    /// Re-run a solo race with the recorded controls and return the player's best completed lap
-    /// in seconds, or -1 when the inputs never complete one.
+    /// Re-run a solo race with the recorded controls: the player's best completed lap in seconds
+    /// (-1 when the inputs never complete one) and their place when the log ends (at their
+    /// finish, or at their wreck): finishers by finish order, then everyone by race distance.
     /// </summary>
-    public static double Replay(string trackId, bool wet, IReadOnlyList<PoCabinetControls> inputs)
+    public static PoCabinetReplay Replay(string trackId, bool wet, IReadOnlyList<PoCabinetControls> inputs)
     {
         var track = PoCabinetTrack.Get(trackId);
         double grip = wet ? WetGrip : 1;
         double tick = PoCabinetPhysics.TickSeconds;
         int totalLaps = track.Laps;
+        int finishOrder = 0;
 
         var cars = new List<Car>();
         var player = new Car { IsPlayer = true };
@@ -113,42 +115,26 @@ public static class PoCabinetLapVerifier
 
             foreach (var car in cars)
             {
-                if (car.Finished || car.Wrecked) continue;
-                while (car.Distance >= (car.LapsDone + 1) * track.LapLength)
-                {
-                    double boundary = (car.LapsDone + 1) * track.LapLength;
-                    double span = car.Distance - car.PrevDistance;
-                    double frac = span > 1e-9 ? Math.Min(1, Math.Max(0, (boundary - car.PrevDistance) / span)) : 1;
-                    double crossedAt = tickStart + frac * stepDt;
-                    double lapTime = crossedAt - car.LapStart;
-                    car.LapStart = crossedAt;
-                    // A lap that broke track limits does not count (race.js lapBookkeeping).
-                    if (!car.LapInvalid && (car.BestLap <= 0 || lapTime < car.BestLap)) car.BestLap = lapTime;
-                    car.LapInvalid = false;
-                    car.LapsDone++;
-                    if (car.LapsDone >= totalLaps)
-                    {
-                        car.Finished = true;
-                        break;
-                    }
-                }
-                if (car.Wide) car.LapInvalid = true;
+                bool running = !car.Finished;
+                car.CountLaps(track, tickStart, stepDt, totalLaps);
+                if (running && car.Finished) car.FinishOrder = ++finishOrder;
             }
         }
-        return player.BestLap > 0 ? player.BestLap : -1;
+        int place = 1 + cars.Count(c => c != player && (c.Finished
+            ? !player.Finished || c.FinishOrder < player.FinishOrder
+            : !player.Finished && c.Distance > player.Distance));
+        return new PoCabinetReplay(player.BestLapSeconds > 0 ? player.BestLapSeconds : -1, place);
     }
 
-    private sealed class Car : PoCabinetCarBody
+    private sealed class Car : PoCabinetRacer
     {
         public bool IsPlayer { get; init; }
         public PoCabinetPersonality? Persona { get; init; }
         public double MaxSpeed { get; init; } = PoCabinetPhysics.MaxSpeed;
         public double CorneringSkill { get; init; } = 0.7;
-        public double PrevDistance { get; set; }
-        public int LapsDone { get; set; }
-        public double LapStart { get; set; }
-        public double BestLap { get; set; }
-        public bool LapInvalid { get; set; }
-        public bool Finished { get; set; }
+        public int FinishOrder { get; set; }
     }
 }
+
+/// <summary>What <see cref="PoCabinetLapVerifier.Replay"/> found: the best lap (-1 = none) and the player's place.</summary>
+public readonly record struct PoCabinetReplay(double BestLapSeconds, int Position);

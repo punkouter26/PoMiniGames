@@ -31,7 +31,7 @@ for PoMule · **Deferred** = planned after PoMule v1.
 | On-demand JS engine loading, PWA cache list | Client `wwwroot/js/engineLoader.js`, `service-worker.published.js` | Yes | Extended |
 | Shared audio and palette buses | Client `wwwroot/js/gameCues.js`, `paletteBus.js`, `spatialAudio.js` | Yes, reuse existing cues | Retained |
 | Online play (SignalR hubs, lobbies, invites) | API `Features/*`, Client per-game clients | No | Retained |
-| Server score verification | API `Features/PoCabinet`, `PoMule` | Yes: the client sends seed + action log, `PoMuleRunVerifier` replays it through the Shared engine; no log = range check only | Extended |
+| Server score verification | API `Features/PoCabinet`, `PoMule` | Yes: Cabinet sends its input log and `PoCabinetLapVerifier` re-runs the race for the lap time and place (online, the server sim timed it); PoMule sends seed + action log, `PoMuleRunVerifier` replays it through the Shared engine; no log = range check only | Extended |
 | AI text (Azure AI Foundry), opt-in only | API `AI/`, quiz slices; free banks and matching by default | No | Retained |
 | Cloud saves and gallery | API `Features/PoEcosystem`, Blob storage | No | Retained |
 | Radzen component library | Client | Yes: all PoMule non-canvas UI; Brawl HQ's select bar, grid and chart | New |

@@ -46,8 +46,8 @@
 // a damaged engine smokes and a wreck burns; the grandstand crowd murmurs, cheers a pass-by, an
 // overtake, a PB and the finish (confetti on a podium); wall hits, contacts, overtakes
 // and the finish also fire the platform's 'pocabinet' cues (gameCues.js: impact, hitstop,
-// haptics — the sound stays audio.js's); wet-road reflections
-// (reflections.js) track every light; and the glass gauge (#pocabinetGauge, the
+// haptics — the sound stays audio.js's); on the low tier, wet-road reflections
+// (reflections.js) track every tail light; and the glass gauge (#pocabinetGauge, the
 // page's markup) gets speed, gear and RPM written straight to the DOM each frame —
 // never through Blazor, so it costs no re-render. acoustics.js turns where the car heard up
 // close is into sound: the reverb zone, the tyre surface, the slipstream (scene.fx.draft) and
@@ -57,18 +57,19 @@ import { Vector3 } from 'three';
 import { buildTrack, wrapAngle, rubberAt } from './track.js';
 import * as ph from './physics.js';
 import { attachInput } from './input.js';
-import { mountCar, unmountCar, CarCrowd, updateDebris, clearDebris } from './cars.js';
+import { mountCar, unmountCar, CarCrowd } from './cars.js';
+import { updateDebris, clearDebris } from './debris.js';
 import * as audio from './audio.js';
 import { currentEnvironment } from './environment.js';
 import { lapTraces, bestTrace, loadPbTrace, savePbTrace, renderTelemetry, debriefFacts } from './telemetry.js';
 import { createFx } from './fx.js';
-import { computeKerbs, onKerb } from './kerbs.js';
-import { getRecords } from './settings.js';
+import { getRecords } from './records.js';
 import { WetReflections } from './reflections.js';
 import { Broadcast } from './broadcast.js';
 import { Acoustics } from './acoustics.js';
 import { Slipstream } from './slipstream.js';
 import { paintScene } from './paint.js';
+import { WORLD_SCALE as WS, shareOrDownload } from './util.js';
 
 const TICK = ph.TICK_SECONDS;
 const COUNTDOWN = 3;
@@ -126,7 +127,7 @@ export function startReplay() { return race ? race.startReplay() : false; }
 export function replayCommand(cmd, value) { race?.replayCommand(cmd, value); }
 export function stopReplay() { race?.stopReplay(); }
 export function recordClip() { return race ? race.recordClip() : Promise.resolve('unavailable'); }
-/** The officials' scripted line pool (PoCabinetTalkService.Banter, built by the page right after the start). */
+/** The officials' scripted line pool (PoCabinetTalk.Banter, handed over by the page right after the start). */
 export function setBanter(lines) { race?.setBanter(lines); }
 /** Solo lap proof for the score submit: { inputs: base64 | null, wet }. */
 export function lapProof() { return race ? race.lapProof() : { inputs: null, wet: false }; }
@@ -142,11 +143,16 @@ class Race {
         this.world = opts.world;
         this.track = buildTrack(opts.world);
         this.totalLaps = Number(opts.world?.totalLaps) || 3;
-        // Rain grip is a solo-only effect: online, prediction must run the server's numbers.
-        this.grip = this.mode === 'net' ? 1 : (currentEnvironment().raining ? 0.85 : 1);
         // Race conditions for the physics: the rain, and the rubber the racing line gathers over
-        // the race (set each tick). Online the server races dry on a green track, so prediction does.
-        this.cond = { wet: this.grip < 1, rubber: 0 };
+        // the race (set each tick). Rain grip is a solo/demo effect: online the server races dry
+        // on a green track, and prediction must run the server's numbers. The weather follows
+        // the environment live until the lights go out, then holds for the race: the lap proof
+        // carries one wet flag, and the server's replay runs the whole race at that grip.
+        this.grip = 1;
+        this.cond = { wet: false, rubber: 0 };
+        this.weatherHeld = this.mode === 'net';
+        this.fx = null;
+        this.syncWeather();
         this.settings = {};
         this.cameraMode = 'chase';   // third person only: 'chase' | 'far'
         this.viewCar = null;         // the car the camera is on this frame
@@ -213,11 +219,8 @@ class Race {
         this.applySettings(opts.settings || {});
 
         // Feel layer.
-        this.kerbs = computeKerbs(this.track);
         try {
-            this.fx = createFx(this.scene, this.track, {
-                grip: this.grip, raining: currentEnvironment().raining, groundHex: this.world?.atmosphere?.groundHex,
-            });
+            this.fx = createFx(this.scene, this.track, { grip: this.grip, groundHex: this.world?.atmosphere?.groundHex });
         } catch { this.fx = null; }
         const pb = getRecords(this.track.id).bestLap;
         this.pbLap = pb > 0 ? pb : -1;
@@ -230,10 +233,10 @@ class Race {
             this.scene.scenery.onFlash = (pos) => audio.shutter(pos, 0.8);
         }
 
-        // Wet-road light streaks: rain only (dry tarmac has nothing to mirror them in), and not
-        // on the Playground's chute; each streak is drawn at its car's road height.
+        // Wet-road light streaks (they show only in the rain, on the low tier), not on the
+        // Playground's chute; each streak is drawn at its car's road height.
         this.reflections = null;
-        if (currentEnvironment().raining && !this.track.roadFrom) {
+        if (!this.track.roadFrom) {
             try { this.reflections = new WetReflections(this.scene); } catch { this.reflections = null; }
         }
         this.moments = { lastPos: this.local?.position ?? 0, overtakeAt: 0, standAt: 0, finished: false, raceStart: 0 };
@@ -363,7 +366,7 @@ class Race {
         const slope = (front - rear) / (AXLE * 2 * (Math.abs(c) > 0.2 ? c : 1));
         const bank = t.bankAt(r.along);
         const lateral = (r.x - p.x) * -p.ty + (r.y - p.y) * p.tx;
-        r.h = ((front + rear) / 2 + lateral * bank) / 10;
+        r.h = ((front + rear) / 2 + lateral * bank) / WS;
         r.pitch = Math.atan(slope * c + bank * s);
         r.roll = Math.atan(bank * c - slope * s);
     }
@@ -393,10 +396,20 @@ class Race {
         this.cameraMode = this.cameraMode === 'chase' ? 'far' : 'chase';
     }
 
+    /** Rain grip from the mounted environment, until it is held for the race (see the constructor). */
+    syncWeather() {
+        if (this.weatherHeld) return;
+        const wet = currentEnvironment().raining;
+        this.grip = wet ? 0.85 : 1;
+        this.cond.wet = wet;
+        if (this.fx) this.fx.grip = this.grip;
+    }
+
     // ── Frame loop ───────────────────────────────────────────────────────
 
     frame(now) {
         if (this.disposed) return;
+        this.syncWeather();
         const dt = this.lastFrame === null ? 0 : Math.min(0.1, (now - this.lastFrame) / 1000);
         this.lastFrame = now;
 
@@ -446,6 +459,7 @@ class Race {
             this.pushHud(elapsed);
             return;
         }
+        if (!this.weatherHeld) { this.syncWeather(); this.weatherHeld = true; }
         const tickStart = Math.max(0, elapsed - TICK);
         const stepDt = elapsed - tickStart;
         const bodies = this.cars.map(c => c.body);
@@ -550,7 +564,7 @@ class Race {
                 const s = Math.min(1, (h.closing - DENT_FLOOR) / DENT_SPEED);
                 if (!car.mesh.addHit(h.fwd, h.side, h.nx, h.ny, s) || s < 0.3) continue;
                 const b = car.body, ch = Math.cos(b.heading), sh = Math.sin(b.heading);
-                const x = (b.x + ch * h.fwd - sh * h.side) / 10, z = (b.y + sh * h.fwd + ch * h.side) / 10;
+                const x = (b.x + ch * h.fwd - sh * h.side) / WS, z = (b.y + sh * h.fwd + ch * h.side) / WS;
                 this.fx?.debris(x, z, car.mesh.paintHex, s, car.render.h, car.render);
             }
             hits.length = 0;
@@ -899,7 +913,7 @@ class Race {
         // The rubber going down on the racing line (and the line drying first in the rain).
         if (now - (this.rubberDrawnAt || 0) > 500) {
             this.rubberDrawnAt = now;
-            this.scene.setRubber?.(this.cond.rubber, this.cond.wet);
+            this.scene.setRubber?.(this.cond.rubber, this.scene.raining);
         }
         this.effects(dt, mode, focus);
 
@@ -970,7 +984,7 @@ class Race {
         const speed01 = focus ? Math.min(1, Math.abs(focus.render.speed) / ph.MAX_SPEED) : 0;
         // Speed blur belongs to a camera that moves with the car, not a trackside one.
         fx.speed = racing && mode !== 'tv' ? speed01 : 0;
-        fx.focus = focus ? { x: focus.render.x / 10, y: focus.render.h, z: focus.render.y / 10, speed01 } : null;
+        fx.focus = focus ? { x: focus.render.x / WS, y: focus.render.h, z: focus.render.y / WS, speed01 } : null;
         // The cars drawn in full, for the post pass's motion blur and exhaust haze.
         const movers = fx.movers || (fx.movers = []);
         movers.length = 0;
@@ -993,7 +1007,8 @@ class Race {
             const es = audio.engineState();
             audio.setSqueal(racing && b.sliding ? 1 : 0, kmh);
 
-            const kerbOn = racing && Math.abs(b.speed) > 15 && onKerb(this.kerbs, this.track, b.segHint, b.lateral);
+            const kerb = racing && Math.abs(b.speed) > 15 && b.segHint >= 0 ? ph.surfaceAt(this.track, b.segHint, b.lateral) : -1;
+            const kerbOn = kerb === ph.SURF_KERB || kerb === ph.SURF_SAUSAGE;
             audio.setKerb(kerbOn, kmh);
             fx.rumble = kerbOn ? 0.3 + 0.7 * Math.min(1, Math.abs(b.speed) / ph.MAX_SPEED) : 0;
             if (kerbOn && this.mode !== 'demo') this.input.rumble(0.2 + 0.3 * fx.rumble);
@@ -1060,7 +1075,7 @@ class Race {
 
         if (stand) {
             if (racing && focus) {
-                const d = Math.hypot(focus.render.x / 10 - stand.center.x, focus.render.y / 10 - stand.center.z);
+                const d = Math.hypot(focus.render.x / WS - stand.center.x, focus.render.y / WS - stand.center.z);
                 if (d < STAND_PASS && speed01 > 0.35 && now - m.standAt > 8000) {
                     m.standAt = now;
                     scenery.exciteCrowd(0.6 + speed01 * 0.4);
@@ -1090,7 +1105,7 @@ class Race {
             const front = me.position <= (this.cars.length > 8 ? 10 : 3);
             audio.cheer(front ? 1 : 0.5);
             this.cue('finish', front ? 1 : 0.5);
-            if (front && !this.scene.fx.reduced) this.fx?.confetti(me.render.x / 10, me.render.y / 10, 160, me.render.h);
+            if (front && !this.scene.fx.reduced) this.fx?.confetti(me.render.x / WS, me.render.y / WS, 160, me.render.h);
         }
     }
 
@@ -1218,8 +1233,8 @@ class Race {
             if (car === ear) continue;
             const h = car.render.heading, v = car.render.speed;
             list.push({
-                id: car.id, x: car.render.x / 10, y: car.render.h + 0.5, z: car.render.y / 10,
-                vx: Math.cos(h) * v / 10, vz: Math.sin(h) * v / 10, kmh: Math.abs(v) * ph.KMH_PER_UNIT,
+                id: car.id, x: car.render.x / WS, y: car.render.h + 0.5, z: car.render.y / WS,
+                vx: Math.cos(h) * v / WS, vz: Math.sin(h) * v / WS, kmh: Math.abs(v) * ph.KMH_PER_UNIT,
             });
         }
         // The nearest few: a voice per car was fine for four rivals, not for ninety-nine.
@@ -1504,23 +1519,7 @@ class Race {
 
         const type = recorder.mimeType || mime || 'video/webm';
         const ext = type.includes('mp4') ? 'mp4' : 'webm';
-        const blob = new Blob(chunks, { type });
-        if (!blob.size) return 'unavailable';
-        const file = new File([blob], `pocabinet-${this.track.id}-lap.${ext}`, { type });
-        try {
-            if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                await navigator.share({ files: [file], title: 'Cabinet — my best lap' });
-                return 'shared';
-            }
-        } catch (e) {
-            if (e && e.name === 'AbortError') return 'shared';
-        }
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = file.name;
-        a.click();
-        window.setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-        return 'downloaded';
+        return shareOrDownload(new Blob(chunks, { type }), `pocabinet-${this.track.id}-lap.${ext}`, 'Cabinet — my best lap');
     }
 
     dispose() {

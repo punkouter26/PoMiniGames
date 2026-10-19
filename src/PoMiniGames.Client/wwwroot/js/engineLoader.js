@@ -38,10 +38,10 @@ const REGISTRY = {
     // remains the fallback when matter.js fails to load or reduced-motion /
     // low-quality tier opts the page out.
     connectfive: ['js/connectfive/index.js', 'PoConnectFive'],
-    // PoCabinet — three.js cockpit scene + car/dialogue facades.
+    // PoCabinet — three.js racing engine (third-person scene, race driver, audio).
     // The engine module registers window.PoCabinet and proxies the named
-    // exports of js/pocabinet/scene.js | cockpit.js | cars.js | dialogue.js
-    // so Blazor's InvokeAsync stays a single global.
+    // exports of js/pocabinet/scene.js | race.js | audio.js | minimap.js |
+    // environment.js | records.js | dialogue.js so Blazor's InvokeAsync stays a single global.
     pocabinet: ['js/pocabinet/index.js', 'PoCabinet'],
     // PoJevArena — Canvas 2D 10v10 arena: sim, Jev scheduler, Black Box, creature art.
     pojevarena: ['js/pojevarena/index.js', 'PoJevArena'],

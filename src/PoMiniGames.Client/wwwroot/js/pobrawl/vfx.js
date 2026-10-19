@@ -1,5 +1,6 @@
 // vfx.js — the transient visual layer: impact frames and impact lights, strike
-// trails, the GPU particle pool, dismemberment and blood, sweat and confetti.
+// trails, the GPU particle pool, dismemberment and confetti. Blood and sweat are
+// blood.js.
 //
 // Mixed into BrawlGame's prototype, so `this` is the live game — see mixin.js.
 
@@ -12,7 +13,7 @@ const _trailPos = new THREE.Vector3();
 const _pColor = new THREE.Color();
 
 class VfxMethods {
-  // Effects built mid-fight (blood droplets, stains, callout words) make their
+  // Effects built mid-fight (callout words and the like) make their
   // materials on the spot and dispose them after. three frees a shader program when
   // its last material goes, so each fight re-linked them on the first hit: a
   // 50-400 ms freeze. One hidden keeper per program holds it alive; _warmupRender
@@ -25,7 +26,7 @@ class VfxMethods {
     this._shaderKeepers = new THREE.Group();
     this._shaderKeepers.visible = false;
     this._shaderKeepers.add(
-      // _spawnBlood / _bloodSquirt droplets and the _addBloodStain decal (same program).
+      // A plain transparent MeshBasic program for effects built mid-fight.
       new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x7e120e, transparent: true, opacity: 0.95 })),
       // spectacle.js _spawnWord.
       new THREE.Sprite(new THREE.SpriteMaterial({
@@ -381,35 +382,10 @@ class VfxMethods {
     }
   }
 
-  // Occasional blood on clean face hits: small matte dark-red droplets that
-  // arc with the blow and fall under gravity. Deliberately mesh-based with
-  // normal blending — additive particles glow, and blood must NOT glow.
-  _spawnBlood(pos, dir, power = 1) {
-    const count = 4 + Math.round(this.rng.random() * 3 * power);
-    for (let i = 0; i < count; i++) {
-      const m = new THREE.Mesh(
-        new THREE.SphereGeometry(0.014 + this.rng.random() * 0.02, 5, 4),
-        new THREE.MeshBasicMaterial({ color: 0x7e120e, transparent: true, opacity: 0.95 })
-      );
-      m.position.set(
-        pos.x + (this.rng.random() - 0.5) * 0.08,
-        pos.y + (this.rng.random() - 0.5) * 0.08,
-        pos.z + (this.rng.random() - 0.5) * 0.08);
-      const vel = new THREE.Vector3(
-        dir.x * (1.2 + this.rng.random() * 1.2) + (this.rng.random() - 0.5) * 1.4,
-        0.6 + this.rng.random() * 1.2,
-        dir.z * (1.2 + this.rng.random() * 1.2) + (this.rng.random() - 0.5) * 1.4);
-      this.scene.add(m);
-      // Long life — droplets don't fade in the air; they end by SPLATTING
-      // on the canvas (see the blood branch in _updateEffects).
-      this.effects.push({ mesh: m, life: 2.5, vel, gravity: -11, blood: true });
-    }
-  }
-
   // Tear an arm off the fighter: detach the shoulder→fist group from the torso,
   // reparent the upper arm and forearm into the scene as two independent
   // objects, and hand them to a two-bone rigid-body ragdoll so the limb flops
-  // limply to the canvas with a silly blood squirt from stump and limb.
+  // limply to the canvas, bleeding from stump and limb.
   //
   // Unregistering the arm's joints from `rig.joints` is load-bearing: the
   // animator, KO ragdoll and hitbox capsules all iterate that map and skip a
@@ -469,17 +445,21 @@ class VfxMethods {
     const angVel = new THREE.Vector3(
       (this.rng.random() - 0.5) * 11, (this.rng.random() - 0.5) * 11, (this.rng.random() - 0.5) * 13);
 
-    const limb = { shoulder, elbow: elbow || null, scale, vel, angVel, arm: null, restT: 0, settled: false };
+    const limb = {
+      shoulder, elbow: elbow || null, scale, vel, angVel, arm: null, restT: 0, settled: false,
+      // The torn end bleeds while it tumbles, tapering off (see _updateSeveredLimbs).
+      bleed: 1, dripT: 0, prev: wp.clone(),
+    };
     this._severedLimbs = this._severedLimbs || [];
     this._severedLimbs.push(limb);
     this._pendingSevers = this._pendingSevers || [];
     this._pendingSevers.push({ fighter, side, limb });
 
-    // Silly geyser: a big squirt off the stump + a burst trailing the limb.
-    this._bloodSquirt(wp, outward, 2.4);
-    this._bloodSquirt(wp, new THREE.Vector3(outward.x, 1, outward.z).normalize(), 1.8);
-    // Keep the stump bleeding for a beat (see the stump loop in _tick).
-    fighter.stumps.push({ side, t: 1.4, emit: 0 });
+    // The gush as it comes off, then the stump bleeds in time with the heart and
+    // both torn ends get a wound cap (blood.js).
+    this._bloodSquirt(wp, new THREE.Vector3(outward.x, 0.45, outward.z).normalize(), 1.6);
+    this._startStump(fighter, side);
+    this._addWoundCap(shoulder, side, fighter.rig.config.buildScale, true);
     this.audio.impact({ power: 1.8, worldPos: wp });
     this.hudDirty = true;
   }
@@ -502,28 +482,6 @@ class VfxMethods {
     this._pendingSevers.length = 0;
   }
 
-  // A beefier, sillier version of _spawnBlood for a dismemberment geyser: more
-  // droplets, launched harder. Reuses the blood/stain pipeline so it splats.
-  _bloodSquirt(pos, dir, power = 1) {
-    const count = 10 + Math.round(this.rng.random() * 10 * power);
-    for (let i = 0; i < count; i++) {
-      const m = new THREE.Mesh(
-        new THREE.SphereGeometry(0.02 + this.rng.random() * 0.03, 5, 4),
-        new THREE.MeshBasicMaterial({ color: 0x9e120e, transparent: true, opacity: 0.95 })
-      );
-      m.position.set(
-        pos.x + (this.rng.random() - 0.5) * 0.1,
-        pos.y + (this.rng.random() - 0.5) * 0.1,
-        pos.z + (this.rng.random() - 0.5) * 0.1);
-      const vel = new THREE.Vector3(
-        dir.x * (2.2 + this.rng.random() * 2.6) + (this.rng.random() - 0.5) * 2.2,
-        1.6 + this.rng.random() * 2.6 * power,
-        dir.z * (2.2 + this.rng.random() * 2.6) + (this.rng.random() - 0.5) * 2.2);
-      this.scene.add(m);
-      this.effects.push({ mesh: m, life: 2.5, vel, gravity: -11, blood: true });
-    }
-  }
-
   // Drive each severed arm from its rigid bodies; once at rest, retire the
   // bodies and leave the meshes where they landed (the world has
   // allowSleep = false, so a settled limb would jitter forever). Limbs linger
@@ -533,61 +491,26 @@ class VfxMethods {
     for (const l of this._severedLimbs) {
       if (l.settled || !l.arm || !l.arm.active) continue;
       l.arm.drive();
+      const p = l.shoulder.position; // the torn end: the shoulder pivot
+      // Drips trail off the torn end, carrying some of its tumble.
+      l.bleed = Math.max(0, l.bleed - dt / 2.5);
+      l.dripT -= dt;
+      if (l.bleed > 0 && l.dripT <= 0 && dt > 0) {
+        l.dripT = 0.03 + (1 - l.bleed) * 0.08;
+        const k = 0.5 / dt;
+        this._blood(p.x, p.y, p.z,
+          (p.x - l.prev.x) * k + (Math.random() - 0.5) * 0.4, (p.y - l.prev.y) * k,
+          (p.z - l.prev.z) * k + (Math.random() - 0.5) * 0.4, 0.007 + 0.008 * l.bleed);
+      }
+      l.prev.copy(p);
       l.restT = l.arm.speed < 0.4 ? l.restT + dt : 0;
       if (l.restT > 0.4) {
         l.settled = true;
-        const p = l.shoulder.position;
         l.arm.dispose();
-        if (Math.abs(p.x) < 5.7 && Math.abs(p.z) < 5.7) {
-          this._addBloodStain(p.x, p.z);
-        }
+        // What is left in the limb seeps out into a pool around the torn end.
+        this._bloodPool(p.x, p.z, 0.2, 3.5);
       }
     }
-  }
-
-  // A landed droplet becomes a permanent stain on the canvas — the ring
-  // visibly accumulates the fight's damage until the next match clears it.
-  _addBloodStain(x, z) {
-    if (!this._stainGeo) {
-      this._stainGeo = new THREE.CircleGeometry(1, 8);
-      this._stainMat = new THREE.MeshBasicMaterial({
-        color: 0x5e0d0a, transparent: true, opacity: 0.8, depthWrite: false,
-      });
-    }
-    this._bloodStains = this._bloodStains || [];
-    // Cap the pool: the oldest stain recycles once the canvas is saturated.
-    if (this._bloodStains.length >= 160) {
-      const old = this._bloodStains.shift();
-      this.scene.remove(old);
-      this._bloodStains.push(old);
-      old.position.set(x, 0.048, z);
-      old.rotation.z = this.rng.random() * Math.PI;
-      this.scene.add(old);
-      return;
-    }
-    const s = new THREE.Mesh(this._stainGeo, this._stainMat);
-    s.rotation.x = -Math.PI / 2;
-    s.rotation.z = this.rng.random() * Math.PI;
-    const r = 0.03 + this.rng.random() * 0.055;
-    s.scale.set(r * (1 + this.rng.random() * 0.6), r, 1);
-    s.position.set(x, 0.048, z);
-    s.renderOrder = 2; // above the canvas top
-    this.scene.add(s);
-    this._bloodStains.push(s);
-  }
-
-  // Sweat spray off a rocked fighter's head on the heavy-hit stagger.
-  _spawnSweat(headPos, count = 7) {
-    for (let i = 0; i < count; i++) {
-      this._spawnParticle(
-        headPos.x + (Math.random() - 0.5) * 0.2,
-        headPos.y + 0.1 + Math.random() * 0.15,
-        headPos.z + (Math.random() - 0.5) * 0.2,
-        (Math.random() - 0.5) * 3.2, 1.2 + Math.random() * 1.6, (Math.random() - 0.5) * 3.2,
-        0xbfd8ff, 0.4 + Math.random() * 0.2, -9);
-    }
-    // The droplets darken the vinyl and dry off (matWear.js).
-    this.matWear?.sweat(headPos.x, headPos.z, 0.55, count);
   }
 
   // Celebration confetti glitter over the ring at the K.O.

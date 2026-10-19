@@ -1,0 +1,599 @@
+// blood.js — blood and sweat: pooled liquid droplets, the torn shoulder's heartbeat
+// bleed, wound caps, the stains the canvas keeps (shaped by how each drop landed,
+// pooling and drying over the night), and the sweat a fighter builds over a round.
+//
+// Mixed into BrawlGame's prototype, so `this` is the live game — see mixin.js.
+//
+// Presentation only: Math.random, never this.rng, so a seeded match plays out the
+// same however much it bleeds. Every mesh here is pooled and built at start(), so
+// _warmupRender compiles its programs up front and nothing links mid-fight.
+
+import * as THREE from 'three';
+
+const DROP_MAX = 768;       // blood droplets in flight
+const SWEAT_MAX = 256;      // sweat droplets in flight
+const STAIN_MAX = 400;      // stains on the canvas; the oldest recycles
+const GRAVITY = -11;
+const AIR_DRAG = 0.35;      // per-second velocity damping; droplets are small
+const FLOOR_Y = 0.07;       // canvas top + a droplet radius
+const STAIN_Y = 0.048;      // just above the canvas top
+const STAIN_HALF = 5.7;     // drops outside this land off the canvas and vanish
+const DRY_SECS = 40;        // fresh red → dried maroon
+const POOL_MAX_R = 0.42;    // merged pools stop growing here
+
+// Heartbeat bleed. Adrenaline puts the heart near 140 bpm; each beat throws a spurt
+// in the first part of the cycle, and each one is weaker as the pressure drops.
+const HEART_PERIOD = 0.42;
+const SPURT_FRAC = 0.42;    // share of each beat spent spurting
+const PRESSURE_DECAY = 0.82;
+const PRESSURE_DRIP = 0.3;  // below this the stump only drips
+const STUMP_LIFE = 8;       // seconds of bleeding in all
+
+// Scratch objects so per-frame code allocates nothing.
+const _m = new THREE.Matrix4();
+const _q = new THREE.Quaternion();
+const _s = new THREE.Vector3();
+const _p = new THREE.Vector3();
+const _d = new THREE.Vector3();
+const _c = new THREE.Color();
+const _up = new THREE.Vector3(0, 1, 0);
+const _socket = new THREE.Vector3();
+const _dir = new THREE.Vector3();
+const _head = new THREE.Vector3();
+
+// Both sit well below full red: AgX at this exposure turns a bright red salmon-pink.
+const BLOOD_FRESH = 0x6e0a08; // arterial: brighter
+const BLOOD_DARK = 0x4a0806;  // a face cut: darker
+const SWEAT_TINT = 0xeaf2fa;
+
+function rnd(a, b) { return a + Math.random() * (b - a); }
+
+// The stain atlas: 2 × 2 cells, white shapes. Cells 0-1 are round splats with
+// satellite spots (a drop that fell straight down); cells 2-3 are teardrops pointing
+// +u with a tail and trailing spatter (a drop that came in low and fast). R holds the
+// crisp coverage, G a blurred copy the shader reads as film thickness.
+function buildStainAtlas() {
+  const SIZE = 256, CELL = 128;
+  const crisp = document.createElement('canvas');
+  crisp.width = crisp.height = SIZE;
+  const g = crisp.getContext('2d');
+  g.fillStyle = '#fff';
+  const blob = (cx, cy, r, wobble, lobes) => {
+    g.beginPath();
+    const steps = 28;
+    for (let i = 0; i <= steps; i++) {
+      const a = (i / steps) * Math.PI * 2;
+      const rr = r * (1 + wobble * Math.sin(a * lobes + lobes) * Math.cos(a * 2.3));
+      const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
+      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.fill();
+  };
+  const dot = (x, y, r) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); };
+  // Cell k sits at column k % 2 and row-from-the-bottom floor(k / 2): the texture is
+  // flipped on upload, so the shader's (uv + cell) * 0.5 lands on it.
+  const origin = (k) => [(k % 2) * CELL, (1 - Math.floor(k / 2)) * CELL];
+  for (let k = 0; k < 2; k++) {
+    const [ox, oy] = origin(k);
+    const cx = ox + CELL / 2, cy = oy + CELL / 2;
+    blob(cx, cy, 34, k ? 0.12 : 0.08, k ? 7 : 5);
+    for (let i = 0; i < 9 + k * 4; i++) {
+      const a = Math.random() * Math.PI * 2, d = rnd(40, 58);
+      dot(cx + Math.cos(a) * d, cy + Math.sin(a) * d, rnd(1.2, 4));
+    }
+  }
+  for (let k = 2; k < 4; k++) {
+    const [ox, oy] = origin(k);
+    const cy = oy + CELL / 2;
+    const head = ox + 46;
+    // Elliptical body, then a tapering tail toward +u.
+    g.beginPath();
+    g.ellipse(head, cy, 30, 20, 0, 0, Math.PI * 2);
+    g.fill();
+    g.beginPath();
+    g.moveTo(head + 10, cy - 15);
+    g.quadraticCurveTo(head + 52, cy - 4, head + 66, cy);
+    g.quadraticCurveTo(head + 52, cy + 4, head + 10, cy + 15);
+    g.fill();
+    dot(head + 72, cy + (k === 2 ? 1 : -2), 3.2);
+    for (let i = 0; i < 6; i++) dot(head + rnd(40, 76), cy + rnd(-14, 14), rnd(0.8, 2.2));
+  }
+  const blur = document.createElement('canvas');
+  blur.width = blur.height = SIZE;
+  const bg = blur.getContext('2d');
+  if ('filter' in bg) bg.filter = 'blur(5px)';
+  bg.drawImage(crisp, 0, 0);
+  const a = g.getImageData(0, 0, SIZE, SIZE);
+  const b = bg.getImageData(0, 0, SIZE, SIZE);
+  for (let i = 0; i < a.data.length; i += 4) {
+    a.data[i + 1] = Math.min(a.data[i], b.data[i]); // thickness never spills past the edge
+    a.data[i + 2] = 0;
+    a.data[i + 3] = 255;
+  }
+  g.putImageData(a, 0, 0);
+  const tex = new THREE.CanvasTexture(crisp);
+  tex.colorSpace = THREE.NoColorSpace; // data, not color
+  return tex;
+}
+
+function makeDropPool(max, material) {
+  const geo = new THREE.SphereGeometry(1, 7, 5);
+  const mesh = new THREE.InstancedMesh(geo, material, max);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  // Seed instanceColor so the instancing-color program is the one warmup compiles.
+  mesh.setColorAt(0, _c.set(0xffffff));
+  mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  mesh.count = 0;
+  mesh.frustumCulled = false; // instances move every frame; the cached bounds would lie
+  mesh.castShadow = false;
+  // Per slot: x y z vx vy vz radius life, plus an RGB tint.
+  return { mesh, max, cursor: 0, live: 0, d: new Float32Array(max * 8), col: new Float32Array(max * 3) };
+}
+
+class BloodMethods {
+  _initBlood() {
+    this._bloodClock = 0;
+    this._drops = makeDropPool(DROP_MAX, new THREE.MeshStandardMaterial({
+      // Fresh blood is a wet, glossy liquid — lit, never additive.
+      color: 0xffffff, roughness: 0.2, metalness: 0,
+    }));
+    this._sweatDrops = makeDropPool(SWEAT_MAX, new THREE.MeshStandardMaterial({
+      // Clear water: almost no color of its own, it shows as a glint off the ring lights.
+      color: 0xffffff, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.55,
+      envMapIntensity: 2.2, depthWrite: false,
+    }));
+    this._sweatDrops.mesh.renderOrder = 3;
+    this.scene.add(this._drops.mesh, this._sweatDrops.mesh);
+
+    // Stains: one instanced quad per stain on the canvas, atlas cell + birth time
+    // per instance, aged in the shader so drying costs nothing on the CPU.
+    const geo = new THREE.PlaneGeometry(1, 1);
+    geo.rotateX(-Math.PI / 2); // lie flat; u runs along local +X
+    this._stainCell = new THREE.InstancedBufferAttribute(new Float32Array(STAIN_MAX), 1);
+    this._stainBirth = new THREE.InstancedBufferAttribute(new Float32Array(STAIN_MAX), 1);
+    this._stainCell.setUsage(THREE.DynamicDrawUsage);
+    this._stainBirth.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('aCell', this._stainCell);
+    geo.setAttribute('aBirth', this._stainBirth);
+    this._stainTex = buildStainAtlas();
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uMap: { value: this._stainTex },
+        uTime: { value: 0 },
+        uFresh: { value: new THREE.Color(0x520907) },
+        uDry: { value: new THREE.Color(0x2a0806) },
+        uRim: { value: new THREE.Color(0x140403) },
+      },
+      vertexShader: /* glsl */`
+        attribute float aCell;
+        attribute float aBirth;
+        uniform float uTime;
+        varying vec2 vUv;
+        varying float vAge;
+        void main() {
+          vec2 cell = vec2(mod(aCell, 2.0), floor(aCell / 2.0));
+          vUv = (uv + cell) * 0.5;
+          vAge = uTime - aBirth;
+          gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: /* glsl */`
+        uniform sampler2D uMap;
+        uniform vec3 uFresh;
+        uniform vec3 uDry;
+        uniform vec3 uRim;
+        varying vec2 vUv;
+        varying float vAge;
+        void main() {
+          vec4 t = texture2D(uMap, vUv);
+          float cov = t.r;
+          if (cov < 0.04) discard;
+          float thick = t.g;
+          float dry = smoothstep(0.0, 1.0, vAge / ${DRY_SECS.toFixed(1)});
+          vec3 col = mix(uFresh, uDry, dry);
+          // Drying blood pulls its pigment to the edge (the coffee-ring look).
+          float rim = 1.0 - smoothstep(0.15, 0.7, thick);
+          col = mix(col, uRim, rim * (0.25 + 0.5 * dry));
+          // A wet film catches a soft highlight on its thick middle, dulling as it dries.
+          col += vec3(0.05, 0.012, 0.01) * smoothstep(0.55, 0.95, thick) * (1.0 - dry);
+          gl_FragColor = vec4(col, cov * mix(0.94, 0.85, dry));
+        }`,
+      transparent: true,
+      depthWrite: false,
+      fog: false,
+    });
+    this._stains = new THREE.InstancedMesh(geo, mat, STAIN_MAX);
+    this._stains.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this._stains.count = 0;
+    this._stains.frustumCulled = false;
+    this._stains.renderOrder = 2; // above the canvas top
+    this.scene.add(this._stains);
+    this._stainList = [];     // index == instance slot
+    this._stainCursor = 0;
+    this._stainGrowing = [];
+    this._stainsDirty = false;
+
+    // Wound caps on the torn shoulder and the torn end of the limb. Shared, wet,
+    // and kept alive by a hidden keeper so the program is compiled at warmup.
+    this._woundGeo = new THREE.SphereGeometry(1, 14, 10);
+    this._woundMat = new THREE.MeshStandardMaterial({ color: 0x5a0a08, roughness: 0.28 });
+    this._woundCoreMat = new THREE.MeshStandardMaterial({ color: 0xa83a32, roughness: 0.35 });
+    const keepers = new THREE.Group();
+    keepers.visible = false;
+    keepers.add(new THREE.Mesh(this._woundGeo, this._woundMat), new THREE.Mesh(this._woundGeo, this._woundCoreMat));
+    this._woundKeepers = keepers;
+    this.scene.add(keepers);
+  }
+
+  // ── Droplets ─────────────────────────────────────────────────────────
+  _emitDrop(pool, x, y, z, vx, vy, vz, r, color) {
+    if (!pool) return;
+    const i = pool.cursor;
+    pool.cursor = (i + 1) % pool.max;
+    const o = i * 8;
+    if (pool.d[o + 7] <= 0) pool.live++;
+    pool.d[o] = x; pool.d[o + 1] = y; pool.d[o + 2] = z;
+    pool.d[o + 3] = vx; pool.d[o + 4] = vy; pool.d[o + 5] = vz;
+    pool.d[o + 6] = r; pool.d[o + 7] = 3;
+    _c.set(color);
+    pool.col[i * 3] = _c.r; pool.col[i * 3 + 1] = _c.g; pool.col[i * 3 + 2] = _c.b;
+  }
+
+  _blood(x, y, z, vx, vy, vz, r, color = BLOOD_FRESH) {
+    this._emitDrop(this._drops, x, y, z, vx, vy, vz, r, color);
+  }
+
+  // Integrate one pool and repack the live drops into instances 0..k-1, each
+  // stretched along its velocity so a fast drop reads as a streak of liquid.
+  _stepDrops(pool, dt, onLand) {
+    if (!pool || (!pool.live && !pool.mesh.count)) return;
+    const d = pool.d, drag = Math.exp(-AIR_DRAG * dt);
+    let k = 0;
+    for (let i = 0; i < pool.max; i++) {
+      const o = i * 8;
+      if (d[o + 7] <= 0) continue;
+      d[o + 7] -= dt;
+      d[o + 3] *= drag; d[o + 5] *= drag;
+      d[o + 4] += GRAVITY * dt;
+      d[o] += d[o + 3] * dt; d[o + 1] += d[o + 4] * dt; d[o + 2] += d[o + 5] * dt;
+      const x = d[o], y = d[o + 1], z = d[o + 2];
+      const onCanvas = Math.abs(x) < STAIN_HALF && Math.abs(z) < STAIN_HALF;
+      if (onCanvas && y <= FLOOR_Y && d[o + 4] < 0) {
+        onLand(x, z, d[o + 3], d[o + 4], d[o + 5], d[o + 6]);
+        d[o + 7] = 0;
+      } else if (y < -0.6) {
+        d[o + 7] = 0; // fell off the ring
+      }
+      if (d[o + 7] <= 0) { pool.live--; continue; }
+      const vx = d[o + 3], vy = d[o + 4], vz = d[o + 5];
+      const sp = Math.sqrt(vx * vx + vy * vy + vz * vz);
+      if (sp > 0.05) _q.setFromUnitVectors(_up, _d.set(vx / sp, vy / sp, vz / sp));
+      else _q.identity();
+      const r = d[o + 6], st = 1 + Math.min(1.5, sp * 0.16), w = r / Math.sqrt(st);
+      _m.compose(_p.set(x, y, z), _q, _s.set(w, r * st, w));
+      pool.mesh.setMatrixAt(k, _m);
+      pool.mesh.setColorAt(k, _c.setRGB(pool.col[i * 3], pool.col[i * 3 + 1], pool.col[i * 3 + 2]));
+      k++;
+    }
+    pool.live = k;
+    pool.mesh.count = k;
+    pool.mesh.instanceMatrix.needsUpdate = true;
+    pool.mesh.instanceColor.needsUpdate = true;
+  }
+
+  _updateBlood(dt) {
+    if (!this._drops) return;
+    this._bloodClock += dt;
+    this._stepDrops(this._drops, dt, (x, z, vx, vy, vz, r) => this._addBloodStain(x, z, vx, vy, vz, r));
+    // Sweat darkens the vinyl where it lands and dries off (matWear.js).
+    this._stepDrops(this._sweatDrops, dt, (x, z) => this.matWear?.sweat(x, z, 0.02, 1));
+    this._updateStains(dt);
+  }
+
+  // Occasional blood on clean face hits: a few fat drops thrown with the blow plus
+  // a fine mist of tiny ones, darker than the arterial red of a torn shoulder.
+  _spawnBlood(pos, dir, power = 1) {
+    const big = 2 + Math.round(Math.random() * 2 * power);
+    const mist = 5 + Math.round(Math.random() * 5 * power);
+    for (let i = 0; i < big + mist; i++) {
+      const fat = i < big;
+      const sp = fat ? rnd(1.4, 2.6) : rnd(2.2, 3.8);
+      const spread = fat ? 0.9 : 1.6;
+      this._blood(
+        pos.x + rnd(-0.04, 0.04), pos.y + rnd(-0.04, 0.04), pos.z + rnd(-0.04, 0.04),
+        dir.x * sp + rnd(-0.5, 0.5) * spread, rnd(0.6, 1.6), dir.z * sp + rnd(-0.5, 0.5) * spread,
+        fat ? rnd(0.012, 0.02) : rnd(0.004, 0.008), BLOOD_DARK);
+    }
+  }
+
+  // The gush the instant an arm comes off: a tight cone of fast drops, the biggest
+  // ones out front, before the heartbeat takes over (_tickStumps).
+  _bloodSquirt(pos, dir, power = 1) {
+    const count = 14 + Math.round(Math.random() * 10 * power);
+    for (let i = 0; i < count; i++) {
+      const lead = i < 4;
+      const sp = (lead ? rnd(4.2, 5.2) : rnd(2.4, 4.6)) * (0.7 + 0.3 * power);
+      const j = lead ? 0.08 : 0.22;
+      this._blood(
+        pos.x + rnd(-0.03, 0.03), pos.y + rnd(-0.03, 0.03), pos.z + rnd(-0.03, 0.03),
+        (dir.x + rnd(-j, j)) * sp, (dir.y + rnd(-j, j)) * sp + 0.8, (dir.z + rnd(-j, j)) * sp,
+        lead ? rnd(0.018, 0.024) : rnd(0.007, 0.015));
+    }
+  }
+
+  // ── The torn shoulder ────────────────────────────────────────────────
+  _startStump(fighter, side) {
+    fighter.stumps.push({ side, t: 0, pressure: 1, beatT: 0, dripT: 0, lead: true });
+    this._addWoundCap(fighter.rig.joints.torso, side, fighter.rig.config.buildScale);
+  }
+
+  // Socket in torso-local space (fighters.js: shoulder at x = ±0.28·buildScale,
+  // y = 0.5) lifted to world; `out` gets the matching outward direction, rotated
+  // with the torso so the spurt leaves the shoulder whichever way the body faces.
+  _stumpFrame(f, side, wobbleT, out) {
+    const s = side === 'L' ? -1 : 1;
+    const torso = f.rig.joints.torso;
+    _socket.set(s * 0.3 * f.rig.config.buildScale, 0.5, 0);
+    torso.localToWorld(_socket);
+    // The jet whips a little, like a loose hose.
+    out.set(s, 0.38 + Math.sin(wobbleT * 11) * 0.16, 0.12 + Math.cos(wobbleT * 7.3) * 0.2).normalize();
+    torso.getWorldQuaternion(_q);
+    out.applyQuaternion(_q);
+    return _socket;
+  }
+
+  // Arterial bleeding in time with the heart: a strong spurt that fades to a
+  // dribble each beat, every beat weaker as the pressure drops, then only drips
+  // running down the side of the body until it stops.
+  _tickStumps(f, dt) {
+    if (!f.stumps || !f.stumps.length) return;
+    for (let n = f.stumps.length - 1; n >= 0; n--) {
+      const st = f.stumps[n];
+      st.t += dt;
+      if (st.t >= STUMP_LIFE) { f.stumps.splice(n, 1); continue; }
+      const socket = this._stumpFrame(f, st.side, st.t, _dir);
+      if (st.pressure > PRESSURE_DRIP) {
+        st.beatT += dt;
+        if (st.beatT >= HEART_PERIOD) {
+          st.beatT -= HEART_PERIOD;
+          st.pressure *= PRESSURE_DECAY;
+          st.lead = true;
+        }
+        const k = st.beatT / HEART_PERIOD / SPURT_FRAC;
+        if (k < 1) {
+          // Fast rise, slow fall: the envelope of one pulse.
+          const e = k < 0.2 ? k / 0.2 : 1 - (k - 0.2) / 0.8;
+          const p = st.pressure;
+          const sp = (2.2 + 2.6 * e) * (0.45 + 0.55 * p);
+          const n2 = 1 + Math.round(2 * e * p + Math.random() * 0.6);
+          for (let i = 0; i < n2; i++) {
+            // Spread each tick's drops along the path they travel in one tick, so the
+            // jet reads as one connected stream rather than puffs.
+            const lag = Math.random() * dt * sp;
+            const r = st.lead && i === 0 ? rnd(0.018, 0.024) * (0.6 + 0.4 * p) : rnd(0.007, 0.01) + 0.009 * e * p;
+            this._blood(
+              socket.x + _dir.x * lag, socket.y + _dir.y * lag, socket.z + _dir.z * lag,
+              _dir.x * sp + rnd(-0.12, 0.12) + f.vel.x * 0.8,
+              _dir.y * sp + rnd(-0.12, 0.12),
+              _dir.z * sp + rnd(-0.12, 0.12) + f.vel.z * 0.8, r);
+          }
+          st.lead = false;
+          continue;
+        }
+      }
+      // Between spurts and once the pressure is gone: drips from the socket or a
+      // little way down the flank, as if run down from the wound.
+      st.dripT -= dt;
+      if (st.dripT <= 0) {
+        st.dripT = st.pressure > PRESSURE_DRIP ? rnd(0.06, 0.12) : rnd(0.18, 0.45) * (1 + st.t / STUMP_LIFE);
+        const s = st.side === 'L' ? -1 : 1;
+        _p.set(s * rnd(0.26, 0.32) * f.rig.config.buildScale, 0.5 - Math.random() * 0.32, rnd(-0.04, 0.06));
+        f.rig.joints.torso.localToWorld(_p);
+        this._blood(_p.x, _p.y, _p.z, f.vel.x + rnd(-0.1, 0.1), rnd(-0.3, 0), f.vel.z + rnd(-0.1, 0.1),
+          rnd(0.009, 0.014), BLOOD_DARK);
+      }
+    }
+  }
+
+  // A dark wet patch with a lighter core: on the torso it sits on the suit's
+  // shoulder cap, flattened along X; on the limb, across the top of the sleeve.
+  _addWoundCap(parent, side, buildScale, onLimb = false) {
+    if (!this._woundGeo || !parent) return;
+    const b = buildScale || 1;
+    const outer = new THREE.Mesh(this._woundGeo, this._woundMat);
+    const core = new THREE.Mesh(this._woundGeo, this._woundCoreMat);
+    outer.userData.shared = core.userData.shared = true; // never disposed with the rig
+    const r = (onLimb ? 0.06 : 0.065) * b;
+    if (onLimb) {
+      outer.position.set(0, -0.005, 0);
+      outer.scale.set(r, r * 0.32, r);
+      core.position.set(0, 0.008, 0);
+      core.scale.set(r * 0.45, r * 0.2, r * 0.45);
+    } else {
+      const s = side === 'L' ? -1 : 1;
+      outer.position.set(s * 0.335 * b, 0.5, 0);
+      outer.scale.set(r * 0.32, r, r);
+      core.position.set(s * 0.352 * b, 0.5, 0);
+      core.scale.set(r * 0.2, r * 0.45, r * 0.45);
+    }
+    parent.add(outer, core);
+  }
+
+  // ── Stains ───────────────────────────────────────────────────────────
+  // A landed droplet becomes a stain shaped by how it hit: steep → a round splat
+  // with satellites; shallow → a teardrop pointing the way it travelled, stretched
+  // by 1 / sin(impact angle) as real bloodstains are (exaggerated a touch: the ring is
+  // small and most drops come down steep). A drop landing on an earlier
+  // round stain joins it, so a pool forms where blood keeps falling.
+  _addBloodStain(x, z, vx = 0, vy = -1, vz = 0, r = 0.02) {
+    if (!this._stains) return;
+    const h = Math.sqrt(vx * vx + vz * vz), v = Math.abs(vy);
+    const sinA = v / Math.max(1e-4, Math.sqrt(h * h + v * v));
+    const speed = Math.sqrt(h * h + v * v);
+    const dia = Math.min(0.3, Math.max(0.04, r * 6 * (1 + speed * 0.08)));
+    const round = sinA > 0.94;
+    if (this._mergeIntoPool(x, z, dia)) return;
+    const len = round ? dia * rnd(0.75, 1.3) : dia / Math.max(0.28, sinA * sinA);
+    this._putStain({
+      x, z, ang: round ? Math.random() * Math.PI * 2 : Math.atan2(-vz, vx),
+      // A round splat's shape fills ~60% of its cell; a teardrop's runs most of its length.
+      sx: round ? len * 1.7 : len * 1.25, sz: round ? len * 1.7 : dia * 1.5,
+      cell: round ? (Math.random() < 0.5 ? 0 : 1) : (Math.random() < 0.5 ? 2 : 3),
+      birth: this._bloodClock, round,
+    });
+  }
+
+  _mergeIntoPool(x, z, dia) {
+    const list = this._stainList, n = list.length;
+    // Only the most recent stains are worth checking: a pool forms where blood is
+    // falling NOW, and the scan stays a few dozen distance checks.
+    for (let j = 0; j < Math.min(n, 48); j++) {
+      const idx = (this._stainCursor - 1 - j + STAIN_MAX * 2) % STAIN_MAX;
+      const st = list[idx];
+      if (!st || !st.round) continue;
+      const R = st.sx * 0.3; // the splat body's radius inside its quad
+      const dx = x - st.x, dz = z - st.z;
+      if (dx * dx + dz * dz > (R + dia * 0.3) * (R + dia * 0.3)) continue;
+      if (R < POOL_MAX_R) {
+        const nr = Math.min(POOL_MAX_R, Math.sqrt(R * R + dia * dia * 0.15));
+        st.sx = st.sz = nr / 0.3;
+      }
+      // Fresh blood on top re-wets the pool.
+      st.birth = this._bloodClock - (this._bloodClock - st.birth) * 0.4;
+      this._writeStain(idx);
+      return true;
+    }
+    return false;
+  }
+
+  _putStain(st) {
+    const idx = this._stainCursor;
+    this._stainCursor = (idx + 1) % STAIN_MAX;
+    this._stainGrowing = this._stainGrowing.filter((g) => g.idx !== idx);
+    this._stainList[idx] = st;
+    this._stains.count = Math.max(this._stains.count, idx + 1);
+    this._writeStain(idx);
+    return idx;
+  }
+
+  _writeStain(idx) {
+    const st = this._stainList[idx];
+    _q.setFromAxisAngle(_up, st.ang);
+    _m.compose(_p.set(st.x, STAIN_Y, st.z), _q, _s.set(st.sx, 1, st.sz));
+    this._stains.setMatrixAt(idx, _m);
+    this._stainCell.array[idx] = st.cell;
+    this._stainBirth.array[idx] = st.birth;
+    this._stainsDirty = true;
+  }
+
+  // A pool that spreads out over `secs` under a limb or body lying in it.
+  _bloodPool(x, z, radius, secs) {
+    if (!this._stains || Math.abs(x) >= STAIN_HALF || Math.abs(z) >= STAIN_HALF) return;
+    const st = { x, z, ang: Math.random() * Math.PI * 2, sx: 0.06, sz: 0.06, cell: 1, birth: this._bloodClock, round: true };
+    const idx = this._putStain(st);
+    this._stainGrowing.push({ idx, st, to: radius / 0.3, rate: (radius / 0.3 - 0.06) / secs });
+  }
+
+  _updateStains(dt) {
+    if (!this._stains) return;
+    this._stains.material.uniforms.uTime.value = this._bloodClock;
+    for (let i = this._stainGrowing.length - 1; i >= 0; i--) {
+      const g = this._stainGrowing[i];
+      // Spreading slows as the pool thins out.
+      const left = g.to - g.st.sx;
+      g.st.sx = g.st.sz = Math.min(g.to, g.st.sx + g.rate * dt * Math.max(0.25, left / g.to * 2));
+      this._writeStain(g.idx);
+      if (g.st.sx >= g.to - 1e-3) this._stainGrowing.splice(i, 1);
+    }
+    if (this._stainsDirty) {
+      this._stains.instanceMatrix.needsUpdate = true;
+      this._stainCell.needsUpdate = true;
+      this._stainBirth.needsUpdate = true;
+      this._stainsDirty = false;
+    }
+  }
+
+  // A fresh match starts on a clean canvas (the tournament keeps its stains; see
+  // _spawnFighters). Droplets still in the air go too.
+  _clearBlood() {
+    if (!this._stains) return;
+    this._stains.count = 0;
+    this._stainList.length = 0;
+    this._stainCursor = 0;
+    this._stainGrowing.length = 0;
+    for (const pool of [this._drops, this._sweatDrops]) {
+      pool.d.fill(0);
+      pool.live = 0;
+      pool.mesh.count = 0;
+    }
+  }
+
+  _disposeBlood() {
+    if (!this._drops) return;
+    for (const m of [this._drops.mesh, this._sweatDrops.mesh, this._stains]) {
+      this.scene.remove(m);
+      m.geometry.dispose();
+      m.material.dispose();
+      m.dispose();
+    }
+    this.scene.remove(this._woundKeepers);
+    this._woundGeo.dispose();
+    this._woundMat.dispose();
+    this._woundCoreMat.dispose();
+    this._stainTex.dispose();
+    this._drops = this._sweatDrops = this._stains = null;
+  }
+
+  // ── Sweat ────────────────────────────────────────────────────────────
+  // Spray off a rocked head: a fan thrown the way the head snapped (`dir`, the
+  // knockback), heavier the wetter the fighter already is.
+  _spawnSweat(headPos, dir, fighter) {
+    const wet = fighter ? Math.min(1, fighter.sweat || 0) : 0.5;
+    const n = Math.round(6 + 10 * wet);
+    let dx = dir ? dir.x : 0, dz = dir ? dir.z : 0;
+    const len = Math.sqrt(dx * dx + dz * dz);
+    if (len < 1e-3) { const a = Math.random() * Math.PI * 2; dx = Math.cos(a); dz = Math.sin(a); } else { dx /= len; dz /= len; }
+    for (let i = 0; i < n; i++) {
+      const fan = rnd(-0.8, 0.8), sp = rnd(1.8, 3.6);
+      this._emitDrop(this._sweatDrops,
+        headPos.x + rnd(-0.08, 0.08), headPos.y + rnd(0.02, 0.14), headPos.z + rnd(-0.08, 0.08),
+        dx * sp - dz * fan * 1.8, rnd(0.8, 2.2), dz * sp + dx * fan * 1.8,
+        i < n * 0.3 ? rnd(0.012, 0.018) : rnd(0.005, 0.01), SWEAT_TINT);
+    }
+  }
+
+  // A round wears a fighter down: sweat builds with time on the clock and faster
+  // when the tank is low, feeding the skin's wet sheen (_applyDamageWear). A
+  // fighter that is already wet flicks drops off any sharp head snap.
+  _tickSweat(f, dt) {
+    if (f.state === 'ko') return;
+    if (this.phase === 'fighting') {
+      const tired = 1 - Math.max(0, Math.min(1, f.energy ?? 1));
+      f.sweat = Math.min(1, (f.sweat || 0) + dt * (1 / 80 + tired / 45));
+    }
+    f.sweatWearT = (f.sweatWearT || 0) - dt;
+    if (f.sweatWearT <= 0) {
+      f.sweatWearT = 0.5;
+      this._applyDamageWear(f);
+    }
+    // Head speed relative to the body: walking doesn't flick, a snap does.
+    const head = f.rig.joints.head;
+    if (!head) return;
+    head.getWorldPosition(_head).sub(f.rig.root.position);
+    if (!f.headRel) { f.headRel = _head.clone(); return; }
+    const vx = (_head.x - f.headRel.x) / dt, vy = (_head.y - f.headRel.y) / dt, vz = (_head.z - f.headRel.z) / dt;
+    f.headRel.copy(_head);
+    f.flickT = Math.max(0, (f.flickT || 0) - dt);
+    if (f.sweat < 0.35 || f.flickT > 0 || vx * vx + vy * vy + vz * vz < 1.5 * 1.5) return;
+    f.flickT = 0.3;
+    _head.add(f.rig.root.position);
+    const n = 2 + Math.round(Math.random() * 2 * f.sweat);
+    for (let i = 0; i < n; i++) {
+      this._emitDrop(this._sweatDrops,
+        _head.x + rnd(-0.06, 0.06), _head.y + rnd(0.04, 0.12), _head.z + rnd(-0.06, 0.06),
+        vx * 0.8 + rnd(-0.4, 0.4), vy * 0.5 + rnd(0.5, 1.2), vz * 0.8 + rnd(-0.4, 0.4),
+        rnd(0.005, 0.012), SWEAT_TINT);
+    }
+  }
+}
+
+export const Blood = BloodMethods.prototype;

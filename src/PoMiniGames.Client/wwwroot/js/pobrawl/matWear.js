@@ -9,8 +9,7 @@
 //   wet  — sweat that dries: droplets flung off a rocked head darken the vinyl
 //          and lower its roughness, then evaporate over ~20 s. Alpha only.
 //
-// Blood is NOT painted here: it has its own stain meshes (vfx.js _addBloodStain),
-// gated on the no-gore switch.
+// Blood is NOT painted here: it has its own stain meshes (blood.js _addBloodStain).
 //
 // Painting is a few canvas arcs per event; the upload is throttled to 5 Hz and
 // skipped when nothing changed, so a quiet ring costs nothing at all.

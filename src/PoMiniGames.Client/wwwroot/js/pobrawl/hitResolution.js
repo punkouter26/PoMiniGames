@@ -749,9 +749,9 @@ class HitResolutionMethods {
       this.excited = Math.max(this.excited, 0.6);
       // The press row catches it.
       this._pressBurst(3);
-      // Sweat spray whips off the rocked head.
+      // Sweat fans off the rocked head the way it snapped.
       defender.rig.joints.head.getWorldPosition(_sweatPos);
-      this._spawnSweat(_sweatPos);
+      this._spawnSweat(_sweatPos, knockDir, defender);
       // Stagger ragdoll: the heaviest non-lethal hits throw a brief
       // whole-body flail — arms fling, elbows whip, torso pitches, the head
       // snaps — driven through the reaction-spring system so it recovers on
@@ -786,14 +786,15 @@ class HitResolutionMethods {
   // model's colors never change when a fighter is hit or knocked out: no
   // bruise tints, no emissive hit-flash, no cut decal. Damage is read from
   // the HUD body diagram instead. What remains here is sweat glisten
-  // (roughness drops — the fighter gets shinier as the fight wears on) and
+  // (roughness drops — the fighter gets shinier as the fight wears on, from the
+  // damage taken plus the sweat the round builds, blood.js _tickSweat) and
   // cheek/brow swelling, both frozen once the fighter is down/KO'd so the
   // fallen silhouette stays consistent under the result modal.
   _applyDamageWear(f) {
     if (f.state === 'ko') return;
     const total = (f.regionDmg.head + f.regionDmg.torso
       + f.regionDmg.arms + f.regionDmg.legs) / 400;
-    const sweat = Math.min(1, total * 1.6);
+    const sweat = Math.min(1, total * 1.6 + (f.sweat || 0) * 0.7);
     const skin = f.rig.materials.skinMat;
     skin.roughness = 0.55 - 0.3 * sweat;
     f.rig.materials.suitMat.roughness = 0.95 - 0.3 * sweat;

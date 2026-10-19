@@ -27,6 +27,7 @@ import {
 import { mixin } from './mixin.js';
 import { PersonalityEffects } from './personalityEffects.js';
 import { Vfx } from './vfx.js';
+import { Blood } from './blood.js';
 import { Cinematics, BASE_FOV } from './cinematics.js';
 import { HitResolution } from './hitResolution.js';
 import { Training } from './training.js';
@@ -339,6 +340,8 @@ export class BrawlGame {
     // droplet and confetti fleck. Additive blending means "fade" is just
     // color → black, so no per-particle alpha attribute is needed.
     this._initParticles();
+    // Pooled blood + sweat droplets, stains and wound caps (blood.js).
+    this._initBlood();
 
     // Pooled shock rings + the flat-silhouette / speedline / smear timers.
     this._initShaderKeepers();
@@ -683,10 +686,7 @@ export class BrawlGame {
     // stains belong to the fight that produced them. Not in the tournament:
     // there the ring keeps all seven bouts' blood, scuffs and sweat (cup.js).
     const keepWear = this.options.mode === 'tournament';
-    if (this._bloodStains && !keepWear) {
-      for (const s of this._bloodStains) this.scene.remove(s);
-      this._bloodStains.length = 0;
-    }
+    if (!keepWear) this._clearBlood();
     // …and so do the scuffs, skids and sweat.
     if (this.matWear && !keepWear) this.matWear.clear();
     this._koDust = null;
@@ -700,6 +700,7 @@ export class BrawlGame {
           if (!obj) continue;
           this.scene.remove(obj);
           obj.traverse((o) => {
+            if (o.userData.shared) return; // blood.js wound caps share one geometry + material
             if (o.geometry) o.geometry.dispose();
             if (o.material) for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose();
           });
@@ -826,9 +827,11 @@ export class BrawlGame {
         regionDmg: { head: 0, torso: 0, arms: 0, legs: 0 },
         // ── Dismemberment ─────────────────────────────────────────────
         // Which arm sides ('L'/'R') have torn off, plus the still-bleeding
-        // stumps that keep squirting for a beat. See _severArm / _tick.
+        // stumps that pump in time with the heart. See _severArm / blood.js.
         armsLost: new Set(),
         stumps: [],
+        // 0..1 sweat built over the round (blood.js _tickSweat).
+        sweat: 0,
         // ── Misc ──────────────────────────────────────────────────────
         idleT: this.rng.random() * 10,
         speedAmt: 0,
@@ -1280,25 +1283,9 @@ export class BrawlGame {
         f.rig.joints.hips.scale.set(1 + s * 0.8, 1 - s, 1 + s * 0.8);
       }
 
-      // Bleeding stumps: keep squirting from the torn shoulder socket for a beat.
-      if (f.stumps && f.stumps.length) {
-        for (let n = f.stumps.length - 1; n >= 0; n--) {
-          const st = f.stumps[n];
-          st.t -= dt;
-          st.emit -= dt;
-          if (st.emit <= 0) {
-            st.emit = 0.07;
-            // Shoulder socket in torso-local space (see fighters.js: shoulder at
-            // x = ±0.28·buildScale, y = 0.5), lifted to world.
-            const socket = new THREE.Vector3(
-              (st.side === 'L' ? -1 : 1) * 0.28 * f.rig.config.buildScale, 0.5, 0);
-            f.rig.joints.torso.localToWorld(socket);
-            const out = new THREE.Vector3(st.side === 'L' ? -1 : 1, 0.5, 0).normalize();
-            this._bloodSquirt(socket, out, 1.1);
-          }
-          if (st.t <= 0) f.stumps.splice(n, 1);
-        }
-      }
+      // Bleeding stumps and the sweat a round builds up (blood.js).
+      this._tickStumps(f, dt);
+      this._tickSweat(f, dt);
     }
 
     // Drive music tension from the lower of the two HPs (0..1 → 0..1).
@@ -2316,18 +2303,12 @@ export class BrawlGame {
   _updateEffects(dt) {
     this._updateParticles(dt);
     this._updateSeveredLimbs(dt);
-    // The mesh-based list below carries post debris chunks + blood droplets.
+    this._updateBlood(dt);
+    // The mesh-based list below carries post debris chunks.
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const e = this.effects[i];
       e.life -= dt;
       const mesh = e.mesh;
-      // Blood splats on the canvas instead of fading mid-air.
-      if (e.blood && mesh.position.y <= 0.07 && e.vel && e.vel.y < 0) {
-        if (Math.abs(mesh.position.x) < 5.7 && Math.abs(mesh.position.z) < 5.7) {
-          this._addBloodStain(mesh.position.x, mesh.position.z);
-        }
-        e.life = 0; // fall through to the removal branch below
-      }
       if (e.vel) {
         mesh.position.x += e.vel.x * dt;
         mesh.position.y += e.vel.y * dt;
@@ -2404,6 +2385,7 @@ export class BrawlGame {
     if (this.clip) { this.clip.dispose(); this.clip = null; }
     if (this.matWear) { this.matWear.dispose(); this.matWear = null; }
     if (this._pSprite) { this._pSprite.dispose(); this._pSprite = null; }
+    this._disposeBlood();
     // Drop the tier subscription before anything else is torn down — the handler
     // touches the renderer and the arena lights, and a `po-gfx-tier` firing during
     // teardown would reach both after they are gone.
@@ -2482,5 +2464,5 @@ export class BrawlGame {
 // Must run at module scope, after the class declaration and before any instance
 // is constructed. index.js only ever imports BrawlGame from here, so by the time
 // `new BrawlGame()` can be reached these methods are already on the prototype.
-mixin(BrawlGame.prototype, SceneSetup, PersonalityEffects, Vfx, Cinematics, HitResolution, Training, Netplay, Commentary, Spectacle, Cup, Ceremony, Director, Show, ...SHOW_MODULES,
+mixin(BrawlGame.prototype, SceneSetup, PersonalityEffects, Vfx, Blood, Cinematics, HitResolution, Training, Netplay, Commentary, Spectacle, Cup, Ceremony, Director, Show, ...SHOW_MODULES,
   ReactiveArena, Lighting, HudFeedback);

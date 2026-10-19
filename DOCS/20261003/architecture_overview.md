@@ -629,6 +629,18 @@ The CSS bars and `role="meter"` tracks stay in the DOM and are what shows withou
 the low tier (the HUD carries `data-liquid` only while the canvas draws). Reduced motion gets
 still tubes redrawn on change. The loop pauses off-screen and in hidden tabs.
 
+**Engine files.** `game.js` holds `BrawlGame`'s loop, spawning, the tick and teardown; everything
+else is a prototype mixin (`mixin.js`) in its own file. Since 2026-10-18 that includes
+`reactiveArena.js` (jumbotron, rig lenses, mat ripple and wear), `lighting.js` (house lights, posture,
+blob and AO shadows) and `hudFeedback.js` (banner, combos, damage numbers, the HUD pump). Shared
+match constants live in `constants.js`. The `AudioBus` is split the same way: `audio.js` (bus, SFX,
+mix, crowd, Cup storyline), `audioAnnouncer.js` (the PA), `audioShowtime.js` (the show-bus half) and
+`audioCore.js` (constants, tables and node helpers the three share). On the page side,
+`PoBrawlPage.razor` keeps the markup and render fragments and `PoBrawlPage.razor.cs` the logic.
+`PoBrawlProgressBook.cs` is the one reader and writer of the browser's ladder rung, fastest KO,
+clears and Cup titles, merging the signed-in copy with `PoBrawlProgressDto.Merge` (the server
+store's own rule).
+
 **Showtime layer.** `js/pobrawl/show.js` is an event bus the presentation modules hang off, so
 none of them patches the fight code. The engine emits `countdown`, `fight`, `chargeStart`,
 `release`, `hit`, `block`, `super`, `ko`, `replay`, `result`, `cut` and `reset`. Each module
@@ -650,7 +662,7 @@ result itself is always the page's one result card (line, recap, press, KO clip)
 
 | Module | What it does |
 |---|---|
-| `audioShow.js` + `audio.js` | A silent conductor clock, published as `this.beat` (`bpm`, `phase`, `beatN`, `bar`, `pulse`, `energy`). A per-fighter charge riser with a full-charge glint and a release snap. A 4-7 note motif per president, played at the countdown, on supers and in the winner's fanfare; the belt ceremony gets a flourish. Combo notes and the stab when the lead flips snap to the beat. The mix follows the director's shot (tight, mid, wide, KO). In player modes the AudioListener follows the camera (HRTF on the high tier). The crowd stomps and claps on the beat when energy is high and chants a formant-synth "U-S-A!". `balloonPop()` is the balloon pop. There is still no music bed. |
+| `audioShow.js` + `audioShowtime.js` | A silent conductor clock, published as `this.beat` (`bpm`, `phase`, `beatN`, `bar`, `pulse`, `energy`). A per-fighter charge riser with a full-charge glint and a release snap. A 4-7 note motif per president, played at the countdown, on supers and in the winner's fanfare; the belt ceremony gets a flourish. Combo notes and the stab when the lead flips snap to the beat. The mix follows the director's shot (tight, mid, wide, KO). In player modes the AudioListener follows the camera (HRTF on the high tier). The crowd stomps and claps on the beat when energy is high and chants a formant-synth "U-S-A!". `balloonPop()` is the balloon pop. There is still no music bed. |
 | `chargeAura.js` | A fresnel energy shell on the striking fist or shoe while a strike charges, going from white to gold, with heat shimmer, motes from the shared particle pool, a full-charge star glint and a release flare. |
 | `balloons.js` | Full show only. A convention balloon drop: 60 instanced balloons, sized by tier. Half of them drop on a KO win, all of them on the tournament final or the last ladder rung. Balloons float down buoyantly, collide through a spatial hash, are shoved by fighters and pop on hits. Pleated bunting and pennant strings run on Verlet cloth and kick on hits and the KO. Test hook: `_balloonDrop(n, spread)`. |
 | `ledBoards.js` (+ `arena.js` `uWave`) | Full show only. Dot-matrix LED ribbon boards on the apron skirt and a ringside barrier. One shader scrolls a canvas marquee that is redrawn only when the text changes. It shows names, the popular-vote split, combos, BLOCKED, super names, KNOCKOUT, COMEBACK!, FINAL 10 SECONDS and UPSET ALERT, in the colour of the momentum leader. The truss and boards pulse on `beat.pulse`. A stadium wave rolls round the stands, lifting seats and phone lights. |

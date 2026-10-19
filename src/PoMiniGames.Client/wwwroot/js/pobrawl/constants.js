@@ -7,6 +7,18 @@ export const SIM_DT = 1 / 60;
 /** Full health. Region damage and the HUD bars are both expressed against this. */
 export const MAX_HP = 100;
 
+/** One round, sixty seconds. The UI counts down; the engine clock counts up. */
+export const TIME_LIMIT = 60;
+
+/** A combo only surfaces at 2+; a "1 HIT" badge on every jab is noise. */
+export const COMBO_MIN_SHOWN = 2;
+
+/**
+ * Half-width of the ring canvas (arena.js builds it as an 11.6 m box). The mat
+ * wear map spans exactly this, so its texels land where the vinyl is.
+ */
+export const MAT_HALF = 5.8;
+
 // Frame-data table. cancelInto = minimum stateT to transition into each named
 // state. { idle: 0 } means recovery auto-completes when stateT reaches the end.
 // Damage is sized for ~25-40 exchanges a match; the damage-derived feel scalars

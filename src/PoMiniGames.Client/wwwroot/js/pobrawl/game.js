@@ -10,7 +10,7 @@ import { Animator } from './animation.js';
 import { KeyboardController, buildTouchControls, LAYOUTS, padCodes } from './input.js';
 import { AiController } from './ai.js';
 import { RandomGenerator } from './rng.js';
-import { CombatPlay, REGIONS, regionEffect } from './combat.js';
+import { CombatPlay, regionEffect } from './combat.js';
 import { PERSONALITIES, makePersonalityState } from './personalities.js';
 import * as PostFx from '../postFx.js';
 import * as VisualRuntime from '../visualRuntime.js';
@@ -30,11 +30,10 @@ import { Vfx } from './vfx.js';
 import { Cinematics, BASE_FOV } from './cinematics.js';
 import { HitResolution } from './hitResolution.js';
 import { Training } from './training.js';
-import { SIM_DT, MAX_HP, ATTACKS, HEAVY_HIT_DMG } from './constants.js';
+import { SIM_DT, MAX_HP, ATTACKS, TIME_LIMIT, MAT_HALF } from './constants.js';
 import { SceneSetup, ENV_INTENSITY } from './sceneSetup.js';
 import { KeyBridge } from '../gamepadBus.js';
 import { BrawlHaptics } from './haptics.js';
-import { MatWear } from './matWear.js';
 import { KoClipRecorder } from './clip.js';
 import { NetController, Netplay } from './netplay.js';
 import { Commentary } from './commentary.js';
@@ -43,6 +42,9 @@ import { Cup } from './cup.js';
 import { Ceremony } from './ceremony.js';
 import { Director } from './director.js';
 import { Show, SHOW_MODULES } from './show.js';
+import { ReactiveArena } from './reactiveArena.js';
+import { Lighting } from './lighting.js';
+import { HudFeedback } from './hudFeedback.js';
 
 const MAX_FRAME_DT = 0.05;
 
@@ -57,8 +59,6 @@ function motionReduced() {
   }
 }
 
-// One round, sixty seconds. The UI counts down; the engine clock counts up.
-const TIME_LIMIT = 60;
 
 // Lateral orbit speed for the circle keys, in the same units as the 2.4 / 1.9
 // forward / backward walk. Slightly under the advance so that closing distance
@@ -83,14 +83,6 @@ const DRAW_HP_BAND = 10;
 const SPAWN_X_BY_SIDE = { left: -1.6, right: 1.6 };
 
 // ── Overhead house light swing ────────────────────────────────────────────
-// The ring spotlight sweeps an ellipse (mostly along Z, with a vertical bob)
-// aimed at the fighters' midpoint, so the light pool, shadows and shaft swing
-// like a hanging studio fixture. See "Room light swing" in _updateLighting.
-const HOUSE_LIGHT_RADIUS = 4.4;              // Z swing
-const HOUSE_LIGHT_RADIUS_X = 1.6;            // narrower X swing for an ellipse, not a circle
-const HOUSE_LIGHT_BOB = 1.8;                 // vertical bobbing amplitude
-const HOUSE_LIGHT_HEIGHT = 11;
-const HOUSE_LIGHT_SPEED = (Math.PI * 2) / 12; // rad/s — one lap per ~12 s
 
 const MIN_SEPARATION = 0.95;
 // Side-view modes (cinematics.js _sideView): the camera never orbits, so the pair is held
@@ -154,20 +146,6 @@ const ENERGY_HITSTUN_REGEN_PER_SEC = 0.08;
 
 
 
-// ── Hit feedback (damage numbers + combo readout) ────────────────────────
-// A combo is a run of landed hits with no more than COMBO_WINDOW between
-// them. It is deliberately longer than HITSTUN (0.35 s): hitstun is how long
-// the defender is *locked*, and requiring the next hit inside that window
-// would only ever count true frame-traps, which this engine's charge-and-
-// release rhythm essentially never produces. 1.1 s reads as "kept the
-// pressure up", which is the thing worth showing the player.
-const COMBO_WINDOW = 1.1;
-// A combo only surfaces at 2+; a "1 HIT" badge on every jab is noise.
-const COMBO_MIN_SHOWN = 2;
-// Hard ceiling on live damage-number nodes. A full-charge flurry can land
-// several hits inside one animation lifetime, and on a phone the compositor
-// cost of unbounded absolutely-positioned text is real. Oldest is evicted.
-const MAX_DAMAGE_NUMBERS = 14;
 
 // VS splash hold, shared by the first match and resetMatch.
 const SPLASH_HOLD_MS = 1300;
@@ -176,9 +154,6 @@ const SLOT_REEL_MS = 2000;
 // How long the landed names stay up before the countdown.
 const SLOT_LAND_HOLD_MS = 800;
 
-// Half-width of the ring canvas (arena.js builds it as an 11.6 m box). The mat
-// wear map spans exactly this, so its texels land where the vinyl is.
-const MAT_HALF = 5.8;
 
 // Danger state: below this share of max HP a fighter is "in the red"; the
 // effect is full strength DANGER_RAMP below it.
@@ -653,232 +628,6 @@ export class BrawlGame {
       if (this._shatterPending) this._shatterNow();
     };
     this.raf = requestAnimationFrame(loop);
-  }
-
-
-  // ══ Reactive arena ═══════════════════════════════════════════════════
-  // The jumbotron, the rig lenses and the ring mat respond to the match.
-
-  _initReactiveArena() {
-    // ── Rig LEDs ──────────────────────────────────────────────────────
-    this._rigLenses = [];
-    this.arena.backdrop?.traverse((o) => {
-      if (o.userData?.rigLens && o.material) this._rigLenses.push(o);
-    });
-
-    // ── Live jumbotron ────────────────────────────────────────────────
-    // 256×128 — the screens are 14 m from the camera behind a fog falloff, so
-    // anything sharper is texture upload cost nobody can resolve. Both screens
-    // share one material (see arena.js buildBackdrop), hence one canvas.
-    const c = document.createElement('canvas');
-    c.width = 256; c.height = 128;
-    this._jumboCanvas = c;
-    this._jumboCtx = c.getContext('2d');
-    this._jumboTex = new THREE.CanvasTexture(c);
-    this._jumboTex.colorSpace = THREE.SRGBColorSpace;
-    const screenMat = this.arena.backdrop?.userData?.screenMat;
-    if (screenMat) {
-      // The outgoing map is arena.js's module-level cached singleton, shared
-      // with any future arena build — replace the reference, never dispose it.
-      screenMat.map = this._jumboTex;
-      screenMat.needsUpdate = true;
-    }
-    this._jumboT = 0;
-    this._jumboFlash = '';   // one-shot centre caption ('K.O.', 'FIGHT', …)
-    this._jumboFlashT = 0;
-
-    // ── Ring-mat ripple ───────────────────────────────────────────────
-    // A SHADING ripple, not a displacement: the mat is a BoxGeometry with one
-    // segment per face, so there are no interior vertices to push. Bands of
-    // light and shadow racing out from the impact read as the canvas taking
-    // the weight, for one branch in a fragment shader that already runs.
-    this._ripple = {
-      origin: new THREE.Vector2(0, 0),
-      t: { value: 99 },          // seconds since the strike; >2 = idle
-      amp: { value: 0 },
-      originU: { value: new THREE.Vector2(0, 0) },
-    };
-    const mat = this.arena.canvasMat;
-    // ── Mat wear ────────────────────────────────────────────────────────
-    // Built here because the canvas shader below is the one place both the
-    // ripple and the wear lookup get injected — two onBeforeCompile hooks on
-    // one material would overwrite each other.
-    this.matWear = new MatWear(MAT_HALF);
-    const W = {
-      wear: { value: this.matWear.wear.tex },
-      wet: { value: this.matWear.wet.tex },
-      half: { value: MAT_HALF },
-    };
-    if (mat) {
-      const R = this._ripple;
-      mat.onBeforeCompile = (shader) => {
-        shader.uniforms.uRippleT = R.t;
-        shader.uniforms.uRippleAmp = R.amp;
-        shader.uniforms.uRippleOrigin = R.originU;
-        shader.uniforms.uWearMap = W.wear;
-        shader.uniforms.uWetMap = W.wet;
-        shader.uniforms.uWearHalf = W.half;
-        shader.vertexShader = shader.vertexShader
-          .replace('void main() {', 'varying vec2 vMatXZ;\nvoid main() {')
-          // World XZ of the fragment. Piggybacks on begin_vertex (which defines
-          // `transformed`) rather than on worldpos_vertex, because that chunk
-          // only emits a world position when an envmap/shadow define happens to
-          // be set — which would make this silently break if lighting changed.
-          .replace('#include <begin_vertex>',
-            '#include <begin_vertex>\n  vMatXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
-        shader.fragmentShader = shader.fragmentShader
-          .replace('void main() {', /* glsl */`
-            uniform float uRippleT;
-            uniform float uRippleAmp;
-            uniform vec2 uRippleOrigin;
-            uniform sampler2D uWearMap;
-            uniform sampler2D uWetMap;
-            uniform float uWearHalf;
-            varying vec2 vMatXZ;
-            float _matWet = 0.0;
-            void main() {`)
-          // Wear goes into the ALBEDO (before lighting), so scuffs sit in the
-          // vinyl under the spots rather than being painted over the lit result.
-          // The box's side faces get the edge texel; at 4 cm tall nobody sees it.
-          .replace('#include <map_fragment>', /* glsl */`
-            #include <map_fragment>
-            {
-              vec2 _wuv = vMatXZ / (2.0 * uWearHalf) + 0.5;
-              if (all(greaterThanEqual(_wuv, vec2(0.0))) && all(lessThanEqual(_wuv, vec2(1.0)))) {
-                vec4 _wear = texture2D(uWearMap, _wuv);
-                // Straight alpha: WebGL un-premultiplies a canvas on upload, so
-                // dividing by alpha again here turned faint texels into speckles.
-                diffuseColor.rgb = mix(diffuseColor.rgb, _wear.rgb, _wear.a);
-                _matWet = texture2D(uWetMap, _wuv).a;
-                diffuseColor.rgb *= 1.0 - 0.38 * _matWet;
-              }
-            }`)
-          // Wet vinyl is glossier: the sweat catches the spots as it dries off.
-          .replace('#include <roughnessmap_fragment>', /* glsl */`
-            #include <roughnessmap_fragment>
-            roughnessFactor = mix(roughnessFactor, 0.28, _matWet);`)
-          .replace('#include <opaque_fragment>', /* glsl */`
-            #include <opaque_fragment>
-            if (uRippleAmp > 0.001) {
-              float _d = distance(vMatXZ, uRippleOrigin);
-              // Expanding wave front at ~4.5 m/s with a gaussian envelope, so
-              // the disturbance is a moving band rather than the whole mat
-              // pulsing at once.
-              float _front = uRippleT * 4.5;
-              float _band = exp(-pow((_d - _front) * 1.9, 2.0));
-              float _wave = sin(_d * 7.0 - uRippleT * 22.0);
-              // Falls off with distance travelled AND with age — a ripple that
-              // only faded with time would still be visible at the ropes.
-              float _fade = uRippleAmp * exp(-_d * 0.24) * exp(-uRippleT * 1.7);
-              gl_FragColor.rgb *= 1.0 + _wave * _band * _fade * 0.55;
-            }`);
-      };
-      mat.needsUpdate = true;
-    }
-  }
-
-  /** Kick a ripple out from a world XZ point — a knockdown, a KO, a body slam. */
-  _ringRipple(x, z, amp = 1) {
-    if (!this._ripple) return;
-    this._ripple.originU.value.set(x, z);
-    this._ripple.t.value = 0;
-    this._ripple.amp.value = Math.min(1.2, amp);
-  }
-
-  _updateReactiveArena(dt) {
-    // Rig LEDs ride the audio envelope plus crowd excitement. The envelope is
-    // the same signal the bloom pulse reads, so the lamps flare on the same
-    // frame the impact is heard rather than a frame or two behind it.
-    if (this._rigLenses && this._rigLenses.length) {
-      const env = this.audio ? this.audio.getEnvelope() : 0;
-      const exc = Math.min(1, this.excited || 0);
-      for (let i = 0; i < this._rigLenses.length; i++) {
-        const lens = this._rigLenses[i];
-        // Per-lamp phase so the truss chases rather than strobing as one block
-        // — eight lamps flashing in unison reads as a bug in the renderer.
-        const phase = Math.sin(this.atmoT * 3.1 + i * 0.8) * 0.5 + 0.5;
-        lens.material.emissiveIntensity =
-          (lens.userData.baseEmissive || 1.4) * (1 + env * 1.6 + exc * 0.5 * phase);
-      }
-    }
-
-    // Ripple clock. Parked at a high value when idle so the shader branch is
-    // skipped via uRippleAmp rather than left running on a stale phase.
-    if (this._ripple && this._ripple.amp.value > 0) {
-      this._ripple.t.value += dt;
-      if (this._ripple.t.value > 2.2) this._ripple.amp.value = 0;
-    }
-
-    // Jumbotron: redraw at ~8 Hz. Each redraw is a texture upload, so it stays
-    // off the frame clock.
-    this._jumboT = (this._jumboT || 0) + dt;
-    if (this._jumboFlashT > 0) this._jumboFlashT -= dt;
-    if (this._jumboT >= 0.125) { this._jumboT = 0; this._drawJumbotron(); }
-  }
-
-  /** One-shot big caption on the jumbotron. */
-  _jumboCaption(text, secs = 1.6) {
-    this._jumboFlash = text;
-    this._jumboFlashT = secs;
-    this._jumboT = 99; // force a redraw on the next update rather than waiting
-  }
-
-  _drawJumbotron() {
-    const g = this._jumboCtx;
-    if (!g || !this.fighters || !this.combat) return;
-    const W = 256, H = 128;
-    // Between tournament bouts the screens carry the bracket (cup.js) until the next count.
-    if (this._drawCupBoard(g, W, H)) { this._jumboTex.needsUpdate = true; return; }
-    g.fillStyle = '#08101f';
-    g.fillRect(0, 0, W, H);
-
-    // Header strip.
-    g.fillStyle = 'rgba(90,124,250,0.18)';
-    g.fillRect(0, 0, W, 18);
-    g.font = 'bold 11px Impact, sans-serif';
-    g.textBaseline = 'middle';
-    g.fillStyle = '#cfe0ff';
-    g.textAlign = 'left';
-    g.fillText('PO BRAWL', 8, 9);
-    g.textAlign = 'right';
-    g.fillText(this.training ? 'TRAINING'
-      : `${Math.ceil(Math.max(0, TIME_LIMIT - (this.clock || 0)))}"`, W - 8, 9);
-
-    // Two name plates with live HP.
-    const names = this.fighters.map((f) => (f.rig.config.name || '').toUpperCase());
-    const hps = this.fighters.map((f) => this._hp(f) / MAX_HP);
-    for (let i = 0; i < 2; i++) {
-      const y = 30 + i * 30;
-      g.textAlign = 'left';
-      g.font = 'bold 12px Impact, sans-serif';
-      g.fillStyle = '#e8eeff';
-      g.fillText(names[i].slice(0, 14), 10, y);
-      g.fillStyle = 'rgba(0,0,0,0.55)';
-      g.fillRect(10, y + 9, W - 20, 7);
-      g.fillStyle = i === 0 ? '#22c55e' : '#ef4444';
-      g.fillRect(10, y + 9, Math.max(0, (W - 20) * hps[i]), 7);
-    }
-
-    // Centre caption: an explicit one-shot beats a live combo, which beats
-    // nothing. Combos are the common case, so they cost no extra state.
-    let caption = this._jumboFlashT > 0 ? this._jumboFlash : '';
-    if (!caption) {
-      const best = this.fighters.reduce((a, b) => (b.comboN > a.comboN ? b : a));
-      if (best.comboN >= COMBO_MIN_SHOWN) caption = `${best.comboN} HIT`;
-    }
-    if (caption) {
-      g.textAlign = 'center';
-      g.font = 'bold 30px Impact, sans-serif';
-      g.fillStyle = 'rgba(255,214,102,0.92)';
-      g.fillText(caption, W / 2, H - 22);
-    }
-
-    // Scanlines last, over everything — this is a screen being filmed, and the
-    // banding is what stops the panel reading as a flat lit quad.
-    g.fillStyle = 'rgba(0,0,0,0.22)';
-    for (let y = 0; y < H; y += 3) g.fillRect(0, y, W, 1);
-
-    this._jumboTex.needsUpdate = true;
   }
 
 
@@ -2462,277 +2211,6 @@ export class BrawlGame {
     return this.clip ? this.clip.save() : Promise.resolve(false);
   }
 
-  // House-light choreography. Backlights track their fighters every frame for
-  // rim separation. `lightsDim` is pinned to 0 (a KO lights-down went black on
-  // most displays), so every consumer collapses to its lights-up value.
-  _updateLighting(dt) {
-    const L = this.arena && this.arena.lights;
-    if (!L) return;
-    this.lightsDim = 0;
-    const d = this.lightsDim;
-    L.hemi.intensity = 0.22 * (1 - d * 0.85);
-    L.key.intensity = 3.4 * (1 - d * 0.75);
-    L.rim.intensity = 1.0 * (1 - d * 0.5);
-    L.fill.intensity = 0.6 * (1 - d * 0.85);
-
-    // ── Personality-driven rim pulses ─────────────────────────────
-    // Active modes (Reagan morningInAmerica, Bush decider, FDR fourTerm, etc.)
-    // tint the rim light. The key/fill stay neutral; only the rim breathes.
-    // Multiple personalities can pulse — pick the strongest tint and lerp
-    // toward the warm/cool midpoint so the rim never goes wild.
-    let rimTint = new THREE.Color(0x6070ff);   // default cool blue rim
-    let rimMul = 1.0;
-    if (this.fighters) {
-      for (const f of this.fighters) {
-        const per = f.personality;
-        if (!per) continue;
-        const mode = per.activeMode;
-        const t = per.modeExpiresAt ? Math.max(0, per.modeExpiresAt - this.t) : 0;
-        if (mode === 'morningInAmerica' && PERSONALITIES.reagan) {
-          // Pulse gold every ~0.5 s.
-          const pulse = 0.5 + 0.5 * Math.sin(this.t * 6.0);
-          rimTint = new THREE.Color(0xffd66b).lerp(rimTint, 1 - pulse);
-          rimMul = Math.max(rimMul, 1.0 + 0.35 * pulse);
-        } else if (mode === 'decider' && PERSONALITIES.bush) {
-          // Magenta steady-burn — Bush's "decision moment".
-          rimTint = rimTint.clone().lerp(new THREE.Color(0xff59a8), 0.65);
-          rimMul = Math.max(rimMul, 1.05);
-        } else if (mode === 'fourTerm' && PERSONALITIES.fdr) {
-          // Warm amber for FDR's warm-up; settles back to blue at expiry.
-          rimTint = rimTint.clone().lerp(new THREE.Color(0xffb056), 0.6);
-        } else if (mode === 'malaiseSpeech' && PERSONALITIES.carter) {
-          // Cool teal — Carter's "wake up" call.
-          rimTint = rimTint.clone().lerp(new THREE.Color(0x6cd6c4), 0.5);
-        } else if (mode === 'dayOfInfamy' && PERSONALITIES.fdr) {
-          // Crimson — FDR rises at 30% HP. Strong + sustained, not pulsing.
-          rimTint = rimTint.clone().lerp(new THREE.Color(0xff3232), 0.7);
-          rimMul = Math.max(rimMul, 1.15);
-        }
-        // Per-fighter single-fire person pulses that aren't activeModes.
-        if (f.charId === 'jfk' && per.jfkProfileIframesUntil && this.t < per.jfkProfileIframesUntil) {
-          rimTint = rimTint.clone().lerp(new THREE.Color(0xfff7c2), 0.55);
-        }
-        if (f.charId === 'eisenhower' && per.eisenhowerIframesUntil && this.t < per.eisenhowerIframesUntil) {
-          rimTint = rimTint.clone().lerp(new THREE.Color(0x9edcff), 0.55);
-        }
-        if (f.charId === 'fdr' && per.fdrIframesUntil && this.t < per.fdrIframesUntil) {
-          rimTint = rimTint.clone().lerp(new THREE.Color(0xfff0c0), 0.5);
-        }
-      }
-    }
-    L.rim.color.copy(rimTint);
-    L.rim.intensity *= rimMul;
-    L.cornerA.intensity = 1.7 * (1 - d * 0.9);
-    L.cornerB.intensity = 1.7 * (1 - d * 0.9);
-    L.spot.intensity = 1.6 + d * 1.6;
-    // Studio rig panels dim with the house lights.
-    if (L.rectA) L.rectA.intensity = 3.4 * (1 - d * 0.85);
-    if (L.rectB) L.rectB.intensity = 2.6 * (1 - d * 0.85);
-    // The volumetric shaft brightens as the hall goes dark — the classic
-    // "single spotlight through smoky air" KO moment.
-    const atmo = this.arena.atmo;
-    if (atmo && atmo.cone) {
-      atmo.cone.material.opacity = 0.09 + d * 0.14;
-    }
-
-    // ── Room light swing ──────────────────────────────────────────────
-    // See HOUSE_LIGHT_*: an ellipse plus vertical bob, one cycle per ~12 s.
-    this._houseT = (this._houseT || 0) + dt;
-    const orbit = this._houseT * HOUSE_LIGHT_SPEED;
-    // Plus the pendulum a heavy landing knocks into it (spectacle.js _kickRig).
-    L.spot.position.set(
-      Math.cos(orbit) * HOUSE_LIGHT_RADIUS_X + (this._rigKick?.x || 0),
-      HOUSE_LIGHT_HEIGHT + Math.sin(orbit * 1.4) * HOUSE_LIGHT_BOB,
-      Math.sin(orbit) * HOUSE_LIGHT_RADIUS + (this._rigKick?.z || 0));
-
-    // Spotlight target: the midpoint between the fighters normally, the loser
-    // during the KO.
-    const loser = this.fighters && this.fighters.find((f) => f.state === 'ko');
-    if (loser && d > 0.01) {
-      const lp = loser.rig.root.position;
-      _spotTarget.set(lp.x, 0, lp.z);
-    } else if (this.fighters && this.fighters.length === 2) {
-      const a = this.fighters[0].rig.root.position;
-      const b = this.fighters[1].rig.root.position;
-      _spotTarget.set((a.x + b.x) * 0.5, 0, (a.z + b.z) * 0.5);
-    } else {
-      _spotTarget.set(0, 0, 0);
-    }
-    L.spot.target.position.lerp(_spotTarget, Math.min(1, dt * 3));
-    L.spot.target.updateMatrixWorld();
-
-    // Keep the fake volumetric shaft glued to the beam: the cylinder's +Y
-    // points back up at the lamp, and its centre sits 5.4 units down the beam
-    // — the same offset it had baked in when the lamp hung fixed at y = 11.
-    if (atmo && atmo.cone) {
-      _beamDir.copy(L.spot.position).sub(L.spot.target.position);
-      if (_beamDir.lengthSq() < 1e-6) _beamDir.set(0, 1, 0); else _beamDir.normalize();
-      atmo.cone.quaternion.setFromUnitVectors(_upY, _beamDir);
-      atmo.cone.position.copy(L.spot.position).addScaledVector(_beamDir, -5.4);
-    }
-
-    // Backlights: behind each fighter, opposite the camera.
-    if (this.fighters && this._backlights) {
-      for (let i = 0; i < this.fighters.length; i++) {
-        const fp = this.fighters[i].rig.root.position;
-        const bl = this._backlights[i];
-        if (!bl) continue;
-        _blDir.copy(fp).sub(this.camera.position);
-        _blDir.y = 0;
-        if (_blDir.lengthSq() < 1e-6) _blDir.set(0, 0, -1);
-        _blDir.normalize();
-        bl.position.set(fp.x + _blDir.x * 3, 3.2, fp.z + _blDir.z * 3);
-        bl.target.position.set(fp.x, 1.0, fp.z);
-        bl.intensity = 3.0 * (1 - d * 0.5);
-      }
-    }
-
-    // ── KO Limelight ─────────────────────────────────────────────────
-    // Sits above and sweeps horizontally across the loser during the KO
-    // cinematic. Decreases each frame; intensity rises as house lights dim
-    // so the contrast between dark hall and tight white slash is dramatic.
-    if (this._limelightActive > 0 && this._limelight) {
-      this._limelightActive -= dt;
-      const lf = this.fighters.find((f) => f.state === 'ko');
-      if (lf) {
-        // Lerp the target over the body — tracks the falling hips smoothly.
-        const ft = lf.rig.joints.torso.getWorldPosition(_blDir);
-        _blDir.copy(ft);
-        this._limelightTarget.lerp(_blDir, Math.min(1, dt * 4));
-        this._limelight.target.position.copy(this._limelightTarget);
-      }
-      // Spotlight lives off-screen-ish, brushes the loser from above-right.
-      const tx = this._limelightTarget.x;
-      const tz = this._limelightTarget.z;
-      this._limelight.position.set(tx + 2.5, 6.5, tz - 1.2);
-      // Fades 0→6 over the first 0.4 s, holds, fades on expiring.
-      const t = THREE.MathUtils.clamp(
-        Math.min(this._limelightActive, 3.5 - this._limelightActive + 0.5) / 0.6, 0, 1);
-      this._limelight.intensity = Math.max(0, 6.0 * t);
-      // Cool the colour as we ramp — warm at start, white at peak (looks
-      // cinematic vs. the warm key).
-      this._limelight.color.setHex(this._limelightActive > 3.0 ? 0xfff0d0 : 0xffffff);
-    } else if (this._limelight && this._limelight.intensity !== 0) {
-      this._limelight.intensity = 0;
-    }
-
-    // ── KO Victor Halo ─────────────────────────────────────────────
-    // Contrasting cooler spotlight follows the WINNER (not the loser). The
-    // tight white-on-loser + cool halo-on-winner reads as "the audience
-    // sees both fighters in their final moments" — cinematic.
-    if (this.phase === 'ko' && this.winner && this.fighters) {
-      const wf = this.fighters[this.winner - 1];
-      if (wf && this._victorHalo) {
-        const wpos = wf.rig.root.position;
-        this._victorHalo.position.set(wpos.x - 1.4, 3.4, wpos.z - 0.8);
-        this._victorHalo.target.position.set(wpos.x, 1.0, wpos.z);
-        // Halo rises with house-dim, then fades as the result screen takes
-        // over (the result modal flips cameraMode to 'result' and we drop
-        // the halo there).
-        const cam = this.cameraMode;
-        const haloT = THREE.MathUtils.clamp(cam === 'ko' ? d * 1.4 : 0, 0, 1);
-        this._victorHalo.intensity = 2.6 * haloT;
-        this._victorHalo.color.setHex(0xa0c4ff);
-      }
-    } else if (this._victorHalo) {
-      this._victorHalo.intensity = 0;
-    }
-    // Tournament: the round's time of day on top of these baselines (cup.js).
-    this._applyCupLook(L, dt);
-  }
-
-  // Shared radial-gradient texture for the fighters' contact-shadow blobs.
-  // Override `opts.inner` / `opts.outer` to tint variants (e.g. AO discs
-  // want a harder black inner).
-  _makeBlobTexture(opts = {}) {
-    const inner = opts.inner || 'rgba(0,0,0,0.9)';
-    const mid = opts.mid || 'rgba(0,0,0,0.45)';
-    const outer = opts.outer || 'rgba(0,0,0,0)';
-    const cacheKey = `${inner}|${mid}|${outer}`;
-    if (this._blobTexCache && this._blobTexCache.key === cacheKey) return this._blobTexCache.tex;
-    if (!this._blobTexCache) this._blobTexCache = {};
-    const c = document.createElement('canvas');
-    c.width = c.height = 128;
-    const g = c.getContext('2d');
-    const grad = g.createRadialGradient(64, 64, 8, 64, 64, 64);
-    grad.addColorStop(0, inner);
-    grad.addColorStop(0.55, mid);
-    grad.addColorStop(1, outer);
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 128, 128);
-    const tex = new THREE.CanvasTexture(c);
-    this._blobTexCache = { key: cacheKey, tex };
-    return tex;
-  }
-
-  // Per-tick posture: head tracking toward the opponent, momentum lean from
-  // the fighter's own velocity/acceleration, and the clinch-frame blend at
-  // chest-to-chest range. All feed overlay targets on the animator.
-  _updatePosture(f, opp, dt) {
-    if (!opp || f.state === 'ko') return;
-    const anim = f.animator;
-
-    // ── Head tracking: look at the opponent's upper body ─────────────
-    f.rig.joints.head.getWorldPosition(_lookA);
-    opp.rig.joints.hips.getWorldPosition(_lookB);
-    _lookB.y += 0.55; // chest height
-    const dx = _lookB.x - _lookA.x, dz = _lookB.z - _lookA.z;
-    const horiz = Math.hypot(dx, dz);
-    let yawLocal = Math.atan2(dx, dz) - f.rig.root.rotation.y;
-    while (yawLocal > Math.PI) yawLocal -= Math.PI * 2;
-    while (yawLocal < -Math.PI) yawLocal += Math.PI * 2;
-    // Pitch: negative x rotation looks up; a downed opponent pulls the gaze down.
-    const pitch = -Math.atan2(_lookB.y - _lookA.y, Math.max(horiz, 0.4));
-    anim.setLook(yawLocal, pitch);
-
-    // ── Momentum lean: into acceleration, counter-lean when braking ──
-    const vx = f.vel.x + f.knockback.x, vz = f.vel.z + f.knockback.z;
-    const ax = (vx - (f._pvx ?? vx)) / dt, az = (vz - (f._pvz ?? vz)) / dt;
-    f._pvx = vx; f._pvz = vz;
-    const yaw = f.rig.root.rotation.y;
-    const cos = Math.cos(yaw), sin = Math.sin(yaw);
-    const lvz = vx * sin + vz * cos, lvx = vx * cos - vz * sin;   // local fwd/side vel
-    const laz = ax * sin + az * cos, lax = ax * cos - az * sin;   // local fwd/side accel
-    anim.setMoveLean(lvz * 0.06 + laz * 0.006, -(lvx * 0.05 + lax * 0.005));
-
-    // ── Clinch frame: arms brace when chest-to-chest, nobody swinging ─
-    const dist = f.rig.root.position.distanceTo(opp.rig.root.position);
-    const passive = (s) => s === 'idle' || s === 'block';
-    anim.setClinch(dist < 1.05 && passive(f.state) && passive(opp.state));
-  }
-
-  // Track each fighter's hips; widen + darken the blob as the body drops
-  // (knockdown/KO) so the lying pose still reads as grounded. The AO disc
-  // is a separate, tighter patch that stays anchored under the planted
-  // feet — sells "not floating".
-  _updateBlobShadows() {
-    if (!this.fighters) return;
-    for (const f of this.fighters) {
-      if (!f.blob) continue;
-      f.rig.joints.hips.getWorldPosition(_blobPos);
-      f.blob.position.x = _blobPos.x;
-      f.blob.position.z = _blobPos.z;
-      const standing = THREE.MathUtils.clamp((_blobPos.y - 0.15) / 0.85, 0, 1);
-      const s = THREE.MathUtils.lerp(1.5, 1.0, standing);
-      f.blob.scale.set(s, s, 1);
-      f.blob.material.opacity = THREE.MathUtils.lerp(0.5, 0.34, standing);
-
-      // AO disc: tracks the planted foot rather than the hips. While
-      // standing the disc stays tight; as the body drops it slides out a
-      // bit but never balloons like the contact blob.
-      if (f.aoDisc) {
-        f.rig.joints.footR.getWorldPosition(_blobPos);
-        f.aoDisc.position.x = _blobPos.x;
-        f.aoDisc.position.z = _blobPos.z;
-        const aos = THREE.MathUtils.lerp(1.4, 1.0, standing);
-        f.aoDisc.scale.set(aos, aos, 1);
-        // AO fades when the body is upright (where the blob does the work)
-        // and goes pitch-black when prone (where it sells the lie-down).
-        f.aoDisc.material.opacity = THREE.MathUtils.lerp(0.8, 0.25, standing);
-      }
-    }
-  }
-
   // Photosensitive-safe presentation: the app-wide reduced-motion setting
   // (user toggle OR OS preference) alone. Read live rather than cached so
   // flipping it mid-fight takes effect at once.
@@ -2908,192 +2386,6 @@ export class BrawlGame {
     }
   }
 
-  _setBanner(text) {
-    if (this.banner && this.banner.textContent !== text) this.banner.textContent = text;
-  }
-
-  // ── Hit feedback: damage numbers + combo readout ─────────────────────
-  // One call per landed (unblocked) hit. Owns the three things that all key off
-  // that single event: the per-round scorecard the end-of-fight recap reads, the
-  // combo run length, and the floating number at the contact point. Blocked
-  // hits deliberately don't come through here — they bump the DEFENDER's block
-  // count at the call site instead, and a blocked blow neither extends a combo
-  // nor deserves a damage number.
-  _registerLandedHit(attacker, defender, dmg, point, region) {
-    const s = attacker.stats;
-    s.hits += 1;
-    if (dmg > s.biggestHit) s.biggestHit = dmg;
-
-    // The combo run continues while the gap since this attacker's last landed
-    // hit is under COMBO_WINDOW. Measured on the sim clock (`this.t`), not
-    // wall-clock, so hitstop pauses the window instead of eating into it.
-    attacker.comboN = (this.t - attacker.comboT) <= COMBO_WINDOW ? attacker.comboN + 1 : 1;
-    attacker.comboT = this.t;
-    if (attacker.comboN > s.bestCombo) s.bestCombo = attacker.comboN;
-    // Taking a hit ends YOUR run. Without this, two fighters trading blows both
-    // show a climbing counter, which reads as a combo when it is the opposite.
-    defender.comboN = 0;
-    defender.comboT = -99;
-
-    this._showCombo(attacker);
-    this._showCombo(defender);
-    this._spawnDamageNumber(point, dmg, region);
-    // The run rings up the scale in the music's key.
-    if (attacker.comboN >= 2) this.audio?.comboNote(attacker.comboN, point);
-    this._commentOnHit(attacker, defender, dmg);
-
-    // ── Reaction layer ───────────────────────────────────────────────
-    // The mix, the crowd and the visual stamp all hang off this one call site
-    // so they can never disagree about what counted as a hit.
-    //
-    // `power` normalises damage against twice the heavy threshold, so a jab is
-    // ~0.35 and a fully-charged head kick saturates at 1.
-    const power = Math.min(1, dmg / (HEAVY_HIT_DMG * 2));
-    if (this.audio) {
-      this.audio.duckMusic(power);
-      this.audio.crowdSwell(power);
-      // The concussion is reserved for a heavy blow to the HEAD. On a torso hit
-      // it makes no sense, and on every hit it would be a permanent lowpass.
-      if (region === REGIONS.HEAD && dmg >= HEAVY_HIT_DMG) {
-        this.audio.concussion(0.55 + 0.45 * power);
-      }
-    }
-    // A near-KO makes the hall inhale.
-    if (this.audio && this._hp(defender) <= 18 && this._hp(defender) > 0 && dmg >= HEAVY_HIT_DMG) {
-      this.audio.crowdGasp();
-    }
-    if (dmg >= HEAVY_HIT_DMG) this._impactFrame(point, power);
-    // Tournament: the crowd reads it against the Elo story (cup.js).
-    this._upsetOnHit(attacker, defender, dmg);
-    // Rumble: the one hit carries the full motor, the one landing it a
-    // light buzz in the hand.
-    this._rumble(defender, 0.3 + 0.6 * power, 0.5, 80 + 140 * power);
-    this._rumble(attacker, 0.08, 0.2 + 0.35 * power, 55);
-    this._show('hit', { attacker, defender, dmg, point, region, power });
-  }
-
-  /**
-   * Dual-rumble on the pad (or phone) of the person driving `f`, if a person is — online only the
-   * local corner. haptics.js routes it; impactBus gates it. opts: { priority, phone }.
-   */
-  _rumble(f, strong, weak, ms, opts) {
-    this.haptics?.rumble(f, strong, weak, ms, opts);
-  }
-
-  _showCombo(f) {
-    const el = this._comboEls?.[this.fighters.indexOf(f)];
-    if (!el) return;
-    if (f.comboN < COMBO_MIN_SHOWN) { el.classList.remove('pb-combo--on'); return; }
-    el.querySelector('.pb-combo__n').textContent = String(f.comboN);
-    // Replay the pop on every increment. Dropping the class and reading
-    // offsetWidth to force a synchronous reflow before re-adding it is the only
-    // reliable way to restart a CSS animation — re-adding it in the same frame
-    // without the reflow is coalesced into no change at all.
-    el.classList.remove('pb-combo--on');
-    void el.offsetWidth;
-    el.classList.add('pb-combo--on');
-  }
-
-  // Expires stale combo runs so the badge disappears when the pressure stops,
-  // rather than hanging until the next hit lands.
-  _tickCombos() {
-    for (const f of this.fighters) {
-      if (f.comboN > 0 && (this.t - f.comboT) > COMBO_WINDOW) {
-        // A run of 4+ that ends on its own terms gets its resolving chord.
-        // (One broken by a counter-hit is zeroed in _registerLandedHit instead,
-        // so it never gets here with a count — no reward for being interrupted.)
-        if (f.comboN >= 4) this.audio?.comboFinisher(f.comboN);
-        f.comboN = 0;
-        this._showCombo(f);
-      }
-    }
-  }
-
-  // A short word at a contact point, on the same lifecycle as a damage number
-  // (same layer, same rise animation, same eviction cap) — it is a damage
-  // number whose text happens to be a word. Used by the perfect guard and the
-  // counter it arms, which are the two events in the game that have to TEACH
-  // something: a block that pays double is worthless as a lesson if nothing on
-  // screen says it happened.
-  _spawnCallout(point, text) {
-    this._spawnFloater(point, text, 'pb-dmg--callout');
-  }
-
-  _spawnDamageNumber(point, dmg, region) {
-    this._spawnFloater(point, String(Math.max(1, Math.round(dmg))),
-      (region === REGIONS.HEAD ? ' pb-dmg--head' : '')
-      + (dmg >= HEAVY_HIT_DMG ? ' pb-dmg--heavy' : ''));
-  }
-
-  // Project a world point to screen and float a DOM node up from it. Owns the
-  // projection guard, the jitter, the node cap and the animationend cleanup —
-  // all of which damage numbers and callouts have to get right identically, and
-  // only one of which is obvious enough to be re-derived correctly by hand.
-  _spawnFloater(point, text, extraClass) {
-    if (!this.fx) return;
-    const w = this._hostW, h = this._hostH;
-    if (!w || !h) return;
-    _dmgProj.copy(point).project(this.camera);
-    // A point behind the near plane projects to a mirrored on-screen position,
-    // so it would draw a number somewhere the hit did not happen. Skip it.
-    if (_dmgProj.z > 1) return;
-    const el = document.createElement('span');
-    el.className = 'pb-dmg' + (extraClass ? ' ' + extraClass.trim() : '');
-    el.textContent = text;
-    // Horizontal jitter so a flurry into one capsule doesn't overprint into an
-    // unreadable smear. Seeded RNG, so a demo replay jitters identically.
-    el.style.left = `${(_dmgProj.x * 0.5 + 0.5) * w + (this.rng.random() - 0.5) * 26}px`;
-    el.style.top = `${(-_dmgProj.y * 0.5 + 0.5) * h}px`;
-    this.fx.appendChild(el);
-    this._dmgNodes.push(el);
-    // Cap the live node count. This is also the safety net for the case where
-    // `animationend` never fires (animations disabled at the OS/browser level):
-    // eviction, not the listener, is what guarantees the list stays bounded.
-    while (this._dmgNodes.length > MAX_DAMAGE_NUMBERS) this._dmgNodes.shift()?.remove();
-    el.addEventListener('animationend', () => {
-      const i = this._dmgNodes.indexOf(el);
-      if (i >= 0) this._dmgNodes.splice(i, 1);
-      el.remove();
-    }, { once: true });
-  }
-
-  // Wipes floating feedback between rounds so a new round never opens with the
-  // previous one's numbers still drifting up the screen.
-  _clearFx() {
-    for (const el of this._dmgNodes || []) el.remove();
-    if (this._dmgNodes) this._dmgNodes.length = 0;
-    for (const f of this.fighters || []) { f.comboN = 0; f.comboT = -99; }
-    for (const el of this._comboEls || []) el?.classList.remove('pb-combo--on');
-  }
-
-  _pushHud(dt) {
-    this.hudTimer += dt;
-    if (!this.hudDirty && this.hudTimer < 0.25) return;
-    this.hudTimer = 0;
-    this.hudDirty = false;
-    if (this.dotnet) {
-      // Region damage rides along as [head, torso, arms, legs] per fighter so
-      // the Blazor HUD can render the body-diagram damage readout.
-      const regions = (f) => [
-        Math.round(f.regionDmg.head), Math.round(f.regionDmg.torso),
-        Math.round(f.regionDmg.arms), Math.round(f.regionDmg.legs),
-      ];
-      // ARITY CONTRACT with PoBrawlPage.OnHud — seven arguments, and both sides
-      // move together or the HUD dies silently. invokeMethodAsync rejects on an
-      // argument-count mismatch and this call swallows it in .catch(() => {}),
-      // so a mismatch produces no console error: just a HUD frozen at its C#
-      // field initializers. Change OnHud in the same commit.
-      // The training room has no clock; the page renders its own ∞ there, and a
-      // pinned full value keeps the HUD from counting down to a limit that never fires.
-      const timeLeft = this.training ? TIME_LIMIT : Math.max(0, TIME_LIMIT - (this.clock || 0));
-      this.dotnet.invokeMethodAsync('OnHud',
-        this._hp(this.fighters[0]), this._hp(this.fighters[1]), Math.round(timeLeft * 10) / 10,
-        regions(this.fighters[0]), regions(this.fighters[1]),
-        Math.round(this.fighters[0].energy * 100), Math.round(this.fighters[1].energy * 100))
-        .catch(() => {});
-    }
-  }
-
   setMuted(m) {
     this.muted = !!m;
     this.audio.setMuted(this.muted);
@@ -3190,4 +2482,5 @@ export class BrawlGame {
 // Must run at module scope, after the class declaration and before any instance
 // is constructed. index.js only ever imports BrawlGame from here, so by the time
 // `new BrawlGame()` can be reached these methods are already on the prototype.
-mixin(BrawlGame.prototype, SceneSetup, PersonalityEffects, Vfx, Cinematics, HitResolution, Training, Netplay, Commentary, Spectacle, Cup, Ceremony, Director, Show, ...SHOW_MODULES);
+mixin(BrawlGame.prototype, SceneSetup, PersonalityEffects, Vfx, Cinematics, HitResolution, Training, Netplay, Commentary, Spectacle, Cup, Ceremony, Director, Show, ...SHOW_MODULES,
+  ReactiveArena, Lighting, HudFeedback);

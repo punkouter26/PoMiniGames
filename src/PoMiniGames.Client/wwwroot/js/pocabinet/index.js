@@ -98,6 +98,7 @@ const api = {
         if (sceneHandle && !sceneHandle.disposed) sceneHandle.applyView(settings);
         audio.setVolume(settings?.masterVolume);
         audio.setMuted(settings?.muted);
+        audio.setMusicEnabled(settings?.music !== false);
         updateRaceSettings(settings);
     },
 

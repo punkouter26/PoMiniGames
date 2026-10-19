@@ -15,6 +15,8 @@ public sealed class PoCabinetUiSettings
 {
     // No volume, mute, reduced-motion or colour-safe here: those are the app's
     // settings, not Cabinet's. settings.js ignores any value an older build stored for them.
+    /// <summary>The adaptive race score (pocabinet/music.js). On by default; an older store without the key reads as on.</summary>
+    public bool Music { get; set; } = true;
     public double HudScale { get; set; } = 1;
     public string Weather { get; set; } = "clear";
     public string TouchControls { get; set; } = "auto";

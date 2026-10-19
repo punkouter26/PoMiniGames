@@ -98,13 +98,14 @@
                 }
                 @if (_phase == Phase.Racing && !IsSpectating && Mode != GameMode.Demo)
                 {
-                    @* Glass cluster: race.js writes speed, gear and --rpm into it every frame, straight
+                    @* Glass cluster: race.js writes speed, gear and --rpm (slipstream.js: --tow) into it every frame, straight
                        to the DOM. The speed and gear spans are rendered EMPTY on purpose: Blazor must own no
                        text node inside them, or JS replacing it breaks the renderer's diff ("reading
                        'Symbol()'"). aria-hidden: the live announcer below covers what matters. *@
                     <div id="pocabinetGauge" class="pocabinet-gauge" aria-hidden="true">
                         <span class="pocabinet-gauge__track"></span>
                         <span class="pocabinet-gauge__ring"></span>
+                        <span class="pocabinet-gauge__tow"></span>
                         <span class="pocabinet-gauge__speed" data-gauge="speed"></span>
                         <span class="pocabinet-gauge__unit">km/h</span>
                         <span class="pocabinet-gauge__gear" data-gauge="gear"></span>

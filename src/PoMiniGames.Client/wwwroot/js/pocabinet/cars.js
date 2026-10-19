@@ -12,6 +12,14 @@
 // differ in the cabin and what is behind it. Paint is satin: a thin clearcoat over a
 // rough base (the showroom gloss it had made the field a hundred mirrors).
 //
+// Living paint (paint.js) goes on top of the dent hook on the paint, glass and trim of every
+// car drawn in full: the dirt the car has picked up (road grime from the arches, a grass smear
+// on the sills, gravel dust or Mar-a-Lago's sand, runs of grime in the rain; weather() takes
+// the surface race.js reads off the sim each frame), rain beads and rivulets that run back with
+// the speed, scars round the dents (scuffed, primer, bare metal with scrape lines and a brushed
+// glint, which replace the dent hook's primer scratches on the body) and a sparse metallic flake in
+// the satin base. The far crowd gets none of it.
+//
 // Everything is derived from the pose race.js already has: steering angle from
 // yaw rate, body roll from lateral acceleration, pitch and brake lights from
 // longitudinal acceleration. Nothing here reads or changes physics.
@@ -26,12 +34,15 @@
 // creases across it, shades the bent metal by its own folds, dulls the clearcoat and
 // scuffs through to primer. The loose parts (bumpers, wing, mirrors, tailgate: tagged per
 // vertex in `aPart`) ride on a matrix each: a hard enough knock leaves one hanging off a
-// hinge and flapping, the next tears it off and drops it on the road as debris (one
-// mesh each, updateDebris()). A corner hit breaks that lamp, a heavy one cracks the glass,
+// hinge and flapping, the next tears it off: that part (its own mesh in the car's paint)
+// leaves from the pose it was hanging at as a rigid body (debris.js) that tumbles, bounces
+// off the road and the barriers and lies there to be kicked about. A wreck loses whatever
+// was hanging and sheds a wheel, which bounces and rolls away; its corner sags. A corner hit
+// breaks that lamp, a heavy one cracks the glass,
 // a crushed corner sags the body onto it and a hit by a wheel bends it. A full car is drawn
 // from a tessellated copy of the body (`fine`): the plain one is a few long panels with
 // nothing between their edges to bend. Every car shares the programs (one cache key); only
-// the uniforms differ. The far cars (CarCrowd) lose their torn-off parts too. What a hit
+// the uniforms differ. The far cars (CarCrowd) lose their torn-off parts and wheels too. What a hit
 // does to the driving is physics.js's business, not this file's.
 //
 // World: sim (x, y) → three (x / 10, 0, y / 10); the car is built along +X and
@@ -40,6 +51,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TessellateModifier } from 'three/addons/modifiers/TessellateModifier.js';
+import { LivingPaint, livingPaint, paintSeed } from './paint.js';
+import { throwPiece } from './debris.js';
 
 const WHEEL_R = 0.36;
 const WHEELS = [[1.2, 0.8, true], [1.2, -0.8, true], [-1.22, 0.8, false], [-1.22, -0.8, false]];
@@ -331,7 +344,10 @@ float dmgCracks(vec2 p) {
     // Gone at a distance, where a streak is finer than a pixel and would only sparkle.
     scratch *= 1.0 - smoothstep(0.35, 1.0, fwidth(vPanel.y * 64.0));
     diffuseColor.rgb *= 1.0 - scuff * 0.5;
+#ifndef PC_PAINT
+    // (The paint's own scars, paint.js, replace these on the body colour.)
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.56, 0.57, 0.6), scratch * 0.8 * smoothstep(0.4, 0.95, vDamage));
+#endif
     // A wreck is scorched and sooted, darkest round the engine bay.
     diffuseColor.rgb *= 1.0 - uScorch * (0.45 + 0.35 * smoothstep(0.4, 1.6, vPanel.x));
     // A broken lamp is a dark hole with a few shards left in it.
@@ -420,86 +436,59 @@ function debrisGeometry(style, id) {
     return entry;
 }
 
-// Torn-off parts lying about: a few dozen meshes at most, oldest cleared first.
-const MAX_DEBRIS = 28;
-const debris = [];
+// Torn-off parts and lost wheels become rigid bodies in debris.js, which flies, bounces, rolls
+// and settles them, lets the cars kick them about, caps them and clears them away.
+export { updateDebris, clearDebris } from './debris.js';
 
-/** Throw part `id` of car `handle` off it at its current pose. */
-function spawnDebris(handle, id) {
+const _m = new THREE.Matrix4();
+const _r = new THREE.Matrix4();
+const _sc = new THREE.Vector3();
+const _sz = new THREE.Vector3();
+const _q = new THREE.Quaternion();
+const X_AXIS = new THREE.Vector3(1, 0, 0);
+
+/**
+ * Throw part `id` of car `handle` off it, from the pose it was hanging at (`hang`, the part's
+ * matrix in the chassis), moving with the car plus a kick off it.
+ */
+function spawnDebris(handle, id, hang) {
     const parent = handle.group.parent;
     if (!parent) return;
     const geo = debrisGeometry(handle.style, id);
     if (!geo.paint && !geo.trim) return;
     const piece = new THREE.Group();
-    const mats = [];
+    piece.name = 'pocabinet-debris-part';
+    let mat = null;
     if (geo.paint) {
-        const m = new THREE.MeshStandardMaterial({ color: handle.paint.color.clone(), roughness: 0.7, metalness: 0.15 });
-        mats.push(m);
-        piece.add(new THREE.Mesh(geo.paint, m));
+        mat = new THREE.MeshStandardMaterial({ color: handle.paint.color.clone(), roughness: 0.6, metalness: 0.2 });
+        piece.add(new THREE.Mesh(geo.paint, mat));
     }
     if (geo.trim) piece.add(new THREE.Mesh(geo.trim, shared().trim));
-    piece.children.forEach(m => { m.castShadow = true; });
-    // Where the part is now, in the world, and moving with the car plus a kick off it.
-    handle.group.updateMatrixWorld();
-    piece.position.copy(geo.centre).applyMatrix4(handle.group.matrixWorld);
-    piece.quaternion.copy(handle.group.quaternion);
+    for (const m of piece.children) m.receiveShadow = true;
+    // Where the part is now in the world: the chassis, then the hinge it was hanging off.
+    handle.group.updateMatrixWorld(true);
+    _m.copy(handle.chassis.matrixWorld).multiply(hang || _r.identity())
+        .multiply(_r.makeTranslation(geo.centre.x, geo.centre.y, geo.centre.z));
+    _m.decompose(piece.position, piece.quaternion, _sc);
+    partBounds(handle.style)[id].getSize(_sz);
     const h = handle.last?.h ?? 0, v = handle.last?.v ?? 0;
+    const fx = Math.cos(h), fz = Math.sin(h);
+    // Out the side it was on (a bumper: off its end as well), up, and still doing most of the car's speed.
     const side = geo.centre.z >= 0 ? 1 : -1;
+    const end = Math.abs(geo.centre.x) > 1.4 ? Math.sign(geo.centre.x) : 0;
     const rnd = Math.random;
-    parent.add(piece);
-    debris.push({
-        piece, mats, ground: handle.group.position.y + 0.04, rest: false, age: 0,
-        vx: Math.cos(h) * v * 0.7 + (-Math.sin(h) * side) * (1 + rnd() * 2), vy: 1.5 + rnd() * 2.5,
-        vz: Math.sin(h) * v * 0.7 + (Math.cos(h) * side) * (1 + rnd() * 2),
-        wx: (rnd() - 0.5) * 14, wy: (rnd() - 0.5) * 10, wz: (rnd() - 0.5) * 14,
+    const out = 0.8 + rnd() * 1.8, keep = 0.72 + rnd() * 0.18;
+    const sideK = end ? 0.35 : 1;
+    const vel = new THREE.Vector3(
+        fx * v * keep - fz * side * out * sideK + fx * end * out * 0.4,
+        1.2 + rnd() * 2.2,
+        fz * v * keep + fx * side * out * sideK + fz * end * out * 0.4);
+    const spin = new THREE.Vector3((rnd() - 0.5) * 12, (rnd() - 0.5) * 9, (rnd() - 0.5) * 12);
+    throwPiece(parent, piece, {
+        box: [_sz.x / 2, Math.max(0.03, _sz.y / 2), _sz.z / 2], v: vel, w: spin, e: 0.3,
+        owner: handle, floor: handle.group.position.y, dispose: () => mat?.dispose(),
     });
-    while (debris.length > MAX_DEBRIS) removeDebris(debris.shift());
 }
-
-function removeDebris(d) {
-    d.piece.parent?.remove(d.piece);
-    for (const m of d.mats) m.dispose();
-}
-
-const SPIN = new THREE.Quaternion();
-const AXIS = new THREE.Vector3();
-/** Fly, bounce and skid the torn-off parts to rest. Call once a rendered frame. */
-export function updateDebris(dt) {
-    if (!(dt > 0)) return;
-    for (const d of debris) {
-        if (d.rest) continue;
-        d.age += dt;
-        d.vy -= 9.8 * dt;
-        const p = d.piece.position;
-        p.x += d.vx * dt; p.y += d.vy * dt; p.z += d.vz * dt;
-        if (p.y < d.ground) {
-            p.y = d.ground;
-            d.vy = Math.abs(d.vy) > 1.2 ? -d.vy * 0.3 : 0;
-            const k = Math.exp(-dt * 3.5);   // skidding along the tarmac
-            d.vx *= k; d.vz *= k; d.wx *= k; d.wy *= k; d.wz *= k;
-            // Settle flat: whatever it is spinning about, it ends up lying on the road.
-            if (Math.hypot(d.vx, d.vz) < 0.2 && d.vy === 0) {
-                d.rest = true;
-                const e = new THREE.Euler().setFromQuaternion(d.piece.quaternion, 'YXZ');
-                d.piece.rotation.set(Math.round(e.x / Math.PI) * Math.PI, e.y, Math.round(e.z / Math.PI) * Math.PI, 'YXZ');
-                continue;
-            }
-        }
-        const w = Math.hypot(d.wx, d.wy, d.wz);
-        if (w > 1e-4) {
-            SPIN.setFromAxisAngle(AXIS.set(d.wx / w, d.wy / w, d.wz / w), w * dt);
-            d.piece.quaternion.premultiply(SPIN);
-        }
-    }
-}
-
-/** Clear every torn-off part off the road (the race is over). */
-export function clearDebris() {
-    while (debris.length) removeDebris(debris.pop());
-}
-
-const _m = new THREE.Matrix4();
-const _r = new THREE.Matrix4();
 
 class CarHandle {
     constructor(group, chassis, mats, dmg, wheels, style) {
@@ -629,12 +618,7 @@ class CarHandle {
                 const free = (bb.min.z + bb.max.z) / 2 - hz;
                 part.angle = Math.sign(free || 1) * PART_DROOP[id];
             }
-            if (part.hits >= gone) {
-                part.state = 2;
-                this.lost |= 1 << (id - 1);
-                this.dmg.parts.value[id - 1].makeScale(0, 0, 0);
-                spawnDebris(this, id);
-            }
+            if (part.hits >= gone) this.tearOff(id);
         };
         if (x > 1.45) knock(PART.FRONT, s);
         if (x < -1.45) { knock(PART.REAR, s); knock(PART.TAILGATE, s); }
@@ -654,12 +638,80 @@ class CarHandle {
         if (s > 0.55 || (s > 0.3 && this.wear > 1)) this.dmg.crack.value = Math.min(1, this.dmg.crack.value + (s - 0.25) * 0.8);
     }
 
-    /** The sim's word on the car (race.js, every frame): a wreck is scorched and loses what is hanging. */
+    /**
+     * The sim's word on the car (race.js, every frame): a wreck is scorched, loses what is
+     * hanging and sheds a wheel.
+     */
     setCondition(wrecked) {
         const target = wrecked ? 1 : 0;
         if (target === this.scorch) return;
         this.scorch = target;
         this.dmg.scorch.value = target;
+        if (!wrecked) return;
+        for (let id = 1; id <= PARTS; id++) if (this.parts[id].state === 1) this.tearOff(id);
+        this.loseWheel();
+    }
+
+    /** Part `id` comes off for good: folded away on the car, a rigid body from the pose it hung at. */
+    tearOff(id) {
+        const part = this.parts[id];
+        if (part.state === 2) return;
+        part.state = 2;
+        this.lost |= 1 << (id - 1);
+        const m = this.dmg.parts.value[id - 1];
+        const hang = m.clone();
+        m.makeScale(0, 0, 0);
+        spawnDebris(this, id, hang);
+    }
+
+    /**
+     * A wreck sheds a wheel (the most bent one; else, half the time, any): it bounces and rolls
+     * off across the run-off (debris.js), and the corner it came off sags.
+     */
+    loseWheel() {
+        const parent = this.group.parent;
+        if (!parent) return;
+        let k = -1, worst = 0.25;
+        this.wheels.forEach((w, i) => { if (!w.gone && w.bent > worst) { worst = w.bent; k = i; } });
+        if (k < 0 && Math.random() < 0.5) k = Math.floor(Math.random() * this.wheels.length);
+        const w = this.wheels[k];
+        if (!w || w.gone) return;
+        this.group.updateMatrixWorld(true);
+        // Its axle (the tyre's Z) on the body's disc axis (its Y).
+        const piece = new THREE.Group();
+        piece.name = 'pocabinet-debris-wheel';
+        const inner = new THREE.Group();
+        inner.rotation.x = -Math.PI / 2;
+        inner.add(new THREE.Mesh(w.tyre.geometry, w.tyre.material), new THREE.Mesh(w.rim.geometry, w.rim.material));
+        for (const m of inner.children) m.receiveShadow = true;
+        piece.add(inner);
+        w.pivot.getWorldPosition(piece.position);
+        w.pivot.getWorldQuaternion(piece.quaternion).multiply(_q.setFromAxisAngle(X_AXIS, Math.PI / 2));
+        const h = this.last?.h ?? 0, v = this.last?.v ?? 0;
+        const fx = Math.cos(h), fz = Math.sin(h);
+        const side = w.pivot.position.z > 0 ? 1 : -1;
+        const rnd = Math.random;
+        const out = 1.4 + rnd() * 2.2, keep = 0.8 + rnd() * 0.15;
+        const thrown = throwPiece(parent, piece, {
+            disc: [WHEEL_R, 0.14], e: 0.45, metal: false, owner: this, roll: true, floor: this.group.position.y,
+            v: new THREE.Vector3(fx * (v * keep + 0.5) - fz * side * out, 1.6 + rnd() * 2.2, fz * (v * keep + 0.5) + fx * side * out),
+            w: new THREE.Vector3((rnd() - 0.5) * 4, (rnd() - 0.5) * 4, (rnd() - 0.5) * 4),
+        });
+        if (!thrown) return;
+        w.gone = true;
+        w.pivot.visible = false;
+        this.lost |= 1 << (PARTS + k);
+        const zn = this.zones;
+        if (w.front) zn.front = Math.max(zn.front, 2); else zn.rear = Math.max(zn.rear, 2);
+        if (side > 0) zn.right = Math.max(zn.right, 2); else zn.left = Math.max(zn.left, 2);
+    }
+
+    /**
+     * What the paint picks up (race.js, every rendered frame): `surface` is the sim's SURF_* under
+     * the car. Dirt and the water on it build from that and the speed drawn; render only.
+     */
+    weather(dt, surface) {
+        if (!this.disposed) this.livery?.tick(dt, surface, this.last?.v ?? 0);
     }
 
     /** World points where a hanging part is dragging on the road (sparks), into `out`. */
@@ -786,8 +838,12 @@ export function mountCar(parent, opts) {
     };
     // Only the glass crazes: the others read a crack that stays 0.
     const noCrack = { value: 0 };
+    // Living paint (paint.js) over the dents: dirt, rain, scars and flake on the body; dirt and
+    // rain on the glass; dirt on the trim. The lamps stay as they are.
+    const livery = new LivingPaint(paintSeed(opts.id || opts.name), dmg.dentP.value);
     for (const [key, mat] of Object.entries(mats)) {
         damageable(mat, key === 'glass' ? dmg : { ...dmg, crack: noCrack }, mat.userData.lamp);
+        if (key === 'paint' || key === 'glass' || key === 'trim') livingPaint(mat, key, livery);
     }
 
     const group = new THREE.Group();
@@ -824,7 +880,9 @@ export function mountCar(parent, opts) {
     group.add(shadow);
 
     parent.add(group);
-    return new CarHandle(group, chassis, mats, dmg, wheels, style);
+    const handle = new CarHandle(group, chassis, mats, dmg, wheels, style);
+    handle.livery = livery;
+    return handle;
 }
 
 export function unmountCar(handle) {
@@ -838,7 +896,7 @@ export function unmountCar(handle) {
  * pass; a hundred of them would take a 29 fps frame to 3. A crowd mesh is the plain body, glass,
  * trim and tyres of its style merged into one geometry: the paint is the instance colour,
  * the rest is baked dark in vertex colour, and it casts its shadow in one call too. A torn-off
- * part stays gone from a far car and a wreck stays sooted (per-instance aLost, aScorch). race.js
+ * part or a shed wheel stays gone from a far car and a wreck stays sooted (per-instance aLost, aScorch). race.js
  * fills them each frame from the handles it is not showing (CarHandle.update has already
  * placed them).
  */
@@ -873,7 +931,12 @@ diffuseColor.rgb *= 1.0 - 0.55 * vScorch;`);
         this.meshes = STYLES.map((_, style) => {
             const g = geometry(style);
             const parts = [shaded(g.paint, 1), shaded(g.glass, 0.04), shaded(g.trim, 0.07)];
-            for (const [x, z] of WHEELS) parts.push(shaded(g.tyre, 0.05).translate(x, WHEEL_R, z));
+            // Each tyre is a part of its own (PARTS + 1 + k), so a wheel a wreck shed stays off.
+            WHEELS.forEach(([x, z], k) => {
+                const tyre = shaded(g.tyre, 0.05).translate(x, WHEEL_R, z);
+                tyre.attributes.aPart.array.fill(PARTS + 1 + k);
+                parts.push(tyre);
+            });
             const merged = mergeGeometries(parts);
             merged.setAttribute('aLost', new THREE.InstancedBufferAttribute(new Float32Array(max), 1).setUsage(THREE.DynamicDrawUsage));
             merged.setAttribute('aScorch', new THREE.InstancedBufferAttribute(new Float32Array(max), 1).setUsage(THREE.DynamicDrawUsage));

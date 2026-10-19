@@ -21,11 +21,22 @@
 // own hits (physics.js reportHits) are not seen here.
 //
 // One-shots race.js fires: backfire() — a flame out of the tail on
-// every exhaust pop audio.js reports; debris() — chunks and paint flakes off a
-// shunt; confetti() — the podium shower over the line.
+// every exhaust pop audio.js reports; debris() — the bits off a shunt: shards of panel in the
+// car's paint, black trim, glass and a hubcap as rigid bodies that tumble, bounce and lie on
+// the road (debris.js), leaving with the car's speed and out of the side that was hit, over a
+// puff of paint dust; confetti() — the podium shower over the line.
+//
+// Smoke, dust, spray and fire go through puff(): on the 'medium' and 'high' quality tiers
+// they are GPU particles (gpuParticles.js: simulated in float textures, lit by the sun,
+// pushed around by the nearest cars), on 'low' (or where float render targets are missing
+// or a shader fails) the CPU pool below. syncGpu() follows the scene's tier, so a mid-race
+// step down rebuilds or drops the GPU system. Stones, debris, confetti and sparks stay on
+// the CPU pools on every tier.
 
 import * as THREE from 'three';
 import { wrapAngle } from './track.js';
+import { GpuParticles, PUFF } from './gpuParticles.js';
+import { throwChunks } from './debris.js';
 import { GRIP_ACCEL, CAR_RADIUS, hullContact, wallAt, surfaceAt, SURF_GRASS, SURF_GRAVEL, SURF_SAUSAGE } from './physics.js';
 
 const WS = 10;
@@ -248,7 +259,38 @@ class CarFx {
         this.state = new Map();
         this.pairs = new Map();
         this.size = new THREE.Vector2();
+        this.gpu = null;          // gpuParticles.js, while the tier runs it
+        this.gpuTier = null;      // the tier it was last built (or tried) for
         this.disposed = false;
+    }
+
+    /** GPU smoke on 'medium' / 'high', the CPU pool on 'low' or if it cannot run (no retry). */
+    syncGpu() {
+        if (this.gpu?.failed) {
+            console.warn('pocabinet/fx: GPU particle shaders failed, using the CPU pools');
+            this.gpu.dispose();
+            this.gpu = null;
+        }
+        const q = this.sh.quality;
+        const want = q === 'high' || q === 'medium' ? q : null;
+        if (want === this.gpuTier) return;
+        this.gpu?.dispose();
+        this.gpu = null;
+        this.gpuTier = want;
+        if (!want) return;
+        try {
+            this.gpu = new GpuParticles(this.sh, want);
+            this.group.add(this.gpu.mesh);
+        } catch (e) {
+            this.gpu = null;
+            console.warn('pocabinet/fx: GPU particles unavailable, using the CPU pools', e);
+        }
+    }
+
+    /** Smoke, dust or spray of `kind` (PUFF): the GPU system when it runs, else the CPU pool. */
+    puff(kind, x, y, z, vx, vy, vz, life, s0, s1, a0, r, g, b, drag, grav, floor) {
+        if (this.gpu) this.gpu.emit(kind, x, y, z, vx, vy, vz, life, s0, s1, a0, r, g, b, drag, grav, floor);
+        else this.smoke.spawn(x, y, z, vx, vy, vz, life, s0, s1, a0, r, g, b, drag, grav, floor);
     }
 
     /** Burst of smoke off the rear wheels for `seconds` (launch at GO). */
@@ -285,18 +327,33 @@ class CarFx {
     }
 
     /** Chunks of trim and flakes of `paint` (hex) flying off a shunt at world (x, z), road height `up`. */
-    debris(x, z, paint, strength = 1, up = 0) {
+    debris(x, z, paint, strength = 1, up = 0, car = null) {
         if (this.disposed) return;
         const rnd = Math.random;
         const c = new THREE.Color(paint || '#888888');
-        const n = Math.round(4 + strength * 10);
+        // The car's velocity (world units/s) and the way out of it at the hit, from its pose.
+        let vx = 0, vz = 0, ox = 0, oz = 0;
+        if (car && Number.isFinite(car.heading)) {
+            const sp = (Number(car.speed) || 0) / WS;
+            vx = Math.cos(car.heading) * sp; vz = Math.sin(car.heading) * sp;
+            ox = x - car.x / WS; oz = z - car.y / WS;
+            const len = Math.hypot(ox, oz);
+            if (len > 1e-3) { ox /= len; oz /= len; } else { ox = 0; oz = 0; }
+        }
+        // The pieces you can see tumble: rigid bodies (debris.js).
+        throwChunks(this.sh.scene, {
+            x, y: up + 0.45, z, vx, vz, ox, oz, strength, paint: c, owner: car, floor: up,
+            hint: Number.isFinite(car?.along) ? this.track.indexAt(car.along) : -1,
+        });
+        // And a puff of paint dust and grit off the hit.
+        const n = Math.round(2 + strength * 5);
         for (let i = 0; i < n; i++) {
             const flake = rnd() < 0.55;
             const shade = 0.08 + rnd() * 0.1;
             this.smoke.spawn(x, up + 0.4 + rnd() * 0.3, z,
-                (rnd() - 0.5) * 7 * strength, 1.5 + rnd() * 3.5 * strength, (rnd() - 0.5) * 7 * strength,
-                0.7 + rnd() * 0.8, 0.14 + rnd() * 0.08, 0.1, 1,
-                flake ? c.r : shade, flake ? c.g : shade, flake ? c.b : shade, 0.4, 9.8, up);
+                vx * 0.6 + (rnd() - 0.5) * 6 * strength, 1.2 + rnd() * 3 * strength, vz * 0.6 + (rnd() - 0.5) * 6 * strength,
+                0.5 + rnd() * 0.6, 0.1 + rnd() * 0.06, 0.08, 1,
+                flake ? c.r : shade, flake ? c.g : shade, flake ? c.b : shade, 0.8, 9.8, up);
         }
     }
 
@@ -323,6 +380,7 @@ class CarFx {
     update(dt, cars, opts = {}) {
         const events = { contacts: [], scraping: new Map(), walls: [] };
         if (this.disposed || dt <= 0) return events;
+        this.syncGpu();
         const t = this.track;
         const skidsOn = opts.skids !== false;
         const rnd = Math.random;
@@ -385,7 +443,7 @@ class CarFx {
                             0.5 + rnd() * 0.5, this.beach ? 0.06 : 0.09 + rnd() * 0.06, 0.07, 1,
                             this.stone.r * shade, this.stone.g * shade, this.stone.b * shade, 0.3, 9.8, up);
                     } else {
-                        this.smoke.spawn(wx + (rnd() - 0.5) * 0.4, up + 0.25, wz + (rnd() - 0.5) * 0.4,
+                        this.puff(PUFF.DUST, wx + (rnd() - 0.5) * 0.4, up + 0.25, wz + (rnd() - 0.5) * 0.4,
                             vx * 0.2 + (rnd() - 0.5) * 1.6, 0.6 + rnd() * 1.1, vz * 0.2 + (rnd() - 0.5) * 1.6,
                             0.9 + rnd() * 0.6, 0.5, 2.4 + rnd() * 0.8, this.beach ? 0.2 : 0.26,
                             this.grit.r, this.grit.g, this.grit.b, 1.3, -0.15, up);
@@ -398,7 +456,7 @@ class CarFx {
                 const n = 3 + Math.round(Math.min(1, v / 100) * 6);
                 for (let i = 0; i < n; i++) {
                     if (i % 2) this.spark(x + (rnd() - 0.5) * 1.4, up + 0.12, z + (rnd() - 0.5) * 1.4, -vx * 0.3 + (rnd() - 0.5) * 3, 1 + rnd() * 2, -vz * 0.3 + (rnd() - 0.5) * 3);
-                    else this.smoke.spawn(x + (rnd() - 0.5) * 1.6, up + 0.2, z + (rnd() - 0.5) * 1.6,
+                    else this.puff(PUFF.GRIT, x + (rnd() - 0.5) * 1.6, up + 0.2, z + (rnd() - 0.5) * 1.6,
                         (rnd() - 0.5) * 2, 0.8 + rnd() * 1.4, (rnd() - 0.5) * 2, 0.5, 0.25, 1.2, 0.18,
                         this.grit.r, this.grit.g, this.grit.b, 2, 2, up);
                 }
@@ -418,7 +476,7 @@ class CarFx {
                         s.acc -= 1;
                         const col = onGrass ? this.dust : null;
                         const shade = 0.72 + rnd() * 0.12;
-                        this.smoke.spawn(
+                        this.puff(onGrass ? PUFF.DUST : PUFF.TYRE,
                             wx + (rnd() - 0.5) * 0.3, up + 0.25, wz + (rnd() - 0.5) * 0.3,
                             vx * 0.25 + (rnd() - 0.5) * 1.2, 0.5 + rnd() * 0.9, vz * 0.25 + (rnd() - 0.5) * 1.2,
                             onGrass ? 0.7 : 0.8 + rnd() * 0.6, 0.4, onGrass ? 1.8 : 2.1 + rnd() * 0.9,
@@ -428,7 +486,7 @@ class CarFx {
                 }
                 // Rain spray off the rear wheels.
                 if (this.raining && v > 35 && !onGrass && !onGravel && rnd() < dt * 22 * (v / 140)) {
-                    this.smoke.spawn(wx, up + 0.2, wz, vx * 0.35 + (rnd() - 0.5), 0.6 + rnd() * 0.5, vz * 0.35 + (rnd() - 0.5),
+                    this.puff(PUFF.SPRAY, wx, up + 0.2, wz, vx * 0.35 + (rnd() - 0.5), 0.6 + rnd() * 0.5, vz * 0.35 + (rnd() - 0.5),
                         0.55, 0.6, 2.6, 0.11, 0.8, 0.84, 0.88, 2.2, 0.4, up);
                 }
                 // Skid marks.
@@ -500,13 +558,23 @@ class CarFx {
                 while (s.sacc >= 1) {
                     s.sacc -= 1;
                     const shade = c.wrecked ? 0.07 + rnd() * 0.05 : 0.6 - 0.4 * engine + rnd() * 0.08;
-                    this.smoke.spawn(
+                    this.puff(c.wrecked ? PUFF.WRECK : PUFF.ENGINE,
                         bx + (rnd() - 0.5) * 0.5, up + 0.75, bz + (rnd() - 0.5) * 0.5,
                         vx * 0.3 + (rnd() - 0.5) * 0.6, 1.1 + rnd() * 1.2, vz * 0.3 + (rnd() - 0.5) * 0.6,
                         1.8 + rnd() * 1.4, 0.5, c.wrecked ? 3.4 + rnd() * 1.2 : 1.8 + engine * 1.2,
                         c.wrecked ? 0.5 : 0.22 + engine * 0.22, shade, shade, shade * 1.03, 0.7, -0.5, up);
                 }
-                if (burning && rnd() < dt * 45) {
+                if (burning && this.gpu && rnd() < dt * 40) {
+                    // GPU fire: HDR flame licking up off the bonnet, cooling into black smoke;
+                    // the odd ember stays a spark.
+                    this.gpu.emit(PUFF.FIRE, bx + (rnd() - 0.5) * 0.7, up + 0.6 + rnd() * 0.2, bz + (rnd() - 0.5) * 0.7,
+                        vx * 0.2 + (rnd() - 0.5) * 0.6, 1.2 + rnd() * 1.2, vz * 0.2 + (rnd() - 0.5) * 0.6,
+                        0.6 + rnd() * 0.45, 0.35 + rnd() * 0.2, 2.4 + rnd() * 0.8, 0.42, 0.05, 0.045, 0.04, 1.6, -2.2, up);
+                    if (rnd() < 0.2) {
+                        this.sparks.spawn(bx + (rnd() - 0.5) * 0.6, up + 0.7, bz + (rnd() - 0.5) * 0.6,
+                            (rnd() - 0.5) * 1.2, 2 + rnd() * 2, (rnd() - 0.5) * 1.2, 0.5 + rnd() * 0.4, 0.14, 0.05, 1, 1, 0.55, 0.12, 1.2, -1, up);
+                    }
+                } else if (burning && rnd() < dt * 45) {
                     const k = rnd();
                     this.sparks.spawn(bx + (rnd() - 0.5) * 0.6, up + 0.6 + rnd() * 0.2, bz + (rnd() - 0.5) * 0.6,
                         (rnd() - 0.5) * 0.8, 1.5 + rnd() * 1.8, (rnd() - 0.5) * 0.8,
@@ -544,6 +612,9 @@ class CarFx {
 
         this.smoke.step(dt);
         this.sparks.step(dt);
+        if (this.gpu) {
+            try { this.gpu.step(dt, cars); } catch (e) { this.gpu.failed = true; console.warn('pocabinet/fx: GPU particle step failed', e); }
+        }
         this.skids.flush();
         this.updateScale();
         return events;
@@ -569,6 +640,8 @@ class CarFx {
         this.group.parent?.remove(this.group);
         this.smoke.dispose();
         this.sparks.dispose();
+        this.gpu?.dispose();
+        this.gpu = null;
         this.skids.dispose();
         this.state.clear();
     }

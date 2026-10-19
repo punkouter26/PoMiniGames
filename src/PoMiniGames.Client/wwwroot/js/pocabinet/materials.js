@@ -231,4 +231,33 @@ export function water(material, strength = 0.18) {
     });
 }
 
+/**
+ * Reflectivity for postfx.js's screen-space reflections: an opaque material writes
+ * 1 − reflectivity into the HDR target's alpha (everything else writes 1). `uRefl` is a
+ * shared { value } so a weather change needs no recompile.
+ */
+export function reflective(material, uRefl) {
+    return addHook(material, 'reflective', (shader) => {
+        shader.uniforms.uPcRefl = uRefl;
+        shader.fragmentShader = 'uniform float uPcRefl;\n' + shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
+        gl_FragColor.a = 1.0 - uPcRefl;`);
+    });
+}
+
+/**
+ * A transparent decal that makes what is under it more reflective instead of less: colour
+ * blends as usual, but the target's alpha (postfx.js's 1 − reflectivity) is multiplied by
+ * 1 − the decal's coverage. Standing water.
+ */
+export function mirrorDecal(material) {
+    material.blending = THREE.CustomBlending;
+    material.blendSrc = THREE.SrcAlphaFactor;
+    material.blendDst = THREE.OneMinusSrcAlphaFactor;
+    material.blendEquation = THREE.AddEquation;
+    material.blendSrcAlpha = THREE.ZeroFactor;
+    material.blendDstAlpha = THREE.OneMinusSrcAlphaFactor;
+    material.blendEquationAlpha = THREE.AddEquation;
+    return material;
+}
+
 /** MeshStandardMaterial shorthand. */

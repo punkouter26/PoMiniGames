@@ -49,7 +49,9 @@
 // haptics — the sound stays audio.js's); wet-road reflections
 // (reflections.js) track every light; and the glass gauge (#pocabinetGauge, the
 // page's markup) gets speed, gear and RPM written straight to the DOM each frame —
-// never through Blazor, so it costs no re-render.
+// never through Blazor, so it costs no re-render. acoustics.js turns where the car heard up
+// close is into sound: the reverb zone, the tyre surface, the slipstream (scene.fx.draft) and
+// the adaptive score (music.js: grid bed, drums in a battle, final-lap lift, overtake stinger).
 
 import { Vector3 } from 'three';
 import { buildTrack, wrapAngle, rubberAt } from './track.js';
@@ -64,6 +66,9 @@ import { computeKerbs, onKerb } from './kerbs.js';
 import { getRecords } from './settings.js';
 import { WetReflections } from './reflections.js';
 import { Broadcast } from './broadcast.js';
+import { Acoustics } from './acoustics.js';
+import { Slipstream } from './slipstream.js';
+import { paintScene } from './paint.js';
 
 const TICK = ph.TICK_SECONDS;
 const COUNTDOWN = 3;
@@ -200,6 +205,9 @@ class Race {
         }
         this.byRange = [];
         this.director = this.mode === 'demo' ? new Broadcast(this) : null;
+        // What the ear hears from where it is: reverb zone, tyre surface, slipstream, the score.
+        try { this.acoustics = new Acoustics(this); } catch { this.acoustics = null; }
+        try { this.slip = new Slipstream(scene); } catch { this.slip = null; }
         if (this.mode === 'net' && opts.initialSnapshot) this.onServerSnapshot(opts.initialSnapshot);
         this.startRecording();
         this.applySettings(opts.settings || {});
@@ -543,7 +551,7 @@ class Race {
                 if (!car.mesh.addHit(h.fwd, h.side, h.nx, h.ny, s) || s < 0.3) continue;
                 const b = car.body, ch = Math.cos(b.heading), sh = Math.sin(b.heading);
                 const x = (b.x + ch * h.fwd - sh * h.side) / 10, z = (b.y + sh * h.fwd + ch * h.side) / 10;
-                this.fx?.debris(x, z, car.mesh.paintHex, s, car.render.h);
+                this.fx?.debris(x, z, car.mesh.paintHex, s, car.render.h, car.render);
             }
             hits.length = 0;
         }
@@ -836,6 +844,7 @@ class Race {
             const o = this.net.renderOffset;
             o.x *= k; o.y *= k; o.h *= k;
         }
+        paintScene(this.scene, this.track);
 
         for (const car of this.cars) {
             let pose;
@@ -865,6 +874,7 @@ class Race {
             this.place(car.render);
             car.mesh?.update({ x: pose.x, y: pose.y, heading: pose.heading, speedKmh: pose.speed * ph.KMH_PER_UNIT, h: car.render.h, pitch: car.render.pitch, roll: car.render.roll });
             car.mesh?.setCondition(!!car.body.wrecked);
+            car.mesh?.weather(this.paused ? 0 : dt, car.body.surface);   // dirt and rain on the paint
         }
         // Camera: the director's shot in the demo, else the local car, or the race leader
         // when spectating.
@@ -880,7 +890,7 @@ class Race {
         }
         this.viewCar = focus || null;
         this.cull();
-        updateDebris(this.paused ? 0 : dt * this.timeScale);
+        updateDebris(this.paused ? 0 : dt * this.timeScale, this);
         if (focus) {
             this.scene.setView({ ...focus.render, mode, dt });
             if (focus.mesh) focus.mesh.group.visible = true;
@@ -961,6 +971,12 @@ class Race {
         // Speed blur belongs to a camera that moves with the car, not a trackside one.
         fx.speed = racing && mode !== 'tv' ? speed01 : 0;
         fx.focus = focus ? { x: focus.render.x / 10, y: focus.render.h, z: focus.render.y / 10, speed01 } : null;
+        // The cars drawn in full, for the post pass's motion blur and exhaust haze.
+        const movers = fx.movers || (fx.movers = []);
+        movers.length = 0;
+        for (const car of this.cars) if (car.mesh?.group.visible) movers.push(car.mesh.group);
+        // The tow (fx.draft, read by acoustics.js below): streamlines, haze and the gauge's arc.
+        try { this.slip?.update(dt, focus, this.cars, this.gauge); } catch { /* decoration */ }
 
         const events = this.fx?.update(this.paused ? 0 : dt * this.timeScale, this.fxCars(), { skids: true });
 
@@ -1014,6 +1030,7 @@ class Race {
         }
 
         this.crowdAndMoments(focus, racing, preStart, speed01);
+        try { this.acoustics?.update(ear, racing, preStart); } catch { /* sound is never fatal */ }
         this.updateGauge(racing || preStart);
         this.updateDamageHud(focus);
         if (dt > 0 && !this.paused) this.dragSparks(dt);
@@ -1030,7 +1047,7 @@ class Race {
         if (this.mode !== 'net') return;
         const car = this.cars.find(c => c.id === id);
         if (!car || !(strength > 0.12)) return;
-        if (car.mesh?.addDamage(x, z, strength) && strength > 0.3) this.fx?.debris(x, z, car.mesh.paintHex, strength, car.render.h);
+        if (car.mesh?.addDamage(x, z, strength) && strength > 0.3) this.fx?.debris(x, z, car.mesh.paintHex, strength, car.render.h, car.render);
     }
 
     /** Grandstand, overtakes and the finish. */
@@ -1518,6 +1535,7 @@ class Race {
         this.fx?.dispose();
         this.reflections?.dispose();
         this.director?.dispose();
+        this.slip?.dispose();
         audio.silenceRace();
         const fx = this.scene.fx;
         if (fx) { fx.speed = 0; fx.rumble = 0; fx.slow = 0; fx.shake = 0; fx.focus = null; }

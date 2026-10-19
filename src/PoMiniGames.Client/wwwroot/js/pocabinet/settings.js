@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     muted: false,
     reducedMotion: false,
     colorSafe: false,
+    music: true,           // the adaptive race score (music.js); the effects stay either way
     hudScale: 1,           // HUD font scale, 0.85 / 1 / 1.15
     weather: 'clear',      // clear | rain | auto (auto = open-meteo, DC). Clear by default (2026-09-29): auto changed grip without warning
     // Controls + driver aids (input.js / physics.assistControls). Aids only
@@ -49,6 +50,7 @@ function clamp(value, lo, hi, fallback) {
 function sanitize(raw) {
     const src = (raw && typeof raw === 'object') ? raw : {};
     const s = { ...DEFAULT_SETTINGS };
+    if (typeof src.music === 'boolean') s.music = src.music;
     s.hudScale = clamp(src.hudScale, 0.8, 1.3, s.hudScale);
     if (['auto', 'clear', 'rain'].includes(src.weather)) s.weather = src.weather;
     if (['auto', 'on', 'off'].includes(src.touchControls)) s.touchControls = src.touchControls;

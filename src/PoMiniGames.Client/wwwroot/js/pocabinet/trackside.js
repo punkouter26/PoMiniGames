@@ -19,7 +19,7 @@
 
 import * as THREE from 'three';
 import { GRIP_ACCEL } from './physics.js';
-import { asphalt, water } from './materials.js';
+import { asphalt, water, mirrorDecal } from './materials.js';
 import { roadPlane, wallFace } from './terrain.js';
 import { gravel, patchMask, repairs, chevrons, boardAtlas, arrowSign, jokerPanel } from './surfaces.js';
 
@@ -117,7 +117,7 @@ export class Trackside {
             dusty: () => decal({ color: '#cdb78c', alphaMap: patchMask('dust'), opacity: 0.6, roughness: 1 }),
             bumpy: () => decal({ color: '#ffffff', map: repairs(), roughness: 0.9 }),
             dirt: () => decal({ color: '#9a7650', map: gravel().map, normalMap: gravel().normalMap, alphaMap: patchMask('dirt'), opacity: 0.95, roughness: 1 }),
-            puddle: () => water(decal({ color: '#10151b', alphaMap: patchMask('puddle'), opacity: 0.85, roughness: 0.1, metalness: 0, envMapIntensity: 1.2 }), 0.06),
+            puddle: () => mirrorDecal(water(decal({ color: '#10151b', alphaMap: patchMask('puddle'), opacity: 0.85, roughness: 0.1, metalness: 0, envMapIntensity: 1.2 }), 0.06)),
         };
         const tiles = { resurfaced: 45, dusty: 70, bumpy: 50, dirt: 30, puddle: 55 };
         const order = { resurfaced: 1, bumpy: 2, dirt: 2, dusty: 3, puddle: 4 };

@@ -32,7 +32,7 @@ const MIN_HOLD = 6000;
 const MAX_HOLD = 15000;
 const EVENT_HOLD = 2500;        // the shortest look at a shot before an event may take over
 const BATTLE_GAP = 1.0;         // seconds between two cars that makes a fight worth cutting to
-const BATTLE_LOST = 1.6;        // and that ends one already on screen
+export const BATTLE_LOST = 1.6; // and that ends one already on screen (acoustics.js: the score's drums fade in under it)
 const PASS_HOLD = 1.2;          // sim seconds a pass must stick before it is called
 const LEAD_HOLD = 1.5;
 const TOWER_ROWS = 10;
@@ -41,6 +41,14 @@ const DOM_MS = 200;
 const SHOTS = ['chase', 'tv', 'far'];
 const PRIORITY = { flag: 3, incident: 2, leader: 1 };
 const SHOT_LABEL = { chase: 'Chase cam', tv: 'Trackside', far: 'Wide' };
+
+/**
+ * The director's measure of a fight: the seconds between `ahead` and `behind` on the road, at
+ * the speed of the car behind. Also the race score's (acoustics.js): drums come in under it.
+ */
+export function battleGap(ahead, behind) {
+    return (ahead.body.distance - behind.body.distance) / Math.max(30, Math.abs(behind.body.speed));
+}
 
 export class Broadcast {
     constructor(race) {
@@ -253,7 +261,7 @@ export class Broadcast {
             if (a.finished || b.finished || a.body.wrecked || b.body.wrecked) continue;
             const d = a.body.distance - b.body.distance;
             if (d < 0 || d > this.L * 0.5) continue;
-            const gap = d / Math.max(30, Math.abs(b.body.speed));
+            const gap = battleGap(a, b);
             if (gap > BATTLE_LOST) continue;
             out.push({ att: b, def: a, gap, place: i + 1, score: (BATTLE_LOST - gap) * (1 + 4 / (i + 1)) });
         }

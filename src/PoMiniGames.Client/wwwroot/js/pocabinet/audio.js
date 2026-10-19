@@ -8,7 +8,30 @@
 // gesture. init() is called from the page's "Start race" click (or the first
 // gesture, via armAudioOnGesture); every other entry point no-ops until then.
 //
-// Graph:  voices ─► sfx bus ─► slow-mo lowpass ─► compressor ─► master ─► out
+// Graph:  voices ─┬──────────────────────────► sfx bus ─┐
+//                 └► reverb send ─► convolver A ─► wet A ┤
+//                                 └► convolver B ─► wet B ┤
+//         music.js score ─► music bus ───────────────────┴► slow-mo lowpass ─► compressor
+//                                                            ─► master ─► out
+//
+//   • music — the adaptive score (music.js, owned here): race state in through setMusic and
+//     musicStinger, ducked by the player engine's load and by every impact, off with the
+//     `music` setting (setMusicEnabled). Its bus joins before the slow-mo lowpass, so the
+//     photo-finish slow motion dips it with everything else; volume, mute and the pause
+//     duck are the master's.
+//   • acoustic space — the engine, rivals, squeal, scrape, pops and impacts also feed a
+//     convolution reverb whose impulse responses are made here at init (decaying stereo
+//     noise, one shape per zone: 'stand' a big wide slap off the grandstand, 'metal' a tight
+//     bright ring under the gantry, a bridge or between close walls, 'open' near-dry open
+//     air). setAcoustics(zone, wet) each frame (acoustics.js picks the zone): a new zone is
+//     loaded into whichever convolver is silent and the two crossfade, so a switch never
+//     clicks.
+//   • surface — under the tyres: gravel crunch (a looped grain buffer whose playback rate
+//     follows speed), sand drag (low hiss and soft grains), a grass swish, wet-tarmac hiss
+//     in the rain and a splash through a puddle (setSurface).
+//   • slipstream — setDraft(0..1) from scene.fx.draft: in a tow the wind dips and goes
+//     muffled and the engine runs a touch freer; pulling out of one, the wind roars back
+//     with a whoosh from the side the car pulled out to.
 //
 //   • player engine — a V8-ish PeriodicWave (firing order on the 8th harmonic of
 //     the cam cycle, cross-plane half-orders for the burble) through a load-driven
@@ -32,6 +55,8 @@
 //
 // All continuous controls are setTargetAtTime, so per-frame calls never click.
 
+import { Music } from './music.js';
+
 let ctx = null;            // AudioContext, created on first user gesture
 let master = null;         // master GainNode (volume / mute / pause duck)
 let bus = null;            // everything feeds this
@@ -47,6 +72,16 @@ let kerb = null;           // { osc, gain }
 let rain = null;           // { gain }
 let wallFx = null;         // { wet, pan }
 let crowd = null;          // { gain, panner, f1 } grandstand murmur
+let musicBus = null;       // the score's bus (joins the sfx bus at the slow-mo lowpass)
+let music = null;          // music.js Music
+let musicEnabled = true;   // the `music` setting (applied whenever the score exists)
+let hitBus = null;         // one-shots (impacts, pops, positional cheers): sfx bus + reverb send
+let verb = null;           // { send, rivalSend, slots: [{ conv, wet, zone }], active, switchAt }
+let irs = null;            // zone → impulse-response AudioBuffer
+let surf = null;           // tyre-surface beds (setSurface)
+let draftAmt = 0;          // slipstream 0..1 (setDraft)
+let draftPeak = 0;
+let lastWhoosh = 0;
 const rivals = new Map();  // id -> rival voice
 const pops = [];           // exhaust-pop events for the flame visuals: { id, strength }
 
@@ -195,6 +230,7 @@ function buildPlayerEngine() {
     lp.connect(shift);
     shift.connect(out);
     out.connect(bus);
+    out.connect(verb.send);
 
     // Gear whine: tracks road speed, not RPM, so it carries on straight through shifts.
     const whine = ctx.createOscillator();
@@ -227,17 +263,18 @@ function buildBeds() {
     const roadLp = filter('lowpass', 420, 0.7);
     const roadGain = gainNode(0);
     const windBand = filter('bandpass', 1100, 0.5);
+    const windLp = filter('lowpass', 9000, 0.7);   // the slipstream muffles the wind
     const windGain = gainNode(0);
     src.connect(roadLp); roadLp.connect(roadGain); roadGain.connect(bus);
-    src.connect(windBand); windBand.connect(windGain); windGain.connect(bus);
+    src.connect(windBand); windBand.connect(windLp); windLp.connect(windGain); windGain.connect(bus);
     src.start();
-    road = { roadGain, windGain, windBand };
+    road = { roadGain, windGain, windBand, windLp };
 
     // Tire squeal: noise through a resonant bandpass whose centre wobbles.
     const sq = noiseSource();
     const band = filter('bandpass', 1700, 7);
     const sqGain = gainNode(0);
-    sq.connect(band); band.connect(sqGain); sqGain.connect(bus);
+    sq.connect(band); band.connect(sqGain); sqGain.connect(bus); sqGain.connect(verb.send);
     sq.start();
     squeal = { gain: sqGain, band };
 
@@ -245,7 +282,7 @@ function buildBeds() {
     const sc = noiseSource();
     const scBand = filter('bandpass', 2600, 2.5);
     const scGain = gainNode(0);
-    sc.connect(scBand); scBand.connect(scGain); scGain.connect(bus);
+    sc.connect(scBand); scBand.connect(scGain); scGain.connect(bus); scGain.connect(verb.send);
     sc.start();
     scrape = { gain: scGain };
 
@@ -267,6 +304,127 @@ function buildBeds() {
     r.connect(rHp); rHp.connect(rLp); rLp.connect(rGain); rGain.connect(bus);
     r.start();
     rain = { gain: rGain };
+}
+
+// ── Acoustic space: procedural impulse responses + two crossfaded convolvers ──
+
+/**
+ * Per zone: length, tail decay (s, time constant), onset build (diffuse density rising), tail
+ * brightness (one-pole coefficient, 1 = unfiltered), early reflections [t, left, right] and
+ * metallic rings [Hz, decay s, amplitude].
+ */
+const IR_SHAPES = {
+    // Open country: a short soft bloom off the ground, almost dry.
+    open: { dur: 0.45, decay: 0.07, build: 0.004, bright: 0.18, tail: 0.6, early: [[0.011, 0.35, 0.3]], rings: [], seed: 11 },
+    // The grandstand: a big wide slap off the stand face, a second off the roof, a long dark tail.
+    stand: {
+        dur: 2.2, decay: 0.42, build: 0.06, bright: 0.28, tail: 0.5,
+        early: [[0.048, 0.9, 0.25], [0.063, 0.3, 0.85], [0.112, 0.55, 0.6], [0.171, 0.35, 0.3], [0.236, 0.2, 0.22]],
+        rings: [], seed: 23,
+    },
+    // Steel overhead or close walls: dense flutter taps, a short bright ring.
+    metal: {
+        dur: 0.75, decay: 0.11, build: 0.002, bright: 0.9, tail: 0.55,
+        early: [[0.004, 0.8, 0.4], [0.009, 0.4, 0.8], [0.0135, 0.65, 0.35], [0.019, 0.3, 0.6], [0.0245, 0.45, 0.25],
+            [0.031, 0.2, 0.4], [0.038, 0.3, 0.18], [0.046, 0.14, 0.22]],
+        rings: [[1180, 0.16, 0.05], [2470, 0.12, 0.04], [3890, 0.09, 0.03], [5230, 0.07, 0.022]], seed: 37,
+    },
+};
+
+function makeIR(shape) {
+    const sr = ctx.sampleRate;
+    const n = Math.ceil(shape.dur * sr);
+    const buf = ctx.createBuffer(2, n, sr);
+    let seed = shape.seed;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 * 2 - 1; };
+    const fadeFrom = Math.floor(n * 0.9);
+    for (let ch = 0; ch < 2; ch++) {
+        const d = buf.getChannelData(ch);
+        let lp = 0;
+        for (let i = 0; i < n; i++) {
+            const t = i / sr;
+            const env = Math.exp(-t / shape.decay) * Math.min(1, t / shape.build);
+            lp += (rnd() * env - lp) * shape.bright;
+            d[i] = lp * shape.tail;
+        }
+        for (const [t, l, r] of shape.early) {
+            const at = Math.round(t * sr), g = ch === 0 ? l : r;
+            for (let k = 0; k < 64 && at + k < n; k++) d[at + k] += rnd() * g * Math.exp(-k / 10);
+        }
+        for (const [f, tc, amp] of shape.rings) {
+            const w = 2 * Math.PI * f / sr, ph = ch * 1.3 + f * 0.001;
+            const len = Math.min(n, Math.ceil(tc * 7 * sr));
+            for (let i = 0; i < len; i++) d[i] += amp * Math.sin(w * i + ph) * Math.exp(-i / (tc * sr)) * Math.min(1, i / 96);
+        }
+        for (let i = fadeFrom; i < n; i++) d[i] *= (n - i) / (n - fadeFrom);
+    }
+    return buf;
+}
+
+function buildReverb() {
+    irs = {};
+    for (const z of Object.keys(IR_SHAPES)) irs[z] = makeIR(IR_SHAPES[z]);
+    const send = gainNode(1);
+    const rivalSend = gainNode(0.6);
+    rivalSend.connect(send);
+    const slots = ['open', 'stand'].map(zone => {
+        const conv = ctx.createConvolver();
+        conv.buffer = irs[zone];
+        const wet = gainNode(0);
+        send.connect(conv); conv.connect(wet); wet.connect(bus);
+        return { conv, wet, zone };
+    });
+    verb = { send, rivalSend, slots, active: 0, switchAt: -10 };
+    // One-shots: to the mix and into the room.
+    hitBus = gainNode(1);
+    hitBus.connect(bus);
+    hitBus.connect(send);
+}
+
+/** Tyre-surface beds: gravel grains, sand drag, grass swish, wet hiss. All silent until setSurface. */
+function buildSurface() {
+    // A grain buffer: 2 s of sparse, randomly bright noise ticks (~70 a second at rate 1). Looped
+    // with a playback rate that follows speed, the grains come faster (and brighter) as the car does.
+    const sr = ctx.sampleRate, n = sr * 2;
+    const gb = ctx.createBuffer(1, n, sr);
+    const d = gb.getChannelData(0);
+    let seed = 0x5eed;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    for (let g = 0; g < 140; g++) {
+        const at = Math.floor(rnd() * (n - 800)), len = Math.floor(sr * (0.003 + rnd() * 0.01));
+        const amp = 0.3 + rnd() * 0.7, bright = 0.25 + rnd() * 0.7;
+        let lp = 0;
+        for (let k = 0; k < len; k++) {
+            lp += ((rnd() * 2 - 1) - lp) * bright;
+            d[at + k] += lp * amp * Math.exp(-k / (len * 0.3));
+        }
+    }
+    const grains = ctx.createBufferSource();
+    grains.buffer = gb;
+    grains.loop = true;
+    const gravelBand = filter('bandpass', 2200, 0.6);
+    const gravel = gainNode(0);
+    grains.connect(gravelBand); gravelBand.connect(gravel); gravel.connect(bus);
+    const sandGrainLp = filter('lowpass', 1500, 0.7);
+    const sandGrains = gainNode(0);
+    grains.connect(sandGrainLp); sandGrainLp.connect(sandGrains); sandGrains.connect(bus);
+
+    const src = noiseSource();
+    const rumbleLp = filter('lowpass', 260, 0.8);
+    const rumble = gainNode(0);             // the car's floor rumbling over stones
+    src.connect(rumbleLp); rumbleLp.connect(rumble); rumble.connect(bus);
+    const sandLp = filter('lowpass', 620, 0.6);
+    const sand = gainNode(0);               // sand dragging at the tyres: a low hiss
+    src.connect(sandLp); sandLp.connect(sand); sand.connect(bus);
+    const grassBand = filter('bandpass', 950, 0.5);
+    const grass = gainNode(0);
+    src.connect(grassBand); grassBand.connect(grass); grass.connect(bus);
+    const wetHp = filter('highpass', 2400, 0.6);
+    const wetLp = filter('lowpass', 7000, 0.5);
+    const wet = gainNode(0);                // spray off wet tarmac; a puddle opens it up
+    src.connect(wetHp); wetHp.connect(wetLp); wetLp.connect(wet); wet.connect(bus);
+    grains.start(); src.start();
+    surf = { grains, gravel, gravelBand, sandGrains, rumble, sand, grass, wet, wetHp, wetLp };
 }
 
 /** Create/resume the AudioContext. Must be called from a user-gesture call path. */
@@ -294,10 +452,19 @@ export function init() {
             slowFilter.connect(comp);
             comp.connect(master);
             master.connect(ctx.destination);
+            musicBus = gainNode(1);
+            musicBus.connect(slowFilter);
 
+            buildReverb();
             engine = buildPlayerEngine();
             buildBeds();
+            buildSurface();
             buildCrowd();
+            try {
+                music = new Music(ctx, noiseBuffer, musicBus);
+                music.setEnabled(musicEnabled);
+                music.setPaused(suspended);
+            } catch { music = null; /* the race runs without a score */ }
         }
         if (ctx.state === 'suspended') void ctx.resume();
         return true;
@@ -337,6 +504,13 @@ export function setMuted(m) {
 export function setSuspended(s) {
     suspended = !!s;
     if (ctx) applyMasterGain();
+    music?.setPaused(suspended);
+}
+
+/** The `music` setting: the adaptive score on or off (fades; no notes are booked while off). */
+export function setMusicEnabled(on) {
+    musicEnabled = on !== false;
+    music?.setEnabled(musicEnabled);
 }
 
 // ── Player engine ────────────────────────────────────────────────────────────
@@ -380,8 +554,9 @@ export function updateEngine(speedKmh, throttle = 0, phase = 'race') {
     engine.osc2.frequency.setTargetAtTime(base, t, tc);
     engine.am.frequency.setTargetAtTime(rpm / 15 * pitch, t, tc);
     engine.gritBand.frequency.setTargetAtTime(rpm / 15 * 2.2 * pitch, t, 0.06);
-    engine.lp.frequency.setTargetAtTime(320 + rpm * 0.22 + load * rpm * 0.34, t, 0.06);
-    engine.pre.gain.setTargetAtTime(0.55 + load * 1.3, t, 0.06);
+    // In a tow the engine runs a touch freer: less strain in the drive, a little more top end.
+    engine.lp.frequency.setTargetAtTime((320 + rpm * 0.22 + load * rpm * 0.34) * (1 + draftAmt * 0.18), t, 0.06);
+    engine.pre.gain.setTargetAtTime((0.55 + load * 1.3) * (1 - draftAmt * 0.16), t, 0.06);
     engine.amDepth.gain.setTargetAtTime(0.02 + load * 0.07, t, 0.08);
     const level = player.active ? (0.09 + r01 * 0.06) * (0.55 + load * 0.45) : 0;
     engine.out.gain.setTargetAtTime(level, t, player.active ? 0.08 : 0.25);
@@ -390,8 +565,10 @@ export function updateEngine(speedKmh, throttle = 0, phase = 'race') {
     engine.whine.frequency.setTargetAtTime((180 + s01 * 1100) * pitch, t, 0.08);
     engine.whineGain.gain.setTargetAtTime(player.active && phase === 'race' ? s01 * 0.012 * (0.4 + load) : 0, t, 0.1);
     road.roadGain.gain.setTargetAtTime(player.active && phase === 'race' ? s01 * s01 * 0.09 : 0, t, 0.12);
-    road.windGain.gain.setTargetAtTime(player.active && phase === 'race' ? s01 * s01 * 0.05 : 0, t, 0.12);
+    road.windGain.gain.setTargetAtTime(player.active && phase === 'race' ? s01 * s01 * 0.05 * (1 - draftAmt * 0.65) : 0, t, 0.12);
     road.windBand.frequency.setTargetAtTime(700 + s01 * 1400, t, 0.2);
+    // The score ducks under a working engine (sidechain style; impacts punch it separately).
+    music?.duck(player.active && phase === 'race' ? load * (0.5 + 0.5 * r01) : 0);
 
     if (shifted > 0 && player.active) {
         engine.shift.gain.cancelScheduledValues(t);
@@ -448,7 +625,7 @@ function crackle(count, spread, strength, dest) {
         g.gain.setValueAtTime(0, t);
         g.gain.linearRampToValueAtTime(peak, t + 0.002);
         g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-        src.connect(band); band.connect(g); g.connect(dest || bus);
+        src.connect(band); band.connect(g); g.connect(dest || hitBus || bus);
         src.start(t, Math.random() * 1.5, dur + 0.02);
         if (Math.random() < 0.35) sweep(95, 55, 0.05, 'sine', peak * 0.8, t, dest);
     }
@@ -466,7 +643,7 @@ function sweep(f0, f1, dur, type, peak, at, dest) {
     g.gain.setValueAtTime(peak, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     o.connect(g);
-    g.connect(dest || bus);
+    g.connect(dest || hitBus || bus);
     o.start(t);
     o.stop(t + dur + 0.03);
 }
@@ -480,7 +657,7 @@ function burst(type, freq, q, dur, peak, at, dest) {
     const g = gainNode(0);
     g.gain.setValueAtTime(peak, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    src.connect(f); f.connect(g); g.connect(dest || bus);
+    src.connect(f); f.connect(g); g.connect(dest || hitBus || bus);
     src.start(t, Math.random() * 1.5, dur + 0.03);
 }
 
@@ -543,7 +720,145 @@ export function silenceRace() {
     setSlowMo(0);
     updateRivals([]);
     setCrowd(0);
+    setSurface('road', 0, false, 0);
+    setDraft(0, 0);
+    music?.stop();
     pops.length = 0;
+}
+
+// ── Music, acoustic space, surface, slipstream (acoustics.js drives these per frame) ──
+
+/** The score's race state: { phase: 'off'|'grid'|'race'|'finish', battle 0..1, finalLap }. */
+export function setMusic(state) {
+    if (!ctx || !music) return;
+    try { music.update(state); } catch { /* never let the score kill the race */ }
+}
+
+/** An overtake by the car heard up close: stinger + sweep. */
+export function musicStinger() {
+    try { music?.stinger(); } catch { /* decoration */ }
+}
+
+/**
+ * The room the ear is in: zone 'open' | 'stand' | 'metal', wet 0..1 (reverb send level).
+ * A new zone loads into the convolver that has been silent at least a second, then the two
+ * crossfade; the switch is held off until then, so flicking between zones never clicks.
+ */
+export function setAcoustics(zone, wet) {
+    if (!ctx || !verb || !irs?.[zone]) return;
+    const t = ctx.currentTime;
+    const w = Math.min(1, Math.max(0, Number(wet) || 0));
+    if (zone !== verb.slots[verb.active].zone && t - verb.switchAt > 1) {
+        const next = 1 - verb.active;
+        const s = verb.slots[next];
+        if (s.zone !== zone) { s.conv.buffer = irs[zone]; s.zone = zone; }
+        verb.active = next;
+        verb.switchAt = t;
+    }
+    verb.slots.forEach((s, i) => s.wet.gain.setTargetAtTime(i === verb.active ? w : 0, t, 0.18));
+}
+
+/**
+ * What the ear car's tyres are on: kind 'road' | 'gravel' | 'sand' | 'grass', its speed,
+ * whether the tarmac is wet, and how deep into a puddle it is (0..1). The kerb buzz is setKerb.
+ */
+export function setSurface(kind, speedKmh, wet = false, puddle = 0) {
+    if (!ctx || !surf) return;
+    const t = ctx.currentTime;
+    const kmh = Math.max(0, Number(speedKmh) || 0);
+    const s01 = Math.min(1, kmh / 250);
+    const moving = kmh > 3 ? 1 : 0;
+    const slow = 1 - slowAmount * 0.4;
+    const on = k => (kind === k ? moving : 0);
+    // Gravel: grains come faster with speed (rate ∝ speed), the floor rumbles over the stones.
+    surf.grains.playbackRate.setTargetAtTime((0.35 + 1.9 * s01) * slow, t, 0.08);
+    surf.gravel.gain.setTargetAtTime(on('gravel') * (0.12 + 0.3 * s01), t, 0.05);
+    surf.gravelBand.frequency.setTargetAtTime((1500 + 1600 * s01) * slow, t, 0.1);
+    surf.rumble.gain.setTargetAtTime((on('gravel') + on('sand') * 0.6) * (0.05 + 0.1 * s01), t, 0.06);
+    // Sand: a low drag hiss and soft, muffled grains.
+    surf.sand.gain.setTargetAtTime(on('sand') * (0.04 + 0.1 * s01), t, 0.08);
+    surf.sandGrains.gain.setTargetAtTime(on('sand') * 0.12 * s01, t, 0.08);
+    surf.grass.gain.setTargetAtTime(on('grass') * (0.012 + 0.04 * s01), t, 0.08);
+    // Wet tarmac: spray hiss with speed; a puddle throws a fuller, lower splash.
+    const p = Math.min(1, Math.max(0, Number(puddle) || 0));
+    const wetOn = wet && kind === 'road' ? moving : 0;
+    surf.wet.gain.setTargetAtTime(wetOn * (s01 * s01 * 0.05 + p * s01 * 0.09), t, p > 0 ? 0.03 : 0.15);
+    surf.wetHp.frequency.setTargetAtTime(2400 - p * 1700, t, 0.05);
+}
+
+/**
+ * Slipstream 0..1 for the ear car (scene.fx.draft). In the tow the wind dips and goes muffled
+ * (updateEngine reads the amount too: wind level, engine freer); pulling out of a real tow,
+ * the wind roars back with a whoosh, panned to `side` (−1 left … +1 right: where the car went).
+ */
+export function setDraft(amount, side = 0) {
+    const d = Math.min(1, Math.max(0, Number(amount) || 0));
+    draftAmt = d;
+    if (!ctx || !road) return;
+    const t = ctx.currentTime;
+    road.windLp.frequency.setTargetAtTime(9000 * Math.pow(750 / 9000, d), t, d > draftPeak ? 0.25 : 0.08);
+    if (d > draftPeak) draftPeak = d;
+    if (draftPeak > 0.4 && d < 0.15) {
+        if (t - lastWhoosh > 1.2 && player.active) {
+            lastWhoosh = t;
+            whoosh(Math.min(1, draftPeak), side);
+        }
+        draftPeak = d;
+    }
+}
+
+/** Air rushing back: band-passed noise sweeping up and away. */
+function whoosh(strength, side) {
+    const t = ctx.currentTime;
+    const src = noiseSource(false);
+    const f = filter('bandpass', 420, 0.9);
+    f.frequency.setValueAtTime(420, t);
+    f.frequency.exponentialRampToValueAtTime(2600, t + 0.35);
+    f.frequency.exponentialRampToValueAtTime(1200, t + 0.8);
+    const g = gainNode(0);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.09 * strength, t + 0.14);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.85);
+    src.connect(f); f.connect(g);
+    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (pan) { pan.pan.value = Math.max(-1, Math.min(1, Number(side) || 0)) * 0.7; g.connect(pan); pan.connect(bus); } else g.connect(bus);
+    src.start(t, Math.random() * 1.2, 0.9);
+}
+
+let meters = null;
+function rmsDb(an) {
+    const a = new Float32Array(an.fftSize);
+    an.getFloatTimeDomainData(a);
+    let s = 0;
+    for (const v of a) s += v * v;
+    return Math.round(10 * Math.log10(s / a.length + 1e-12));
+}
+
+/** For the harness: what the new layers are doing (music/reverb levels in dBFS, meters made on first call). */
+export function debugState() {
+    if (!ctx) return null;
+    if (!meters) {
+        meters = { music: ctx.createAnalyser(), verb: ctx.createAnalyser(), master: ctx.createAnalyser() };
+        for (const m of Object.values(meters)) m.fftSize = 2048;
+        musicBus.connect(meters.music);
+        for (const s of verb.slots) s.wet.connect(meters.verb);
+        master.connect(meters.master);
+    }
+    return {
+        state: ctx.state, time: +ctx.currentTime.toFixed(2),
+        db: { music: rmsDb(meters.music), verb: rmsDb(meters.verb), master: rmsDb(meters.master) },
+        verb: verb && {
+            active: verb.active, zones: verb.slots.map(s => s.zone),
+            wet: verb.slots.map(s => +s.wet.gain.value.toFixed(3)),
+        },
+        draft: +draftAmt.toFixed(3), windLp: Math.round(road.windLp.frequency.value), lastWhoosh: +lastWhoosh.toFixed(2),
+        surface: surf && {
+            gravel: +surf.gravel.gain.value.toFixed(3), sand: +surf.sand.gain.value.toFixed(3),
+            grass: +surf.grass.gain.value.toFixed(3), wet: +surf.wet.gain.value.toFixed(3),
+            grainRate: +surf.grains.playbackRate.value.toFixed(2),
+        },
+        music: music?.debug() ?? null,
+    };
 }
 
 // ── Rivals: positional engines with Doppler ──────────────────────────────────
@@ -609,7 +924,7 @@ function makeRivalVoice() {
     const lp = filter('lowpass', 900, 0.9);
     const g = gainNode(0);
     const panner = makePanner();
-    osc.connect(lp); lp.connect(g); g.connect(panner); panner.connect(bus);
+    osc.connect(lp); lp.connect(g); g.connect(panner); panner.connect(bus); panner.connect(verb.rivalSend);
     osc.start();
     return { osc, lp, g, panner, state: { gear: 1, rpm: IDLE_RPM }, lastKmh: 0, seen: 0 };
 }
@@ -745,7 +1060,7 @@ function oneShotDest(pos) {
     if (!pos) return null;
     const p = makePanner();
     setPannerPosition(p, pos.x, pos.y ?? 0.5, pos.z);
-    p.connect(bus);
+    p.connect(hitBus || bus);
     window.setTimeout(() => { try { p.disconnect(); } catch { /* gone */ } }, 1500);
     return p;
 }
@@ -762,6 +1077,8 @@ export function impact(strength, kind = 'wall', pos = null) {
     const s = Math.min(1, Math.max(0.1, Number(strength) || 0));
     const dest = oneShotDest(pos);
     const car = kind === 'car';
+    // The score flinches with a hit near the ear (one heard from afar barely moves it).
+    music?.hit(pos ? s * 0.35 : s);
     sweep(car ? 170 : 115, car ? 70 : 42, 0.2, 'sine', 0.3 * s, t, dest);
     burst('lowpass', car ? 2400 : 1600, 0.7, 0.14, 0.28 * s, t, dest);
     burst('bandpass', car ? 3200 : 2300, 6, car ? 0.12 : 0.08, 0.12 * s, t + 0.01, dest);

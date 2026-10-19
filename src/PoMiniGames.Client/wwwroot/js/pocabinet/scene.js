@@ -65,7 +65,7 @@ import { Sky } from './sky.js';
 import { Scenery } from './scenery.js';
 import { PostFx } from './postfx.js';
 import { Grass } from './grass.js';
-import { asphalt, grass as grassTextures, macro, clock } from './materials.js';
+import { asphalt, grass as grassTextures, macro, clock, reflective } from './materials.js';
 import { Terrain, themeOf, isPlayground, wallFace } from './terrain.js';
 import { Trackside } from './trackside.js';
 import { gravel, sand, limitStripes } from './surfaces.js';
@@ -138,6 +138,7 @@ class SceneHandle {
         this.terrain = null;      // terrain.js (every track but the Playground)
         this.trackside = null;    // trackside.js
         this.runoffMats = null;   // gravel / tarmac run-off materials, wetted by setWeather
+        this.roadRefl = { value: 0.02 };   // the road's reflectivity for postfx.js, set by setWeather
         this.theme = 'capitol';
         this.playground = false;
         this.sky = null;
@@ -295,8 +296,9 @@ class SceneHandle {
     }
 
     /**
-     * The PiP pass: straight to the canvas through a scissor (no post pass, so the renderer's
-     * own tone mapping stands in for it), reusing this frame's shadow map. Left out on the low
+     * The PiP pass: an HDR frame of its own, tone-mapped into a corner of the canvas by the post
+     * pass (postfx.js drawInset; without one, straight to the canvas through a scissor with the
+     * renderer's tone mapping), reusing this frame's shadow map. Left out on the low
      * tier, where the frame has no time for a second scene, and on a narrow canvas, where the
      * inset would be too small to read. pipRect (canvas CSS px from the top left) tells the
      * page where to put the frame and label, or null when nothing was drawn.
@@ -321,6 +323,21 @@ class SceneHandle {
         const ahead = p.back ? 14 : 30;
         cam.lookAt(cx + fx * ahead, ground + rise * ahead * dir + (p.back ? 0.9 : 1.1), cz + fz * ahead);
 
+        // Through the post pass when there is one: drawn into a linear HDR target, the inset uses
+        // the very programs the main pass compiled (drawn straight to the canvas with tone mapping,
+        // every material needs a second variant, and compiling ~25 of them the moment the demo's
+        // PiP first appears froze the start for seconds), then tone-mapped into its corner.
+        if (this.post) {
+            const shadows = r.shadowMap.autoUpdate;
+            r.shadowMap.autoUpdate = false;
+            try {
+                this.post.drawInset(this.scene, cam, x, y, w, h, this.fx.exposure || 1);
+            } finally {
+                r.shadowMap.autoUpdate = shadows;
+            }
+            this.pipRect = { x, y: size.y - y - h, w, h };
+            return;
+        }
         const tone = r.toneMapping, exposure = r.toneMappingExposure, shadows = r.shadowMap.autoUpdate;
         r.setRenderTarget(null);
         r.toneMapping = THREE.ACESFilmicToneMapping;
@@ -467,6 +484,11 @@ class SceneHandle {
         this.fx.exposure = 1;
         this.fx.bloomThreshold = 1.1;
         this.sky?.setRain(rain);
+        // The post pass's reflections: wet asphalt is a blurred mirror; dry, the road only marks
+        // itself (0.02) so the far tarmac can shimmer like a mirage on a clear day.
+        this.roadRefl.value = rain ? 0.55 : 0.02;
+        this.fx.skyColor = fog.clone();
+        this.fx.mirage = rain ? 0 : 1;
         // Standing water, the rubbered line drying first, and wet gravel and run-off tarmac
         // (environment.js wets the road itself).
         this.trackside?.setWet(rain);
@@ -564,11 +586,11 @@ class SceneHandle {
         // The Playground keeps the straight-up normals it always had; a hill shades as one.
         const flat = this.playground;
         this.roadMesh = new THREE.Mesh(ribbon(t, (i) => -t.hw[i], (i) => t.hw[i], 0.02, 45, built, { flat }),
-            macro(new THREE.MeshStandardMaterial({
+            reflective(macro(new THREE.MeshStandardMaterial({
                 color: hex(atmosphere.roadHex, '#393b42'), roughness: 1, metalness: 0,
                 map: tar.map, normalMap: tar.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: tar.roughnessMap,
                 side: THREE.DoubleSide,
-            }), 30, 0.2));
+            }), 30, 0.2), this.roadRefl));
         this.roadMesh.receiveShadow = true;
         group.add(this.roadMesh);
         if (this.playground) {

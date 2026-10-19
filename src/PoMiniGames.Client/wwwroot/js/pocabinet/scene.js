@@ -1071,11 +1071,22 @@ function flatGround(world, material, reach, tile) {
  * an outer face `thick` sim units further out (on side `s`), standing on the road's plane
  * (height and bank) with its foot sunk below it so no slope of the ground opens a gap.
  * uv.x runs along the lap for the striped texture.
+ *
+ * Where the face would stand on another part of the road (the inside of a corner tighter than
+ * the wall's offset, or a stretch whose run-off reaches a neighbouring one), that piece is not
+ * drawn: the physics measures its wall from the nearest point of the road, so there is no wall
+ * there, and cars used to drive straight through one standing across the track.
  */
 function barrier(track, lateral, s, height, thick) {
     const lat = typeof lateral === 'function' ? lateral : () => lateral;
     const positions = [], uvs = [];
     const n = track.count;
+    const onRoad = new Uint8Array(n);
+    for (let k = 0; k < n; k++) {
+        const face = lat(k);
+        const pr = track.project(track.x[k] - track.ty[k] * face, track.y[k] + track.tx[k] * face, -1);
+        if (Math.abs(pr.lateral) < track.hwAt(pr.index) + 1) onRoad[k] = 1;
+    }
     const rows = [[0, -0.3], [0, height], [s * thick, height], [s * thick, -1.2]];
     const vs = [0, 0.8, 0.9, 1];
     for (let i = 0; i <= n; i++) {
@@ -1096,6 +1107,7 @@ function barrier(track, lateral, s, height, thick) {
     geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     const idx = [];
     for (let i = 0; i < n; i++) {
+        if (onRoad[i] || onRoad[(i + 1) % n]) continue;
         for (let r = 0; r < 3; r++) {
             const a0 = i * 4 + r, a1 = i * 4 + r + 1, b0 = (i + 1) * 4 + r, b1 = (i + 1) * 4 + r + 1;
             idx.push(a0, a1, b0, a1, b1, b0);

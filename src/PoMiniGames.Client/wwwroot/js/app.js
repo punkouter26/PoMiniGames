@@ -115,44 +115,7 @@
     next.focus();
   });
 
-  // ----- 3. Hub "Continue": is there a saved Ecosystem island? -----
-  // Reads the island's metadata straight from IndexedDB (database 'poecosystem', store 'worlds',
-  // key 'meta'; see poecosystem/sim/persistence/idb.js) so the hub need not load the engine.
-  // Never creates the database: it checks the list first and aborts any upgrade.
-  window.PoHub = {
-    hasEcoIsland: function () {
-      try {
-        if (!window.indexedDB || typeof indexedDB.databases !== 'function') return Promise.resolve(false);
-        return indexedDB.databases().then(function (dbs) {
-          if (!dbs.some(function (d) { return d.name === 'poecosystem'; })) return false;
-          return new Promise(function (resolve) {
-            var timer = setTimeout(function () { resolve(false); }, 1500);
-            var end = function (value) { clearTimeout(timer); resolve(value); };
-            var req;
-            try { req = indexedDB.open('poecosystem'); } catch (_) { end(false); return; }
-            req.onupgradeneeded = function () { try { req.transaction.abort(); } catch (_) { /* gone */ } };
-            req.onerror = function () { end(false); };
-            req.onsuccess = function () {
-              var db = req.result;
-              try {
-                if (!db.objectStoreNames.contains('worlds')) { db.close(); end(false); return; }
-                var get = db.transaction('worlds', 'readonly').objectStore('worlds').get('meta');
-                get.onsuccess = function () { db.close(); end(!!get.result); };
-                get.onerror = function () { db.close(); end(false); };
-              } catch (_) {
-                try { db.close(); } catch (__) { /* closed */ }
-                end(false);
-              }
-            };
-          });
-        }).catch(function () { return false; });
-      } catch (_) {
-        return Promise.resolve(false);
-      }
-    }
-  };
-
-  // ----- 4. WebGL2 + device capability probe (callable from Blazor) -----
+  // ----- 3. WebGL2 + device capability probe (callable from Blazor) -----
   // Gates the home page ambient particle field. Skips WebGL entirely on
   // low-memory devices, when prefers-reduced-motion is set, or when WebGL2
   // is unavailable. Returns a boolean — caller falls back to the CSS gradient.

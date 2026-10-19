@@ -659,12 +659,12 @@
    Everything below: layout that fills the viewport, the
    merged start card, the compact HUD strip, results with pinned actions, touch-safe
    targets, contrast, and ONE reduced-motion rule. Later rules win on purpose. */
-/* The race view is the whole screen: games.css hides the app's top bar while
-   .pocabinet-race--immersive is on the page, and the lap readout, replay bar and status sit on
-   the view instead of under it. Touch controls, the cluster and the broadcast graphics all
-   key off this one variable. */
+/* The race view fills the screen under the app's top bar (kept, like every other game's), and
+   the lap readout, replay bar and status sit on the view instead of under it. Touch controls,
+   the cluster and the broadcast graphics all key off this one variable. */
 .pocabinet-race {
-    --pocabinet-canvas-h: max(280px, calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px)));
+    --pocabinet-bar-h: 3.35rem;
+    --pocabinet-canvas-h: max(280px, calc(100dvh - var(--pocabinet-bar-h) - var(--safe-bottom, 0px)));
 }
 
 /* Screen-reader-only text (the live region here; stage notes in the track rows). */

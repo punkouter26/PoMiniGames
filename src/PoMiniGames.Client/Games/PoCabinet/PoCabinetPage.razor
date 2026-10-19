@@ -41,11 +41,11 @@
         }
         else
         {
-            @* Immersive: games.css hides the app's top bar while this class is on the page, and
-               every readout sits on the race view (the lap strip used to be a white band under it). *@
+            @* The race view fills the screen under the app's top bar, like every other game, and
+               every readout sits on the view (the lap strip used to be a white band under it). *@
             @* @key: every race gets fresh canvases. Teardown destroys the WebGL context, and a
                restart on the same <canvas> could not get a working one back. *@
-            <section @key="_raceSerial" class="pocabinet-race pocabinet-race--immersive @(Mode == GameMode.Demo ? "pocabinet-race--demo" : null)"
+            <section @key="_raceSerial" class="pocabinet-race @(Mode == GameMode.Demo ? "pocabinet-race--demo" : null)"
                      style="--pocabinet-hud:@Settings.HudScaleCss"
                      aria-label="@(_phase == Phase.Replay ? "Race replay" : "Race in progress")">
                 <canvas id="pocabinetCanvas"

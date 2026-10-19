@@ -13,7 +13,6 @@
 @inject AppUpdateService AppUpdate
 @inject PlaySessionService PlaySessions
 @inject NavigationManager NavigationManager
-@inject HubPrefsService HubPrefs
 
 <div class="gl-page">
     @* First tab stop on every route. The header is persistent chrome (brand, game
@@ -281,13 +280,7 @@
         // because Blazor WASM navigation raises no DOM event a JS module could hear —
         // paletteBus only catches popstate. routeFx also hands the destination to
         // paletteBus, so the accent and the acoustic space follow the route.
-        // The same event feeds the hub's "Continue" strip: one place sees every navigation,
-        // so no game page has to remember to record itself.
-        _onLocationChanged = (_, args) =>
-        {
-            HubPrefs.Record(NavigationManager.ToBaseRelativePath(args.Location).Insert(0, "/"));
-            _ = PlayRouteWipeAsync(args.Location);
-        };
+        _onLocationChanged = (_, args) => _ = PlayRouteWipeAsync(args.Location);
         NavigationManager.LocationChanged += _onLocationChanged;
 
         Settings.Load();
@@ -316,8 +309,6 @@
         // re-entrancy guarded so racing the reconnect handler is harmless.
         _ = ScoreSync.FlushAsync();
         await UpdateBadgeAsync();
-        // A direct load of a game route counts as opening it, same as a navigation.
-        HubPrefs.Record(NavigationManager.ToBaseRelativePath(NavigationManager.Uri).Insert(0, "/"));
         // The pre-paint script in index.html has already stamped the theme, so
         // this is not what avoids a flash. It attaches the OS-preference
         // listener that keeps "Auto" live when the system flips mid-session.

@@ -989,7 +989,7 @@ class Race {
         const movers = fx.movers || (fx.movers = []);
         movers.length = 0;
         for (const car of this.cars) if (car.mesh?.group.visible) movers.push(car.mesh.group);
-        // The tow (fx.draft, read by acoustics.js below): streamlines, haze and the gauge's arc.
+        // The tow (fx.draft, read by acoustics.js below): the haze and the gauge's arc.
         try { this.slip?.update(dt, focus, this.cars, this.gauge); } catch { /* decoration */ }
 
         const events = this.fx?.update(this.paused ? 0 : dt * this.timeScale, this.fxCars(), { skids: true });

@@ -41,8 +41,6 @@ for PoMule · **Deferred** = planned after PoMule v1.
 
 | Capability | Owner | Notes |
 |---|---|---|
-| Hub "Today" card and cross-game daily streak | Client `Services/Play/DailyChallengeService.cs` | UTC date hashed over the offline solo games; seed passed as `?daily=` |
-| Hub pins and the "Continue" strip | Client `Services/Play/HubPrefsService.cs` | localStorage; last route recorded by `MainLayout` |
 | Achievements | Client `Services/Play/AchievementService.cs` | Rules over local stats; shown on the profile |
 | Weekly leaderboards | Infrastructure `StorageService.HighScores`, API `Features/Leaderboard/UnifiedLeaderboardEndpoints.cs` | `period=week` reads this ISO week's boards |
 | PoFunQuiz question bank | API `Features/PoFunQuiz/Storage/QuizBankRepository.cs` (`PoFunQuizBank` table), `OpenTriviaDbClient.cs`, `BundledQuizQuestions.cs`, `QuizPrebakeService.cs` | Free; grows only; dedup by text hash |

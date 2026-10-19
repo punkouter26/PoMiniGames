@@ -169,7 +169,9 @@ public sealed class PoCabinetSim
                 double lapTime = crossedAt - car.LapStartTime;
                 car.LapStartTime = crossedAt;
                 car.LastLapSeconds = lapTime;
-                if (car.BestLapSeconds <= 0 || lapTime < car.BestLapSeconds) car.BestLapSeconds = lapTime;
+                // A lap that broke track limits does not count toward the best.
+                if (!car.LapInvalid && (car.BestLapSeconds <= 0 || lapTime < car.BestLapSeconds)) car.BestLapSeconds = lapTime;
+                car.LapInvalid = false;
                 car.LapsDone++;
                 if (car.LapsDone >= TotalLaps)
                 {
@@ -185,6 +187,7 @@ public sealed class PoCabinetSim
                 }
                 if (!car.IsPlayer && Rank(car) == 1) Say(DialogueKind.LapFinish, car);
             }
+            if (car.Wide) car.LapInvalid = true;
         }
 
         var order = Standings();
@@ -263,6 +266,8 @@ public sealed class PoCabinetSim
         public double LapStartTime { get; set; }
         public double LastLapSeconds { get; set; }
         public double BestLapSeconds { get; set; }
+        /// <summary>This lap has broken track limits (all four wheels past the edge): it will not count as a best.</summary>
+        public bool LapInvalid { get; set; }
         public bool Finished { get; set; }
         public double FinishTime { get; set; }
         public int FinishOrder { get; set; }

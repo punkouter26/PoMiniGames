@@ -39,6 +39,9 @@ public static class PoCabinetAiDriver
     private const double LapseLength = 170;
     /// <summary>How far over its own pace a car lets a descent carry it before it brakes for it.</summary>
     private const double RunOn = 30;
+    /// <summary>How far ahead it starts picking its side of a road divider, and how wide it keeps of it.</summary>
+    private const double IslandLook = 320;
+    private const double IslandClear = 14;
 
     // Scratch for one Decide call: the cars ahead that are in the way, and how far ahead each is.
     [ThreadStatic] private static PoCabinetCarBody[]? _near;
@@ -55,7 +58,7 @@ public static class PoCabinetAiDriver
     {
         if (car.Wrecked) return Wrecked(track, car);
         double v = car.Speed;
-        double hw = track.HalfWidth;
+        double hw = track.HalfWidthAt(car.SegHint >= 0 ? car.SegHint : track.IndexAt(car.Along));
         double edge = hw * 0.8;
         double line = personality.LateralOffset * hw * 0.6;
         double lateralTarget = line;
@@ -88,6 +91,9 @@ public static class PoCabinetAiDriver
             if (d > half) d -= track.Length;
             else if (d < -half) d += track.Length;
             if (d <= -Range || d >= Range || track.Parked(other.Distance)) continue;
+            // A car the other side of a road divider is in another lane altogether: on a bend it
+            // can look dead ahead, and two lanes braking for each other stop both.
+            if (SplitBy(track, car, other)) continue;
             double dx = other.X - car.X, dy = other.Y - car.Y;
             double fwd = dx * hx + dy * hy, side = dy * hx - dx * hy;
             if (fwd > -44 && fwd < 44)
@@ -145,6 +151,8 @@ public static class PoCabinetAiDriver
         // Never turn in on a car that is alongside: hold the lane (but always come back off the
         // grass). A bruiser does it anyway and leans on whoever is there.
         if (personality.Aggression < 0.8 && (lateralTarget > car.Lateral ? right : left)) lateralTarget = Math.Min(edge, Math.Max(-edge, car.Lateral));
+        // A divider ahead: pick a side of it (the wild and the aggressive go for the joker lane).
+        if (track.Islands.Count > 0) lateralTarget = IslandLane(track, car, lateralTarget, personality.Aggression >= 0.5 || personality.Wildness >= 0.15, left, right);
 
         // Steering: aim at a point ahead, further ahead at speed.
         double look = personality.LookaheadDistance * 0.5 + 20 + Math.Abs(v) * 0.45;
@@ -156,6 +164,9 @@ public static class PoCabinetAiDriver
         // A smooth driver feeds the lock in; a twitchy one saws at it and weaves.
         double steer = Math.Min(1, Math.Max(-1, err * (1.8 + 1.6 * personality.Twitch)));
         if (v < 0) steer = -steer; // rolling backwards inverts the lock (see PoCabinetPhysics.Step)
+        // Nose into a barrier or a divider, facing well away from its line and barely moving:
+        // back out (the brake at a standstill is reverse, and reversing turns the tail the other way).
+        if ((err > 1.2 || err < -1.2) && v < 6 && v > -PoCabinetPhysics.ReverseMax) return new PoCabinetControls(0, 1, steer);
 
         // Speed: the tightest corner in braking range sets the target. Capped at a turn as tight
         // as the road is wide: the centerline has kinks sharper than that (Mar-a-Lago's last
@@ -165,6 +176,9 @@ public static class PoCabinetAiDriver
         // way a lapse has it believing in grip that is not there.
         double margin = (0.55 + corneringSkill * 0.4) * (lapsing != 0 ? Math.Abs(lapsing) : 1);
         double kappa = Math.Min(1 / track.HalfWidth, track.MaxCurvature(car.Along + 5, car.Along + 30 + Math.Abs(v) * (1.3 - 0.6 * personality.BrakingAggression)));
+        // A car on the inside of a split runs a tighter radius than the centerline's.
+        double inside = track.Islands.Count > 0 ? InsideOfIsland(track, car, lateralTarget) : 0;
+        if (inside > 0) kappa = kappa / Math.Max(0.4, 1 - kappa * inside);
         double cornerSpeed = Math.Sqrt(PoCabinetPhysics.GripAccel * grip * margin / Math.Max(kappa, 1e-5));
         double target = Math.Min(maxSpeed, cornerSpeed);
         // What it brakes for: the corner and the traffic. Its own pace it only lifts for, so a
@@ -198,14 +212,79 @@ public static class PoCabinetAiDriver
     public static PoCabinetControls Wrecked(PoCabinetTrack track, PoCabinetCarBody car)
     {
         double v = car.Speed;
-        double target = (car.Lateral < 0 ? -1 : 1) * (track.HalfWidth + PoCabinetPhysics.RunOff * 0.7);
+        int seg = car.SegHint >= 0 ? car.SegHint : track.IndexAt(car.Along);
+        int side = car.Lateral < 0 ? -1 : 1;
+        double target = side * (track.HalfWidthAt(seg) + PoCabinetPhysics.RunOffAt(track, seg, side) * 0.7);
         var p = track.PointAt(car.Along + 30 + Math.Abs(v) * 0.3);
         double tx = p.X + -p.Ty * target;
         double ty = p.Y + p.Tx * target;
         double steer = Math.Min(1, Math.Max(-1, PoCabinetTrack.WrapAngle(PoCabinetTrack.Atan2(ty - car.Y, tx - car.X) - car.Heading) * 2.4));
         if (v < 0) steer = -steer;
-        bool clear = Math.Abs(car.Lateral) > track.HalfWidth + PoCabinetPhysics.WreckClear;
+        bool clear = Math.Abs(car.Lateral) > track.HalfWidthAt(seg) + PoCabinetPhysics.WreckClear;
         return new PoCabinetControls(clear ? 0 : 1, clear && v > 0.5 ? 0.6 : 0, steer);
+    }
+
+    /// <summary>True when cars <paramref name="a"/> and <paramref name="b"/> are both beside the same
+    /// road divider, on opposite sides of it. Mirrors physics.js <c>splitBy</c>.</summary>
+    private static bool SplitBy(PoCabinetTrack track, PoCabinetCarBody a, PoCabinetCarBody b)
+    {
+        if (a.SegHint < 0 || b.SegHint < 0) return false;
+        int k = track.IslandIndexAt(a.SegHint);
+        if (k < 0 || track.IslandIndexAt(b.SegHint) != k) return false;
+        var s = track.Islands[k];
+        double mid = (s.LatFrom + s.LatTo) * 0.5;
+        return (a.Lateral < mid) != (b.Lateral < mid);
+    }
+
+    /// <summary>
+    /// A road divider within <see cref="IslandLook"/> ahead (or alongside): keep the lane target on
+    /// one side of it, clear of its ends. A car keeps to the side it is on (a field swapping sides
+    /// in front of the nose is a pile-up); a driver who goes for the joker (<paramref name="joker"/>)
+    /// crosses to the short side if it is still well short of the nose and nobody is alongside on
+    /// that side. Mirrors physics.js <c>islandLane</c>.
+    /// </summary>
+    private static double IslandLane(PoCabinetTrack track, PoCabinetCarBody car, double target, bool joker, bool left, bool right)
+    {
+        double half = track.Length * 0.5;
+        foreach (var s in track.Islands)
+        {
+            double d = s.FromAlong - car.Along;
+            if (d > half) d -= track.Length;
+            else if (d < -half) d += track.Length;
+            double len = s.ToAlong - s.FromAlong;
+            if (d > IslandLook || d < -len) continue;
+            double mid = (s.LatFrom + s.LatTo) * 0.5;
+            int side = car.Lateral < mid ? -1 : 1;
+            if (joker && d > IslandLook * 0.4 && side != s.ShortSide && !(s.ShortSide > 0 ? right : left)) side = s.ShortSide;
+            double lo = side < 0 ? -s.HalfWidth * 0.85 : s.LatTo + IslandClear;
+            double hi = side < 0 ? s.LatFrom - IslandClear : s.HalfWidth * 0.85;
+            // The middle of the lane, not its edges: on a bend the line a car steers along cuts in
+            // toward the inside, and an edge an inch off the divider is a car grinding along it.
+            double m = (hi - lo) * 0.2;
+            return Math.Min(hi - m, Math.Max(lo + m, target));
+        }
+        return target;
+    }
+
+    /// <summary>
+    /// How far to the inside of the bend a car beside (or about to be beside) a road divider is:
+    /// its lane is the short side's, the inside, a tighter radius than the centerline's. 0 for any
+    /// other car. Mirrors physics.js <c>insideOfIsland</c>.
+    /// </summary>
+    private static double InsideOfIsland(PoCabinetTrack track, PoCabinetCarBody car, double target)
+    {
+        double half = track.Length * 0.5;
+        foreach (var s in track.Islands)
+        {
+            double d = s.FromAlong - car.Along;
+            if (d > half) d -= track.Length;
+            else if (d < -half) d += track.Length;
+            if (d > IslandLook || d < -(s.ToAlong - s.FromAlong)) continue;
+            double lat = Math.Max(Math.Abs(car.Lateral), Math.Abs(target));
+            double mid = (s.LatFrom + s.LatTo) * 0.5;
+            return (target - mid) * s.ShortSide > 0 ? lat : 0;
+        }
+        return 0;
     }
 
     /// <summary>

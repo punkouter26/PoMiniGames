@@ -1,5 +1,5 @@
 @*
-    PoCabinetTrackSelector — the four themed tracks. Keyboard navigation + screen reader
+    PoCabinetTrackSelector — the themed tracks and today's daily circuit. Keyboard navigation + screen reader
     labels; the parent owns the selection (two-way binding).
 
     Campaign (1P): each card says what a race there means for the campaign, and the
@@ -7,7 +7,7 @@
     that is not the current one only "doesn't count yet", which the card says instead
     of implying you can't pick it.
 
-    Compact (the lobby host): a plain dropdown instead of four big cards.
+    Compact (the lobby host): a plain dropdown instead of the big cards.
 *@
 
 @using PoMiniGames.Shared.Games
@@ -19,7 +19,7 @@
     <label class="pocabinet-track-select">
         <span>Track</span>
         <select value="@SelectedTrackId" @onchange="e => SelectTrack(e.Value?.ToString() ?? PoCabinetCatalog.DefaultTrackId)">
-            @foreach (var track in PoCabinetCatalog.Tracks)
+            @foreach (var track in AllTracks)
             {
                 <option value="@track.Id">@track.Name · @TrackMeta(track.Id)</option>
             }
@@ -29,13 +29,15 @@
 else
 {
     <div class="pocabinet-track-selector" role="radiogroup" aria-label="Choose a track">
-        @for (var i = 0; i < PoCabinetCatalog.Tracks.Count; i++)
+        @for (var i = 0; i < AllTracks.Count; i++)
         {
             var stage = i;
-            var track = PoCabinetCatalog.Tracks[i];
+            var track = AllTracks[i];
             var accent = TrackAccent(track.Id);
             var isSelected = track.Id == SelectedTrackId;
-            (string Kind, string Text)? campaign = Campaign ? StageNote(stage) : null;
+            (string Kind, string Text)? campaign = !Campaign ? null
+                : stage < PoCabinetCatalog.CampaignStages ? StageNote(stage)
+                : ("free", "Free race · not a campaign stage");
             <button type="button"
                     class="pocabinet-track @(isSelected ? "pocabinet-track--selected" : null)"
                     role="radio"
@@ -79,7 +81,12 @@ else
             ["maralago"] = ("#2e7d4f", 4, "Medium"),
             ["pressbriefing"] = ("#c0392b", 3, "Hard"),
             ["playground"] = ("#f39c12", 3, "Medium"),
+            ["senate"] = ("#b3541e", 4, "Hard"),
         };
+
+    /// <summary>The fixed tracks, then today's daily circuit (UTC), which changes at midnight.</summary>
+    private static IReadOnlyList<PoCabinetTrackInfo> AllTracks =>
+        [.. PoCabinetCatalog.Tracks, PoCabinetCatalog.Today(DateTime.UtcNow)];
 
     protected override void OnInitialized() => Career.Changed += OnCareerChanged;
 
@@ -88,10 +95,12 @@ else
     public void Dispose() => Career.Changed -= OnCareerChanged;
 
     private static string TrackAccent(string id) =>
-        TrackInfo.TryGetValue(id, out var info) ? info.Accent : "#888";
+        PoCabinetDailyTrack.TryParse(id, out _) ? "#7b61ff"
+        : TrackInfo.TryGetValue(id, out var info) ? info.Accent : "#888";
 
     private static string TrackMeta(string id) =>
-        !TrackInfo.TryGetValue(id, out var info) ? ""
+        PoCabinetDailyTrack.TryParse(id, out _) ? "New layout every day · 3 km"
+        : !TrackInfo.TryGetValue(id, out var info) ? ""
         : PoCabinetTrackGeometry.Get(id).Laps == 1 ? $"One run · {info.Difficulty}"
         : $"{info.LengthKm} km · {info.Difficulty}";
 

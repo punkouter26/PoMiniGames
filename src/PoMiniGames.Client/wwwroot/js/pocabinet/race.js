@@ -52,7 +52,7 @@
 // never through Blazor, so it costs no re-render.
 
 import { Vector3 } from 'three';
-import { buildTrack, wrapAngle } from './track.js';
+import { buildTrack, wrapAngle, rubberAt } from './track.js';
 import * as ph from './physics.js';
 import { attachInput } from './input.js';
 import { mountCar, unmountCar, CarCrowd, updateDebris, clearDebris } from './cars.js';
@@ -139,6 +139,9 @@ class Race {
         this.totalLaps = Number(opts.world?.totalLaps) || 3;
         // Rain grip is a solo-only effect: online, prediction must run the server's numbers.
         this.grip = this.mode === 'net' ? 1 : (currentEnvironment().raining ? 0.85 : 1);
+        // Race conditions for the physics: the rain, and the rubber the racing line gathers over
+        // the race (set each tick). Online the server races dry on a green track, so prediction does.
+        this.cond = { wet: this.grip < 1, rubber: 0 };
         this.settings = {};
         this.cameraMode = 'chase';   // third person only: 'chase' | 'far'
         this.viewCar = null;         // the car the camera is on this frame
@@ -219,10 +222,10 @@ class Race {
             this.scene.scenery.onFlash = (pos) => audio.shutter(pos, 0.8);
         }
 
-        // Wet-road light streaks: rain only (dry tarmac has nothing to mirror them in), and
-        // only on a flat track: the streaks are drawn on the ground plane.
+        // Wet-road light streaks: rain only (dry tarmac has nothing to mirror them in), and not
+        // on the Playground's chute; each streak is drawn at its car's road height.
         this.reflections = null;
-        if (currentEnvironment().raining && !this.track.z) {
+        if (currentEnvironment().raining && !this.track.roadFrom) {
             try { this.reflections = new WetReflections(this.scene); } catch { this.reflections = null; }
         }
         this.moments = { lastPos: this.local?.position ?? 0, overtakeAt: 0, standAt: 0, finished: false, raceStart: 0 };
@@ -295,7 +298,7 @@ class Race {
             prev: { x: 0, y: 0, heading: 0, along: 0 },
             render: { x: 0, y: 0, heading: 0, speed: 0, along: 0, h: 0, pitch: 0, roll: 0 },
             persona: null, maxSpeed: ph.MAX_SPEED, corneringSkill: 0.7,
-            lapsDone: 0, lapStart: 0, lastLap: 0, bestLap: 0,
+            lapsDone: 0, lapStart: 0, lastLap: 0, bestLap: 0, lapInvalid: false, lastLapValid: true,
             finished: false, finishTime: 0, finishOrder: 0, position: meta.id + 1,
             prevDistance: 0,
             mesh: null,
@@ -320,7 +323,8 @@ class Race {
         body.segHint = proj.index;
         body.along = proj.along;
         body.lateral = proj.lateral;
-        body.onGrass = Math.abs(proj.lateral) > this.track.halfWidth;
+        body.onGrass = Math.abs(proj.lateral) > this.track.hwAt(proj.index);
+        body.surface = ph.surfaceAt(this.track, proj.index, proj.lateral);
         body.damage = Number(s.damage) || 0;
         body.engine = Number(s.engine) || 0;
         body.pull = Number(s.pull) || 0;
@@ -437,6 +441,8 @@ class Race {
         const tickStart = Math.max(0, elapsed - TICK);
         const stepDt = elapsed - tickStart;
         const bodies = this.cars.map(c => c.body);
+        // MIRRORED by PoCabinetLapVerifier.Replay: the rubber at this tick's race time.
+        this.cond.rubber = rubberAt(elapsed);
         // A wrecked player is out: the log ends there, and the car is driven off the line
         // (MIRRORED by PoCabinetLapVerifier.Replay, which stops at the wreck).
         const driving = this.local && !this.local.finished && !this.local.body.wrecked;
@@ -455,7 +461,7 @@ class Race {
                 if (car.isLocal) this.lastControls = c;
                 car.throttle = c.throttle;   // the demo's engine note follows the car on screen
             }
-            ph.step(this.track, car.body, c, stepDt, this.grip);
+            ph.step(this.track, car.body, c, stepDt, this.grip, this.cond);
         }
         ph.resolveContacts(this.track, bodies);
         this.applyHits();
@@ -479,15 +485,20 @@ class Race {
                 const frac = span > 1e-9 ? Math.min(1, Math.max(0, (boundary - car.prevDistance) / span)) : 1;
                 const crossedAt = tickStart + frac * stepDt;
                 const lapTime = crossedAt - car.lapStart;
+                // A lap that broke track limits does not count for anything (MIRRORED by
+                // PoCabinetLapVerifier and PoCabinetSim): not the best, not the PB, not the trace.
+                const valid = !car.lapInvalid;
                 if (car.isLocal && this.rec) {
-                    this.rec.laps.push({ lap: car.lapsDone + 1, startT: car.lapStart, endT: crossedAt, time: lapTime });
+                    this.rec.laps.push({ lap: car.lapsDone + 1, startT: car.lapStart, endT: crossedAt, time: lapTime, valid });
                 }
                 car.lapStart = crossedAt;
                 car.lastLap = lapTime;
-                const raceBest = car.bestLap <= 0 || lapTime < car.bestLap;
+                car.lastLapValid = valid;
+                car.lapInvalid = false;
+                const raceBest = valid && (car.bestLap <= 0 || lapTime < car.bestLap);
                 if (raceBest) car.bestLap = lapTime;
                 car.lapsDone++;
-                if (car.isLocal && this.mode !== 'demo') this.onLocalLap(lapTime, raceBest && car.lapsDone > 1);
+                if (car.isLocal && this.mode !== 'demo' && valid) this.onLocalLap(lapTime, raceBest && car.lapsDone > 1);
                 if (car.lapsDone >= this.totalLaps) {
                     car.finished = true;
                     car.finishTime = crossedAt;
@@ -495,6 +506,10 @@ class Race {
                     if (this.firstFinishAt < 0) this.firstFinishAt = elapsed;
                     break;
                 }
+            }
+            if (car.body.wide && !car.lapInvalid) {
+                car.lapInvalid = true;
+                if (car.isLocal && this.mode !== 'demo') this.cue('wall', 0.15);
             }
         }
         const order = [...this.cars].sort((a, b) => {
@@ -871,6 +886,11 @@ class Race {
             if (focus.mesh) focus.mesh.group.visible = true;
         }
         this.director?.draw(now);
+        // The rubber going down on the racing line (and the line drying first in the rain).
+        if (now - (this.rubberDrawnAt || 0) > 500) {
+            this.rubberDrawnAt = now;
+            this.scene.setRubber?.(this.cond.rubber, this.cond.wet);
+        }
         this.effects(dt, mode, focus);
 
         if (this.minimap && now - this.minimapAt > 66) {
@@ -1150,6 +1170,8 @@ class Race {
             hint: (exact || c.isLocal) ? c.body.segHint : -1,
             // What the hits have done, for the engine smoke and the fire of a wreck.
             engine: c.body.engine, wrecked: !!c.body.wrecked,
+            // What it is on (physics SURF_*): gravel throws stones, grass dust, a raised kerb a jolt.
+            surface: (exact || c.isLocal) ? c.body.surface : -1,
         }));
     }
 
@@ -1243,7 +1265,7 @@ class Race {
                 lapProgress: fraction(c.body.distance / this.track.length),
                 position: c.position, isPlayer: c.isLocal, finished: c.finished, ackSeq: 0,
                 damage: round3(c.body.damage), engine: round3(c.body.engine), pull: round3(c.body.pull),
-                wrecked: !!c.body.wrecked, style: ph.archetype(c.persona),
+                wrecked: !!c.body.wrecked, style: ph.archetype(c.persona), lapInvalid: !!c.lapInvalid,
             })),
             latestDialogue: this.line,
             static: null,
@@ -1310,7 +1332,7 @@ class Race {
      */
     telemetry(canvasId) {
         if (!this.telemetryPair) {
-            const best = bestTrace(lapTraces(this.rec));
+            const best = bestTrace(lapTraces({ ...this.rec, laps: this.rec.laps.filter(l => l.valid !== false) }));
             if (!best) return { summary: 'No complete lap was recorded, so there is no telemetry for this race.', hasReference: false };
             const reference = loadPbTrace(this.track.id);
             savePbTrace(this.track.id, best);

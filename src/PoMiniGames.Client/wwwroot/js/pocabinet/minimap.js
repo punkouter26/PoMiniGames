@@ -9,6 +9,9 @@
 //   • world — the static world the scene mounts against (centerXY, flat
 //     [x0, y0, ...] in sim units, from PoCabinetTrackGeometry). A bare point
 //     array ([x, y] or {X, Y}) is still accepted.
+//     A circuit's world also carries the road's half width per sample (halfWidths) and its
+//     dividers (islands): the road is drawn to scale under the line, and a divider as a
+//     light sliver splitting it, tapered like the physics' (ISLAND_TAPER samples).
 //   • cars — rows from race.js (x, y, isPlayer = the local car, color,
 //     officialId, finished), pushed ~15 Hz.
 //
@@ -20,6 +23,7 @@
 const MARGIN = 14;           // px padding around the track path
 const OKABE_ITO = ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7'];
 const OFFICIAL_ORDER = ['sean-s', 'steve-b', 'bill-b', 'mike-p', 'player'];
+const ISLAND_TAPER = 4;   // track.js
 
 function pointOf(p) {
     if (Array.isArray(p)) return { x: Number(p[0]) || 0, y: Number(p[1]) || 0 };
@@ -68,6 +72,8 @@ class MinimapHandle {
         this.trackLayer.width = canvas.width;
         this.trackLayer.height = canvas.height;
         const tctx = this.trackLayer.getContext('2d');
+        const band = opts && opts.band;
+        if (band && !this.open) this.drawBand(tctx, centerline, band, dpr);
         this.tracePath(tctx, centerline);
         tctx.lineWidth = Math.max(3, 5 * dpr);
         tctx.strokeStyle = 'rgba(0,0,0,0.55)';
@@ -75,6 +81,7 @@ class MinimapHandle {
         tctx.lineWidth = Math.max(1.5, 2.5 * dpr);
         tctx.strokeStyle = this.accent;
         tctx.stroke();
+        if (band && !this.open) this.drawIslands(tctx, centerline, band, dpr);
 
         // Sector ticks + start line at path fractions 0, 1/3, 2/3.
         this.sectorPoints = [0, 1 / 3, 2 / 3].map(f => this.pointAtFraction(centerline, f));
@@ -86,6 +93,63 @@ class MinimapHandle {
             tctx.fillStyle = i === 0 ? '#ffffff' : 'rgba(255,255,255,0.6)';
             tctx.arc(x, y, (i === 0 ? 3.4 : 2.2) * dpr, 0, Math.PI * 2);
             tctx.fill();
+        }
+    }
+
+    /** The road to scale (a darker band, its width per sample) and any dividers on it. */
+    drawBand(ctx2d, centerline, band, dpr) {
+        const pts = centerline.map(pointOf);
+        const n = pts.length;
+        if (!Array.isArray(band.hw) || band.hw.length !== n) return;
+        const normal = pts.map((p, i) => {
+            const a = pts[(i - 1 + n) % n], b = pts[(i + 1) % n];
+            const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+            return { x: -dy / len, y: dx / len };   // right of travel
+        });
+        const at = (i, lat) => this.toCanvas(pts[i].x + normal[i].x * lat, pts[i].y + normal[i].y * lat);
+        // Only where it is wider than the line drawn over it.
+        if (band.hw.some(h => h * 2 * this.scale > 4 * dpr)) {
+            ctx2d.beginPath();
+            for (let i = 0; i <= n; i++) { const c = at(i % n, Number(band.hw[i % n])); if (i) ctx2d.lineTo(c.x, c.y); else ctx2d.moveTo(c.x, c.y); }
+            for (let i = n; i >= 0; i--) { const c = at(i % n, -Number(band.hw[i % n])); ctx2d.lineTo(c.x, c.y); }
+            ctx2d.closePath();
+            ctx2d.fillStyle = 'rgba(0,0,0,0.42)';
+            ctx2d.fill();
+        }
+    }
+
+    /** Dividers: a light sliver over the line, split where the road splits. */
+    drawIslands(ctx2d, centerline, band, dpr) {
+        const pts = centerline.map(pointOf);
+        const n = pts.length;
+        const normal = pts.map((p, i) => {
+            const a = pts[(i - 1 + n) % n], b = pts[(i + 1) % n];
+            const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+            return { x: -dy / len, y: dx / len };
+        });
+        const at = (i, lat) => this.toCanvas(pts[i].x + normal[i].x * lat, pts[i].y + normal[i].y * lat);
+        for (const s of Array.isArray(band.islands) ? band.islands : []) {
+            const from = Number(s.from) | 0, to = Number(s.to) | 0;
+            const count = (to - from + n) % n;
+            if (count < 2) continue;
+            const mid = (Number(s.latFrom) + Number(s.latTo)) / 2, half = (Number(s.latTo) - Number(s.latFrom)) / 2;
+            // Drawn a little fatter than scale, or a 24-unit divider is invisible at minimap size.
+            const grow = Math.max(1, 2 * dpr / Math.max(1e-6, half * this.scale));
+            const side = (dir) => {
+                const out = [];
+                for (let j = 0; j < count; j++) {
+                    const i = (from + j) % n;
+                    const t = Math.min(1, (j + 1) / ISLAND_TAPER, (count - j) / ISLAND_TAPER);
+                    out.push(at(i, mid + dir * half * t * grow));
+                }
+                return out;
+            };
+            const lo = side(-1), hi = side(1).reverse();
+            ctx2d.beginPath();
+            [...lo, ...hi].forEach((c, k) => (k ? ctx2d.lineTo(c.x, c.y) : ctx2d.moveTo(c.x, c.y)));
+            ctx2d.closePath();
+            ctx2d.fillStyle = 'rgba(255,255,255,0.9)';
+            ctx2d.fill();
         }
     }
 
@@ -188,6 +252,7 @@ export function mountMinimap(canvas, worldOrCenterline, opts) {
         centerline = [];
         for (let i = 0; i + 1 < end; i += 2) centerline.push([xy[i], xy[i + 1]]);
         if (finish > 0) opts = { ...(opts || {}), open: true };
+        else opts = { ...(opts || {}), band: { hw: worldOrCenterline.halfWidths, islands: worldOrCenterline.islands } };
     }
     if (!Array.isArray(centerline) || centerline.length < 3) {
         throw new Error('pocabinet/minimap: centerline is required');

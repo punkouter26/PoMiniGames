@@ -28,19 +28,69 @@ public sealed record PoCabinetTrackDefinition(
     public int HiddenFromKnot { get; init; }
     public int HiddenToKnot { get; init; }
 
-    /// <summary>Road height per knot (sim units), or null for a flat track. Render-only: the
-    /// physics is 2D and never reads it.</summary>
+    /// <summary>Road height per knot (sim units), or null for a flat track. The physics reads its
+    /// grade (gravity along the road); the scene lays the road, the ground and the scenery on it.</summary>
     public IReadOnlyList<double>? KnotZ { get; init; }
 
-    /// <summary>Cross slope per knot (tan of the bank, + = right side higher), or null.
-    /// Render-only, like <see cref="KnotZ"/>.</summary>
+    /// <summary>Cross slope per knot (tan of the bank, + = right side higher), or null. The
+    /// physics gives a turn banked into it more grip.</summary>
     public IReadOnlyList<double>? KnotBank { get; init; }
 
     /// <summary>The knot the scene starts laying tarmac at. 0 = the whole track is tarmac;
     /// otherwise an open chute (the model's gutter, without its walls) runs up to here.
     /// Render-only.</summary>
     public int RoadFromKnot { get; init; }
+
+    /// <summary>Road width per knot as a share of <see cref="PoCabinetTrackDefinition.TrackWidth"/>
+    /// (null = the same all the way round): pinch points and wide braking zones.</summary>
+    public IReadOnlyList<double>? KnotWidth { get; init; }
+
+    /// <summary>What lies between the road edge and the barrier where no zone says otherwise.</summary>
+    public PoCabinetRunoff DefaultRunoff { get; init; } = PoCabinetRunoff.Grass;
+
+    /// <summary>Run-off that differs from <see cref="DefaultRunoff"/>: gravel traps, tarmac run-off.</summary>
+    public IReadOnlyList<PoCabinetRunoffZone>? Runoff { get; init; }
+
+    /// <summary>Knot ranges whose apex kerbs are raised "sausage" kerbs (the chicanes): they
+    /// unsettle a car that takes too much of them.</summary>
+    public IReadOnlyList<(double FromKnot, double ToKnot)>? Sausages { get; init; }
+
+    /// <summary>Patches of road with their own grip: resurfaced, dusty, bumpy, puddles in the rain.</summary>
+    public IReadOnlyList<PoCabinetPatchDef>? Patches { get; init; }
+
+    /// <summary>Split sections: a divider down the road with a lane either side, one of them the
+    /// shorter, slower-surfaced joker line.</summary>
+    public IReadOnlyList<PoCabinetIslandDef>? Islands { get; init; }
+
+    /// <summary>The scenery, sky and props the scene dresses the track in (default: the id).</summary>
+    public string? Theme { get; init; }
 }
+
+/// <summary>What lies between the road edge and the barrier. Grass drags and has little grip;
+/// gravel beaches a car fast; tarmac run-off costs nothing but the lap (track limits).</summary>
+public enum PoCabinetRunoff
+{
+    Grass = 0,
+    Gravel = 1,
+    Tarmac = 2,
+}
+
+/// <summary>Run-off of <paramref name="Kind"/> on knots [<paramref name="FromKnot"/>,
+/// <paramref name="ToKnot"/>) (wrapping past the line when From &gt; To), on one side
+/// (-1 left, +1 right) or both (0).</summary>
+public sealed record PoCabinetRunoffZone(double FromKnot, double ToKnot, int Side, PoCabinetRunoff Kind);
+
+/// <summary>A patch of road from knot <paramref name="FromKnot"/> to <paramref name="ToKnot"/>,
+/// between two lateral offsets given as shares of the local half width (-1 = the left edge,
+/// +1 the right), whose grip is multiplied by <paramref name="DryGrip"/> or, in the rain,
+/// <paramref name="WetGrip"/>. <paramref name="Kind"/> is what the scene draws (resurfaced,
+/// dusty, bumpy, puddle, paint, dirt).</summary>
+public sealed record PoCabinetPatchDef(double FromKnot, double ToKnot, double LatFrom, double LatTo, double DryGrip, double WetGrip, string Kind);
+
+/// <summary>A divider from knot <paramref name="FromKnot"/> to <paramref name="ToKnot"/>
+/// between two lateral offsets (sim units). <paramref name="ShortSide"/> (-1 left, +1 right) is
+/// the joker lane: the shorter way round, usually on a worse surface (a patch says which).</summary>
+public sealed record PoCabinetIslandDef(double FromKnot, double ToKnot, double LatFrom, double LatTo, int ShortSide);
 
 /// <summary>
 /// Shared track geometry. World units are the sim's: car radius 14, speeds in units/s
@@ -56,14 +106,17 @@ public static class PoCabinetTrackGeometry
     private static readonly Dictionary<string, PoCabinetTrackDefinition> Definitions =
         new(StringComparer.OrdinalIgnoreCase)
         {
+            // A speedway with a road-course twist: banked turns at either end, a rise through
+            // turns 1-2 and a run back down the back straight into a bus-stop chicane (raised
+            // kerbs, tarmac run-off: cut it and the lap is gone), gravel outside turn 1.
             ["capitol"] = new(
                 "capitol",
                 TrackWidth: 110,
                 Knots: Scale(
                 [
                     (0, 0), (380, 0), (760, 0), (1100, 60), (1300, 220), (1340, 420), (1220, 600),
-                    (1000, 700), (700, 720), (380, 720), (60, 700), (-160, 600), (-280, 420),
-                    (-260, 220), (-140, 60),
+                    (1000, 700), (760, 722), (620, 726), (540, 676), (440, 652), (350, 680), (260, 722),
+                    (60, 705), (-160, 600), (-280, 420), (-260, 220), (-140, 60),
                 ]),
                 StepsPerSegment: 12,
                 Atmosphere: new PoCabinetAtmosphereWire
@@ -77,7 +130,27 @@ public static class PoCabinetTrackGeometry
                     GroundHex = "#3f6a2e",
                     RoadHex = "#44464d",
                     AccentHex = "#c6a35a",
-                }),
+                })
+            {
+                //          0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16   17   18
+                KnotZ = [0, 0, 6, 20, 38, 46, 44, 34, 22, 14, 10, 8, 8, 8, 6, 12, 18, 12, 4],
+                KnotBank = [0, 0, 0, -0.1, -0.24, -0.28, -0.24, -0.1, 0, 0, 0, 0, 0, 0, -0.06, -0.2, -0.24, -0.2, -0.06],
+                KnotWidth = [1, 1.08, 1.15, 1.12, 1, 1, 1, 1, 1, 1, 0.96, 0.96, 0.96, 1, 1, 1, 1, 1, 1],
+                Runoff =
+                [
+                    new(2.5, 6.5, -1, PoCabinetRunoff.Gravel),
+                    new(9, 13.5, 0, PoCabinetRunoff.Tarmac),
+                    new(15, 17.5, -1, PoCabinetRunoff.Gravel),
+                ],
+                Sausages = [(9.2, 13.2)],
+                Patches =
+                [
+                    new(0.3, 2, -1, 1, 1.03, 1.02, "resurfaced"),
+                    new(7.3, 7.9, 0.1, 0.7, 1, 0.7, "puddle"),
+                    new(15.4, 16.2, -1, 0.1, 0.94, 0.86, "bumpy"),
+                    new(4.6, 5.2, -0.9, -0.3, 1, 0.72, "puddle"),
+                ],
+            },
             ["maralago"] = new(
                 "maralago",
                 TrackWidth: 120,
@@ -98,7 +171,28 @@ public static class PoCabinetTrackGeometry
                     GroundHex = "#c2c98a",
                     RoadHex = "#6b675e",
                     AccentHex = "#f0e6c8",
-                }),
+                })
+            {
+                // Over the dunes: a rise off the line and a drop into the far hairpin, sand traps
+                // outside the big corners, sand blown across the exits, the road pinched where it
+                // threads between the greens.
+                //          0    1    2    3    4    5    6    7    8    9   10   11   12   13
+                KnotZ = [0, 8, 26, 42, 36, 18, 6, 0, 4, 16, 28, 24, 12, 4],
+                KnotBank = [0, 0, 0, 0.06, 0.16, 0.18, 0.1, 0, 0, 0.04, 0.12, 0.16, 0.1, 0.02],
+                KnotWidth = [1.08, 1.1, 1.05, 1, 1, 1, 1, 1, 0.95, 0.88, 0.88, 0.92, 1, 1.04],
+                Runoff =
+                [
+                    new(3, 6.6, 1, PoCabinetRunoff.Gravel),
+                    new(9.4, 12.4, 1, PoCabinetRunoff.Gravel),
+                ],
+                Patches =
+                [
+                    new(6.1, 6.8, 0.2, 1, 0.9, 0.84, "dusty"),
+                    new(12.3, 12.9, 0.1, 1, 0.9, 0.84, "dusty"),
+                    new(1.4, 1.9, -0.7, -0.1, 1, 0.7, "puddle"),
+                    new(7.6, 8.2, -0.2, 0.5, 1, 0.72, "puddle"),
+                ],
+            },
             ["pressbriefing"] = new(
                 "pressbriefing",
                 TrackWidth: 105,
@@ -124,7 +218,74 @@ public static class PoCabinetTrackGeometry
                     GroundHex = "#8a7f78",
                     RoadHex = "#3f3f47",
                     AccentHex = "#c1253b",
-                }),
+                })
+            {
+                // A plaza: tarmac run-off everywhere, so the edge costs nothing but the lap (track
+                // limits). A crest down the long straight, and the twisty last sector split by the
+                // media scrum: the inside lane is the joker, shorter but on dusty paving.
+                //          0    1    2    3    4    5    6    7    8    9   10   11   12   13   14
+                KnotZ = [0, 10, 24, 30, 22, 10, 4, 0, -4, -8, -10, -8, -6, -4, -2],
+                KnotWidth = [1, 1, 1, 1, 1, 1, 1, 1.05, 1.15, 1.35, 1.7, 1.7, 1.55, 1.2, 1.05],
+                DefaultRunoff = PoCabinetRunoff.Tarmac,
+                Islands = [new(9.9, 12.2, -12, 12, 1)],
+                Patches =
+                [
+                    new(9.9, 12.2, 0.15, 1, 0.88, 0.78, "dirt"),
+                    new(2.3, 2.8, 0.1, 0.8, 1, 0.7, "puddle"),
+                    new(5.4, 5.9, -0.8, -0.1, 1, 0.72, "puddle"),
+                    new(0, 0.25, -1, 1, 0.98, 0.84, "paint"),
+                ],
+            },
+            // A road course in autumn hills: up the long start straight to a blind crest, down
+            // through a kink into a banked hairpin (bumpy on the brakes, gravel outside), back
+            // through the esses and a chicane with raised kerbs, and round the sweeper, split by
+            // a divider: the inside lane is the joker, shorter and on dirt.
+            ["senate"] = new(
+                "senate",
+                TrackWidth: 100,
+                Knots:
+                [
+                    (0, 0), (350, 0), (700, 0), (1050, 20), (1300, 70), (1460, 140), (1550, 250),
+                    (1530, 370), (1430, 420), (1300, 390), (1120, 420), (950, 480), (800, 500),
+                    (650, 560), (500, 540), (400, 545), (330, 600), (240, 600), (170, 545), (0, 520),
+                    (-180, 450), (-280, 300), (-260, 140), (-150, 30),
+                ],
+                StepsPerSegment: 12,
+                Atmosphere: new PoCabinetAtmosphereWire
+                {
+                    SkyHex = "#a9c4de",
+                    FogStart = 260,
+                    FogEnd = 1150,
+                    FogHex = "#c3d0da",
+                    AmbientIntensity = 0.7,
+                    GroundHex = "#5d6b33",
+                    RoadHex = "#45474d",
+                    AccentHex = "#b3541e",
+                })
+            {
+                //          0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17  18  19  20  21  22  23
+                KnotZ = [0, 18, 44, 66, 72, 64, 52, 42, 36, 32, 28, 28, 32, 36, 40, 40, 38, 36, 34, 26, 16, 8, 2, 0],
+                KnotBank = [0, 0, 0, 0, -0.04, -0.14, -0.28, -0.32, -0.26, -0.08, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.06, -0.12, -0.14, -0.1, -0.03],
+                KnotWidth = [1, 1, 1, 1, 1, 1.1, 1.2, 1.2, 1.15, 1.05, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1.25, 1.7, 1.7, 1.45, 1.1],
+                Runoff =
+                [
+                    new(3.5, 5, -1, PoCabinetRunoff.Gravel),
+                    new(5, 9.5, -1, PoCabinetRunoff.Gravel),
+                    new(14.5, 18.5, 0, PoCabinetRunoff.Tarmac),
+                ],
+                Sausages = [(14.6, 18.4)],
+                Patches =
+                [
+                    new(0.4, 2, -1, 1, 1.03, 1.02, "resurfaced"),
+                    new(4.6, 5.4, -1, 1, 0.95, 0.88, "bumpy"),
+                    new(13.2, 13.9, -0.2, 1, 0.92, 0.86, "dusty"),
+                    new(19.9, 21.6, 0.15, 1, 0.88, 0.78, "dirt"),
+                    new(2.4, 2.9, 0.2, 0.9, 1, 0.7, "puddle"),
+                    new(10.3, 10.8, -0.8, -0.1, 1, 0.72, "puddle"),
+                ],
+                Islands = [new(19.9, 21.6, -12, 12, 1)],
+                Theme = "senate",
+            },
             ["playground"] = new(
                 "playground",
                 TrackWidth: 74,
@@ -227,9 +388,11 @@ public static class PoCabinetTrackGeometry
             },
         };
 
-    /// <summary>Definition for <paramref name="trackId"/>, or the default track when unknown.</summary>
+    /// <summary>Definition for <paramref name="trackId"/> (a daily id builds that day's circuit),
+    /// or the default track when unknown.</summary>
     public static PoCabinetTrackDefinition Get(string? trackId) =>
-        !string.IsNullOrWhiteSpace(trackId) && Definitions.TryGetValue(trackId.Trim(), out var def)
+        PoCabinetDailyTrack.TryParse(trackId, out var day) ? PoCabinetDailyTrack.Get(day)
+        : !string.IsNullOrWhiteSpace(trackId) && Definitions.TryGetValue(trackId.Trim(), out var def)
             ? def
             : Definitions[PoCabinetCatalog.DefaultTrackId];
 
@@ -292,9 +455,10 @@ public static class PoCabinetTrackGeometry
     /// and what the race hub hands a joining client. Built on demand — it is a few KB and
     /// the client caches nothing it could get wrong.
     /// </summary>
-    public static PoCabinetStaticWorld BuildStaticWorld(string? trackId)
+    public static PoCabinetStaticWorld BuildStaticWorld(string? trackId) => BuildStaticWorld(Get(trackId));
+
+    public static PoCabinetStaticWorld BuildStaticWorld(PoCabinetTrackDefinition def)
     {
-        var def = Get(trackId);
         var xy = BuildCenterlineXY(def);
         double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
         for (int i = 0; i < xy.Length; i += 2)
@@ -304,7 +468,7 @@ public static class PoCabinetTrackGeometry
             minY = Math.Min(minY, xy[i + 1]);
             maxY = Math.Max(maxY, xy[i + 1]);
         }
-        return new PoCabinetStaticWorld
+        var world = new PoCabinetStaticWorld
         {
             TrackId = def.Id,
             TrackName = PoCabinetCatalog.GetTrack(def.Id).Name,
@@ -323,6 +487,8 @@ public static class PoCabinetTrackGeometry
             HiddenFrom = def.HiddenFromKnot * def.StepsPerSegment,
             HiddenTo = def.HiddenToKnot * def.StepsPerSegment,
         };
+        PoCabinetTrackFeatures.Fill(world, def, xy);
+        return world;
     }
 
     private static (double X, double Y)[] Scale((double X, double Y)[] knots) =>

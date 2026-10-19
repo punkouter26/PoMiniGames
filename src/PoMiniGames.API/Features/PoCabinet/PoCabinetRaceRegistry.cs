@@ -259,6 +259,7 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
             Engine = Math.Round(c.Engine, 3),
             Pull = Math.Round(c.Pull, 3),
             Wrecked = c.Wrecked,
+            LapInvalid = c.LapInvalid,
             AckSeq = c.AckSeq,
         }).ToList();
 

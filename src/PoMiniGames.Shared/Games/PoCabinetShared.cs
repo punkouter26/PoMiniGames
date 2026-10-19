@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace PoMiniGames.Shared.Games;
 
 // ──────────────────────────────  Career state  ──────────────────────────────
@@ -64,15 +66,25 @@ public sealed class PoCabinetCarState
     public bool Finished { get; set; }
     /// <summary>What the hits have cost the car (PoCabinetPhysics.Hurt): structure and engine
     /// 0..1, alignment -1..1 (+ pulls right). The owning client predicts with them, and every
-    /// client smokes and dents the car by them.</summary>
+    /// client smokes and dents the car by them. Left off the wire while 0 (most cars, most of
+    /// the time): the 30 Hz snapshot is budgeted at 2 KB for 8 cars.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public double Damage { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public double Engine { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public double Pull { get; set; }
     /// <summary>Structure or engine gone: out of the race, limping off the racing line.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Wrecked { get; set; }
+    /// <summary>This lap broke track limits (all four wheels past the edge): it will not count
+    /// as a best lap.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LapInvalid { get; set; }
     /// <summary>An AI driver's personality in a word ("Bruiser", "Late braker"; physics.js
     /// <c>archetype</c>), for the standings. Solo snapshots only; empty online.</summary>
-    public string Style { get; set; } = "";
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Style { get; set; }
     /// <summary>
     /// Highest <see cref="PoCabinetInput.Seq"/> the server has applied to this car (0 for AI
     /// officials and in solo races). The owning client drops acknowledged inputs from its
@@ -152,6 +164,46 @@ public sealed class PoCabinetStaticWorld
     /// <summary>The centerline sample the scene starts laying tarmac at (0 = the whole track);
     /// before it the track is an open chute in place of a model's gutter. Drawn only.</summary>
     public int RoadFrom { get; set; }
+
+    // Track features (PoCabinetTrackFeatures): computed once here, read by both physics copies
+    // and the scene, so the road everyone drives on is the same to the last value.
+
+    /// <summary>Road half width per centerline sample (sim units).</summary>
+    public IReadOnlyList<double> HalfWidths { get; set; } = new List<double>();
+    /// <summary>Run-off per sample on the left and right (<see cref="PoCabinetRunoff"/> as an int).</summary>
+    public IReadOnlyList<int> RunoffLeft { get; set; } = new List<int>();
+    public IReadOnlyList<int> RunoffRight { get; set; } = new List<int>();
+    /// <summary>Apex kerb per sample: 0 none, ±1 a flat kerb on that side (+ = right), ±2 a raised one.</summary>
+    public IReadOnlyList<int> Kerbs { get; set; } = new List<int>();
+    /// <summary>The racing line per sample (lateral offset, sim units): where the rubber goes down.</summary>
+    public IReadOnlyList<double> RacingLine { get; set; } = new List<double>();
+    public IReadOnlyList<PoCabinetPatchWire> Patches { get; set; } = new List<PoCabinetPatchWire>();
+    public IReadOnlyList<PoCabinetIslandWire> Islands { get; set; } = new List<PoCabinetIslandWire>();
+    /// <summary>Which scenery, sky and props dress the track (the id, or a borrowed theme for the daily track).</summary>
+    public string Theme { get; set; } = "capitol";
+}
+
+/// <summary>A grip patch on samples [From, To) between two lateral offsets (sim units).</summary>
+public sealed class PoCabinetPatchWire
+{
+    public int From { get; set; }
+    public int To { get; set; }
+    public double LatFrom { get; set; }
+    public double LatTo { get; set; }
+    public double DryGrip { get; set; } = 1;
+    public double WetGrip { get; set; } = 1;
+    public string Kind { get; set; } = "";
+}
+
+/// <summary>A road divider on samples [From, To) between two lateral offsets (sim units);
+/// ShortSide (-1 left, +1 right) is the joker lane.</summary>
+public sealed class PoCabinetIslandWire
+{
+    public int From { get; set; }
+    public int To { get; set; }
+    public double LatFrom { get; set; }
+    public double LatTo { get; set; }
+    public int ShortSide { get; set; }
 }
 
 // ──────────────────────────────  Player input  ──────────────────────────────

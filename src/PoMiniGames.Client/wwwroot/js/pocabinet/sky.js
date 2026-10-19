@@ -10,7 +10,7 @@
 
 import * as THREE from 'three';
 
-// Per-track look. Directions are world space (y up). The DirectionalLight in
+// Per-theme look (scene.js passes terrain.js themeOf(track); an unknown one gets Capitol's). Directions are world space (y up). The DirectionalLight in
 // scene.js follows `sun`, clamped high enough to keep the road lit.
 // All are daytime: a low-sun dusk or a night makes the race hard to read.
 const PRESETS = {
@@ -25,6 +25,11 @@ const PRESETS = {
     pressbriefing: {
         zenith: '#4a86cf', sun: [0.3, 0.7, 0.55], sunColor: '#fff4dc', sunSize: 1.2,
         clouds: 0.32, cloudColor: '#ffffff',
+    },
+    // Senate Hill: a cool, high autumn sky over the woods, the sun lower and warmer.
+    senate: {
+        zenith: '#4f7fb4', sun: [0.55, 0.5, -0.45], sunColor: '#ffe0b0', sunSize: 1.3,
+        clouds: 0.42, cloudColor: '#f4f1ec',
     },
     playground: {
         zenith: '#3f86d6', sun: [-0.4, 0.74, 0.5], sunColor: '#fff3d8', sunSize: 1.3,

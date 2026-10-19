@@ -14,19 +14,27 @@
 // world-space macro tint so it never tiles — plus camera-riding grass blades
 // (grass.js) on the green tracks.
 //
-//   • ground (grass, or a plaza on Press Briefing), sized past the fog
-//   • asphalt ribbon, painted edge lines, a chequered start line
-//   • barrier walls with a striped face, exactly where physics.js stops a car
+//   • ground (grass, or a plaza on Press Briefing): a terrain heightfield (terrain.js) that
+//     lies on the road's plane under the road and its run-off and rolls away into hills
+//     beyond the barriers, sized past the fog
+//   • asphalt ribbon as wide as the road is at each sample (track.hw), painted edge lines,
+//     a chequered start line
+//   • the run-off either side: lawn, a gravel trap (beach sand at Mar-a-Lago) or tarmac
+//     run-off with painted track-limit stripes, as deep as physics.js makes it (runOffAt)
+//   • barrier walls with a striped face, exactly where physics.js stops a car (wallAt),
+//     following the road's height and bank
+//   • patches, the rubbered-in racing line, road dividers with their JOKER signs, braking
+//     boards and corner numbers (trackside.js)
 //   • racing-line overlay coloured by corner speed (assist)
-//   • sky dome (sky.js) and trackside scenery (scenery.js)
+//   • sky dome (sky.js) and trackside scenery (scenery.js), dressed by track.theme
 //   • Playground only: the imported playground.glb (see PLAYGROUND)
 //
-// World mapping: sim (x, y) → three (x / 10, h, y / 10). h is 0 everywhere except on a
-// track that carries heights (track.z — the Playground run): there the road and its lines,
-// the cars and the camera all ride at the centerline's height (tilted by track.bank), the
-// part of the loop that is only a return link (track.drawn) is not built at all, tarmac is
-// only laid from track.roadFrom on (track.built; before it, an open chute), and there are
-// no barrier walls.
+// World mapping: sim (x, y) → three (x / 10, h, y / 10). h is the road's height (track.z,
+// tilted across by track.bank) on the road and its run-off out to the barriers, and the
+// terrain's height (groundHeight) everywhere else. The Playground run keeps its own staging:
+// the part of the loop that is only a return link (track.drawn) is not built at all, tarmac
+// is only laid from track.roadFrom on (track.built; before it, an open chute), the run-off
+// is a deck in the air, there are no barrier walls and the lawn is flat.
 //
 // Camera: third person only. 'chase' (close), 'far' (high and
 // long) and 'tv' (trackside cameras handing off along the lap).
@@ -44,19 +52,23 @@
 // API surface:
 //   const handle = await mount(canvas, world);
 //   handle.setView({ x, y, heading, mode, speed, dt }); handle.setRacingLine(bool);
-//   handle.setStartLights(lit, go); handle.setWeather(rain);
+//   handle.setStartLights(lit, go); handle.setWeather(rain); handle.setRubber(r, wet);
+//   handle.groundHeight(xSim, ySim) — world height of the ground there
 //   handle.setPip(pose | null)   — demo broadcast inset; handle.pipRect says where it landed
 //   unmount(handle);
 
 import * as THREE from 'three';
 import { buildTrack } from './track.js';
-import { RUN_OFF, GRIP_ACCEL } from './physics.js';
+import { RUN_OFF, GRIP_ACCEL, runOffAt } from './physics.js';
 import { computeKerbs } from './kerbs.js';
 import { Sky } from './sky.js';
 import { Scenery } from './scenery.js';
 import { PostFx } from './postfx.js';
 import { Grass } from './grass.js';
 import { asphalt, grass as grassTextures, macro, clock } from './materials.js';
+import { Terrain, themeOf, isPlayground, wallFace } from './terrain.js';
+import { Trackside } from './trackside.js';
+import { gravel, sand, limitStripes } from './surfaces.js';
 
 export const WORLD_SCALE = 10;
 
@@ -123,6 +135,11 @@ class SceneHandle {
         this.racingLine = null;
         this.groundMesh = null;
         this.roadMesh = null;
+        this.terrain = null;      // terrain.js (every track but the Playground)
+        this.trackside = null;    // trackside.js
+        this.runoffMats = null;   // gravel / tarmac run-off materials, wetted by setWeather
+        this.theme = 'capitol';
+        this.playground = false;
         this.sky = null;
         this.envSky = null;
         this.envTarget = null;
@@ -240,6 +257,8 @@ class SceneHandle {
                 this._chaseLook.lerp(look, 1 - Math.exp(-(dt || 0.016) * 14));
             }
             this._chase.y = Math.max(this._chase.y, h + 0.7);
+            // Never inside a hillside the road cuts past.
+            if (this.terrain) this._chase.y = Math.max(this._chase.y, this.terrain.worldHeight(this._chase.x * WORLD_SCALE, this._chase.z * WORLD_SCALE) + 0.6);
             this.camera.position.copy(this._chase);
             this.camera.lookAt(this._chaseLook);
             return;
@@ -254,8 +273,12 @@ class SceneHandle {
             this._tvIndex = idx;
             const at = idx * (t.length / 8) + 40;
             const q = t.pointAt(at);
-            const side = t.halfWidth + RUN_OFF + 30;
-            this._tvPos = new THREE.Vector3((q.x - q.ty * side) / WORLD_SCALE, 7 + t.heightAt(at) / WORLD_SCALE, (q.y + q.tx * side) / WORLD_SCALE);
+            const side = (this.playground ? t.halfWidth + RUN_OFF : wallFace(t, t.indexAt(at), 1)) + 30;
+            const gx = q.x - q.ty * side, gy = q.y + q.tx * side;
+            // On its mast on the ground, or (in the air, the Playground) at the road's height.
+            const road = t.heightAt(at) / WORLD_SCALE;
+            const ground = this.terrain ? Math.max(road, this.terrain.worldHeight(gx, gy)) : road;
+            this._tvPos = new THREE.Vector3(gx / WORLD_SCALE, 7 + ground, gy / WORLD_SCALE);
         }
         this.camera.position.copy(this._tvPos);
         this.camera.lookAt(x, h + 0.6, z);
@@ -444,7 +467,28 @@ class SceneHandle {
         this.fx.exposure = 1;
         this.fx.bloomThreshold = 1.1;
         this.sky?.setRain(rain);
+        // Standing water, the rubbered line drying first, and wet gravel and run-off tarmac
+        // (environment.js wets the road itself).
+        this.trackside?.setWet(rain);
+        this.trackside?.setRubber(this.trackside.level, rain);
+        const r = this.runoffMats;
+        if (r) {
+            for (const [mat, dry] of r.dry) {
+                mat.color.copy(dry.color).multiplyScalar(rain ? dry.wetShade : 1);
+                mat.roughness = rain ? dry.wetRough : dry.roughness;
+            }
+        }
         this.captureEnvironment();
+    }
+
+    /** Rubber down on the racing line (0..1, track.js rubberAt) and whether it is raining. */
+    setRubber(r, wet) {
+        this.trackside?.setRubber(r, wet);
+    }
+
+    /** World height of the ground under a sim point (the road's height on the Playground's flat lawn: 0). */
+    groundHeight(xSim, ySim) {
+        return this.terrain ? this.terrain.worldHeight(xSim, ySim) : 0;
     }
 
     /** Re-render the sky dome into a PMREM cube for image-based lighting and reflections. */
@@ -452,7 +496,7 @@ class SceneHandle {
         if (!this.sky) return;
         try {
             if (!this.envSky) {
-                this.envSky = new Sky(this.track.id);
+                this.envSky = new Sky(this.theme);
                 this.envScene = new THREE.Scene();
                 this.envScene.add(this.envSky.mesh);
             }
@@ -483,34 +527,43 @@ class SceneHandle {
 
         this.disposeTrackMeshes();
         this.track = buildTrack(world);
+        const t = this.track;
+        this.theme = themeOf(t);
+        this.playground = isPlayground(t);
         const group = new THREE.Group();
         group.name = 'pocabinet-track';
-        const plaza = this.track.id === 'pressbriefing';
+        const plaza = this.theme === 'pressbriefing';
 
-        // Ground: reaches past the fog's far edge so it fades into the sky's horizon.
-        const minX = Number(world.minX) || 0, maxX = Number(world.maxX) || 0;
-        const minY = Number(world.minY) || 0, maxY = Number(world.maxY) || 0;
+        // Ground: reaches past the fog's far edge so it fades into the sky's horizon. A terrain
+        // that follows the road everywhere but the Playground, whose lawn is flat.
         const reach = (Number(atmosphere.fogEnd) || 900) * 1.3;
-        const w = (maxX - minX) / WORLD_SCALE + reach * 2, d = (maxY - minY) / WORLD_SCALE + reach * 2;
-        const groundGeom = new THREE.PlaneGeometry(w, d);
-        groundGeom.rotateX(-Math.PI / 2);
-        scaleUv(groundGeom, w / (plaza ? 5 : 7), d / (plaza ? 5 : 7));
+        const tile = plaza ? 5 : 7;
         const tex = plaza ? asphalt() : grassTextures();
         const groundMat = macro(new THREE.MeshStandardMaterial({
             color: hex(atmosphere.groundHex, '#2a3a24'), roughness: plaza ? 0.75 : 0.95, metalness: 0,
             map: tex.map, normalMap: tex.normalMap, normalScale: new THREE.Vector2(0.6, 0.6),
             roughnessMap: plaza ? tex.roughnessMap : null,
         }), plaza ? 40 : 70, plaza ? 0.15 : 0.35);
-        const ground = new THREE.Mesh(groundGeom, groundMat);
-        ground.position.set((minX + maxX) / 2 / WORLD_SCALE, 0, (minY + maxY) / 2 / WORLD_SCALE);
-        ground.receiveShadow = true;
+        let ground = null;
+        if (!this.playground) {
+            try {
+                this.terrain = new Terrain(t, this.theme);
+                ground = this.terrain.mesh(groundMat, reach, tile);
+            } catch (e) {
+                this.terrain = null;
+                console.warn('pocabinet/scene: terrain skipped', e);
+            }
+        }
+        if (!ground) ground = flatGround(world, groundMat, reach, tile);
         group.add(ground);
         this.groundMesh = ground;
 
-        const hw = this.track.halfWidth;
+        const hw = t.halfWidth;
         const tar = asphalt();
-        const built = (i) => this.track.built(i);
-        this.roadMesh = new THREE.Mesh(ribbon(this.track, -hw, hw, 0.02, 45, built),
+        const built = (i) => t.built(i);
+        // The Playground keeps the straight-up normals it always had; a hill shades as one.
+        const flat = this.playground;
+        this.roadMesh = new THREE.Mesh(ribbon(t, (i) => -t.hw[i], (i) => t.hw[i], 0.02, 45, built, { flat }),
             macro(new THREE.MeshStandardMaterial({
                 color: hex(atmosphere.roadHex, '#393b42'), roughness: 1, metalness: 0,
                 map: tar.map, normalMap: tar.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: tar.roughnessMap,
@@ -518,34 +571,38 @@ class SceneHandle {
             }), 30, 0.2));
         this.roadMesh.receiveShadow = true;
         group.add(this.roadMesh);
-        // A road in the air has no lawn beside it: deck the run-off out to where a car is stopped.
-        if (this.track.z) {
-            const deckMat = new THREE.MeshStandardMaterial({
-                color: hex(atmosphere.groundHex, '#2a3a24').multiplyScalar(0.8), roughness: 0.9, metalness: 0, side: THREE.DoubleSide,
-            });
-            for (const [a, b] of [[-hw - RUN_OFF, -hw], [hw, hw + RUN_OFF]]) {
-                const deck = new THREE.Mesh(ribbon(this.track, a, b, 0.02, 45, built), deckMat);
-                deck.receiveShadow = true;
-                deck.castShadow = true;
-                group.add(deck);
+        if (this.playground) {
+            // A road in the air has no lawn beside it: deck the run-off out to where a car is stopped.
+            if (t.z) {
+                const deckMat = new THREE.MeshStandardMaterial({
+                    color: hex(atmosphere.groundHex, '#2a3a24').multiplyScalar(0.8), roughness: 0.9, metalness: 0, side: THREE.DoubleSide,
+                });
+                for (const [a, b] of [[-hw - RUN_OFF, -hw], [hw, hw + RUN_OFF]]) {
+                    const deck = new THREE.Mesh(ribbon(t, a, b, 0.02, 45, built, { flat }), deckMat);
+                    deck.receiveShadow = true;
+                    deck.castShadow = true;
+                    group.add(deck);
+                }
+                this.roadMesh.castShadow = true;
             }
-            this.roadMesh.castShadow = true;
-        }
-        // Where the track stands in for a model's gutter (Playground): the gutter's floor
-        // without its walls, as wide as the tarmac and run-off together, the run-off a shade
-        // darker. Three strips that meet under the edge lines, not one: where the bank
-        // changes a strip twists, and a line laid on a wider strip dips through it.
-        if (this.track.roadFrom) {
-            const reach = hw + RUN_OFF + 8;   // a car stopped at the edge keeps its wheels on it
-            const onChute = (i) => this.track.drawn(i) && !built(i);
-            for (const [a, b, shade] of [[-reach, -hw, 0.72], [-hw, hw, 1], [hw, reach, 0.72]]) {
-                const chute = new THREE.Mesh(ribbon(this.track, a, b, 0.02, 45, onChute), new THREE.MeshStandardMaterial({
-                    color: hex(PLAYGROUND.chuteHex, '#2f86d6').multiplyScalar(shade), roughness: 0.55, metalness: 0, side: THREE.DoubleSide,
-                }));
-                chute.receiveShadow = true;
-                chute.castShadow = true;
-                group.add(chute);
+            // Where the track stands in for a model's gutter (Playground): the gutter's floor
+            // without its walls, as wide as the tarmac and run-off together, the run-off a shade
+            // darker. Three strips that meet under the edge lines, not one: where the bank
+            // changes a strip twists, and a line laid on a wider strip dips through it.
+            if (t.roadFrom) {
+                const out = hw + RUN_OFF + 8;   // a car stopped at the edge keeps its wheels on it
+                const onChute = (i) => t.drawn(i) && !built(i);
+                for (const [a, b, shade] of [[-out, -hw, 0.72], [-hw, hw, 1], [hw, out, 0.72]]) {
+                    const chute = new THREE.Mesh(ribbon(t, a, b, 0.02, 45, onChute, { flat }), new THREE.MeshStandardMaterial({
+                        color: hex(PLAYGROUND.chuteHex, '#2f86d6').multiplyScalar(shade), roughness: 0.55, metalness: 0, side: THREE.DoubleSide,
+                    }));
+                    chute.receiveShadow = true;
+                    chute.castShadow = true;
+                    group.add(chute);
+                }
             }
+        } else {
+            this.buildRunoff(group, atmosphere, groundMat, tile);
         }
 
         // Edge lines on the tarmac, then the barriers where physics puts the wall.
@@ -554,35 +611,43 @@ class SceneHandle {
         });
         // On the Playground's chute the lines are all that marks the tarmac: outside them is
         // run-off, which drags like grass.
-        for (const [a, b] of [[-hw, -hw + 2.2], [hw - 2.2, hw]]) {
-            const line = new THREE.Mesh(ribbon(this.track, a, b, 0.03, 45), lineMat);
+        for (const [a, b] of [[(i) => -t.hw[i], (i) => -t.hw[i] + 2.2], [(i) => t.hw[i] - 2.2, (i) => t.hw[i]]]) {
+            const line = new THREE.Mesh(ribbon(t, a, b, 0.03, 45, undefined, { flat }), lineMat);
             line.receiveShadow = true;
             group.add(line);
         }
-        // physics.js stops a car's centre at hw + RUN_OFF - CAR_RADIUS/2; its flank is
-        // half a car width further out, so that is where the barrier face belongs.
-        // The Playground run has none: in its gutter the gutter's
-        // own sides are the wall, and on its ramp and slide the edge of the deck is. The
-        // physics still stops a car there.
-        const wallLat = hw + RUN_OFF;
+        // physics.js stops a car's centre at wallAt (hw + run-off depth - CAR_RADIUS/2); its
+        // flank is half a car width further out, so that is where the barrier face belongs.
+        // The Playground run has none: in its gutter the gutter's own sides are the wall, and
+        // on its ramp and slide the edge of the deck is. The physics still stops a car there.
         const barrierMat = new THREE.MeshStandardMaterial({
             map: barrierTexture(atmosphere.accentHex), roughness: 0.6, metalness: 0.1, side: THREE.DoubleSide,
         });
-        for (const s of this.track.z ? [] : [-1, 1]) {
-            const wallMesh = new THREE.Mesh(barrier(this.track, s * wallLat, s, 0.7, 2.5), barrierMat);
+        for (const s of this.playground ? [] : [-1, 1]) {
+            const wallMesh = new THREE.Mesh(barrier(t, (i) => s * wallFace(t, i, s), s, 0.7, 2.5), barrierMat);
             wallMesh.castShadow = true;
             wallMesh.receiveShadow = true;
             group.add(wallMesh);
         }
 
-        group.add(startLine(this.track));
+        group.add(startLine(t));
 
-        this.racingLine = racingLineMesh(this.track);
+        this.racingLine = racingLineMesh(t);
         this.racingLine.visible = false;
         group.add(this.racingLine);
 
+        if (!this.playground) {
+            try {
+                this.trackside = new Trackside(t, { theme: this.theme, terrain: this.terrain, atmosphere });
+                group.add(this.trackside.group);
+            } catch (e) {
+                this.trackside = null;
+                console.warn('pocabinet/scene: trackside skipped', e);
+            }
+        }
+
         try {
-            this.sky = new Sky(this.track.id);
+            this.sky = new Sky(this.theme);
             group.add(this.sky.mesh);
             this.sunDir = new THREE.Vector3(...this.sky.preset.sun).normalize();
             const light = this.sky.lightDirection();
@@ -597,7 +662,9 @@ class SceneHandle {
             console.warn('pocabinet/scene: sky skipped', e);
         }
         try {
-            this.scenery = new Scenery(this.track, { ...world, kerbs: computeKerbs(this.track) });
+            this.scenery = new Scenery(t, {
+                ...world, kerbs: computeKerbs(t), theme: this.theme, terrain: this.terrain, playground: this.playground,
+            });
             group.add(this.scenery.group);
         } catch (e) {
             this.scenery = null;
@@ -608,7 +675,65 @@ class SceneHandle {
         this.trackGroup = group;
         this.buildGrass();
         this.setWeather(false);
-        if (this.track.id === 'playground') this.loadPlayground(group);
+        if (t.id === 'playground') this.loadPlayground(group);
+    }
+
+    /**
+     * Run-off either side, per sample as deep as the physics makes it (runOffAt): the lawn
+     * (the ground's own material, mapped the same, so it meets the terrain seamlessly), a
+     * gravel trap (beach sand at Mar-a-Lago) or tarmac run-off with painted track-limit
+     * stripes along the edge. Laid on the road's plane, a hair under the tarmac, and on under
+     * the barrier.
+     */
+    buildRunoff(group, atmosphere, lawn, lawnTile) {
+        const t = this.track;
+        const beach = this.theme === 'maralago';
+        const g = beach ? sand() : gravel();
+        const gravelMat = macro(new THREE.MeshStandardMaterial({
+            color: beach ? '#efe3c6' : '#c4b8a2', map: g.map, normalMap: g.normalMap,
+            normalScale: new THREE.Vector2(beach ? 0.5 : 1, beach ? 0.5 : 1), roughness: 1, metalness: 0,
+        }), 25, 0.2);
+        const tar = asphalt();
+        const runMat = macro(new THREE.MeshStandardMaterial({
+            color: hex(atmosphere.roadHex, '#393b42').multiplyScalar(1.18).lerp(new THREE.Color('#5a6272'), 0.18),
+            map: tar.map, normalMap: tar.normalMap, normalScale: new THREE.Vector2(0.7, 0.7), roughnessMap: tar.roughnessMap,
+            roughness: 1, metalness: 0,
+        }), 30, 0.2);
+        const blue = this.theme === 'pressbriefing' || this.theme === 'maralago';
+        const stripeMat = new THREE.MeshStandardMaterial({
+            map: limitStripes(blue ? '#1f5fbf' : '#c8202a', '#f2f2f2'), roughness: 0.55, metalness: 0,
+            polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+        });
+        const dry = new Map();
+        dry.set(gravelMat, { color: gravelMat.color.clone(), roughness: 1, wetShade: 0.72, wetRough: 0.6 });
+        dry.set(runMat, { color: runMat.color.clone(), roughness: 1, wetShade: 0.58, wetRough: 0.32 });
+        dry.set(stripeMat, { color: stripeMat.color.clone(), roughness: 0.55, wetShade: 0.8, wetRough: 0.25 });
+        this.runoffMats = { dry };
+        const mats = [lawn, gravelMat, runMat];
+        const tiles = [lawnTile, beach ? 4 : 2.6, 4.5];
+        for (const side of [-1, 1]) {
+            const inner = (i) => t.hw[i] - 0.5;   // tucked under the tarmac's edge
+            const outer = (i) => t.hw[i] + runOffAt(t, i, side) + 3;
+            const from = side < 0 ? (i) => -outer(i) : inner;
+            const to = side < 0 ? (i) => -inner(i) : outer;
+            for (const kind of [0, 1, 2]) {
+                const pick = (i) => t.drawn(i) && t.runoffAt(i, side) === kind;
+                let any = false;
+                for (let i = 0; i < t.count && !any; i++) any = pick(i);
+                if (!any) continue;
+                const mesh = new THREE.Mesh(ribbon(t, from, to, 0.012, 45, pick, { worldTile: tiles[kind] }), mats[kind]);
+                mesh.name = `pocabinet-runoff-${['grass', 'gravel', 'tarmac'][kind]}`;
+                mesh.receiveShadow = true;
+                group.add(mesh);
+                if (kind !== 2) continue;
+                // Track limits: a painted band along the edge of the tarmac run-off.
+                const a = side < 0 ? (i) => -(t.hw[i] + 5) : (i) => t.hw[i] + 0.5;
+                const b = side < 0 ? (i) => -(t.hw[i] + 0.5) : (i) => t.hw[i] + 5;
+                const stripes = new THREE.Mesh(ribbon(t, a, b, 0.022, 24, pick), stripeMat);
+                stripes.receiveShadow = true;
+                group.add(stripes);
+            }
+        }
     }
 
     /** Fetch and place playground.glb into `group`; non-fatal, and dropped if the track changed meanwhile. */
@@ -667,9 +792,11 @@ class SceneHandle {
         }
         this.grass = null;
         const blades = GRASS_BLADES[this.quality] || 0;
-        if (!this.track || !blades || this.track.id === 'pressbriefing') return;
+        if (!this.track || !blades || this.theme === 'pressbriefing') return;
         try {
-            this.grass = new Grass(this.track, hex(this.baseAtmosphere?.groundHex, '#2a3a24'), blades, keepOutFor(this.track.id));
+            this.grass = new Grass(this.track, hex(this.baseAtmosphere?.groundHex, '#2a3a24'), blades, {
+                keepOut: keepOutFor(this.track.id), terrain: this.terrain, playground: this.playground,
+            });
             this.scene.add(this.grass.mesh);
         } catch (e) {
             this.grass = null;
@@ -686,6 +813,11 @@ class SceneHandle {
         if (!this.trackGroup) return;
         this.scene.remove(this.trackGroup);
         this.scenery?.dispose();
+        this.trackside?.dispose();
+        this.trackside = null;
+        this.terrain?.dispose();
+        this.terrain = null;
+        this.runoffMats = null;
         disposeObject(this.trackGroup);
         for (const t of this.ownedTextures) t.dispose();
         this.ownedTextures = [];
@@ -755,28 +887,56 @@ function bankHeight(track, k, lat) {
 }
 
 /**
- * A strip between two lateral offsets, following the road's height and bank;
- * uv = (lateral, distance) / tile (sim units). `pick(i)` chooses the segments to lay
- * (default: everything but the return link).
+ * The road surface's normal at sample `k` (world space): tilted back by the grade and
+ * across by the bank. Straight up on a flat track.
  */
-function ribbon(track, fromLat, toLat, height, tile, pick = (i) => track.drawn(i)) {
-    const positions = [], uvs = [];
+function roadNormal(track, k, out) {
     const n = track.count;
+    const p = (k - 1 + n) % n, q = (k + 1) % n;
+    const span = track.segLen[p] + track.segLen[k];
+    const g = track.z && span > 1e-9 ? (track.z[q] - track.z[p]) / span : 0;
+    const b = track.bank ? track.bank[k] : 0;
+    const tx = track.tx[k], ty = track.ty[k];
+    // (lateral, bank) x (forward, grade), lateral = (-ty, tx).
+    return out.set(b * ty - tx * g, 1, -ty * g - b * tx).normalize();
+}
+
+/**
+ * A strip between two lateral offsets (sim units; numbers, or functions of the sample for a
+ * road whose width changes), following the road's height and bank; uv = (lateral, distance)
+ * / tile (sim units), or world xz / opts.worldTile (world units) for a surface that has to
+ * meet the terrain's mapping. `pick(i)` chooses the segments to lay (default: everything
+ * but the return link). Normals follow the road's slope, or point straight up (opts.flat).
+ */
+function ribbon(track, fromLat, toLat, height, tile, pick = (i) => track.drawn(i), opts = {}) {
+    const from = typeof fromLat === 'function' ? fromLat : () => fromLat;
+    const to = typeof toLat === 'function' ? toLat : () => toLat;
+    const positions = [], uvs = [], normals = [];
+    const n = track.count;
+    const nrm = new THREE.Vector3();
     for (let i = 0; i <= n; i++) {
         const k = i % n;
         const nx = -track.ty[k], ny = track.tx[k];
         const x = track.x[k], y = track.y[k];
         const h = height + roadHeight(track, k);
-        positions.push(
-            (x + nx * fromLat) / WORLD_SCALE, h + bankHeight(track, k, fromLat), (y + ny * fromLat) / WORLD_SCALE,
-            (x + nx * toLat) / WORLD_SCALE, h + bankHeight(track, k, toLat), (y + ny * toLat) / WORLD_SCALE,
-        );
-        const v = (i === n ? track.length : track.cum[k]) / tile;
-        uvs.push(fromLat / tile, v, toLat / tile, v);
+        const a = from(k), b = to(k);
+        const ax = (x + nx * a) / WORLD_SCALE, az = (y + ny * a) / WORLD_SCALE;
+        const bx = (x + nx * b) / WORLD_SCALE, bz = (y + ny * b) / WORLD_SCALE;
+        positions.push(ax, h + bankHeight(track, k, a), az, bx, h + bankHeight(track, k, b), bz);
+        if (opts.worldTile) {
+            uvs.push(ax / opts.worldTile, az / opts.worldTile, bx / opts.worldTile, bz / opts.worldTile);
+        } else {
+            const v = (i === n ? track.length : track.cum[k]) / tile;
+            uvs.push(a / tile, v, b / tile, v);
+        }
+        if (opts.flat) nrm.set(0, 1, 0);
+        else roadNormal(track, k, nrm);
+        normals.push(nrm.x, nrm.y, nrm.z, nrm.x, nrm.y, nrm.z);
     }
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geom.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     const indices = [];
     for (let i = 0; i < n; i++) {
         if (!pick(i)) continue;
@@ -784,28 +944,45 @@ function ribbon(track, fromLat, toLat, height, tile, pick = (i) => track.drawn(i
         indices.push(a0, a1, b0, a1, b1, b0);
     }
     geom.setIndex(indices);
-    geom.computeVertexNormals();
-    // A flat road: force the normals straight up (winding differs per side).
-    const nrm = geom.attributes.normal;
-    for (let i = 0; i < nrm.count; i++) nrm.setXYZ(i, 0, 1, 0);
     return geom;
 }
 
+/** The Playground's lawn (and the fallback if the terrain fails): one flat plane past the fog. */
+function flatGround(world, material, reach, tile) {
+    const minX = Number(world.minX) || 0, maxX = Number(world.maxX) || 0;
+    const minY = Number(world.minY) || 0, maxY = Number(world.maxY) || 0;
+    const w = (maxX - minX) / WORLD_SCALE + reach * 2, d = (maxY - minY) / WORLD_SCALE + reach * 2;
+    const geom = new THREE.PlaneGeometry(w, d);
+    geom.rotateX(-Math.PI / 2);
+    scaleUv(geom, w / tile, d / tile);
+    const ground = new THREE.Mesh(geom, material);
+    ground.position.set((minX + maxX) / 2 / WORLD_SCALE, 0, (minY + maxY) / 2 / WORLD_SCALE);
+    ground.receiveShadow = true;
+    return ground;
+}
+
 /**
- * Barrier wall: inner face at `lateral`, a top, and an outer face `thick` sim units
- * further out (on side `s`). uv.x runs along the lap for the striped texture.
+ * Barrier wall: inner face at `lateral` (a number, or a function of the sample), a top, and
+ * an outer face `thick` sim units further out (on side `s`), standing on the road's plane
+ * (height and bank) with its foot sunk below it so no slope of the ground opens a gap.
+ * uv.x runs along the lap for the striped texture.
  */
 function barrier(track, lateral, s, height, thick) {
+    const lat = typeof lateral === 'function' ? lateral : () => lateral;
     const positions = [], uvs = [];
     const n = track.count;
-    const rows = [[lateral, 0], [lateral, height], [lateral + s * thick, height], [lateral + s * thick, 0]];
+    const rows = [[0, -0.3], [0, height], [s * thick, height], [s * thick, -1.2]];
     const vs = [0, 0.8, 0.9, 1];
     for (let i = 0; i <= n; i++) {
         const k = i % n;
         const nx = -track.ty[k], ny = track.tx[k];
         const u = (i === n ? track.length : track.cum[k]) / 80;
-        rows.forEach(([lat, h], r) => {
-            positions.push((track.x[k] + nx * lat) / WORLD_SCALE, h, (track.y[k] + ny * lat) / WORLD_SCALE);
+        const face = lat(k);
+        // The top follows the plane at the face, so the wall stands level across its thickness.
+        const base = roadHeight(track, k) + bankHeight(track, k, face);
+        rows.forEach(([dl, h], r) => {
+            const l = face + dl;
+            positions.push((track.x[k] + nx * l) / WORLD_SCALE, base + h, (track.y[k] + ny * l) / WORLD_SCALE);
             uvs.push(u, vs[r]);
         });
     }
@@ -851,8 +1028,9 @@ function barrierTexture(accentHex) {
 function startLine(track) {
     const group = new THREE.Group();
     const p = track.pointAt(track.lapLength);
-    const y = 0.035 + track.heightAt(track.lapLength) / WORLD_SCALE;
-    const cols = 12, rows = 2, hw = track.halfWidth;
+    const y0 = 0.035 + track.heightAt(track.lapLength) / WORLD_SCALE;
+    const bank = track.bankAt(track.lapLength);
+    const cols = 12, rows = 2, hw = track.hw[track.indexAt(track.lapLength)];
     const cell = (hw * 2) / cols;
     const geom = new THREE.PlaneGeometry(cell / WORLD_SCALE, cell / WORLD_SCALE);
     geom.rotateX(-Math.PI / 2);
@@ -865,7 +1043,7 @@ function startLine(track) {
             const m = new THREE.Mesh(geom, (r + c) % 2 === 0 ? white : black);
             m.position.set(
                 (p.x + -p.ty * lat + p.tx * fwd) / WORLD_SCALE,
-                y,
+                y0 + bank * lat / WORLD_SCALE,
                 (p.y + p.tx * lat + p.ty * fwd) / WORLD_SCALE);
             m.rotation.y = -Math.atan2(p.ty, p.tx);
             m.receiveShadow = true;

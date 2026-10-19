@@ -39,17 +39,19 @@ public class PoCabinetTrackRenderUiTests
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
 
         // The tracks each carry their id as data-track-id; verifying the
-        // ids by attribute avoids coupling the test to label text or layout.
+        // ids by attribute avoids coupling the test to label text or layout. The cards render after
+        // the guest sign-in and the stored settings are read, which can trail NetworkIdle.
+        await page.Locator(".pocabinet-track").First.WaitForAsync(new() { Timeout = 30_000 });
         var ids = await page.Locator(".pocabinet-track").EvaluateAllAsync<string[]>(
             "els => els.map(e => e.getAttribute('data-track-id'))");
-        ids.Should().BeEquivalentTo(new[] { "capitol", "maralago", "pressbriefing", "playground" },
-            because: "the track selector must show all four themed tracks");
+        ids.Should().BeEquivalentTo(new[] { "capitol", "maralago", "pressbriefing", "playground", "senate", PoMiniGames.Shared.Games.PoCabinetDailyTrack.TodayId(DateTime.UtcNow) },
+            because: "the track selector must show the five themed tracks and today's daily circuit");
 
         // Atmosphere accent colours differ per track (gold trim, palm green,
-        // podium red, slide orange). Asserting that all four swatches are present proves the
+        // podium red, slide orange, autumn rust, daily violet). Asserting that every swatch is present proves the
         // CSS theme variables resolved.
         var accents = await page.Locator(".pocabinet-track__swatch").CountAsync();
-        accents.Should().Be(4,
+        accents.Should().Be(6,
             "each track card must render an atmosphere swatch so the player can compare tracks at a glance");
     }
 }

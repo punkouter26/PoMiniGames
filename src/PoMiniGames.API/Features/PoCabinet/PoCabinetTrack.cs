@@ -10,6 +10,11 @@ public readonly record struct PoCabinetTrackProjection(int Index, double Along, 
 /// <summary>A point at an arc-length distance along the centerline, with its unit tangent.</summary>
 public readonly record struct PoCabinetTrackPoint(double X, double Y, double Tx, double Ty);
 
+/// <summary>A road divider on samples [From, To) between two lateral offsets; ShortSide is the
+/// joker lane; FromAlong/ToAlong are its ends along the loop and HalfWidth the road's there.</summary>
+public sealed record PoCabinetTrackIsland(int From, int To, double LatFrom, double LatTo, int ShortSide,
+    double FromAlong, double ToAlong, double HalfWidth);
+
 /// <summary>
 /// Runtime view of one track: the resampled centerline from <see cref="PoCabinetTrackGeometry"/>
 /// plus the arc-length tables and curvature the physics and AI need. Built once per track id.
@@ -25,6 +30,15 @@ public sealed class PoCabinetTrack
 {
     /// <summary>Distance step used when scanning ahead for the tightest corner.</summary>
     public const double CurvatureSampleStep = 8;
+    /// <summary>Track evolution (<see cref="GripAt"/>): rubber goes down on the racing line over
+    /// this much race time; on it the grip rises (more again in the wet, where the line dries
+    /// first), and well off it the marbles take a little away. Mirrors track.js.</summary>
+    public const double RubberSeconds = 90;
+    private const double RubberBand = 24;
+    private const double RubberDry = 0.05;
+    private const double RubberWet = 0.1;
+    private const double MarblesFrom = 50;
+    private const double Marbles = 0.04;
 
     private static readonly ConcurrentDictionary<string, PoCabinetTrack> Cache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -41,11 +55,26 @@ public sealed class PoCabinetTrack
     private readonly double[]? _bank;
     private readonly bool _pointToPoint;
     private readonly double _parkAt;
+    /// <summary>Track features, the world's own arrays (<see cref="PoCabinetTrackFeatures"/>):
+    /// half width, run-off either side, apex kerbs, the racing line, patches, dividers.</summary>
+    private readonly double[] _hw;
+    private readonly int[] _runoffLeft;
+    private readonly int[] _runoffRight;
+    private readonly int[] _kerbs;
+    private readonly double[] _line;
+    private readonly PoCabinetPatchWire[] _patches;
+    private readonly PoCabinetTrackIsland[] _islands;
+    private readonly int[] _islandOf;
+    private readonly double[] _islandLo;
+    private readonly double[] _islandHi;
+    /// <summary>Samples over which a divider tapers to a point at either end. Mirrors track.js.</summary>
+    private const double IslandTaper = 4;
 
     private PoCabinetTrack(PoCabinetTrackDefinition def)
     {
         Id = def.Id;
         HalfWidth = def.TrackWidth * 0.5;
+        var world = PoCabinetTrackGeometry.BuildStaticWorld(def);
         var xy = PoCabinetTrackGeometry.BuildCenterlineXY(def);
         Count = xy.Length / 2;
         _x = new double[Count];
@@ -103,6 +132,82 @@ public sealed class PoCabinetTrack
         {
             _curv[i] = (raw[(i - 1 + Count) % Count] + raw[i] + raw[(i + 1) % Count]) / 3.0;
         }
+
+        _hw = world.HalfWidths.Count == Count ? [.. world.HalfWidths] : Enumerable.Repeat(HalfWidth, Count).ToArray();
+        _runoffLeft = world.RunoffLeft.Count == Count ? [.. world.RunoffLeft] : new int[Count];
+        _runoffRight = world.RunoffRight.Count == Count ? [.. world.RunoffRight] : new int[Count];
+        _kerbs = world.Kerbs.Count == Count ? [.. world.Kerbs] : new int[Count];
+        _line = world.RacingLine.Count == Count ? [.. world.RacingLine] : new double[Count];
+        _patches = [.. world.Patches];
+        _islands = world.Islands.Select(s => new PoCabinetTrackIsland(
+            s.From, s.To, s.LatFrom, s.LatTo, s.ShortSide == 0 ? 1 : s.ShortSide,
+            _cum[s.From], _cum[s.To], _hw[(s.From + ((s.To - s.From) >> 1)) % Count])).ToArray();
+        // Which divider stands on each sample (-1: none) and how wide it is there: it tapers to a
+        // point over its first and last IslandTaper samples, so a car meeting its nose glances off.
+        _islandOf = Enumerable.Repeat(-1, Count).ToArray();
+        _islandLo = new double[Count];
+        _islandHi = new double[Count];
+        for (int k = 0; k < _islands.Length; k++)
+        {
+            var s = _islands[k];
+            int n = (s.To - s.From + Count) % Count;
+            double mid = (s.LatFrom + s.LatTo) * 0.5, half = (s.LatTo - s.LatFrom) * 0.5;
+            for (int j = 0; j < n; j++)
+            {
+                int i = (s.From + j) % Count;
+                double t = Math.Min(1, Math.Min((j + 1) / IslandTaper, (n - j) / IslandTaper));
+                _islandOf[i] = k;
+                _islandLo[i] = mid - half * t;
+                _islandHi[i] = mid + half * t;
+            }
+        }
+    }
+
+    /// <summary>Index into <see cref="Islands"/> of the divider on sample <paramref name="i"/>, or -1.</summary>
+    public int IslandIndexAt(int i) => _islandOf[i];
+
+    /// <summary>The divider's lateral extent at sample <paramref name="i"/> (tapered at its ends).</summary>
+    public double IslandLo(int i) => _islandLo[i];
+
+    public double IslandHi(int i) => _islandHi[i];
+
+    /// <summary>How much rubber is down <paramref name="elapsed"/> seconds into a race, 0..1. Mirrors track.js <c>rubberAt</c>.</summary>
+    public static double RubberAt(double elapsed) => Math.Min(1, Math.Max(0, elapsed / RubberSeconds));
+
+    /// <summary>Road half width at sample <paramref name="i"/>. Mirrors track.js <c>hwAt</c>.</summary>
+    public double HalfWidthAt(int i) => _hw[i];
+
+    /// <summary>Run-off kind at sample <paramref name="i"/> on <paramref name="side"/> (+1 right): 0 grass, 1 gravel, 2 tarmac.</summary>
+    public int RunoffAt(int i, int side) => side > 0 ? _runoffRight[i] : _runoffLeft[i];
+
+    /// <summary>Apex kerb at sample <paramref name="i"/>: 0, ±1 flat, ±2 raised (sign = side).</summary>
+    public int KerbAt(int i) => _kerbs[i];
+
+    /// <summary>The road dividers, in the world's order.</summary>
+    public IReadOnlyList<PoCabinetTrackIsland> Islands => _islands;
+
+    /// <summary>The divider standing on sample <paramref name="i"/>, or null. Mirrors track.js <c>islandAt</c>.</summary>
+    public PoCabinetTrackIsland? IslandAt(int i) => _islandOf[i] >= 0 ? _islands[_islandOf[i]] : null;
+
+    /// <summary>
+    /// What the road itself does to grip at sample <paramref name="i"/>, <paramref name="lateral"/>
+    /// from the centerline: its patches, in order, then the rubber on the racing line (and the
+    /// marbles off it). Mirrors track.js <c>gripAt</c>, operation for operation.
+    /// </summary>
+    public double GripAt(int i, double lateral, bool wet, double rubber)
+    {
+        double g = 1;
+        foreach (var p in _patches)
+        {
+            if (i >= p.From && i < p.To && lateral >= p.LatFrom && lateral <= p.LatTo) g *= wet ? p.WetGrip : p.DryGrip;
+        }
+        if (rubber > 0 && Math.Abs(lateral) <= _hw[i])
+        {
+            double off = Math.Abs(lateral - _line[i]);
+            if (off < RubberBand) g *= 1 + (wet ? RubberWet : RubberDry) * rubber;
+            else if (off > MarblesFrom && !wet) g *= 1 - Marbles * rubber;
+        }
+        return g;
     }
 
     /// <summary>Rise per unit of road along segment <paramref name=i/> (+ = uphill in the

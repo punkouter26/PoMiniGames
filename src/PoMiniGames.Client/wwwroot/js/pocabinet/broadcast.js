@@ -140,8 +140,8 @@ export class Broadcast {
     }
 
     onLap(car) {
-        // Lap one starts from the grid, behind the line: not a flying lap.
-        if (car.lapsDone < 2 || !(car.lastLap > 0)) return;
+        // Lap one starts from the grid, behind the line: not a flying lap. A lap past track limits never counts.
+        if (car.lapsDone < 2 || !(car.lastLap > 0) || car.lastLapValid === false) return;
         if (this.fastest > 0 && car.lastLap >= this.fastest) return;
         this.fastest = car.lastLap;
         this.fastestId = car.id;

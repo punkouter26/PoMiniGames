@@ -12,18 +12,23 @@
 //
 // Deterministic: placement uses an RNG seeded by the track id, so every player
 // sees the same island of props. Everything is placed outside the barrier line
-// (checked against the full centerline), so nothing sits where physics runs.
+// (checked against the full centerline, at each sample's own width and run-off depth), so
+// nothing sits where physics runs. What the track is dressed as (landmark, planting,
+// billboards) is its theme (track.theme: Capitol, Mar-a-Lago, Press Briefing, Senate Hill);
+// everything stands on the terrain (terrain.js heightAt), the kerbs on the road's plane.
 //
 // Built once per SceneHandle.setTrack and added to the track group, so the
 // group's traversal disposes geometry and materials; textures are cached per
 // module (a handful of small canvases) and live for the page.
 
 import * as THREE from 'three';
-import { RUN_OFF } from './physics.js';
-import { KERB_INNER, KERB_OUTER } from './kerbs.js';
+import { KERB_INNER, KERB_OUTER, raised } from './kerbs.js';
 import { wind, water } from './materials.js';
+import { themeOf, roadPlane, wallFace } from './terrain.js';
 
 const WS = 10; // sim → world (scene.js WORLD_SCALE)
+/** A raised kerb's hump starts this far past the edge line (sim units); the flat band stops there. */
+const SAUSAGE_FROM = 2;
 
 // ── Small helpers ────────────────────────────────────────────────────────────
 
@@ -53,7 +58,12 @@ function simAt(track, dist, lat) {
 /** Clear of the road and run-off by at least `margin` sim units, anywhere on the loop. */
 function clearOfTrack(track, x, y, margin) {
     const proj = track.project(x, y, -1);
-    return Math.abs(proj.lateral) > track.halfWidth + RUN_OFF + margin;
+    return Math.abs(proj.lateral) > wallFace(track, proj.index, proj.lateral > 0 ? 1 : -1) + margin;
+}
+
+/** The barrier's face at a distance along the loop on `side` (sim units from the centerline). */
+function wallAtDist(track, dist, side) {
+    return wallFace(track, track.indexAt(dist), side);
 }
 
 /** rotation.y that turns an object's local +Z toward world direction (dx, dz). */
@@ -130,6 +140,7 @@ const BILLBOARDS = {
     capitol: ['SPEED LIMIT: VETOED', 'FILIBUSTER ZONE', 'NO OVERTAKING WITHOUT A QUORUM', 'PIT STOP OF THE UNION'],
     maralago: ['MEMBERS ONLY', 'GOLF CARTS YIELD', 'RESORT SPEED LIMIT: NEGOTIABLE', 'VALET PARKING ONLY'],
     pressbriefing: ['NO FURTHER QUESTIONS', 'BREAKING: LAP RECORD', 'OFF THE RECORD', 'ALTERNATIVE LAP TIMES'],
+    senate: ['CLOTURE AHEAD', 'FILIBUSTER HILL', 'NO AMENDMENTS PAST THIS POINT', 'MAJORITY LEADER PARKING'],
 };
 
 // ── The scenery handle ───────────────────────────────────────────────────────
@@ -138,6 +149,8 @@ export class Scenery {
     constructor(track, world) {
         this.track = track;
         this.trackId = track.id;
+        this.theme = world.theme || themeOf(track);
+        this.terrain = world.terrain || null;
         this.atmosphere = world.atmosphere || {};
         this.group = new THREE.Group();
         this.group.name = 'pocabinet-scenery';
@@ -154,9 +167,10 @@ export class Scenery {
 
         this.buildKerbs(world.kerbs);
         this.buildGantry();
-        // A track with height (the Playground run) rides on a model that IS the scenery;
-        // everything below stands on the ground beside a flat road.
-        if (!track.z) {
+        // The Playground run rides on a model that IS the scenery; everywhere else the props
+        // below stand on the ground beside the road.
+        const playground = world.playground ?? !!track.z;
+        if (!playground) {
             this.buildLandmarks();
             this.buildLamps();
             this.buildPlanting();
@@ -178,19 +192,24 @@ export class Scenery {
         if (!kerbs) return;
         const t = this.track;
         const n = t.count;
-        const hw = t.halfWidth;
         const pos = [], col = [];
         const red = new THREE.Color('#d42a2a'), white = new THREE.Color('#f0f0f0');
-        // [x, z, y]: y is the road's own height on a track that has one.
+        // [x, z, y]: y is the road's plane (height and bank) at that lateral.
         const edge = (i, lat) => {
             const k = i % n;
-            return [(t.x[k] + -t.ty[k] * lat) / WS, (t.y[k] + t.tx[k] * lat) / WS, 0.045 + (t.z ? t.z[k] / WS : 0)];
+            return [(t.x[k] + -t.ty[k] * lat) / WS, (t.y[k] + t.tx[k] * lat) / WS, 0.045 + roadPlane(t, k, lat) / WS];
         };
+        const humps = [];
         for (let i = 0; i < n; i++) {
             const s = kerbs[i];
             if (!s || kerbs[(i + 1) % n] !== s) continue;
-            const inLat = s * (hw - KERB_INNER), outLat = s * (hw + KERB_OUTER);
-            const a0 = edge(i, inLat), a1 = edge(i, outLat), b0 = edge(i + 1, inLat), b1 = edge(i + 1, outLat);
+            const j = (i + 1) % n;
+            // A raised ("sausage") kerb: the flat red and white band stops at the edge line and the
+            // hump takes the rest of the band (buildSausages).
+            const hump = raised(t, i);
+            if (hump) humps.push(i);
+            const inLat = (k) => s * (t.hw[k] - KERB_INNER), outLat = (k) => s * (t.hw[k] + (hump ? SAUSAGE_FROM : KERB_OUTER));
+            const a0 = edge(i, inLat(i)), a1 = edge(i, outLat(i)), b0 = edge(j, inLat(j)), b1 = edge(j, outLat(j));
             for (let h = 0; h < 2; h++) {
                 const f0 = h / 2, f1 = (h + 1) / 2;
                 const lerp = (p, q, f) => p.map((v, j) => v + (q[j] - v) * f);
@@ -213,23 +232,86 @@ export class Scenery {
         mesh.userData.noShadow = true;
         mesh.receiveShadow = true;
         this.group.add(mesh);
+        if (humps.length) this.buildSausages(humps, kerbs);
+    }
+
+    /**
+     * Raised kerbs: a yellow and black hump from just outside the edge line to the outer edge
+     * of the kerb band (where physics.js scrubs speed and throws the car out), built on the
+     * road's plane. One mesh, vertex colours, faceted on purpose so the hump reads.
+     */
+    buildSausages(list, kerbs) {
+        const t = this.track, n = t.count;
+        // Cross-section: fraction across the hump, height (world units).
+        const profile = [[0, 0], [0.12, 0.09], [0.3, 0.15], [0.7, 0.15], [0.88, 0.09], [1, 0]];
+        const yellow = new THREE.Color('#f2c21b'), black = new THREE.Color('#1a1a1a');
+        const pos = [], col = [];
+        const at = (k, s, f, up) => {
+            const lat = s * (t.hw[k] + SAUSAGE_FROM + (KERB_OUTER - SAUSAGE_FROM) * f);
+            return [(t.x[k] - t.ty[k] * lat) / WS, roadPlane(t, k, lat) / WS + 0.04 + up, (t.y[k] + t.tx[k] * lat) / WS];
+        };
+        for (const i of list) {
+            const s = Math.sign(kerbs[i]);
+            const j = (i + 1) % n;
+            for (let h = 0; h < 2; h++) {
+                const f0 = h / 2, f1 = (h + 1) / 2;
+                const c = (i * 2 + h) % 2 ? black : yellow;
+                for (let p = 0; p < profile.length - 1; p++) {
+                    const quad = [];
+                    const A = (pf) => {
+                        const a = at(i, s, profile[pf][0], profile[pf][1]), b = at(j, s, profile[pf][0], profile[pf][1]);
+                        return [a.map((v, q) => v + (b[q] - v) * f0), a.map((v, q) => v + (b[q] - v) * f1)];
+                    };
+                    const [p0, q0] = A(p), [p1, q1] = A(p + 1);
+                    quad.push(p0, p1, q0, p1, q1, q0);
+                    // Wound so the outside faces up on either side of the road.
+                    const tri = s > 0 ? quad : [p1, p0, q0, q1, p1, q0];
+                    for (const v of tri) pos.push(v[0], v[1], v[2]);
+                    const shade = 0.85 + 0.15 * Math.sin(Math.PI * (p + 0.5) / (profile.length - 1));
+                    for (let v = 0; v < 6; v++) col.push(c.r * shade, c.g * shade, c.b * shade);
+                }
+            }
+        }
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geom.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        geom.computeVertexNormals();
+        const mesh = new THREE.Mesh(geom, lam(0xffffff, { vertexColors: true, roughness: 0.55, side: THREE.DoubleSide }));
+        mesh.name = 'pocabinet-sausages';
+        mesh.userData.noShadow = true;
+        mesh.receiveShadow = true;
+        this.group.add(mesh);
+    }
+
+    /** Ground height (world units) under a sim point: the terrain's, or 0 without one. */
+    gy(x, y) {
+        return this.terrain ? this.terrain.worldHeight(x, y) : 0;
     }
 
     // ── Start gantry: five pods, red one by one, then all green ──
     buildGantry() {
         const t = this.track;
-        const hw = t.halfWidth;
         const p = simAt(t, 20, 0);
         const g = new THREE.Group();
         g.name = 'pocabinet-gantry';
-        g.position.set(p.x / WS, t.heightAt(20) / WS, p.y / WS);
+        const y0 = t.heightAt(20) / WS;
+        g.position.set(p.x / WS, y0, p.y / WS);
         g.rotation.y = yawTo(p.tx, p.ty);
         const steel = lam('#2b2f38', { roughness: 0.45, metalness: 0.6 });
-        // Posts stand just outside the barrier, so no car can ever drive through one.
-        const span = (hw + RUN_OFF + 4) * 2 / WS;
+        // Posts stand just outside the barrier, so no car can ever drive through one, each down
+        // to the ground where it stands (the road may be banked, the ground may fall away).
+        const half = Math.max(wallAtDist(t, 20, -1), wallAtDist(t, 20, 1)) + 4;
+        const span = half * 2 / WS;
         for (const s of [-1, 1]) {
-            const post = new THREE.Mesh(new THREE.BoxGeometry(0.35, 5, 0.35), steel);
-            post.position.set(s * span / 2, 2.5, 0);
+            // Local +X is the driver's left once the gantry faces down the straight.
+            const q = simAt(t, 20, -s * half);
+            // (No terrain, the Playground: the gantry stands on its own deck, as it always has.)
+            const foot = this.terrain
+                ? Math.min(this.gy(q.x, q.y), y0 + roadPlane(t, t.indexAt(20), -s * half) / WS - t.heightAt(20) / WS) - y0 - 0.3
+                : 0;
+            const len = 5 - foot;
+            const post = new THREE.Mesh(new THREE.BoxGeometry(0.35, len, 0.35), steel);
+            post.position.set(s * span / 2, foot + len / 2, 0);
             g.add(post);
         }
         const beam = new THREE.Mesh(new THREE.BoxGeometry(span + 0.4, 0.55, 0.5), steel);
@@ -291,9 +373,7 @@ export class Scenery {
     // ── Street lamps ──
     buildLamps() {
         const t = this.track;
-        const hw = t.halfWidth;
         const count = Math.max(8, Math.round(t.length / 150));
-        const baseLat = hw + RUN_OFF + 8;
         const armLen = 2.6;
         const postGeom = new THREE.CylinderGeometry(0.09, 0.13, 6, 6);
         postGeom.translate(0, 3, 0);
@@ -307,20 +387,21 @@ export class Scenery {
         for (let i = 0; i < count; i++) {
             const s = i % 2 ? 1 : -1;
             const d = (i + 0.5) * t.length / count;
-            const base = simAt(t, d, s * baseLat);
+            const base = simAt(t, d, s * (wallAtDist(t, d, s) + 8));
             if (!clearOfTrack(t, base.x, base.y, 4) || this.excluded(base.x, base.y)) continue;
             const inward = { x: s * t.pointAt(d).ty, z: -s * t.pointAt(d).tx };   // toward the road
             const bx = base.x / WS, bz = base.y / WS;
-            dummy.position.set(bx, 0, bz);
+            const y = this.gy(base.x, base.y);
+            dummy.position.set(bx, y - 0.2, bz);
             dummy.rotation.set(0, 0, 0);
             dummy.updateMatrix();
             posts.setMatrixAt(used, dummy.matrix);
-            dummy.position.set(bx + inward.x * armLen / 2, 6, bz + inward.z * armLen / 2);
+            dummy.position.set(bx + inward.x * armLen / 2, y + 5.8, bz + inward.z * armLen / 2);
             dummy.rotation.set(0, yawTo(inward.x, inward.z), 0);
             dummy.updateMatrix();
             arms.setMatrixAt(used, dummy.matrix);
             const hx = bx + inward.x * armLen, hz = bz + inward.z * armLen;
-            dummy.position.set(hx, 5.92, hz);
+            dummy.position.set(hx, y + 5.72, hz);
             dummy.updateMatrix();
             heads.setMatrixAt(used, dummy.matrix);
             used++;
@@ -354,25 +435,44 @@ export class Scenery {
         const inside = (centroid.x - start.x) * right.x + (centroid.y - start.y) * right.y > 0 ? 1 : -1;
         // Step outward until the footprint (≈ 300 sim units across) is clear of every stretch of road.
         let push = 330;
-        let out = simAt(t, t.length * 0.08, -inside * (t.halfWidth + RUN_OFF + push));
+        const wall = wallAtDist(t, t.length * 0.08, -inside);
+        let out = simAt(t, t.length * 0.08, -inside * (wall + push));
         while (push < 1200 && !clearOfTrack(t, out.x, out.y, 200)) {
             push += 60;
-            out = simAt(t, t.length * 0.08, -inside * (t.halfWidth + RUN_OFF + push));
+            out = simAt(t, t.length * 0.08, -inside * (wall + push));
         }
         const facing = { x: -out.x + simAt(t, t.length * 0.08, 0).x, y: -out.y + simAt(t, t.length * 0.08, 0).y };
         this.landmarkOut = { x: out.x, y: out.y, face: facing };
         this.centroid = { x: cx, y: cy };
 
-        if (this.trackId === 'maralago') this.buildMansion(out, facing);
-        else if (this.trackId === 'pressbriefing') this.buildBriefingRoom(out, facing);
+        if (this.theme === 'maralago') this.buildMansion(out, facing);
+        else if (this.theme === 'pressbriefing') this.buildBriefingRoom(out, facing);
+        else if (this.theme === 'senate') this.buildTemple(out, facing);
         else this.buildCapitol(out, facing);
 
-        if (this.trackId === 'capitol') this.buildMonument(centroid);
-        if (this.trackId === 'maralago') this.buildGolf(centroid);
+        if (this.theme === 'capitol') this.buildMonument(centroid);
+        if (this.theme === 'maralago') this.buildGolf(centroid);
     }
 
-    placeGroup(g, at, face) {
-        g.position.set(at.x / WS, 0, at.y / WS);
+    /**
+     * Stand a landmark on the ground: at the highest point under its footprint (`r` sim
+     * units), on a terrace of `stone` that runs down into the slope, so no corner floats.
+     */
+    placeGroup(g, at, face, r = 0, terrace = null) {
+        let y = 0;
+        if (this.terrain && r > 0) {
+            const range = this.terrain.rangeAround(at.x, at.y, r);
+            y = range.hi;
+            if (terrace && range.hi - range.lo > 0.05) {
+                const depth = range.hi - range.lo + 1;
+                const base = new THREE.Mesh(new THREE.BoxGeometry(terrace.w, depth, terrace.d), terrace.mat);
+                base.position.y = -depth / 2 + 0.02;
+                g.add(base);
+            }
+        } else if (this.terrain) {
+            y = this.gy(at.x, at.y);
+        }
+        g.position.set(at.x / WS, y, at.y / WS);
         g.rotation.y = yawTo(face.x, face.y);
         this.group.add(g);
     }
@@ -414,7 +514,7 @@ export class Scenery {
         dome.scale.y = 1.3;
         add(new THREE.CylinderGeometry(0.8, 0.9, 1.8, 10), marble, 0, 17.8, 0);
         add(new THREE.ConeGeometry(0.4, 1.4, 8), shade, 0, 19.4, 0);
-        this.placeGroup(g, at, face);
+        this.placeGroup(g, at, face, 200, { w: 44, d: 18, mat: shade });
         this.exclusions.push({ x: at.x, y: at.y, r: 260 });
     }
 
@@ -437,7 +537,7 @@ export class Scenery {
         blink.scale.set(2, 2, 1);
         g.add(blink);
         this.blinkers.push(blink);
-        g.position.set(c.x / WS, 0, c.y / WS);
+        g.position.set(c.x / WS, (this.terrain ? this.terrain.rangeAround(c.x, c.y, 12).lo : 0) - 0.1, c.y / WS);
         this.group.add(g);
 
         // Reflecting pool alongside, if the infield has room for it.
@@ -445,13 +545,15 @@ export class Scenery {
         const ax = start.tx, ay = start.ty;
         const px = c.x + ax * 170, py = c.y + ay * 170;
         const ends = [[px - ax * 140, py - ay * 140], [px + ax * 140, py + ay * 140]];
-        if (ends.every(([x, y]) => clearOfTrack(t, x, y, 25)) && clearOfTrack(t, px, py, 25)) {
+        // (and only on level ground: water does not lie on a slope)
+        const level = !this.terrain || [[px, py], ...ends].every(([x, y]) => Math.abs(this.gy(x, y) - this.gy(px, py)) < 0.12);
+        if (level && ends.every(([x, y]) => clearOfTrack(t, x, y, 25)) && clearOfTrack(t, px, py, 25)) {
             const pool = new THREE.Mesh(new THREE.PlaneGeometry(28, 3.4),
                 water(new THREE.MeshStandardMaterial({ color: '#0e1e2a', roughness: 0.04, metalness: 0 }), 0.12));
             pool.userData.noShadow = true;
             pool.rotation.x = -Math.PI / 2;
             pool.rotation.z = -Math.atan2(ay, ax);
-            pool.position.set(px / WS, 0.025, py / WS);
+            pool.position.set(px / WS, this.gy(px, py) + 0.04, py / WS);
             this.group.add(pool);
         }
         this.exclusions.push({ x: c.x, y: c.y, r: 60 }, { x: px, y: py, r: 160 });
@@ -483,7 +585,7 @@ export class Scenery {
         swim.rotation.x = -Math.PI / 2;
         swim.position.set(0, 0.03, 10);
         g.add(swim);
-        this.placeGroup(g, at, face);
+        this.placeGroup(g, at, face, 210, { w: 40, d: 30, mat: lam('#e2c9a6') });
         this.exclusions.push({ x: at.x, y: at.y, r: 260 });
     }
 
@@ -497,17 +599,23 @@ export class Scenery {
             const r = 60 + this.rng() * 180;
             const x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
             if (!clearOfTrack(t, x, y, 50)) continue;
-            const disc = new THREE.Mesh(new THREE.CircleGeometry(3.2, 24), green);
-            disc.rotation.x = -Math.PI / 2;
-            disc.position.set(x / WS, 0.02, y / WS);
+            // The green lies on the ground: each vertex at the terrain's height.
+            const discGeom = new THREE.CircleGeometry(3.2, 24);
+            discGeom.rotateX(-Math.PI / 2);
+            const dp = discGeom.attributes.position;
+            for (let v = 0; v < dp.count; v++) dp.setY(v, this.gy(x + dp.getX(v) * WS, y + dp.getZ(v) * WS) + 0.03);
+            discGeom.computeVertexNormals();
+            const disc = new THREE.Mesh(discGeom, green);
+            disc.position.set(x / WS, 0, y / WS);
             disc.userData.noShadow = true;
             disc.receiveShadow = true;
             this.group.add(disc);
+            const gyc = this.gy(x, y);
             const p = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.4, 5), pole);
-            p.position.set(x / WS, 1.2, y / WS);
+            p.position.set(x / WS, gyc + 1.2, y / WS);
             this.group.add(p);
             const f = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.5), flagMat);
-            f.position.set(x / WS + 0.4, 2.1, y / WS);
+            f.position.set(x / WS + 0.4, gyc + 2.1, y / WS);
             this.group.add(f);
             this.exclusions.push({ x, y, r: 40 });
         }
@@ -549,21 +657,72 @@ export class Scenery {
                 g.add(s);
             }
         }
-        this.placeGroup(g, at, face);
+        this.placeGroup(g, at, face, 300, { w: 66, d: 12, mat: lam('#8a8f99') });
         this.exclusions.push({ x: at.x, y: at.y, r: 340 });
+    }
+
+    /**
+     * Senate Hill's landmark: a classical stone temple on a stepped podium, a colonnade on
+     * every side under a pediment at each end, and a low dome behind.
+     */
+    buildTemple(at, face) {
+        const g = new THREE.Group();
+        g.name = 'pocabinet-temple';
+        const stone = lam('#ddd5c4');
+        const shade = lam('#c3b9a4');
+        const add = (geom, mat, x, y, z) => { const m = new THREE.Mesh(geom, mat); m.position.set(x, y, z); g.add(m); return m; };
+        for (let k = 0; k < 3; k++) add(new THREE.BoxGeometry(30 - k * 1.4, 0.6, 18 - k * 1.4), k % 2 ? shade : stone, 0, 0.3 + k * 0.6, 0);
+        const W = 26, D = 14, H = 7.5;
+        add(new THREE.BoxGeometry(W - 4, H, D - 5), shade, 0, 1.8 + H / 2, 0);   // the cella
+        const colGeom = new THREE.CylinderGeometry(0.42, 0.5, H, 10);
+        const across = 9, deep = 5;
+        const cols = new THREE.InstancedMesh(colGeom, stone, across * 2 + (deep - 2) * 2);
+        const dummy = new THREE.Object3D();
+        let k = 0;
+        for (let i = 0; i < across; i++) {
+            for (const z of [-D / 2 + 0.6, D / 2 - 0.6]) {
+                dummy.position.set(-W / 2 + 0.8 + i * (W - 1.6) / (across - 1), 1.8 + H / 2, z);
+                dummy.updateMatrix();
+                cols.setMatrixAt(k++, dummy.matrix);
+            }
+        }
+        for (let i = 1; i < deep - 1; i++) {
+            for (const x of [-W / 2 + 0.8, W / 2 - 0.8]) {
+                dummy.position.set(x, 1.8 + H / 2, -D / 2 + 0.6 + i * (D - 1.2) / (deep - 1));
+                dummy.updateMatrix();
+                cols.setMatrixAt(k++, dummy.matrix);
+            }
+        }
+        cols.instanceMatrix.needsUpdate = true;
+        cols.frustumCulled = false;
+        g.add(cols);
+        add(new THREE.BoxGeometry(W + 0.6, 1.2, D + 0.6), stone, 0, 1.8 + H + 0.6, 0);   // entablature
+        // Pediments: a low triangular prism along the roof.
+        const roof = new THREE.Shape();
+        roof.moveTo(-(D + 0.6) / 2, 0); roof.lineTo((D + 0.6) / 2, 0); roof.lineTo(0, 2.6); roof.closePath();
+        const prism = new THREE.ExtrudeGeometry(roof, { depth: W + 0.6, bevelEnabled: false });
+        prism.translate(0, 0, -(W + 0.6) / 2);
+        prism.rotateY(Math.PI / 2);
+        add(prism, shade, 0, 1.8 + H + 1.2, 0);
+        add(new THREE.CylinderGeometry(3.2, 3.4, 2.2, 20), stone, 0, 1.8 + H + 4.2, 0);
+        const dome = add(new THREE.SphereGeometry(3.3, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), lam('#8aa39a', { roughness: 0.5, metalness: 0.3 }), 0, 1.8 + H + 5.3, 0);
+        dome.scale.y = 0.9;
+        this.placeGroup(g, at, face, 170, { w: 32, d: 20, mat: shade });
+        this.exclusions.push({ x: at.x, y: at.y, r: 240 });
     }
 
     // ── Trees / palms ──
     buildPlanting() {
         const t = this.track;
-        if (this.trackId === 'pressbriefing') return;
-        const palms = this.trackId === 'maralago';
+        if (this.theme === 'pressbriefing') return;
+        if (this.theme === 'senate') { this.buildForest(); return; }
+        const palms = this.theme === 'maralago';
         const target = palms ? 90 : 150;
         const spots = [];
         for (let tries = 0; tries < target * 8 && spots.length < target; tries++) {
             const d = this.rng() * t.length;
             const s = this.rng() < 0.5 ? -1 : 1;
-            const lat = s * (t.halfWidth + RUN_OFF + 30 + Math.pow(this.rng(), 1.6) * 520);
+            const lat = s * (wallAtDist(t, d, s) + 30 + Math.pow(this.rng(), 1.6) * 520);
             const p = simAt(t, d, lat);
             if (!clearOfTrack(t, p.x, p.y, 22) || this.excluded(p.x, p.y)) continue;
             if (spots.some(q => (q.x - p.x) ** 2 + (q.y - p.y) ** 2 < 28 * 28)) continue;
@@ -581,12 +740,13 @@ export class Scenery {
             spots.forEach((p, i) => {
                 const h = 4 + this.rng() * 4;
                 const r = 1.2 + this.rng() * 1.1;
-                dummy.position.set(p.x / WS, 0, p.y / WS);
+                const y = this.gy(p.x, p.y) - 0.15;
+                dummy.position.set(p.x / WS, y, p.y / WS);
                 dummy.rotation.set(0, this.rng() * 6.28, 0);
                 dummy.scale.set(1, h * 0.35, 1);
                 dummy.updateMatrix();
                 trunks.setMatrixAt(i, dummy.matrix);
-                dummy.position.y = h * 0.28;
+                dummy.position.y = y + h * 0.28;
                 dummy.scale.set(r, h * 0.8, r);
                 dummy.updateMatrix();
                 crowns.setMatrixAt(i, dummy.matrix);
@@ -613,7 +773,7 @@ export class Scenery {
             const h = 5 + this.rng() * 4;
             const lean = (this.rng() - 0.5) * 0.3;
             const yaw = this.rng() * 6.28;
-            dummy.position.set(p.x / WS, 0, p.y / WS);
+            dummy.position.set(p.x / WS, this.gy(p.x, p.y) - 0.15, p.y / WS);
             dummy.rotation.set(lean, yaw, 0);
             dummy.scale.set(1, h, 1);
             dummy.updateMatrix();
@@ -637,26 +797,99 @@ export class Scenery {
         }
     }
 
+    /**
+     * Senate Hill: an autumn forest. Broadleaf trees in orange, red and gold (two lumpy
+     * crowns each), a few dark firs between them, thicker near the road and on out into the
+     * hills. Instanced: four draw calls for the lot.
+     */
+    buildForest() {
+        const t = this.track;
+        const target = 300;
+        const spots = [];
+        for (let tries = 0; tries < target * 8 && spots.length < target; tries++) {
+            const d = this.rng() * t.length;
+            const s = this.rng() < 0.5 ? -1 : 1;
+            const lat = s * (wallAtDist(t, d, s) + 24 + Math.pow(this.rng(), 1.4) * 640);
+            const p = simAt(t, d, lat);
+            if (!clearOfTrack(t, p.x, p.y, 18) || this.excluded(p.x, p.y)) continue;
+            if (spots.some(q => (q.x - p.x) ** 2 + (q.y - p.y) ** 2 < 22 * 22)) continue;
+            spots.push(p);
+        }
+        const dummy = new THREE.Object3D();
+        const color = new THREE.Color();
+        const firs = spots.filter(() => this.rng() < 0.18);
+        const broad = spots.filter(p => !firs.includes(p));
+        const trunkGeom = new THREE.CylinderGeometry(0.12, 0.2, 1, 5);
+        trunkGeom.translate(0, 0.5, 0);
+        const crownGeom = new THREE.IcosahedronGeometry(1, 1);
+        const coneGeom = new THREE.ConeGeometry(1, 1, 7);
+        coneGeom.translate(0, 0.5, 0);
+        const trunks = new THREE.InstancedMesh(trunkGeom, lam('#4a3626'), spots.length);
+        const crowns = new THREE.InstancedMesh(crownGeom, wind(lam('#ffffff', { roughness: 0.85, flatShading: true }), 0.05), broad.length * 2);
+        const cones = new THREE.InstancedMesh(coneGeom, wind(lam('#ffffff', { roughness: 0.9 }), 0.06), firs.length);
+        // Autumn: orange, rust red, gold and a few hanging on to green.
+        const hues = [[0.07, 0.75, 0.42], [0.02, 0.7, 0.36], [0.11, 0.8, 0.48], [0.09, 0.65, 0.4], [0.2, 0.4, 0.3]];
+        let tr = 0, cr = 0, co = 0;
+        for (const p of spots) {
+            const y = this.gy(p.x, p.y) - 0.15;
+            const fir = firs.includes(p);
+            const h = fir ? 6 + this.rng() * 5 : 4 + this.rng() * 3.5;
+            dummy.position.set(p.x / WS, y, p.y / WS);
+            dummy.rotation.set(0, this.rng() * 6.28, 0);
+            dummy.scale.set(1, h * (fir ? 0.3 : 0.55), 1);
+            dummy.updateMatrix();
+            trunks.setMatrixAt(tr++, dummy.matrix);
+            if (fir) {
+                const r = 1.1 + this.rng() * 0.6;
+                dummy.position.y = y + h * 0.22;
+                dummy.scale.set(r, h * 0.85, r);
+                dummy.updateMatrix();
+                cones.setMatrixAt(co, dummy.matrix);
+                color.setHSL(0.36 + this.rng() * 0.05, 0.4, 0.16 + this.rng() * 0.06);
+                cones.setColorAt(co++, color);
+                continue;
+            }
+            const hue = hues[Math.floor(this.rng() * hues.length)];
+            for (let k = 0; k < 2; k++) {
+                const r = (1.4 + this.rng() * 1.1) * (k ? 0.75 : 1);
+                dummy.position.set(p.x / WS + (this.rng() - 0.5) * 0.9 * k, y + h * (0.62 + 0.25 * k), p.y / WS + (this.rng() - 0.5) * 0.9 * k);
+                dummy.rotation.set(this.rng(), this.rng() * 6.28, 0);
+                dummy.scale.set(r, r * (0.8 + this.rng() * 0.3), r);
+                dummy.updateMatrix();
+                crowns.setMatrixAt(cr, dummy.matrix);
+                color.setHSL(hue[0] + (this.rng() - 0.5) * 0.03, hue[1], hue[2] * (0.85 + this.rng() * 0.3));
+                crowns.setColorAt(cr++, color);
+            }
+        }
+        trunks.count = tr; crowns.count = cr; cones.count = co;
+        for (const m of [trunks, crowns, cones]) {
+            m.instanceMatrix.needsUpdate = true;
+            if (m.instanceColor) m.instanceColor.needsUpdate = true;
+            m.frustumCulled = false;
+            this.group.add(m);
+        }
+    }
+
     // ── Billboards ──
     buildBillboards() {
         const t = this.track;
-        const texts = BILLBOARDS[this.trackId] || BILLBOARDS.capitol;
+        const texts = BILLBOARDS[this.theme] || BILLBOARDS.capitol;
         const bg = '#' + this.accent.clone().multiplyScalar(0.35).getHexString();
         const frame = lam('#202226');
         texts.forEach((text, i) => {
             const d = t.length * (0.2 + i * 0.2);
             for (const s of [1, -1]) {
-                const lat = s * (t.halfWidth + RUN_OFF + 40);
+                const lat = s * (wallAtDist(t, d, s) + 40);
                 const p = simAt(t, d, lat);
                 if (!clearOfTrack(t, p.x, p.y, 12) || this.excluded(p.x, p.y)) continue;
                 const g = new THREE.Group();
                 // Face the oncoming traffic, angled a little toward the road.
                 const fx = -p.tx + s * p.ty * 0.35, fz = -p.ty - s * p.tx * 0.35;
-                g.position.set(p.x / WS, 0, p.y / WS);
+                g.position.set(p.x / WS, this.terrain ? this.terrain.rangeAround(p.x, p.y, 32).lo : 0, p.y / WS);
                 g.rotation.y = yawTo(fx, fz);
                 for (const x of [-3.2, 3.2]) {
-                    const post = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3, 0.2), frame);
-                    post.position.set(x, 1.5, -0.1);
+                    const post = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.6, 0.2), frame);
+                    post.position.set(x, 1.2, -0.1);
                     g.add(post);
                 }
                 const board = new THREE.Mesh(new THREE.BoxGeometry(8.4, 2.4, 0.2), frame);
@@ -675,7 +908,7 @@ export class Scenery {
     // ── Press pen: photographers with flashbulbs ──
     buildPressPen() {
         const t = this.track;
-        const heavy = this.trackId === 'pressbriefing';
+        const heavy = this.theme === 'pressbriefing';
         const sides = heavy ? [-1, 1] : [1];
         const perSide = heavy ? 18 : 9;
         const bodyGeom = new THREE.CylinderGeometry(0.22, 0.26, 1.2, 6);
@@ -691,34 +924,35 @@ export class Scenery {
         for (const s of sides) {
             for (let i = 0; i < perSide; i++) {
                 const d = -140 + i * (heavy ? 22 : 26) + this.rng() * 8;
-                const lat = s * (t.halfWidth + RUN_OFF + 10 + this.rng() * 6);
+                const lat = s * (wallAtDist(t, d, s) + 10 + this.rng() * 6);
                 const p = simAt(t, d, lat);
                 // Near a kinked start the offset point can land on another stretch of road.
                 if (!clearOfTrack(t, p.x, p.y, 6)) continue;
                 const inward = { x: s * p.ty, z: -s * p.tx };
                 const x = p.x / WS, z = p.y / WS;
+                const gy = this.gy(p.x, p.y);
                 const yaw = yawTo(inward.x - p.tx * 0.4, inward.z - p.ty * 0.4);
                 dummy.rotation.set(0, yaw, 0);
-                dummy.position.set(x, 0.6, z);
+                dummy.position.set(x, gy + 0.6, z);
                 dummy.updateMatrix();
                 bodies.setMatrixAt(n, dummy.matrix);
                 color.setHSL(this.rng(), 0.25, 0.18 + this.rng() * 0.2);
                 bodies.setColorAt(n, color);
-                dummy.position.set(x, 1.35, z);
+                dummy.position.set(x, gy + 1.35, z);
                 dummy.updateMatrix();
                 heads.setMatrixAt(n, dummy.matrix);
                 const fwd = { x: Math.sin(yaw), z: Math.cos(yaw) };
                 const cx = x + fwd.x * 0.25, cz = z + fwd.z * 0.25;
-                dummy.position.set(cx, 1.35, cz);
+                dummy.position.set(cx, gy + 1.35, cz);
                 dummy.updateMatrix();
                 cams.setMatrixAt(n, dummy.matrix);
                 const flash = new THREE.Sprite(new THREE.SpriteMaterial({
                     map: glowTexture(), color: hdr('#eef4ff', 8), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0,
                 }));
-                flash.position.set(cx + fwd.x * 0.2, 1.4, cz + fwd.z * 0.2);
+                flash.position.set(cx + fwd.x * 0.2, gy + 1.4, cz + fwd.z * 0.2);
                 flash.scale.set(2.6, 2.6, 1);
                 this.group.add(flash);
-                this.flashes.push({ sprite: flash, t: 0, delay: -1, pos: { x: cx, y: 1.4, z: cz } });
+                this.flashes.push({ sprite: flash, t: 0, delay: -1, pos: { x: cx, y: gy + 1.4, z: cz } });
                 n++;
             }
         }
@@ -734,7 +968,7 @@ export class Scenery {
     // ── Grandstand: four stepped rows of fans facing the start straight ──
     buildGrandstand() {
         const t = this.track;
-        const press = this.trackId === 'pressbriefing';
+        const press = this.theme === 'pressbriefing';
         // Opposite the press pen; Press Briefing has pens both sides of the line, so its stand is half a lap on.
         const mid = press ? t.length * 0.5 : 0;
         const side = -1;
@@ -748,30 +982,35 @@ export class Scenery {
         const dummy = new THREE.Object3D();
         const color = new THREE.Color();
         const fans = [];
-        let n = 0, sx = 0, sz = 0;
+        let n = 0, sx = 0, sy = 0, sz = 0;
         for (let c = 0; c < cols; c++) {
             const d = mid + (c - cols / 2) * spacing;
-            const base = simAt(t, d, side * (t.halfWidth + RUN_OFF + 9));
-            const back = simAt(t, d, side * (t.halfWidth + RUN_OFF + 9 + rows * 11));
+            const wall = wallAtDist(t, d, side);
+            const base = simAt(t, d, side * (wall + 9));
+            const back = simAt(t, d, side * (wall + 9 + rows * 11));
             if (!clearOfTrack(t, base.x, base.y, 4) || !clearOfTrack(t, back.x, back.y, 4) || this.excluded(base.x, base.y)) continue;
             const inward = { x: side * base.ty, z: -side * base.tx };
             const yaw = yawTo(inward.x, inward.z);
+            // The stand is built level off the ground at its front row; every step runs down
+            // into the slope wherever the ground falls away behind.
+            const front = this.gy(base.x, base.y);
             for (let r = 0; r < rows; r++) {
-                const p = simAt(t, d, side * (t.halfWidth + RUN_OFF + 9 + r * 11));
+                const p = simAt(t, d, side * (wall + 9 + r * 11));
                 const x = p.x / WS, z = p.y / WS;
+                const top = front + 0.5 + r, bottom = Math.min(front, this.gy(p.x, p.y)) - 0.3;
                 dummy.rotation.set(0, yaw, 0);
-                dummy.scale.set(1, 1 + r * 2, 1);
-                dummy.position.set(x, (0.5 + r) * 0.5, z);
+                dummy.scale.set(1, (top - bottom) / 0.5, 1);
+                dummy.position.set(x, (top + bottom) / 2, z);
                 dummy.updateMatrix();
                 steps.setMatrixAt(n, dummy.matrix);
                 dummy.scale.set(1, 1, 1);
-                const seat = 0.52 + r;   // top of this row's step (height 0.5 + r)
+                const seat = top + 0.02;   // top of this row's step
                 color.setHSL(this.rng(), 0.55, 0.35 + this.rng() * 0.25);
                 bodies.setColorAt(n, color);
                 color.setHSL(0.07, 0.4, 0.35 + this.rng() * 0.35);
                 heads.setColorAt(n, color);
                 fans.push({ x, z, seat, yaw, phase: this.rng() * Math.PI * 2, rate: 7 + this.rng() * 4, i: n });
-                sx += x; sz += z;
+                sx += x; sy += front; sz += z;
                 n++;
             }
         }
@@ -781,7 +1020,7 @@ export class Scenery {
             this.group.add(m);
         }
         if (!n) return;
-        this.crowd = { center: { x: sx / n, y: 2, z: sz / n }, level: 0, fans, bodies, heads, dummy, pose: 0 };
+        this.crowd = { center: { x: sx / n, y: sy / n + 2, z: sz / n }, level: 0, fans, bodies, heads, dummy, pose: 0 };
         this.poseCrowd(0);
     }
 
@@ -823,7 +1062,7 @@ export class Scenery {
      */
     update(dt, focus) {
         this.time += dt;
-        const paparazzi = this.trackId === 'pressbriefing' && focus && focus.speed01 > 0.35;
+        const paparazzi = this.theme === 'pressbriefing' && focus && focus.speed01 > 0.35;
         for (const f of this.flashes) {
             if (paparazzi && f.delay < 0 && f.t <= 0) {
                 const d2 = (f.pos.x - focus.x) ** 2 + (f.pos.z - focus.z) ** 2;

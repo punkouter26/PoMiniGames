@@ -1,14 +1,17 @@
 // pocabinet/fx.js
 //
-// Car-driven particles and marks for PoCabinet: tyre smoke, grass dust, rain
-// spray, wall sparks, car-to-car contact sparks, launch smoke off the line, and
+// Car-driven particles and marks for PoCabinet: tyre smoke, grass dust, stones and dust
+// thrown up in a gravel trap (sand at Mar-a-Lago), a jolt of grit and sparks off a raised
+// kerb, rain spray, wall sparks, car-to-car contact sparks, launch smoke off the line, and
 // skid marks that stay on the tarmac for the whole race, and the smoke off a damaged
 // engine (grey, then black) and the fire of a wreck.
 //
 // Everything is derived from the poses race.js already draws (position, heading,
 // speed) plus, where the car is simulated locally, its body's `sliding` flag —
 // so remote cars online and the replay get the same effects, and nothing here
-// feeds back into physics. Lateral grip use is estimated from yaw rate × speed
+// feeds back into physics. What a car is on is its body's `surface` where race.js
+// knows it, else worked out the same way (physics.js surfaceAt). Every particle settles on
+// the ground it was thrown from, not at sea level, so hills are no trouble. Lateral grip use is estimated from yaw rate × speed
 // against the same GRIP_ACCEL the physics caps it at.
 //
 // update() returns the frame's contact events so race.js can play the crunch
@@ -23,7 +26,7 @@
 
 import * as THREE from 'three';
 import { wrapAngle } from './track.js';
-import { GRIP_ACCEL, RUN_OFF, CAR_RADIUS, hullContact } from './physics.js';
+import { GRIP_ACCEL, CAR_RADIUS, hullContact, wallAt, surfaceAt, SURF_GRASS, SURF_GRAVEL, SURF_SAUSAGE } from './physics.js';
 
 const WS = 10;
 const MAX_SMOKE = 900;
@@ -89,6 +92,7 @@ class Pool {
         this.a0 = new Float32Array(max);
         this.drag = new Float32Array(max);
         this.grav = new Float32Array(max);
+        this.floor = new Float32Array(max);
         this.next = 0;
         this.live = 0;
         const geom = new THREE.BufferGeometry();
@@ -110,8 +114,10 @@ class Pool {
         this.geom = geom;
     }
 
-    spawn(x, y, z, vx, vy, vz, life, s0, s1, a0, r, g, b, drag, grav) {
+    /** `floor`: the ground height the particle bounces on (world units; default just under it). */
+    spawn(x, y, z, vx, vy, vz, life, s0, s1, a0, r, g, b, drag, grav, floor = y - 0.25) {
         const i = this.next;
+        this.floor[i] = floor + 0.02;
         this.next = (this.next + 1) % this.max;
         const k = i * 3;
         this.pos[k] = x; this.pos[k + 1] = y; this.pos[k + 2] = z;
@@ -133,7 +139,7 @@ class Pool {
             const damp = Math.exp(-this.drag[i] * dt);
             this.vel[k] *= damp; this.vel[k + 1] = this.vel[k + 1] * damp - this.grav[i] * dt; this.vel[k + 2] *= damp;
             this.pos[k] += this.vel[k] * dt; this.pos[k + 1] += this.vel[k + 1] * dt; this.pos[k + 2] += this.vel[k + 2] * dt;
-            if (this.pos[k + 1] < 0.02) { this.pos[k + 1] = 0.02; this.vel[k + 1] *= -0.3; }
+            if (this.pos[k + 1] < this.floor[i]) { this.pos[k + 1] = this.floor[i]; this.vel[k + 1] *= -0.3; }
             const f = 1 - this.life[i] / this.maxLife[i];
             this.size[i] = this.s0[i] + (this.s1[i] - this.s0[i]) * f;
             this.alpha[i] = this.a0[i] * (f < 0.12 ? f / 0.12 : 1 - (f - 0.12) / 0.88);
@@ -228,6 +234,10 @@ class CarFx {
         this.grip = Number(opts.grip) || 1;
         this.raining = !!opts.raining;
         this.dust = new THREE.Color(opts.groundHex || '#6b6040').lerp(new THREE.Color('#c8b890'), 0.45);
+        // Gravel traps: grey-brown stones and pale dust; Mar-a-Lago's are beach sand.
+        this.beach = track.theme === 'maralago';
+        this.stone = new THREE.Color(this.beach ? '#d9c79c' : '#8d8577');
+        this.grit = new THREE.Color(this.beach ? '#efe2c2' : '#c9bba0');
         this.smoke = new Pool(MAX_SMOKE, SMOKE_FRAG, THREE.NormalBlending);
         this.sparks = new Pool(MAX_SPARKS, SPARK_FRAG, THREE.AdditiveBlending);
         this.skids = new SkidMarks();
@@ -237,7 +247,6 @@ class CarFx {
         sceneHandle.scene.add(this.group);
         this.state = new Map();
         this.pairs = new Map();
-        this.wallLat = track.halfWidth + RUN_OFF - CAR_RADIUS * 0.5;
         this.size = new THREE.Vector2();
         this.disposed = false;
     }
@@ -251,7 +260,7 @@ class CarFx {
     }
 
     newState() {
-        return { h: null, x: 0, y: 0, up: 0, v: 0, lat: 0, hint: -1, skid: [null, null], launch: 0, launchStrength: 1, acc: 0, walled: false, wallAt: 0, off: null, out: 0, hl: null, sacc: 0, wreckT: 0 };
+        return { h: null, x: 0, y: 0, up: 0, v: 0, lat: 0, hint: -1, skid: [null, null], launch: 0, launchStrength: 1, acc: 0, walled: false, wallAt: 0, off: null, out: 0, hl: null, sacc: 0, wreckT: 0, surf: 0, gacc: 0 };
     }
 
     /** A flame out of the tail of car `id` (its last pose), `strength` 0..1. */
@@ -287,7 +296,7 @@ class CarFx {
             this.smoke.spawn(x, up + 0.4 + rnd() * 0.3, z,
                 (rnd() - 0.5) * 7 * strength, 1.5 + rnd() * 3.5 * strength, (rnd() - 0.5) * 7 * strength,
                 0.7 + rnd() * 0.8, 0.14 + rnd() * 0.08, 0.1, 1,
-                flake ? c.r : shade, flake ? c.g : shade, flake ? c.b : shade, 0.4, 9.8);
+                flake ? c.r : shade, flake ? c.g : shade, flake ? c.b : shade, 0.4, 9.8, up);
         }
     }
 
@@ -300,7 +309,7 @@ class CarFx {
             col.setHSL(rnd(), 0.85, 0.58);
             this.smoke.spawn(x + (rnd() - 0.5) * 8, up + 7 + rnd() * 4, z + (rnd() - 0.5) * 8,
                 (rnd() - 0.5) * 5, 2 + rnd() * 4, (rnd() - 0.5) * 5,
-                3 + rnd() * 2, 0.16, 0.14, 1, col.r, col.g, col.b, 1.6, 1.4);
+                3 + rnd() * 2, 0.16, 0.14, 1, col.r, col.g, col.b, 1.6, 1.4, up);
         }
     }
 
@@ -315,7 +324,6 @@ class CarFx {
         const events = { contacts: [], scraping: new Map(), walls: [] };
         if (this.disposed || dt <= 0) return events;
         const t = this.track;
-        const hw = t.halfWidth;
         const skidsOn = opts.skids !== false;
         const rnd = Math.random;
 
@@ -343,6 +351,11 @@ class CarFx {
             s.v = v;
             s.h = c.heading;
 
+            const hw = t.hwAt(proj.index);
+            // What the car is on: the sim's word where it has one, else the same rule.
+            const surface = Number.isInteger(c.surface) && c.surface >= 0 ? c.surface : surfaceAt(t, proj.index, proj.lateral);
+            const kicked = surface === SURF_SAUSAGE && s.surf !== SURF_SAUSAGE;
+            s.surf = surface;
             const limit = GRIP_ACCEL * this.grip * (Math.abs(proj.lateral) > hw ? 0.6 : 1);
             let slip = Math.max(0, (s.lat / limit - 0.9) * 8);
             if (c.sliding) slip = Math.max(slip, 1);
@@ -353,8 +366,45 @@ class CarFx {
             const x = c.x / WS, z = c.y / WS;
             const fx = Math.cos(c.heading), fz = Math.sin(c.heading);
             const rx = -fz, rz = fx;
-            const onGrass = Math.abs(proj.lateral) > hw + 2;
+            const onGrass = surface === SURF_GRASS;
+            const onGravel = surface === SURF_GRAVEL;
             const vx = fx * c.speed / WS, vz = fz * c.speed / WS;
+            // Gravel: stones spat out behind the rear wheels and a dust cloud (sand: a spray).
+            if (onGravel && v > 12) {
+                s.gacc += dt * 40 * Math.min(1, v / 70);
+                while (s.gacc >= 1) {
+                    s.gacc -= 1;
+                    const side = rnd() < 0.5 ? -1 : 1;
+                    const wx = x - fx * REAR + rx * TRACK_HALF * side, wz = z - fz * REAR + rz * TRACK_HALF * side;
+                    const kick = 0.15 + rnd() * 0.35;
+                    const stone = rnd() < (this.beach ? 0.35 : 0.6);
+                    if (stone) {
+                        const shade = 0.7 + rnd() * 0.5;
+                        this.smoke.spawn(wx, up + 0.15, wz,
+                            -vx * kick + rx * side * (rnd() * 2.5) + (rnd() - 0.5), 1.2 + rnd() * 2.8, -vz * kick + rz * side * (rnd() * 2.5) + (rnd() - 0.5),
+                            0.5 + rnd() * 0.5, this.beach ? 0.06 : 0.09 + rnd() * 0.06, 0.07, 1,
+                            this.stone.r * shade, this.stone.g * shade, this.stone.b * shade, 0.3, 9.8, up);
+                    } else {
+                        this.smoke.spawn(wx + (rnd() - 0.5) * 0.4, up + 0.25, wz + (rnd() - 0.5) * 0.4,
+                            vx * 0.2 + (rnd() - 0.5) * 1.6, 0.6 + rnd() * 1.1, vz * 0.2 + (rnd() - 0.5) * 1.6,
+                            0.9 + rnd() * 0.6, 0.5, 2.4 + rnd() * 0.8, this.beach ? 0.2 : 0.26,
+                            this.grit.r, this.grit.g, this.grit.b, 1.3, -0.15, up);
+                    }
+                }
+            }
+            // A raised kerb: a jolt of grit and a few sparks off the floor the moment it is hit,
+            // and a shake for the camera when it is the car in view.
+            if (kicked && v > 25) {
+                const n = 3 + Math.round(Math.min(1, v / 100) * 6);
+                for (let i = 0; i < n; i++) {
+                    if (i % 2) this.spark(x + (rnd() - 0.5) * 1.4, up + 0.12, z + (rnd() - 0.5) * 1.4, -vx * 0.3 + (rnd() - 0.5) * 3, 1 + rnd() * 2, -vz * 0.3 + (rnd() - 0.5) * 3);
+                    else this.smoke.spawn(x + (rnd() - 0.5) * 1.6, up + 0.2, z + (rnd() - 0.5) * 1.6,
+                        (rnd() - 0.5) * 2, 0.8 + rnd() * 1.4, (rnd() - 0.5) * 2, 0.5, 0.25, 1.2, 0.18,
+                        this.grit.r, this.grit.g, this.grit.b, 2, 2, up);
+                }
+                const cam = this.sh.camera?.position, fxs = this.sh.fx;
+                if (cam && fxs && (x - cam.x) ** 2 + (z - cam.z) ** 2 < 14 * 14) fxs.shake = Math.max(fxs.shake || 0, 0.35 * Math.min(1, v / 90));
+            }
 
             for (let w = 0; w < 2; w++) {
                 const side = w ? 1 : -1;
@@ -362,7 +412,7 @@ class CarFx {
                 const wz = z - fz * REAR + rz * TRACK_HALF * side;
                 // Tyre smoke (tarmac) or dust (grass). A wisp, not a cloud: with a hundred cars
                 // sliding at once the old puffs (twice the rate, size and opacity) hid the pack.
-                if (slip > 0.35 || (onGrass && v > 20)) {
+                if (!onGravel && (slip > 0.35 || (onGrass && v > 20))) {
                     s.acc += dt * (onGrass ? 14 * Math.min(1, v / 60) : 22 * slip);
                     while (s.acc >= 1) {
                         s.acc -= 1;
@@ -373,16 +423,16 @@ class CarFx {
                             vx * 0.25 + (rnd() - 0.5) * 1.2, 0.5 + rnd() * 0.9, vz * 0.25 + (rnd() - 0.5) * 1.2,
                             onGrass ? 0.7 : 0.8 + rnd() * 0.6, 0.4, onGrass ? 1.8 : 2.1 + rnd() * 0.9,
                             onGrass ? 0.18 : 0.07 + slip * 0.08,
-                            col ? col.r : shade, col ? col.g : shade, col ? col.b : shade * 1.02, 1.4, -0.25);
+                            col ? col.r : shade, col ? col.g : shade, col ? col.b : shade * 1.02, 1.4, -0.25, up);
                     }
                 }
                 // Rain spray off the rear wheels.
-                if (this.raining && v > 35 && !onGrass && rnd() < dt * 22 * (v / 140)) {
+                if (this.raining && v > 35 && !onGrass && !onGravel && rnd() < dt * 22 * (v / 140)) {
                     this.smoke.spawn(wx, up + 0.2, wz, vx * 0.35 + (rnd() - 0.5), 0.6 + rnd() * 0.5, vz * 0.35 + (rnd() - 0.5),
-                        0.55, 0.6, 2.6, 0.11, 0.8, 0.84, 0.88, 2.2, 0.4);
+                        0.55, 0.6, 2.6, 0.11, 0.8, 0.84, 0.88, 2.2, 0.4, up);
                 }
                 // Skid marks.
-                if (skidsOn && slip > 0.45 && !onGrass) {
+                if (skidsOn && slip > 0.45 && !onGrass && !onGravel) {
                     const prev = s.skid[w];
                     if (prev) {
                         const d2 = (wx - prev[0]) ** 2 + (wz - prev[1]) ** 2;
@@ -408,8 +458,9 @@ class CarFx {
             s.hl = hl + wrapAngle(c.heading - hl) * lag;
             s.off = off;
 
-            // Barrier scrape: the physics clamps a car's centre at wallLat.
-            const wall = off >= this.wallLat - 0.8 && v > 18;
+            // Barrier scrape: the physics clamps a car's centre at wallAt (per sample and side:
+            // deeper where the run-off is gravel or tarmac).
+            const wall = off >= wallAt(t, proj.index, proj.lateral > 0 ? 1 : -1) - 0.8 && v > 18;
             if (wall) {
                 const side = proj.lateral > 0 ? 1 : -1;
                 const nx = -proj.ty * side, nz = proj.tx * side;
@@ -453,13 +504,13 @@ class CarFx {
                         bx + (rnd() - 0.5) * 0.5, up + 0.75, bz + (rnd() - 0.5) * 0.5,
                         vx * 0.3 + (rnd() - 0.5) * 0.6, 1.1 + rnd() * 1.2, vz * 0.3 + (rnd() - 0.5) * 0.6,
                         1.8 + rnd() * 1.4, 0.5, c.wrecked ? 3.4 + rnd() * 1.2 : 1.8 + engine * 1.2,
-                        c.wrecked ? 0.5 : 0.22 + engine * 0.22, shade, shade, shade * 1.03, 0.7, -0.5);
+                        c.wrecked ? 0.5 : 0.22 + engine * 0.22, shade, shade, shade * 1.03, 0.7, -0.5, up);
                 }
                 if (burning && rnd() < dt * 45) {
                     const k = rnd();
                     this.sparks.spawn(bx + (rnd() - 0.5) * 0.6, up + 0.6 + rnd() * 0.2, bz + (rnd() - 0.5) * 0.6,
                         (rnd() - 0.5) * 0.8, 1.5 + rnd() * 1.8, (rnd() - 0.5) * 0.8,
-                        0.3 + rnd() * 0.35, 0.7 + rnd() * 0.5, 0.2, 1, 1, 0.35 + k * 0.4, 0.06, 2, -2.5);
+                        0.3 + rnd() * 0.35, 0.7 + rnd() * 0.5, 0.2, 1, 1, 0.35 + k * 0.4, 0.06, 2, -2.5, up);
                 }
             }
         }

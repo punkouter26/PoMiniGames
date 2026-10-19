@@ -1593,6 +1593,42 @@
     .pocabinet-sector { min-width: 0; padding: 0.12rem 0.35rem; }
 }
 
+/* Track limits: the lap in progress will not count. Under the place badge, amber, not alarming. */
+.pocabinet-limits {
+    position: absolute;
+    top: calc(2.9rem + 3.4rem * var(--pocabinet-hud, 1));
+    left: 0.7rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 6px;
+    font-size: calc(0.8rem * var(--pocabinet-hud, 1));
+    color: #1d1405;
+    background: #ffb02e;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+    z-index: 4;
+    animation: pocabinet-limits-in 0.35s cubic-bezier(0.2, 0.9, 0.25, 1.2) both;
+}
+
+.pocabinet-limits b {
+    margin-right: 0.35em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.pocabinet-lap--deleted {
+    text-decoration: line-through;
+    color: var(--pocabinet-loss);
+}
+
+@keyframes pocabinet-limits-in {
+    from { opacity: 0; transform: translateY(-0.4rem); }
+    to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pocabinet-limits { animation: none; }
+}
+
 /* Nobody drives the demo: no pedals over its caption on a touch screen. */
 .pocabinet-race--demo .pocabinet-touch { display: none; }
 

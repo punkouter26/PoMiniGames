@@ -10,7 +10,8 @@
 // work): every car's tail lights, brighter under braking (the game is always day,
 // so there are no lamp or headlight sources).
 // Additive over the road, depth-tested so cars occlude it. Render-only: it reads the
-// poses race.js already drew.
+// poses race.js already drew. Each streak lies on the road under its car (the car's own
+// height: hills and banking), not at sea level.
 
 import * as THREE from 'three';
 
@@ -21,6 +22,7 @@ const TAILS = [new THREE.Vector3(-1.9, 0.56, 0.56), new THREE.Vector3(-1.9, 0.56
 const VERT = /* glsl */ `
 attribute vec4 aLight;     // world x, world z, light height, intensity
 attribute vec3 aColor;
+attribute float aGround;   // road height under the light (world y)
 uniform vec3 uCam;
 varying vec2 vQ;
 varying vec3 vColor;
@@ -39,7 +41,7 @@ void main() {
     vQ = position.xy;
     vColor = aColor;
     vI = aLight.w * smoothstep(120.0, 55.0, dist);
-    gl_Position = projectionMatrix * viewMatrix * vec4(p.x, 0.06, p.y, 1.0);
+    gl_Position = projectionMatrix * viewMatrix * vec4(p.x, aGround + 0.06, p.y, 1.0);
 }`;
 
 const FRAG = /* glsl */ `
@@ -66,8 +68,10 @@ export class WetReflections {
         quad.setIndex([0, 1, 2, 1, 3, 2]);
         this.light = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 4), 4).setUsage(THREE.DynamicDrawUsage);
         this.color = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 3), 3).setUsage(THREE.DynamicDrawUsage);
+        this.ground = new THREE.InstancedBufferAttribute(new Float32Array(MAX), 1).setUsage(THREE.DynamicDrawUsage);
         quad.setAttribute('aLight', this.light);
         quad.setAttribute('aColor', this.color);
+        quad.setAttribute('aGround', this.ground);
         quad.instanceCount = 0;
         this.geom = quad;
         this.material = new THREE.ShaderMaterial({
@@ -92,11 +96,12 @@ export class WetReflections {
      */
     update(timeSeconds, cars) {
         if (this.disposed) return;
-        const L = this.light.array, C = this.color.array;
+        const L = this.light.array, C = this.color.array, G = this.ground.array;
         let n = 0;
-        const put = (x, z, h, intensity, c) => {
+        const put = (x, z, h, intensity, c, ground) => {
             if (n >= MAX || intensity <= 0.01) return;
             L[n * 4] = x; L[n * 4 + 1] = z; L[n * 4 + 2] = h; L[n * 4 + 3] = intensity;
+            G[n] = ground;
             C[n * 3] = c.r; C[n * 3 + 1] = c.g; C[n * 3 + 2] = c.b;
             n++;
         };
@@ -106,12 +111,13 @@ export class WetReflections {
             const tail = car.braking ? 0.85 : 0.35;
             for (const p of TAILS) {
                 const w = this._v.copy(p).applyMatrix4(car.group.matrixWorld);
-                put(w.x, w.z, 0.56, tail, TAIL);
+                put(w.x, w.z, 0.56, tail, TAIL, car.group.position.y);
             }
         }
         this.geom.instanceCount = n;
         this.light.needsUpdate = true;
         this.color.needsUpdate = true;
+        this.ground.needsUpdate = true;
         this.material.uniforms.uCam.value.copy(this.sh.camera.position);
         this.material.uniforms.uTime.value = timeSeconds % 1000;
     }

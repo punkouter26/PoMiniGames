@@ -11,6 +11,22 @@
 
 const CURVATURE_SAMPLE_STEP = 8;
 const HALF_PI = Math.PI / 2;
+/** Track evolution (gripAt): rubber goes down on the racing line over this much race time; on it
+ *  the grip rises (more again in the wet, where the line dries first), and well off it the
+ *  marbles take a little away. MIRRORED: PoCabinetTrack. */
+const RUBBER_SECONDS = 90;
+const RUBBER_BAND = 24;
+const RUBBER_DRY = 0.05;
+const RUBBER_WET = 0.1;
+const MARBLES_FROM = 50;
+const MARBLES = 0.04;
+/** Samples over which a road divider tapers to a point at either end. MIRRORED: PoCabinetTrack. */
+const ISLAND_TAPER = 4;
+
+/** How much rubber is down `elapsed` seconds into a race, 0..1. Mirrors PoCabinetTrack.RubberAt. */
+export function rubberAt(elapsed) {
+    return Math.min(1, Math.max(0, elapsed / RUBBER_SECONDS));
+}
 
 // ── Trig the sim can rely on ────────────────────────────────────────────────
 // sin, cos and atan2 built from + − × ÷, floor and sqrt only, which IEEE 754 pins to the
@@ -143,6 +159,80 @@ class Track {
         this.z = perSample(world?.centerZ);
         this.bank = perSample(world?.centerBank);
         this.roadFrom = Number(world?.roadFrom) || 0;
+
+        // Track features (PoCabinetTrackFeatures, shipped with the world): road half width,
+        // run-off either side (0 grass, 1 gravel, 2 tarmac), apex kerbs (±1 flat, ±2 raised, sign
+        // = side), the racing line, grip patches and road dividers. A world without them (an old
+        // payload) reads as the plain track it used to be.
+        const ints = (a) => Array.isArray(a) && a.length === this.count ? Int8Array.from(a, Number) : new Int8Array(this.count);
+        this.hw = perSample(world?.halfWidths) || new Float64Array(this.count).fill(halfWidth);
+        this.runoffLeft = ints(world?.runoffLeft);
+        this.runoffRight = ints(world?.runoffRight);
+        this.kerbs = ints(world?.kerbs);
+        this.line = perSample(world?.racingLine) || new Float64Array(this.count);
+        this.theme = String(world?.theme || this.id);
+        this.patches = (Array.isArray(world?.patches) ? world.patches : []).map(p => ({
+            from: Number(p.from) | 0, to: Number(p.to) | 0, latFrom: Number(p.latFrom), latTo: Number(p.latTo),
+            dryGrip: Number(p.dryGrip), wetGrip: Number(p.wetGrip), kind: String(p.kind || ''),
+        }));
+        this.islands = (Array.isArray(world?.islands) ? world.islands : []).map(s => {
+            const from = Number(s.from) | 0, to = Number(s.to) | 0;
+            return {
+                from, to, latFrom: Number(s.latFrom), latTo: Number(s.latTo), shortSide: Number(s.shortSide) || 1,
+                fromAlong: cum[from], toAlong: cum[to], hw: this.hw[(from + ((to - from) >> 1)) % this.count],
+            };
+        });
+        // Which divider (index into islands) stands on each sample, or -1, and how wide it is
+        // there: it tapers to a point over its first and last ISLAND_TAPER samples, so a car that
+        // meets its nose glances off instead of stopping dead.
+        this.islandOf = new Int16Array(this.count).fill(-1);
+        this.islandLo = new Float64Array(this.count);
+        this.islandHi = new Float64Array(this.count);
+        this.islands.forEach((s, k) => {
+            const n = (s.to - s.from + this.count) % this.count;
+            const mid = (s.latFrom + s.latTo) * 0.5, half = (s.latTo - s.latFrom) * 0.5;
+            for (let j = 0; j < n; j++) {
+                const i = (s.from + j) % this.count;
+                const t = Math.min(1, (j + 1) / ISLAND_TAPER, (n - j) / ISLAND_TAPER);
+                this.islandOf[i] = k;
+                this.islandLo[i] = mid - half * t;
+                this.islandHi[i] = mid + half * t;
+            }
+        });
+    }
+
+    /** Road half width at sample `i`. Mirrors PoCabinetTrack.HalfWidthAt. */
+    hwAt(i) {
+        return this.hw[i];
+    }
+
+    /** Run-off kind at sample `i` on `side` (+1 right): 0 grass, 1 gravel, 2 tarmac. Mirrors PoCabinetTrack.RunoffAt. */
+    runoffAt(i, side) {
+        return side > 0 ? this.runoffRight[i] : this.runoffLeft[i];
+    }
+
+    /** The divider standing on sample `i`, or null. Mirrors PoCabinetTrack.IslandAt. */
+    islandAt(i) {
+        const k = this.islandOf[i];
+        return k >= 0 ? this.islands[k] : null;
+    }
+
+    /**
+     * What the road itself does to grip at sample `i`, `lateral` from the centerline: its
+     * patches, in order, then the rubber laid on the racing line (and the marbles off it).
+     * Mirrors PoCabinetTrack.GripAt, operation for operation.
+     */
+    gripAt(i, lateral, wet, rubber) {
+        let g = 1;
+        for (const p of this.patches) {
+            if (i >= p.from && i < p.to && lateral >= p.latFrom && lateral <= p.latTo) g *= wet ? p.wetGrip : p.dryGrip;
+        }
+        if (rubber > 0 && Math.abs(lateral) <= this.hw[i]) {
+            const off = Math.abs(lateral - this.line[i]);
+            if (off < RUBBER_BAND) g *= 1 + (wet ? RUBBER_WET : RUBBER_DRY) * rubber;
+            else if (off > MARBLES_FROM && !wet) g *= 1 - MARBLES * rubber;
+        }
+        return g;
     }
 
     /** Share of its top speed a finished car at race distance `distance` holds. Mirrors PoCabinetTrack.CoolDownAt. */

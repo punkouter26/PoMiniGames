@@ -98,6 +98,7 @@ public static class PoCabinetLapVerifier
             double tickStart = Math.Max(0, elapsed - tick);
             double stepDt = elapsed - tickStart;
             var controls = inputs[used++];
+            var cond = new PoCabinetConditions(wet, PoCabinetTrack.RubberAt(elapsed));
 
             foreach (var car in cars)
             {
@@ -106,7 +107,7 @@ public static class PoCabinetLapVerifier
                     ? controls
                     : PoCabinetAiDriver.Decide(track, car, car.Persona!, car.Finished ? car.MaxSpeed * track.CoolDownAt(car.Distance) : car.MaxSpeed,
                         car.CorneringSkill, bodies, grip);
-                PoCabinetPhysics.Step(track, car, c, stepDt, grip);
+                PoCabinetPhysics.Step(track, car, c, stepDt, grip, cond);
             }
             PoCabinetPhysics.ResolveContacts(track, bodies);
 
@@ -121,7 +122,9 @@ public static class PoCabinetLapVerifier
                     double crossedAt = tickStart + frac * stepDt;
                     double lapTime = crossedAt - car.LapStart;
                     car.LapStart = crossedAt;
-                    if (car.BestLap <= 0 || lapTime < car.BestLap) car.BestLap = lapTime;
+                    // A lap that broke track limits does not count (race.js lapBookkeeping).
+                    if (!car.LapInvalid && (car.BestLap <= 0 || lapTime < car.BestLap)) car.BestLap = lapTime;
+                    car.LapInvalid = false;
                     car.LapsDone++;
                     if (car.LapsDone >= totalLaps)
                     {
@@ -129,6 +132,7 @@ public static class PoCabinetLapVerifier
                         break;
                     }
                 }
+                if (car.Wide) car.LapInvalid = true;
             }
         }
         return player.BestLap > 0 ? player.BestLap : -1;
@@ -144,6 +148,7 @@ public static class PoCabinetLapVerifier
         public int LapsDone { get; set; }
         public double LapStart { get; set; }
         public double BestLap { get; set; }
+        public bool LapInvalid { get; set; }
         public bool Finished { get; set; }
     }
 }

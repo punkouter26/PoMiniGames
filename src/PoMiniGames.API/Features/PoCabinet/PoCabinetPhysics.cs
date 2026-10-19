@@ -57,7 +57,15 @@ public class PoCabinetCarBody
     public double Pull { get; set; }
     /// <summary>Structure or engine gone: the engine is dead but for a limp off the road.</summary>
     public bool Wrecked { get; set; }
+    /// <summary>What it is on (<see cref="PoCabinetPhysics.SurfRoad"/> …), set at the end of each step for the next.</summary>
+    public int Surface { get; set; }
+    /// <summary>All four wheels past the track limits on the last step.</summary>
+    public bool Wide { get; set; }
 }
+
+/// <summary>Race conditions for <see cref="PoCabinetPhysics.Step"/>: rain, and how much rubber is
+/// down (<see cref="PoCabinetTrack.RubberAt"/>). Default: dry, green track.</summary>
+public readonly record struct PoCabinetConditions(bool Wet, double Rubber);
 
 /// <summary>
 /// Arcade car physics shared by every PoCabinet race: a speed-along-heading model with a
@@ -162,31 +170,118 @@ public static class PoCabinetPhysics
     public const double BankGrip = 0.6;
     /// <summary>The friction circle: the share of cornering grip full brake pressure takes.</summary>
     public const double TrailLoss = 0.25;
+    /// <summary>What a car is on (<see cref="PoCabinetCarBody.Surface"/>): the road, an apex kerb
+    /// (flat or raised), or the run-off. Gravel beaches a car fast; tarmac run-off costs nothing
+    /// but the lap; a raised kerb scrubs speed and throws the car out. Gravel and tarmac run-off
+    /// are deeper than grass: the barrier stands <see cref="RunOffWide"/> out there.</summary>
+    public const int SurfRoad = 0, SurfKerb = 1, SurfSausage = 2, SurfGrass = 3, SurfGravel = 4, SurfRunoff = 5;
+    public const double RunOffWide = 40;
+    /// <summary>How far an apex kerb reaches onto the tarmac, and out past the edge line.</summary>
+    public const double KerbInner = 5;
+    public const double KerbOuter = 12;
+    public const double KerbGrip = 0.97;
+    public const double KerbWetGrip = 0.8;
+    public const double SausageGrip = 0.85;
+    public const double SausageScrub = 45;
+    public const double SausageKick = 1.1;
+    public const double GravelGrip = 0.45;
+    public const double GravelDecel = 95;
 
-    /// <summary>Barrier distance from the centerline for a track (car centre can't pass it).</summary>
+    /// <summary>Barrier distance from the centerline on the track's nominal width.</summary>
     public static double WallLateral(PoCabinetTrack track) => track.HalfWidth + RunOff - CarRadius * 0.5;
+
+    /// <summary>How deep the run-off is at sample <paramref name="i"/> on <paramref name="side"/>. Mirrors physics.js <c>runOffAt</c>.</summary>
+    public static double RunOffAt(PoCabinetTrack track, int i, int side) => track.RunoffAt(i, side) == 0 ? RunOff : RunOffWide;
+
+    /// <summary>Where a car's centre meets the barrier at sample <paramref name="i"/> on <paramref name="side"/>. Mirrors physics.js <c>wallAt</c>.</summary>
+    public static double WallAt(PoCabinetTrack track, int i, int side) => track.HalfWidthAt(i) + RunOffAt(track, i, side) - CarRadius * 0.5;
+
+    /// <summary>What a car <paramref name="lateral"/> off the centerline at sample <paramref name="i"/> is on. Mirrors physics.js <c>surfaceAt</c>.</summary>
+    public static int SurfaceAt(PoCabinetTrack track, int i, double lateral)
+    {
+        double hw = track.HalfWidthAt(i);
+        double l = Math.Abs(lateral);
+        int s = lateral > 0 ? 1 : -1;
+        int k = track.KerbAt(i);
+        if (k != 0 && (k > 0 ? 1 : -1) == s && l > hw - KerbInner && l < hw + KerbOuter)
+        {
+            return k == 2 || k == -2 ? SurfSausage : SurfKerb;
+        }
+        if (l <= hw) return SurfRoad;
+        int kind = track.RunoffAt(i, s);
+        return kind == 1 ? SurfGravel : kind == 2 ? SurfRunoff : SurfGrass;
+    }
+
+    /// <summary>Track limits: all four wheels past the edge (the kerb counts as track). Mirrors physics.js <c>beyondLimits</c>.</summary>
+    public static bool Beyond(PoCabinetTrack track, int i, double lateral)
+    {
+        int s = lateral > 0 ? 1 : -1;
+        int k = track.KerbAt(i);
+        double edge = track.HalfWidthAt(i) + (k != 0 && (k > 0 ? 1 : -1) == s ? KerbOuter : 0);
+        return Math.Abs(lateral) - HullRadius > edge;
+    }
+
+    /// <summary>Where the car ends up this step and how it is moving (<see cref="Bounce"/>'s state).</summary>
+    private struct StepState
+    {
+        public double X, Y, Heading, V2, Slip;
+    }
+
+    /// <summary>
+    /// The car has gone <paramref name="excess"/> into a barrier on side <paramref name="s"/> of it
+    /// at <paramref name="proj"/>: put it back on the face and, if it was closing, damage it and
+    /// take the closing speed off. Shared by the edge barriers and the dividers. Mirrors physics.js <c>bounce</c>.
+    /// </summary>
+    private static void Bounce(PoCabinetCarBody car, PoCabinetTrackProjection proj, double s, double excess, ref StepState st)
+    {
+        double nx = -proj.Ty * s, ny = proj.Tx * s;
+        st.X -= nx * excess;
+        st.Y -= ny * excess;
+        double ch = PoCabinetTrack.Cos(st.Heading), sh = PoCabinetTrack.Sin(st.Heading);
+        double vx = ch * st.V2 - sh * st.Slip, vy = sh * st.V2 + ch * st.Slip;
+        double vn = vx * nx + vy * ny;
+        if (vn > 0)
+        {
+            // The part of the body facing the barrier takes it, pushed straight back from it.
+            double fn = nx * ch + ny * sh, sn = ny * ch - nx * sh;
+            Hurt(car, vn, fn * (HullHalf + HullRadius), sn * HullRadius);
+            double tx = vx - nx * vn, ty = vy - ny * vn;
+            vx = tx * WallFriction - nx * vn * WallRestitution;
+            vy = ty * WallFriction - ny * vn * WallRestitution;
+            double speed = Math.Sqrt(vx * vx + vy * vy);
+            if (speed > 1) st.Heading = st.V2 >= 0 ? PoCabinetTrack.Atan2(vy, vx) : PoCabinetTrack.Atan2(-vy, -vx);
+            st.V2 = st.V2 >= 0 ? speed : -speed;
+            st.Slip = 0; // the car leaves the barrier pointing the way it is going
+            car.WallImpact = Math.Max(car.WallImpact, vn);
+        }
+    }
 
     /// <summary>
     /// Advance one car by <paramref name="dt"/>. <paramref name="grip"/> is the weather factor
     /// (1 = dry). Contacts with other cars are a separate pass (<see cref="ResolveContacts"/>).
     /// </summary>
-    public static void Step(PoCabinetTrack track, PoCabinetCarBody car, PoCabinetControls c, double dt, double grip)
+    public static void Step(PoCabinetTrack track, PoCabinetCarBody car, PoCabinetControls c, double dt, double grip, PoCabinetConditions cond = default)
     {
         double throttle = c.Throttle, brake = c.Brake, steer = c.Steer;
         double v = car.Speed;
-        double surfaceGrip = car.OnGrass ? GrassGrip : 1;
+        // The road under it (last tick's segment and surface): what it is on, and the grip the
+        // patches, the rubber and the kerbs there give.
+        int seg = car.SegHint;
+        int surf = car.Surface;
+        double surfaceGrip = surf == SurfGrass ? GrassGrip : surf == SurfGravel ? GravelGrip
+            : surf == SurfKerb ? (cond.Wet ? KerbWetGrip : KerbGrip) : surf == SurfSausage ? SausageGrip : 1;
+        if (seg >= 0) surfaceGrip *= track.GripAt(seg, car.Lateral, cond.Wet, cond.Rubber);
         // What the hits have cost: a wrecked engine gives only a limp, and only until the car is
         // clear of the tarmac; a bent car pulls and has lost lock, power, top speed and grip.
         if (car.Wrecked)
         {
-            throttle = Math.Abs(car.Lateral) > track.HalfWidth + WreckClear || v >= LimpSpeed ? 0 : Math.Min(throttle, LimpThrottle);
+            throttle = Math.Abs(car.Lateral) > (seg >= 0 ? track.HalfWidthAt(seg) : track.HalfWidth) + WreckClear || v >= LimpSpeed ? 0 : Math.Min(throttle, LimpThrottle);
         }
         steer = Math.Min(1, Math.Max(-1, steer * (1 - LockLoss * Math.Abs(car.Pull)) + PullSteer * car.Pull));
         double power = 1 - PowerLoss * car.Engine;
         double top = MaxSpeed * (1 - TopLoss * car.Engine);
         grip = grip * (1 - GripLoss * car.Damage);
-        // The road under it (last tick's segment): how steep the way it is pointing, how banked.
-        int seg = car.SegHint;
+        // How steep the way it is pointing, how banked.
         double roadDot = seg >= 0 ? PoCabinetTrack.Cos(car.Heading) * track.TangentX(seg) + PoCabinetTrack.Sin(car.Heading) * track.TangentY(seg) : 0;
         double slope = seg >= 0 ? track.Grade(seg) * roadDot : 0;
         double bank = seg >= 0 ? track.Bank(seg) : 0;
@@ -217,7 +312,10 @@ public static class PoCabinetPhysics
             double a = throttle * Accel * power * grip * Math.Max(0, 1 - ratio * ratio)
                        - brake * BrakeDecel
                        - CoastDecel * (1 - throttle);
-            if (car.OnGrass && v > 25) a -= GrassDecel;
+            // Grass drags, gravel beaches the car, a raised kerb scrubs it.
+            if (surf == SurfGrass && v > 25) a -= GrassDecel;
+            else if (surf == SurfGravel && v > 8) a -= GravelDecel;
+            else if (surf == SurfSausage && v > 15) a -= SausageScrub;
             // Downhill pulls the car on and uphill holds it back; past its top speed the air
             // takes the excess back.
             a -= SlopeGravity * slope;
@@ -245,53 +343,55 @@ public static class PoCabinetPhysics
         double slipGrip = SlipDecel * grip * surfaceGrip * dt;
         double slip = car.Slip > 0 ? Math.Max(0, car.Slip - slipGrip) : Math.Min(0, car.Slip + slipGrip);
         double spin = car.Spin > 0 ? Math.Max(0, car.Spin - SpinDecel * dt) : Math.Min(0, car.Spin + SpinDecel * dt);
+        // A raised kerb throws the car out, away from the apex, by how fast it takes it.
+        if (surf == SurfSausage && speedAbs > 15) slip += (car.Lateral > 0 ? 1 : -1) * roadDot * SausageKick * speedAbs * dt;
         if (Math.Abs(slip) > SlipSliding) car.Sliding = true;
 
         double heading = car.Heading + (omega + spin) * dt;
         double ch = PoCabinetTrack.Cos(heading), sh = PoCabinetTrack.Sin(heading);
-        double x = car.X + (ch * v2 - sh * slip) * dt;
-        double y = car.Y + (sh * v2 + ch * slip) * dt;
+        var st = new StepState
+        {
+            X = car.X + (ch * v2 - sh * slip) * dt,
+            Y = car.Y + (sh * v2 + ch * slip) * dt,
+            Heading = heading,
+            V2 = v2,
+            Slip = slip,
+        };
 
-        // ── Track: grass and barrier ────────────────────────────────────
-        var proj = track.Project(x, y, car.SegHint);
-        double wallLat = WallLateral(track);
+        // ── Track: the barriers at the edge of the run-off (deeper where it is gravel or
+        // tarmac), and a road divider, faced from whichever side the car is on ──
+        var proj = track.Project(st.X, st.Y, car.SegHint);
         car.WallImpact = 0;
+        int side = proj.Lateral > 0 ? 1 : -1;
+        double wallLat = WallAt(track, proj.Index, side);
         if (Math.Abs(proj.Lateral) > wallLat)
         {
-            double s = proj.Lateral > 0 ? 1 : -1;
-            double nx = -proj.Ty * s, ny = proj.Tx * s; // outward normal
-            double excess = Math.Abs(proj.Lateral) - wallLat;
-            x -= nx * excess;
-            y -= ny * excess;
-
-            double vx = ch * v2 - sh * slip, vy = sh * v2 + ch * slip;
-            double vn = vx * nx + vy * ny;
-            if (vn > 0)
+            Bounce(car, proj, side, Math.Abs(proj.Lateral) - wallLat, ref st);
+            proj = track.Project(st.X, st.Y, proj.Index);
+        }
+        if (track.IslandIndexAt(proj.Index) >= 0)
+        {
+            double lo = track.IslandLo(proj.Index) - CarRadius * 0.5, hi = track.IslandHi(proj.Index) + CarRadius * 0.5;
+            if (proj.Lateral > lo && proj.Lateral < hi)
             {
-                // The part of the body facing the barrier takes it, pushed straight back from it.
-                double fn = nx * ch + ny * sh, sn = ny * ch - nx * sh;
-                Hurt(car, vn, fn * (HullHalf + HullRadius), sn * HullRadius);
-                double tx = vx - nx * vn, ty = vy - ny * vn;
-                vx = tx * WallFriction - nx * vn * WallRestitution;
-                vy = ty * WallFriction - ny * vn * WallRestitution;
-                double speed = Math.Sqrt(vx * vx + vy * vy);
-                if (speed > 1) heading = v2 >= 0 ? PoCabinetTrack.Atan2(vy, vx) : PoCabinetTrack.Atan2(-vy, -vx);
-                v2 = v2 >= 0 ? speed : -speed;
-                slip = 0; // the car leaves the barrier pointing the way it is going
-                car.WallImpact = vn;
+                double toLo = proj.Lateral - lo, toHi = hi - proj.Lateral;
+                if (toLo < toHi) Bounce(car, proj, 1, toLo, ref st);
+                else Bounce(car, proj, -1, toHi, ref st);
+                proj = track.Project(st.X, st.Y, proj.Index);
             }
-            proj = track.Project(x, y, proj.Index);
         }
 
-        car.X = x;
-        car.Y = y;
-        car.Heading = PoCabinetTrack.WrapAngle(heading);
-        car.Speed = v2;
-        car.Slip = slip;
+        car.X = st.X;
+        car.Y = st.Y;
+        car.Heading = PoCabinetTrack.WrapAngle(st.Heading);
+        car.Speed = st.V2;
+        car.Slip = st.Slip;
         car.Spin = spin;
         car.SegHint = proj.Index;
         car.Lateral = proj.Lateral;
-        car.OnGrass = Math.Abs(proj.Lateral) > track.HalfWidth;
+        car.OnGrass = Math.Abs(proj.Lateral) > track.HalfWidthAt(proj.Index);
+        car.Surface = SurfaceAt(track, proj.Index, proj.Lateral);
+        car.Wide = Beyond(track, proj.Index, proj.Lateral);
         AdvanceDistance(track, car, proj.Along);
     }
 
@@ -486,6 +586,8 @@ public static class PoCabinetPhysics
         car.Along = proj.Along;
         car.Lateral = proj.Lateral;
         car.OnGrass = false;
+        car.Surface = SurfRoad;
+        car.Wide = false;
         // Race distance starts negative: the slot's own distance behind the line, corrected by
         // where the car projects (a bend moves an outer slot a little along the road). Not
         // "along minus a lap": a front-row slot on a tight last bend can project past the line.

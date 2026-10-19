@@ -47,7 +47,9 @@ public sealed class PoCabinetAiPersonalityTests
                 if (car.Distance > 150) series.Add(car.Lateral);
             }
             car.LapsDone.Should().BeGreaterThanOrEqualTo(1, $"{o.Id} must complete a lap under the real physics");
-            car.BestLapSeconds.Should().BeInRange(12, 60, $"{o.Id}'s lap time must be a plausible arcade lap");
+            // The lap as timed: a wild one may have run wide past the track limits, which costs it
+            // the best-lap board (BestLapSeconds) but not the clock.
+            car.LastLapSeconds.Should().BeInRange(12, 60, $"{o.Id}'s lap time must be a plausible arcade lap");
             laterals[o.Id] = series;
         }
 

@@ -200,6 +200,9 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     private bool _submitted;
     private double _submittedBestLap;
     private bool _wreckAnnounced;
+    /// <summary>The lap in progress has broken track limits; the last one did.</summary>
+    protected bool _lapInvalid;
+    protected bool _lastLapInvalid;
     private int _lastLapCount;
     private double _lastLapTime;
     private long _lastHudRender;
@@ -299,7 +302,12 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     protected async Task StartRaceAsync()
     {
         // A demo shows a different track each time it starts itself.
-        if (Mode == GameMode.Demo) _trackId = PoCabinetCatalog.Tracks[Random.Shared.Next(PoCabinetCatalog.Tracks.Count)].Id;
+        if (Mode == GameMode.Demo)
+        {
+            // Today's daily circuit is in the draw too.
+            int pick = Random.Shared.Next(PoCabinetCatalog.Tracks.Count + 1);
+            _trackId = pick < PoCabinetCatalog.Tracks.Count ? PoCabinetCatalog.Tracks[pick].Id : PoCabinetCatalog.Today(DateTime.UtcNow).Id;
+        }
         _playerName = PlayerNameSvc.GetOrReadInitialName();
         _status = null;
         await UnlockAudioAsync();
@@ -580,11 +588,21 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             if (_lastLapCount > 0 && localCar.Lap > _lastLapCount)
             {
                 var lapTime = snap.ElapsedRaceTime - _lastLapTime;
-                if (lapTime > 0 && (_bestLapSession <= 0 || lapTime < _bestLapSession)) _bestLapSession = lapTime;
+                // A lap past track limits is timed but counts for nothing (race.js lapBookkeeping).
+                var invalid = _lapInvalid;
+                if (!invalid && lapTime > 0 && (_bestLapSession <= 0 || lapTime < _bestLapSession)) _bestLapSession = lapTime;
                 CloseLap(lapTime, snap.ElapsedRaceTime);
+                _lastLapInvalid = invalid;
                 if (lapTime > 0) Fire("PoCabinet.lapChime");
                 if (localCar.Lap <= _totalLaps)
-                    _liveAnnouncement = $"Lap {localCar.Lap} of {_totalLaps}. Last lap {FormatLapTime(lapTime)}.";
+                    _liveAnnouncement = $"Lap {localCar.Lap} of {_totalLaps}. Last lap {FormatLapTime(lapTime)}{(invalid ? ", deleted for track limits" : "")}.";
+                _lapInvalid = false;
+                forceRender = true;
+            }
+            if (localCar.LapInvalid && !_lapInvalid)
+            {
+                _lapInvalid = true;
+                _liveAnnouncement = "Track limits: all four wheels off. This lap will not count.";
                 forceRender = true;
             }
             _lastLapCount = localCar.Lap;
@@ -819,6 +837,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _submitted = false;
         _submittedBestLap = 0;
         _wreckAnnounced = false;
+        _lapInvalid = false;
+        _lastLapInvalid = false;
         _telemetryDrawn = false;
         _telemetrySummary = null;
         _hasReferenceLap = false;

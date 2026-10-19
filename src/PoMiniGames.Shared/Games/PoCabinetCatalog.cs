@@ -57,11 +57,31 @@ public static class PoCabinetCatalog
             "playground",
             "Playground Marble Run",
             "Point-to-point down a giant play structure's marble run: off the top, round the banked turns, down the slide to the finish tray. One run."),
+        new PoCabinetTrackInfo(
+            "senate",
+            "Senate Hill",
+            "Autumn hill road course: a climb to a blind crest, a banked downhill hairpin, the esses, a filibuster chicane with raised kerbs and a split sweeper with a joker lane."),
     });
 
-    public static PoCabinetTrackInfo GetTrack(string? id) =>
-        Tracks.FirstOrDefault(t => string.Equals(t.Id, id?.Trim(), StringComparison.OrdinalIgnoreCase)) ?? Tracks[0];
+    /// <summary>The tracks that are campaign stages, in stage order (the first four of <see cref="Tracks"/>).</summary>
+    public const int CampaignStages = 4;
 
+    public static PoCabinetTrackInfo GetTrack(string? id) =>
+        PoCabinetDailyTrack.TryParse(id, out var day) ? Daily(day)
+        : Tracks.FirstOrDefault(t => string.Equals(t.Id, id?.Trim(), StringComparison.OrdinalIgnoreCase)) ?? Tracks[0];
+
+    /// <summary>A track a race may be run and a lap posted on: the fixed ones, and the daily
+    /// circuit of yesterday, today or tomorrow (UTC).</summary>
     public static bool IsKnownTrack(string? id) =>
-        Tracks.Any(t => string.Equals(t.Id, id?.Trim(), StringComparison.OrdinalIgnoreCase));
+        Tracks.Any(t => string.Equals(t.Id, id?.Trim(), StringComparison.OrdinalIgnoreCase))
+        || PoCabinetDailyTrack.IsCurrent(id, DateTime.UtcNow);
+
+    /// <summary>The daily circuit's card: a new seeded layout each UTC day, the same for everyone.</summary>
+    public static PoCabinetTrackInfo Daily(DateOnly day) => new(
+        PoCabinetDailyTrack.IdFor(day),
+        PoCabinetDailyTrack.NameFor(day),
+        "Today's circuit, generated from the date: a new layout every day, the same hills, corners and run-off for every player, with its own leaderboard.");
+
+    /// <summary>Today's daily circuit (UTC).</summary>
+    public static PoCabinetTrackInfo Today(DateTime utcNow) => Daily(DateOnly.FromDateTime(utcNow));
 }

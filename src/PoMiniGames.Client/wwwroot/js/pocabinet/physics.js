@@ -105,6 +105,28 @@ const BANK_GRIP = 0.6;
 const TRAIL_LOSS = 0.25;
 /** AI: how far over its own pace a car lets a descent carry it before it brakes for it. */
 const RUN_ON = 30;
+/**
+ * What a car is on (body.surface, set at the end of every step from where it ended up, read by
+ * the next one): the road, an apex kerb (flat or raised), or the run-off past the edge.
+ * Gravel beaches a car fast; tarmac run-off costs nothing but the lap; a raised kerb scrubs
+ * speed and throws the car sideways (out, away from the apex). Gravel and tarmac run-off
+ * are deeper than grass: the barrier stands RUN_OFF_WIDE out there.
+ */
+export const SURF_ROAD = 0, SURF_KERB = 1, SURF_SAUSAGE = 2, SURF_GRASS = 3, SURF_GRAVEL = 4, SURF_RUNOFF = 5;
+export const RUN_OFF_WIDE = 40;
+/** How far an apex kerb reaches onto the tarmac, and out past the edge line (sim units). */
+export const KERB_INNER = 5;
+export const KERB_OUTER = 12;
+const KERB_GRIP = 0.97;
+const KERB_WET_GRIP = 0.8;
+const SAUSAGE_GRIP = 0.85;
+const SAUSAGE_SCRUB = 45;
+const SAUSAGE_KICK = 1.1;
+const GRAVEL_GRIP = 0.45;
+const GRAVEL_DECEL = 95;
+/** AI: how far ahead it starts picking its side of a road divider, and how wide it keeps of it. */
+const ISLAND_LOOK = 320;
+const ISLAND_CLEAR = 14;
 /** AI following: the gap it keeps to the car ahead (centres; hulls touch at 39) and the braking it plans on. */
 const FOLLOW_GAP = 44;
 const FOLLOW_DECEL = 80;
@@ -229,8 +251,44 @@ function lapse(persona, distance) {
 /** Neutral line used by the demo autopilot and for finished cars' cool-down lap. */
 export const AUTOPILOT = Object.freeze({ lookahead: 100, lateralOffset: 0, brakingAggression: 0.5, collisionTolerance: 0.9, draftingAffinity: 0, aggression: 0, twitch: 0.375 });
 
+/** The barrier's distance from the centerline on the track's nominal width (feel and audio only; the physics uses wallAt). */
 export function wallLateral(track) {
     return track.halfWidth + RUN_OFF - CAR_RADIUS * 0.5;
+}
+
+/** How deep the run-off is at sample `i` on `side` (+1 right). Mirrors PoCabinetPhysics.RunOffAt. */
+export function runOffAt(track, i, side) {
+    return track.runoffAt(i, side) === 0 ? RUN_OFF : RUN_OFF_WIDE;
+}
+
+/** Where a car's centre meets the barrier at sample `i` on `side`. Mirrors PoCabinetPhysics.WallAt. */
+export function wallAt(track, i, side) {
+    return track.hwAt(i) + runOffAt(track, i, side) - CAR_RADIUS * 0.5;
+}
+
+/** What a car `lateral` off the centerline at sample `i` is on (SURF_*). Mirrors PoCabinetPhysics.SurfaceAt. */
+export function surfaceAt(track, i, lateral) {
+    const hw = track.hwAt(i);
+    const l = Math.abs(lateral);
+    const s = lateral > 0 ? 1 : -1;
+    const k = track.kerbs[i];
+    if (k !== 0 && (k > 0 ? 1 : -1) === s && l > hw - KERB_INNER && l < hw + KERB_OUTER) {
+        return k === 2 || k === -2 ? SURF_SAUSAGE : SURF_KERB;
+    }
+    if (l <= hw) return SURF_ROAD;
+    const kind = track.runoffAt(i, s);
+    return kind === 1 ? SURF_GRAVEL : kind === 2 ? SURF_RUNOFF : SURF_GRASS;
+}
+
+/**
+ * Track limits: all four wheels past the edge of the track (the kerb counts as track), i.e.
+ * the car's flank is beyond it. Mirrors PoCabinetPhysics.Beyond.
+ */
+export function beyondLimits(track, i, lateral) {
+    const s = lateral > 0 ? 1 : -1;
+    const k = track.kerbs[i];
+    const edge = track.hwAt(i) + (k !== 0 && (k > 0 ? 1 : -1) === s ? KERB_OUTER : 0);
+    return Math.abs(lateral) - HULL_RADIUS > edge;
 }
 
 /** A fresh physical body. Race bookkeeping (laps, times) is layered on by the caller. */
@@ -242,6 +300,8 @@ export function createBody() {
         slip: 0, spin: 0,   // sideways speed (+ = right) and yaw rate a contact left behind
         // What the hits have cost (hurt()): structure and engine 0..1, alignment −1..1 (+ pulls right).
         damage: 0, engine: 0, pull: 0, wrecked: false,
+        // What it is on (SURF_*), and whether it is past the track limits.
+        surface: SURF_ROAD, wide: false,
     };
 }
 
@@ -252,8 +312,12 @@ export function copyBody(src, dst) {
     d.onGrass = src.onGrass; d.sliding = src.sliding; d.wallImpact = src.wallImpact;
     d.slip = src.slip; d.spin = src.spin;
     d.damage = src.damage; d.engine = src.engine; d.pull = src.pull; d.wrecked = src.wrecked;
+    d.surface = src.surface ?? SURF_ROAD; d.wide = !!src.wide;
     return d;
 }
+
+/** Race conditions for step(): rain, and how much rubber is down (track.js rubberAt). */
+export const DRY = Object.freeze({ wet: false, rubber: 0 });
 
 // Where race.js wants every hit reported, for the dents (render only: nothing reads it back).
 let hitSink = null;
@@ -280,23 +344,62 @@ function hurt(car, closing, fwd, side, nx, ny) {
     if (car.damage >= 1 || car.engine >= 1) car.wrecked = true;
 }
 
-/** Advance one car by dt with controls { throttle, brake, steer }. Mirrors PoCabinetPhysics.Step. */
-export function step(track, car, c, dt, grip) {
+// step()'s scratch for the barrier bounces: where the car ends up and how it is moving.
+const ST = { x: 0, y: 0, heading: 0, v2: 0, slip: 0 };
+
+/**
+ * The car has gone `excess` into a barrier that lies on side `s` of it (+1: toward +lateral at
+ * the projection `proj`): put it back on the barrier's face, and if it was closing, damage it
+ * where it hit and take the closing speed off (a little comes back, the rest scrubs along).
+ * Shared by the edge barriers and the road dividers. Mirrors PoCabinetPhysics.Bounce.
+ */
+function bounce(car, proj, s, excess, st) {
+    const nx = -proj.ty * s, ny = proj.tx * s;
+    st.x -= nx * excess;
+    st.y -= ny * excess;
+    const ch = cos(st.heading), sh = sin(st.heading);
+    let vx = ch * st.v2 - sh * st.slip, vy = sh * st.v2 + ch * st.slip;
+    const vn = vx * nx + vy * ny;
+    if (vn > 0) {
+        // The part of the body facing the barrier takes it, pushed straight back from it.
+        const fn = nx * ch + ny * sh, sn = ny * ch - nx * sh;
+        hurt(car, vn, fn * (HULL_HALF + HULL_RADIUS), sn * HULL_RADIUS, -fn, -sn);
+        const tx = vx - nx * vn, ty = vy - ny * vn;
+        vx = tx * WALL_FRICTION - nx * vn * WALL_RESTITUTION;
+        vy = ty * WALL_FRICTION - ny * vn * WALL_RESTITUTION;
+        const speed = Math.sqrt(vx * vx + vy * vy);
+        if (speed > 1) st.heading = st.v2 >= 0 ? atan2(vy, vx) : atan2(-vy, -vx);
+        st.v2 = st.v2 >= 0 ? speed : -speed;
+        st.slip = 0;   // the car leaves the barrier pointing the way it is going
+        car.wallImpact = Math.max(car.wallImpact, vn);
+    }
+}
+
+/**
+ * Advance one car by dt with controls { throttle, brake, steer }. `grip` is the weather and
+ * `cond` the race conditions ({ wet, rubber }; DRY when omitted). Mirrors PoCabinetPhysics.Step.
+ */
+export function step(track, car, c, dt, grip, cond = DRY) {
     let throttle = c.throttle, steer = c.steer;
     const brake = c.brake;
     const v = car.speed;
-    const surfaceGrip = car.onGrass ? GRASS_GRIP : 1;
+    // The road under it (last tick's segment and surface): what it is on, and the grip the
+    // patches, the rubber and the kerbs there give.
+    const seg = car.segHint;
+    const surf = car.surface;
+    let surfaceGrip = surf === SURF_GRASS ? GRASS_GRIP : surf === SURF_GRAVEL ? GRAVEL_GRIP
+        : surf === SURF_KERB ? (cond.wet ? KERB_WET_GRIP : KERB_GRIP) : surf === SURF_SAUSAGE ? SAUSAGE_GRIP : 1;
+    if (seg >= 0) surfaceGrip *= track.gripAt(seg, car.lateral, cond.wet, cond.rubber);
     // What the hits have cost: a wrecked engine gives only a limp, and only until the car is
     // clear of the tarmac; a bent car pulls and has lost lock, power, top speed and grip.
     if (car.wrecked) {
-        throttle = Math.abs(car.lateral) > track.halfWidth + WRECK_CLEAR || v >= LIMP_SPEED ? 0 : Math.min(throttle, LIMP_THROTTLE);
+        throttle = Math.abs(car.lateral) > (seg >= 0 ? track.hwAt(seg) : track.halfWidth) + WRECK_CLEAR || v >= LIMP_SPEED ? 0 : Math.min(throttle, LIMP_THROTTLE);
     }
     steer = Math.min(1, Math.max(-1, steer * (1 - LOCK_LOSS * Math.abs(car.pull)) + PULL_STEER * car.pull));
     const power = 1 - POWER_LOSS * car.engine;
     const top = MAX_SPEED * (1 - TOP_LOSS * car.engine);
     grip = grip * (1 - GRIP_LOSS * car.damage);
-    // The road under it (last tick's segment): how steep the way it is pointing, how banked.
-    const seg = car.segHint;
+    // How steep the way it is pointing, how banked.
     const roadDot = seg >= 0 ? cos(car.heading) * track.tx[seg] + sin(car.heading) * track.ty[seg] : 0;
     const slope = seg >= 0 ? track.grade(seg) * roadDot : 0;
     const bank = seg >= 0 ? track.bankOf(seg) : 0;
@@ -316,7 +419,10 @@ export function step(track, car, c, dt, grip) {
         let a = throttle * ACCEL * power * grip * Math.max(0, 1 - ratio * ratio)
             - brake * BRAKE_DECEL
             - COAST_DECEL * (1 - throttle);
-        if (car.onGrass && v > 25) a -= GRASS_DECEL;
+        // Grass drags, gravel beaches the car, a raised kerb scrubs it.
+        if (surf === SURF_GRASS && v > 25) a -= GRASS_DECEL;
+        else if (surf === SURF_GRAVEL && v > 8) a -= GRAVEL_DECEL;
+        else if (surf === SURF_SAUSAGE && v > 15) a -= SAUSAGE_SCRUB;
         // Downhill pulls the car on and uphill holds it back; past its top speed the air
         // takes the excess back.
         a -= SLOPE_GRAVITY * slope;
@@ -342,50 +448,50 @@ export function step(track, car, c, dt, grip) {
     const slipGrip = SLIP_DECEL * grip * surfaceGrip * dt;
     let slip = car.slip > 0 ? Math.max(0, car.slip - slipGrip) : Math.min(0, car.slip + slipGrip);
     const spin = car.spin > 0 ? Math.max(0, car.spin - SPIN_DECEL * dt) : Math.min(0, car.spin + SPIN_DECEL * dt);
+    // A raised kerb throws the car out, away from the apex, by how fast it takes it.
+    if (surf === SURF_SAUSAGE && speedAbs > 15) slip += (car.lateral > 0 ? 1 : -1) * roadDot * SAUSAGE_KICK * speedAbs * dt;
     if (Math.abs(slip) > SLIP_SLIDING) car.sliding = true;
 
-    let heading = car.heading + (omega + spin) * dt;
+    const heading = car.heading + (omega + spin) * dt;
     const ch = cos(heading), sh = sin(heading);
-    let x = car.x + (ch * v2 - sh * slip) * dt;
-    let y = car.y + (sh * v2 + ch * slip) * dt;
+    const st = ST;
+    st.x = car.x + (ch * v2 - sh * slip) * dt;
+    st.y = car.y + (sh * v2 + ch * slip) * dt;
+    st.heading = heading;
+    st.v2 = v2;
+    st.slip = slip;
 
-    let proj = track.project(x, y, car.segHint);
-    const wallLat = wallLateral(track);
+    // The barriers: at the edge of the run-off (deeper where it is gravel or tarmac), and a
+    // road divider, faced from whichever side the car is on.
+    let proj = track.project(st.x, st.y, car.segHint);
     car.wallImpact = 0;
+    const side = proj.lateral > 0 ? 1 : -1;
+    const wallLat = wallAt(track, proj.index, side);
     if (Math.abs(proj.lateral) > wallLat) {
-        const s = proj.lateral > 0 ? 1 : -1;
-        const nx = -proj.ty * s, ny = proj.tx * s;
-        const excess = Math.abs(proj.lateral) - wallLat;
-        x -= nx * excess;
-        y -= ny * excess;
-
-        let vx = ch * v2 - sh * slip, vy = sh * v2 + ch * slip;
-        const vn = vx * nx + vy * ny;
-        if (vn > 0) {
-            // The part of the body facing the barrier takes it, pushed straight back from it.
-            const fn = nx * ch + ny * sh, sn = ny * ch - nx * sh;
-            hurt(car, vn, fn * (HULL_HALF + HULL_RADIUS), sn * HULL_RADIUS, -fn, -sn);
-            const tx = vx - nx * vn, ty = vy - ny * vn;
-            vx = tx * WALL_FRICTION - nx * vn * WALL_RESTITUTION;
-            vy = ty * WALL_FRICTION - ny * vn * WALL_RESTITUTION;
-            const speed = Math.sqrt(vx * vx + vy * vy);
-            if (speed > 1) heading = v2 >= 0 ? atan2(vy, vx) : atan2(-vy, -vx);
-            v2 = v2 >= 0 ? speed : -speed;
-            slip = 0;   // the car leaves the barrier pointing the way it is going
-            car.wallImpact = vn;
+        bounce(car, proj, side, Math.abs(proj.lateral) - wallLat, st);
+        proj = track.project(st.x, st.y, proj.index);
+    }
+    if (track.islandOf[proj.index] >= 0) {
+        const lo = track.islandLo[proj.index] - CAR_RADIUS * 0.5, hi = track.islandHi[proj.index] + CAR_RADIUS * 0.5;
+        if (proj.lateral > lo && proj.lateral < hi) {
+            const toLo = proj.lateral - lo, toHi = hi - proj.lateral;
+            if (toLo < toHi) bounce(car, proj, 1, toLo, st);
+            else bounce(car, proj, -1, toHi, st);
+            proj = track.project(st.x, st.y, proj.index);
         }
-        proj = track.project(x, y, proj.index);
     }
 
-    car.x = x;
-    car.y = y;
-    car.heading = wrapAngle(heading);
-    car.speed = v2;
-    car.slip = slip;
+    car.x = st.x;
+    car.y = st.y;
+    car.heading = wrapAngle(st.heading);
+    car.speed = st.v2;
+    car.slip = st.slip;
     car.spin = spin;
     car.segHint = proj.index;
     car.lateral = proj.lateral;
-    car.onGrass = Math.abs(proj.lateral) > track.halfWidth;
+    car.onGrass = Math.abs(proj.lateral) > track.hwAt(proj.index);
+    car.surface = surfaceAt(track, proj.index, proj.lateral);
+    car.wide = beyondLimits(track, proj.index, proj.lateral);
     advanceDistance(track, car, proj.along);
 }
 
@@ -537,6 +643,8 @@ export function gridSlot(track, car, slot) {
     car.along = proj.along;
     car.lateral = proj.lateral;
     car.onGrass = false;
+    car.surface = SURF_ROAD;
+    car.wide = false;
     // Race distance starts negative: the slot's own distance behind the line, corrected by
     // where the car projects (a bend moves an outer slot a little along the road). Not
     // "along minus a lap": a front-row slot on a tight last bend can project past the line.
@@ -550,13 +658,34 @@ export function gridSlot(track, car, slot) {
  * Speed the tightest corner in braking range allows; `reach` is how many seconds of road
  * that range is (the later a driver brakes, the less). Shared by the AI and the auto-brake assist.
  */
-function cornerSpeed(track, car, grip, margin, reach) {
+function cornerSpeed(track, car, grip, margin, reach, inside = 0) {
     const v = car.speed;
     // Capped at a turn as tight as the road is wide: the centerline has kinks sharper than
     // that (Mar-a-Lago's last bend, a few samples long) which a car simply cuts across,
     // and braking for them parked a 100-car field on the start line.
-    const kappa = Math.min(1 / track.halfWidth, track.maxCurvature(car.along + 5, car.along + 30 + Math.abs(v) * reach));
+    let kappa = Math.min(1 / track.halfWidth, track.maxCurvature(car.along + 5, car.along + 30 + Math.abs(v) * reach));
+    // A car `inside` units to the inside of the bend runs a tighter radius than the centerline's.
+    if (inside > 0) kappa = kappa / Math.max(0.4, 1 - kappa * inside);
     return Math.sqrt(GRIP_ACCEL * grip * margin / Math.max(kappa, 1e-5));
+}
+
+/**
+ * How far to the inside of the bend a car beside (or about to be beside) a road divider is:
+ * its lane is the short side's, the inside, a tighter radius than the centerline's. 0 for any
+ * other car. Mirrors PoCabinetAiDriver.InsideOfIsland.
+ */
+function insideOfIsland(track, car, target) {
+    const half = track.length * 0.5;
+    for (const s of track.islands) {
+        let d = s.fromAlong - car.along;
+        if (d > half) d -= track.length;
+        else if (d < -half) d += track.length;
+        if (d > ISLAND_LOOK || d < -(s.toAlong - s.fromAlong)) continue;
+        const lat = Math.max(Math.abs(car.lateral), Math.abs(target));
+        const mid = (s.latFrom + s.latTo) * 0.5;
+        return (target - mid) * s.shortSide > 0 ? lat : 0;
+    }
+    return 0;
 }
 
 // aiControls scratch: the slower cars ahead within range, and how far ahead each is.
@@ -579,21 +708,61 @@ function clearRun(n, lateral) {
  */
 export function wreckControls(track, car) {
     const v = car.speed;
-    const target = (car.lateral < 0 ? -1 : 1) * (track.halfWidth + RUN_OFF * 0.7);
+    const seg = car.segHint >= 0 ? car.segHint : track.indexAt(car.along);
+    const side = car.lateral < 0 ? -1 : 1;
+    const target = side * (track.hwAt(seg) + runOffAt(track, seg, side) * 0.7);
     const p = track.pointAt(car.along + 30 + Math.abs(v) * 0.3);
     const tx = p.x + -p.ty * target;
     const ty = p.y + p.tx * target;
     let steer = Math.min(1, Math.max(-1, wrapAngle(atan2(ty - car.y, tx - car.x) - car.heading) * 2.4));
     if (v < 0) steer = -steer;
-    const clear = Math.abs(car.lateral) > track.halfWidth + WRECK_CLEAR;
+    const clear = Math.abs(car.lateral) > track.hwAt(seg) + WRECK_CLEAR;
     return { throttle: clear ? 0 : 1, brake: clear && v > 0.5 ? 0.6 : 0, steer };
+}
+
+/**
+ * A road divider within ISLAND_LOOK ahead (or alongside): keep the lane target on one side of
+ * it, clear of its ends. A car keeps to the side it is on (a field swapping sides in front of
+ * the nose is a pile-up); a driver who goes for the joker (`joker`) crosses to the short side
+ * if it is still well short of the nose and nobody is alongside on that side (`left`, `right`).
+ * Mirrors PoCabinetAiDriver.IslandLane.
+ */
+function islandLane(track, car, target, joker, left, right) {
+    const half = track.length * 0.5;
+    for (const s of track.islands) {
+        let d = s.fromAlong - car.along;
+        if (d > half) d -= track.length;
+        else if (d < -half) d += track.length;
+        const len = s.toAlong - s.fromAlong;
+        if (d > ISLAND_LOOK || d < -len) continue;
+        const mid = (s.latFrom + s.latTo) * 0.5;
+        let side = car.lateral < mid ? -1 : 1;
+        if (joker && d > ISLAND_LOOK * 0.4 && side !== s.shortSide && !(s.shortSide > 0 ? right : left)) side = s.shortSide;
+        const lo = side < 0 ? -s.hw * 0.85 : s.latTo + ISLAND_CLEAR;
+        const hi = side < 0 ? s.latFrom - ISLAND_CLEAR : s.hw * 0.85;
+        // The middle of the lane, not its edges: on a bend the line a car steers along cuts in
+        // toward the inside, and an edge an inch off the divider is a car grinding along it.
+        const m = (hi - lo) * 0.2;
+        return Math.min(hi - m, Math.max(lo + m, target));
+    }
+    return target;
+}
+
+/** True when cars `a` and `b` are both beside the same road divider, on opposite sides of it. Mirrors PoCabinetAiDriver.SplitBy. */
+function splitBy(track, a, b) {
+    if (a.segHint < 0 || b.segHint < 0) return false;
+    const k = track.islandOf[a.segHint];
+    if (k < 0 || track.islandOf[b.segHint] !== k) return false;
+    const s = track.islands[k];
+    const mid = (s.latFrom + s.latTo) * 0.5;
+    return (a.lateral < mid) !== (b.lateral < mid);
 }
 
 /** AI controls for one car. Mirrors PoCabinetAiDriver.Decide. */
 export function aiControls(track, car, persona, maxSpeed, corneringSkill, field, grip) {
     if (car.wrecked) return wreckControls(track, car);
     const v = car.speed;
-    const hw = track.halfWidth;
+    const hw = track.hwAt(car.segHint >= 0 ? car.segHint : track.indexAt(car.along));
     const edge = hw * 0.8;
     const line = persona.lateralOffset * hw * 0.6;
     let lateralTarget = line;
@@ -617,6 +786,9 @@ export function aiControls(track, car, persona, maxSpeed, corneringSkill, field,
         if (d > half) d -= track.length;
         else if (d < -half) d += track.length;
         if (d <= -AI_RANGE || d >= AI_RANGE || track.parked(other.distance)) continue;
+        // A car the other side of a road divider is in another lane altogether: on a bend it
+        // can look dead ahead, and two lanes braking for each other stop both.
+        if (splitBy(track, car, other)) continue;
         const dx = other.x - car.x, dy = other.y - car.y;
         const fwd = dx * hx + dy * hy, side = dy * hx - dx * hy;
         if (fwd > -44 && fwd < 44) {
@@ -652,6 +824,8 @@ export function aiControls(track, car, persona, maxSpeed, corneringSkill, field,
     // Never turn in on a car that is alongside: hold the lane (but always come back off the
     // grass). A bruiser does it anyway and leans on whoever is there.
     if (persona.aggression < 0.8 && (lateralTarget > car.lateral ? right : left)) lateralTarget = Math.min(edge, Math.max(-edge, car.lateral));
+    // A divider ahead: pick a side of it (the wild and the aggressive go for the joker lane).
+    if (track.islands.length) lateralTarget = islandLane(track, car, lateralTarget, persona.aggression >= 0.5 || persona.wildness >= 0.15, left, right);
 
     const look = persona.lookahead * 0.5 + 20 + Math.abs(v) * 0.45;
     const p = track.pointAt(car.along + look);
@@ -662,11 +836,15 @@ export function aiControls(track, car, persona, maxSpeed, corneringSkill, field,
     // A smooth driver feeds the lock in; a twitchy one saws at it and weaves.
     let steer = Math.min(1, Math.max(-1, err * (1.8 + 1.6 * persona.twitch)));
     if (v < 0) steer = -steer;
+    // Nose into a barrier or a divider, facing well away from its line and barely moving:
+    // back out (the brake at a standstill is reverse, and reversing turns the tail the other way).
+    if ((err > 1.2 || err < -1.2) && v < 6 && v > -REVERSE_MAX) return { throttle: 0, brake: 1, steer };
 
     // A late braker looks 0.7 s up the road for its corner, a cautious one 1.3 s; either
     // way a lapse has it believing in grip that is not there.
     const margin = (0.55 + corneringSkill * 0.4) * (lapsing !== 0 ? Math.abs(lapsing) : 1);
-    const corner = cornerSpeed(track, car, grip, margin, 1.3 - 0.6 * persona.brakingAggression);
+    const inside = track.islands.length ? insideOfIsland(track, car, lateralTarget) : 0;
+    const corner = cornerSpeed(track, car, grip, margin, 1.3 - 0.6 * persona.brakingAggression, inside);
     let target = Math.min(maxSpeed, corner);
     // What it brakes for: the corner and the traffic. Its own pace it only lifts for, so a
     // descent can carry it on, up to RUN_ON over (a finished car parking, at 0, stops).

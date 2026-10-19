@@ -1592,3 +1592,331 @@
     .pocabinet-sectors { flex: 1 1 auto; gap: 0.25rem; }
     .pocabinet-sector { min-width: 0; padding: 0.12rem 0.35rem; }
 }
+
+/* Nobody drives the demo: no pedals over its caption on a touch screen. */
+.pocabinet-race--demo .pocabinet-touch { display: none; }
+
+.pocabinet-hud__hint {
+    color: var(--color-text-muted);
+    font-size: 0.9em;
+}
+
+@media (max-width: 640px) {
+    .pocabinet-hud__hint { display: none; }
+}
+
+/* ─── Demo broadcast (broadcast.js writes every text node and data-* state) ───
+   TV graphics over the race: timing tower top left, callout top centre, caption bottom left,
+   the frame round the scene's picture-in-picture bottom right. Scheme-invariant like the
+   rest of the canvas overlays: what sits behind them is the race, not the page. */
+.pocabinet-bc {
+    --bc-panel: rgba(8, 12, 24, 0.8);
+    --bc-row: rgba(255, 255, 255, 0.06);
+    --bc-text: #ffffff;
+    --bc-muted: rgba(255, 255, 255, 0.72);
+    --bc-focus: #ffd23f;
+    --bc-live: #ff3b3b;
+    --bc-out: #ff6b5e;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: var(--pocabinet-canvas-h);
+    pointer-events: none;
+    z-index: 3;
+    color: var(--bc-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.pocabinet-bc__tower {
+    position: absolute;
+    top: 0.7rem;
+    left: 0.7rem;
+    width: calc(12.5rem * var(--pocabinet-hud, 1));
+    font-size: calc(0.8rem * var(--pocabinet-hud, 1));
+    background: var(--bc-panel);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 8px;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+}
+
+.pocabinet-bc__head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.6rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.pocabinet-bc__live {
+    padding: 0.05rem 0.35rem;
+    border-radius: 3px;
+    background: var(--bc-live);
+    font-size: 0.85em;
+}
+
+.pocabinet-bc__live::before {
+    content: "";
+    display: inline-block;
+    width: 0.45em;
+    height: 0.45em;
+    margin-right: 0.3em;
+    border-radius: 50%;
+    background: currentColor;
+    vertical-align: 0.1em;
+    animation: pocabinet-bc-blink 1.4s steps(2, jump-none) infinite;
+}
+
+.pocabinet-bc__rows {
+    list-style: none;
+    margin: 0;
+    padding: 0.2rem 0;
+}
+
+.pocabinet-bc__row {
+    display: grid;
+    grid-template-columns: 1.7em 0.3em minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.45em;
+    padding: 0.1rem 0.6rem;
+    line-height: 1.35;
+}
+
+.pocabinet-bc__row:nth-child(even) { background: var(--bc-row); }
+.pocabinet-bc__row[data-state="off"] { display: none; }
+
+/* The gap between the top ten and the car on screen further back. */
+.pocabinet-bc__row[data-state="sep"] {
+    display: block;
+    height: 0.7em;
+    background: none;
+}
+
+.pocabinet-bc__row[data-state="sep"]::before {
+    content: "···";
+    display: block;
+    text-align: center;
+    line-height: 0.4;
+    color: var(--bc-muted);
+}
+
+.pocabinet-bc__row[data-focus="on"] {
+    background: rgba(255, 210, 63, 0.18);
+    box-shadow: inset 3px 0 0 var(--bc-focus);
+}
+
+.pocabinet-bc__rpos {
+    text-align: right;
+    font-weight: 800;
+}
+
+.pocabinet-bc__rchip {
+    height: 1em;
+    border-radius: 2px;
+}
+
+.pocabinet-bc__rcode {
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pocabinet-bc__rgap {
+    color: var(--bc-muted);
+    text-align: right;
+}
+
+.pocabinet-bc__row[data-out="on"] .pocabinet-bc__rcode { opacity: 0.55; text-decoration: line-through; }
+.pocabinet-bc__row[data-out="on"] .pocabinet-bc__rgap { color: var(--bc-out); font-weight: 700; }
+
+/* Callout: a coloured tag for what happened, then the line. */
+.pocabinet-bc__callout {
+    position: absolute;
+    top: 0.9rem;
+    left: 50%;
+    display: flex;
+    align-items: stretch;
+    max-width: min(46%, 32rem);
+    font-size: calc(0.95rem * var(--pocabinet-hud, 1));
+    background: var(--bc-panel);
+    border-radius: 6px;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+    opacity: 0;
+    transform: translate(-50%, -0.6rem);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.pocabinet-bc__callout[data-show="on"] {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+.pocabinet-bc__callout[data-show="on"] .pocabinet-bc__ct {
+    animation: pocabinet-bc-wipe 0.45s 0.1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.pocabinet-bc__ck {
+    display: flex;
+    align-items: center;
+    padding: 0.35rem 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    color: #10131c;
+    background: var(--bc-focus);
+}
+
+.pocabinet-bc__callout[data-kind="overtake"] .pocabinet-bc__ck { background: #4cc3ff; }
+.pocabinet-bc__callout[data-kind="fastest"] .pocabinet-bc__ck { background: #b884ff; }
+.pocabinet-bc__callout[data-kind="wreck"] .pocabinet-bc__ck { background: var(--bc-out); }
+.pocabinet-bc__callout[data-kind="final"] .pocabinet-bc__ck { background: #ff9f43; }
+.pocabinet-bc__callout[data-kind="flag"] .pocabinet-bc__ck {
+    background: repeating-conic-gradient(#10131c 0 25%, #ffffff 0 50%) 0 0 / 0.7rem 0.7rem;
+    color: #ffffff;
+    text-shadow: 0 0 3px #10131c, 0 0 6px #10131c;
+}
+
+.pocabinet-bc__ct {
+    padding: 0.35rem 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Caption (lower third): the car on screen. */
+.pocabinet-bc__lower {
+    position: absolute;
+    left: 0.7rem;
+    bottom: 0.8rem;
+    display: grid;
+    gap: 0.15rem;
+    min-width: calc(15rem * var(--pocabinet-hud, 1));
+    max-width: min(46%, 26rem);
+    padding: 0.45rem 0.8rem 0.5rem;
+    font-size: calc(0.85rem * var(--pocabinet-hud, 1));
+    background: var(--bc-panel);
+    border-left: 4px solid var(--bc-focus);
+    border-radius: 6px;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+    opacity: 0;
+    transform: translateX(-0.6rem);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.pocabinet-bc__lower[data-show="on"] {
+    opacity: 1;
+    transform: none;
+}
+
+.pocabinet-bc__shot {
+    font-size: 0.78em;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--bc-focus);
+}
+
+.pocabinet-bc__who {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.pocabinet-bc__pos {
+    font-size: 1.35em;
+    font-weight: 800;
+}
+
+.pocabinet-bc__chip {
+    flex: none;
+    width: 0.35rem;
+    height: 1.3em;
+    border-radius: 2px;
+}
+
+.pocabinet-bc__name {
+    font-size: 1.15em;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pocabinet-bc__style {
+    flex: none;
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+    font-size: 0.75em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.pocabinet-bc__style:empty { display: none; }
+
+.pocabinet-bc__meta {
+    color: var(--bc-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The frame round the scene's PiP viewport (broadcast.js places it over scene.pipRect). */
+.pocabinet-bc__pip {
+    position: absolute;
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+}
+
+.pocabinet-bc__pip[data-show="off"] { display: none; }
+
+.pocabinet-bc__piplabel {
+    position: absolute;
+    left: 0;
+    top: 0;
+    max-width: 100%;
+    padding: 0.15rem 0.5rem;
+    font-size: calc(0.72rem * var(--pocabinet-hud, 1));
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: var(--bc-panel);
+}
+
+@keyframes pocabinet-bc-blink {
+    0% { opacity: 1; }
+    100% { opacity: 0.25; }
+}
+
+@keyframes pocabinet-bc-wipe {
+    from { clip-path: inset(0 100% 0 0); }
+    to { clip-path: inset(0 0 0 0); }
+}
+
+/* Phones: a top-five tower (plus the car on screen), the callout above the caption, a slimmer caption. */
+@media (max-width: 640px) {
+    .pocabinet-bc__tower { width: calc(10rem * var(--pocabinet-hud, 1)); font-size: calc(0.72rem * var(--pocabinet-hud, 1)); }
+    .pocabinet-bc__row:nth-child(n+6):not([data-focus="on"]) { display: none; }
+    .pocabinet-bc__callout { top: auto; bottom: 5.4rem; max-width: calc(100% - 1.4rem); font-size: calc(0.82rem * var(--pocabinet-hud, 1)); }
+    .pocabinet-bc__lower { max-width: calc(100% - 1.4rem); font-size: calc(0.78rem * var(--pocabinet-hud, 1)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pocabinet-bc__live::before,
+    .pocabinet-bc__callout[data-show="on"] .pocabinet-bc__ct { animation: none; }
+    .pocabinet-bc__callout,
+    .pocabinet-bc__lower { transition: none; }
+}

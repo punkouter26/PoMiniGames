@@ -10,8 +10,9 @@
 //               for that: only the nearest cars are drawn in full (the rest are one
 //               instanced mesh, cars.js CarCrowd) or heard, and the HUD snapshot
 //               carries the whole field only when it has to.
-//   demo      — as solo, with the local car on autopilot and the camera
-//               cycling chase → far chase → TV.
+//   demo      — as solo, with the local car on autopilot, covered like a TV race
+//               (broadcast.js): a director follows the best battle in the field, with a
+//               timing tower, a caption, callouts and a picture-in-picture onboard.
 //
 // The camera is third person at all times: 'chase', 'far' (the
 // camera button toggles them) and, in the demo and replays, 'tv'.
@@ -62,6 +63,7 @@ import { createFx } from './fx.js';
 import { computeKerbs, onKerb } from './kerbs.js';
 import { getRecords } from './settings.js';
 import { WetReflections } from './reflections.js';
+import { Broadcast } from './broadcast.js';
 
 const TICK = ph.TICK_SECONDS;
 const COUNTDOWN = 3;
@@ -139,7 +141,7 @@ class Race {
         this.grip = this.mode === 'net' ? 1 : (currentEnvironment().raining ? 0.85 : 1);
         this.settings = {};
         this.cameraMode = 'chase';   // third person only: 'chase' | 'far'
-        this.demoCameraAt = 0;
+        this.viewCar = null;         // the car the camera is on this frame
         this.paused = false;
         this.disposed = false;
         this.clock = 0;
@@ -194,6 +196,7 @@ class Race {
             try { this.crowd = new CarCrowd(this.scene.scene, this.cars.length); } catch { this.crowd = null; }
         }
         this.byRange = [];
+        this.director = this.mode === 'demo' ? new Broadcast(this) : null;
         if (this.mode === 'net' && opts.initialSnapshot) this.onServerSnapshot(opts.initialSnapshot);
         this.startRecording();
         this.applySettings(opts.settings || {});
@@ -373,6 +376,8 @@ class Race {
             this.pushReplayState(true);
             return;
         }
+        // The demo's director owns its camera: the button asks it for the next shot.
+        if (this.director) { this.director.cutNow(); return; }
         this.cameraMode = this.cameraMode === 'chase' ? 'far' : 'chase';
     }
 
@@ -425,6 +430,7 @@ class Race {
             this.saidPreRace = this.say(ph.OFFICIALS[Math.floor(Math.random() * ph.OFFICIALS.length)].id, 'preRace', true);
         }
         if (elapsed < 0) {
+            this.director?.tick(elapsed);
             this.pushHud(elapsed);
             return;
         }
@@ -447,12 +453,14 @@ class Race {
                 c = ph.aiControls(this.track, car.body, persona, car.finished ? car.maxSpeed * this.track.coolDownAt(car.body.distance) : car.maxSpeed,
                     car.corneringSkill, bodies, this.grip);
                 if (car.isLocal) this.lastControls = c;
+                car.throttle = c.throttle;   // the demo's engine note follows the car on screen
             }
             ph.step(this.track, car.body, c, stepDt, this.grip);
         }
         ph.resolveContacts(this.track, bodies);
         this.applyHits();
         this.lapBookkeeping(tickStart, stepDt, elapsed);
+        this.director?.tick(elapsed);
         this.checkPhotoFinish();
         this.feedback();
         this.record(elapsed);
@@ -628,7 +636,8 @@ class Race {
     }
 
     feedback() {
-        const car = this.local;
+        // The demo's slaps are the car on screen's (input.rumble is a no-op there: no pad in hand).
+        const car = this.director ? this.viewCar : this.local;
         if (!car) return;
         if (car.body.wallImpact > 6 && performance.now() - this.lastWallAt > 500) {
             this.wallHits++;
@@ -842,25 +851,26 @@ class Race {
             car.mesh?.update({ x: pose.x, y: pose.y, heading: pose.heading, speedKmh: pose.speed * ph.KMH_PER_UNIT, h: car.render.h, pitch: car.render.pitch, roll: car.render.roll });
             car.mesh?.setCondition(!!car.body.wrecked);
         }
+        // Camera: the director's shot in the demo, else the local car, or the race leader
+        // when spectating.
+        let mode = this.cameraMode;
+        let focus;
+        const shot = this.director?.view(now);
+        if (shot) {
+            focus = shot.car;
+            mode = shot.mode;
+        } else {
+            focus = this.local || [...this.cars].sort((a, b) => a.position - b.position)[0];
+            if (!this.local) mode = 'chase';
+        }
+        this.viewCar = focus || null;
         this.cull();
         updateDebris(this.paused ? 0 : dt * this.timeScale);
-
-        // Camera: the local car, or the race leader when spectating.
-        let mode = this.cameraMode;
-        if (this.mode === 'demo') {
-            if (now - this.demoCameraAt > 7000) {
-                this.demoCameraAt = now;
-                const order = ['chase', 'far', 'tv'];
-                this.demoCamera = order[(order.indexOf(this.demoCamera || 'tv') + 1) % order.length];
-            }
-            mode = this.demoCamera || 'chase';
-        }
-        const focus = this.local || [...this.cars].sort((a, b) => a.position - b.position)[0];
-        if (!this.local) mode = 'chase';
         if (focus) {
             this.scene.setView({ ...focus.render, mode, dt });
             if (focus.mesh) focus.mesh.group.visible = true;
         }
+        this.director?.draw(now);
         this.effects(dt, mode, focus);
 
         if (this.minimap && now - this.minimapAt > 66) {
@@ -883,7 +893,7 @@ class Race {
      */
     cull() {
         const crowd = this.crowd;
-        const focus = this.local || this.cars[0];
+        const focus = this.viewCar || this.local || this.cars[0];
         if (!crowd || !focus) return;
         const live = this.mode !== 'net' && !this.replay;
         const order = this.byRange;
@@ -934,10 +944,13 @@ class Race {
 
         const events = this.fx?.update(this.paused ? 0 : dt * this.timeScale, this.fxCars(), { skids: true });
 
-        if (this.local) {
-            const b = this.local.body;
-            const kmh = Math.abs(this.local.render.speed) * ph.KMH_PER_UNIT;
-            const throttle = this.mode === 'demo' && preStart ? 0 : this.lastControls.throttle;
+        // Whose engine, tyres and kerbs are heard up close: the player's, or in the demo the car on
+        // screen's (the director's shot; every other car is a spatial rival voice).
+        const ear = this.director ? focus : this.local;
+        if (ear) {
+            const b = ear.body;
+            const kmh = Math.abs(ear.render.speed) * ph.KMH_PER_UNIT;
+            const throttle = this.mode === 'demo' ? (preStart ? 0 : ear.throttle ?? 0) : this.lastControls.throttle;
             // A wrecked engine is dead: the note stops with the bang.
             const dead = !!b.wrecked;
             audio.updateEngine(racing && !dead ? kmh : 0, dead ? 0 : throttle, dead ? 'off' : racing ? 'race' : preStart ? 'grid' : 'off');
@@ -952,13 +965,13 @@ class Race {
             const gap = ph.wallLateral(this.track) - Math.abs(b.lateral);
             const near = racing ? Math.max(0, 1 - gap / 45) * Math.min(1, Math.abs(b.speed) / 60) : 0;
             audio.setWallProximity(near, b.lateral > 0 ? 1 : -1);
-            audio.setScrape(racing ? (events?.scraping.get(this.local.id) || 0) : 0);
+            audio.setScrape(racing ? (events?.scraping.get(ear.id) || 0) : 0);
         } else {
             fx.rumble = 0;
         }
 
         for (const c of events?.contacts || []) {
-            if (this.local && c.ids.includes(this.local.id)) {
+            if (ear && c.ids.includes(ear.id)) {
                 audio.impact(c.strength, 'car');
                 // Once per shunt, not per frame of a grinding side-by-side: the hitstop would chain.
                 if (performance.now() - (this.lastContactCueAt || 0) > 450) {
@@ -974,9 +987,9 @@ class Race {
         }
         for (const w of events?.walls || []) this.damage(w.id, w.x, w.z, w.strength);
 
-        // Exhaust pops → flames (the player's id is the local car's).
+        // Exhaust pops → flames (the 'player' voice is the car heard up close).
         for (const pop of audio.takePops()) {
-            const id = pop.id === 'player' ? this.local?.id : pop.id;
+            const id = pop.id === 'player' ? ear?.id : pop.id;
             if (id !== undefined && id !== null) this.fx?.backfire(id, pop.strength);
         }
 
@@ -1161,8 +1174,9 @@ class Race {
         audio.updateListener({ x: p.x, y: p.y, z: p.z }, this.camFwd, { x: 0, y: 1, z: 0 }, { x: c.vx, y: c.vy, z: c.vz });
         if (!live) { audio.updateRivals([]); return; }
         const list = [];
+        const ear = this.director ? this.viewCar : this.local;
         for (const car of this.cars) {
-            if (car.isLocal) continue;
+            if (car === ear) continue;
             const h = car.render.heading, v = car.render.speed;
             list.push({
                 id: car.id, x: car.render.x / 10, y: car.render.h + 0.5, z: car.render.y / 10,
@@ -1481,6 +1495,7 @@ class Race {
         this.crowd?.dispose();
         this.fx?.dispose();
         this.reflections?.dispose();
+        this.director?.dispose();
         audio.silenceRace();
         const fx = this.scene.fx;
         if (fx) { fx.speed = 0; fx.rumble = 0; fx.slow = 0; fx.shake = 0; fx.focus = null; }

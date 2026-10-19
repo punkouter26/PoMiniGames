@@ -46,7 +46,7 @@
         }
         else
         {
-            <section class="pocabinet-race"
+            <section class="pocabinet-race @(Mode == GameMode.Demo ? "pocabinet-race--demo" : null)"
                      style="--pocabinet-hud:@Settings.HudScaleCss"
                      aria-label="@(_phase == Phase.Replay ? "Race replay" : "Race in progress")">
                 <canvas id="pocabinetCanvas"
@@ -57,7 +57,46 @@
                         aria-label="Cabinet race view. Drive with W A S D, the arrow keys, a gamepad or the on-screen controls.">
                 </canvas>
                 <canvas id="pocabinetMinimap" @ref="_minimapCanvas" class="pocabinet-minimap" aria-hidden="true"></canvas>
-                @if (_phase == Phase.Racing && !IsSpectating)
+                @if (Mode == GameMode.Demo && _phase is Phase.Racing or Phase.Finished)
+                {
+                    @* The demo is covered like a TV race (broadcast.js): a timing tower, a callout, a
+                       caption for the car on screen and the frame round the picture-in-picture. Every
+                       text node is rendered EMPTY on purpose and written by JS a few times a second,
+                       like the gauge. aria-hidden: an attract loop; the announcer covers the finish. *@
+                    <div id="pocabinetBroadcast" class="pocabinet-bc" aria-hidden="true">
+                        <div class="pocabinet-bc__tower">
+                            <div class="pocabinet-bc__head"><span class="pocabinet-bc__live">Live</span><span class="pocabinet-bc__lap" data-bc="lap"></span></div>
+                            <ol class="pocabinet-bc__rows">
+                                @for (var i = 0; i < BroadcastRows; i++)
+                                {
+                                    <li class="pocabinet-bc__row" data-bc-row data-state="off">
+                                        <span class="pocabinet-bc__rpos" data-bc="rpos"></span>
+                                        <span class="pocabinet-bc__rchip" data-bc="rchip"></span>
+                                        <span class="pocabinet-bc__rcode" data-bc="rcode"></span>
+                                        <span class="pocabinet-bc__rgap" data-bc="rgap"></span>
+                                    </li>
+                                }
+                            </ol>
+                        </div>
+                        <div class="pocabinet-bc__callout" data-bc="callout" data-show="off">
+                            <b class="pocabinet-bc__ck" data-bc="ck"></b><span class="pocabinet-bc__ct" data-bc="ct"></span>
+                        </div>
+                        <div class="pocabinet-bc__lower" data-bc="lower" data-show="off">
+                            <span class="pocabinet-bc__shot" data-bc="shot"></span>
+                            <span class="pocabinet-bc__who">
+                                <span class="pocabinet-bc__pos" data-bc="pos"></span>
+                                <span class="pocabinet-bc__chip" data-bc="chip"></span>
+                                <span class="pocabinet-bc__name" data-bc="name"></span>
+                                <span class="pocabinet-bc__style" data-bc="style"></span>
+                            </span>
+                            <span class="pocabinet-bc__meta" data-bc="meta"></span>
+                        </div>
+                        <div class="pocabinet-bc__pip" data-bc="pip" data-show="off">
+                            <span class="pocabinet-bc__piplabel" data-bc="piplabel"></span>
+                        </div>
+                    </div>
+                }
+                @if (_phase == Phase.Racing && !IsSpectating && Mode != GameMode.Demo)
                 {
                     @* Glass cluster: race.js writes speed, gear and --rpm into it every frame, straight
                        to the DOM. The speed and gear spans are rendered EMPTY on purpose: Blazor must own no
@@ -156,31 +195,40 @@
                        Not a live region: it re-renders ~15 times a second. The announcer below speaks
                        laps, places and the finish instead. *@
                     <div class="pocabinet-hud">
-                        <span>Lap <strong>@Math.Min(_lap, _totalLaps)</strong>/@_totalLaps</span>
-                        <span>Time <strong>@FormatLapTime(_lapSeconds)</strong></span>
-                        <span>Last <strong>@FormatLapTime(_lastLapSeconds)</strong></span>
-                        <span>Best <strong>@FormatLapTime(_bestLapSession > 0 ? _bestLapSession : _storedBestLap)</strong></span>
-                        <span class="pocabinet-sectors" aria-label="Sector splits">
-                            @for (var i = 0; i < 3; i++)
-                            {
-                                var idx = i;
-                                <span class="pocabinet-sector @SectorClass(idx)">
-                                    <span class="pocabinet-sector__label">S@(idx + 1)</span>
-                                    @if (_sectorTimes[idx] is { } done)
-                                    {
-                                        @FormatLapTime(done)
-                                    }
-                                    else if (idx == _sectorIndex && _lastSnapshot is { } ls && ls.Started && !ls.Finished)
-                                    {
-                                        @FormatLapTime(Math.Max(0, ls.ElapsedRaceTime - _sectorStart))
-                                    }
-                                    else
-                                    {
-                                        @("—")
-                                    }
-                                </span>
-                            }
-                        </span>
+                        @if (Mode == GameMode.Demo)
+                        {
+                            @* The demo's laps and places are on the timing tower; the strip says where it is. *@
+                            <span>Live from <strong>@PoCabinetCatalog.GetTrack(_trackId).Name</strong></span>
+                            <span class="pocabinet-hud__hint">The director follows the closest fights · 🎥 cuts to the next shot</span>
+                        }
+                        else
+                        {
+                            <span>Lap <strong>@Math.Min(_lap, _totalLaps)</strong>/@_totalLaps</span>
+                            <span>Time <strong>@FormatLapTime(_lapSeconds)</strong></span>
+                            <span>Last <strong>@FormatLapTime(_lastLapSeconds)</strong></span>
+                            <span>Best <strong>@FormatLapTime(_bestLapSession > 0 ? _bestLapSession : _storedBestLap)</strong></span>
+                            <span class="pocabinet-sectors" aria-label="Sector splits">
+                                @for (var i = 0; i < 3; i++)
+                                {
+                                    var idx = i;
+                                    <span class="pocabinet-sector @SectorClass(idx)">
+                                        <span class="pocabinet-sector__label">S@(idx + 1)</span>
+                                        @if (_sectorTimes[idx] is { } done)
+                                        {
+                                            @FormatLapTime(done)
+                                        }
+                                        else if (idx == _sectorIndex && _lastSnapshot is { } ls && ls.Started && !ls.Finished)
+                                        {
+                                            @FormatLapTime(Math.Max(0, ls.ElapsedRaceTime - _sectorStart))
+                                        }
+                                        else
+                                        {
+                                            @("—")
+                                        }
+                                    </span>
+                                }
+                            </span>
+                        }
                         <span class="pocabinet-hud__buttons">
                             <button type="button" class="pocabinet-iconbtn" @onclick="CycleCameraAsync" aria-label="Change camera (C)">🎥</button>
                             @if (Pausable)

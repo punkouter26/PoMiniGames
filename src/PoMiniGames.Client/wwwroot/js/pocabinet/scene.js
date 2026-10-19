@@ -45,6 +45,7 @@
 //   const handle = await mount(canvas, world);
 //   handle.setView({ x, y, heading, mode, speed, dt }); handle.setRacingLine(bool);
 //   handle.setStartLights(lit, go); handle.setWeather(rain);
+//   handle.setPip(pose | null)   — demo broadcast inset; handle.pipRect says where it landed
 //   unmount(handle);
 
 import * as THREE from 'three';
@@ -71,6 +72,7 @@ function hex(value, fallback) {
 }
 
 const RENDER_SCALE = { low: 0.6, medium: 0.8, high: 1 };
+const PIP_WIDTH = 0.26;   // of the canvas width
 
 // Playground Marble Run: wwwroot/models/playground.glb (metres, +Y up) drawn at 50× around
 // the world origin, so 1 model metre = 50 scene units = 500 sim units — the scale the track's
@@ -151,6 +153,8 @@ class SceneHandle {
         this._chaseLook = new THREE.Vector3();
         this._chaseInit = false;
         this._v = new THREE.Vector3();
+        this.pip = null;
+        this.pipRect = null;
         this._onResize = () => this.resize();
         window.addEventListener('resize', this._onResize);
     }
@@ -186,6 +190,9 @@ class SceneHandle {
             } catch { /* decoration never kills the frame */ }
             if (this.post) this.post.render(this.scene, this.camera, this.fx, now / 1000);
             else this.renderer.render(this.scene, this.camera);
+            if (this.pip) {
+                try { this.renderPip(); } catch { this.pipRect = null; }
+            }
         };
         this._raf = requestAnimationFrame(loop);
     }
@@ -252,6 +259,63 @@ class SceneHandle {
         }
         this.camera.position.copy(this._tvPos);
         this.camera.lookAt(x, h + 0.6, z);
+    }
+
+    /**
+     * Picture in picture (the demo's broadcast.js): a camera on a car's roof, looking ahead or
+     * (back) behind, drawn into a corner of the canvas after the main frame. p = a car pose
+     * { x, y, heading, h, pitch, back } in sim units, or null for none.
+     */
+    setPip(p) {
+        this.pip = p || null;
+        if (!this.pip) this.pipRect = null;
+    }
+
+    /**
+     * The PiP pass: straight to the canvas through a scissor (no post pass, so the renderer's
+     * own tone mapping stands in for it), reusing this frame's shadow map. Left out on the low
+     * tier, where the frame has no time for a second scene, and on a narrow canvas, where the
+     * inset would be too small to read. pipRect (canvas CSS px from the top left) tells the
+     * page where to put the frame and label, or null when nothing was drawn.
+     */
+    renderPip() {
+        const r = this.renderer;
+        const size = r.getSize(this._pipSize || (this._pipSize = new THREE.Vector2()));
+        if (this.quality === 'low' || size.x < 560) { this.pipRect = null; return; }
+        const p = this.pip;
+        const w = Math.round(size.x * PIP_WIDTH), h = Math.round(w * 9 / 16);
+        const m = Math.round(Math.max(8, size.x * 0.012));
+        const x = size.x - w - m, y = m;   // bottom right (the viewport counts y from the bottom)
+        const cam = this.pipCamera || (this.pipCamera = new THREE.PerspectiveCamera(62, 16 / 9, 0.2, 2000));
+        if (Math.abs(cam.aspect - w / h) > 1e-3) { cam.aspect = w / h; cam.updateProjectionMatrix(); }
+        const cx = (Number(p.x) || 0) / WORLD_SCALE, cz = (Number(p.y) || 0) / WORLD_SCALE;
+        const ground = Number(p.h) || 0;
+        const rise = Math.tan(Number(p.pitch) || 0);
+        const dir = p.back ? -1 : 1;
+        const fx = Math.cos(Number(p.heading) || 0) * dir, fz = Math.sin(Number(p.heading) || 0) * dir;
+        // Above the roof line of the tallest body (the van's, 1.42), a touch towards the view.
+        cam.position.set(cx + fx * 0.6, ground + 1.75 + rise * 0.6 * dir, cz + fz * 0.6);
+        const ahead = p.back ? 14 : 30;
+        cam.lookAt(cx + fx * ahead, ground + rise * ahead * dir + (p.back ? 0.9 : 1.1), cz + fz * ahead);
+
+        const tone = r.toneMapping, exposure = r.toneMappingExposure, shadows = r.shadowMap.autoUpdate;
+        r.setRenderTarget(null);
+        r.toneMapping = THREE.ACESFilmicToneMapping;
+        r.toneMappingExposure = this.fx.exposure || 1;
+        r.shadowMap.autoUpdate = false;
+        r.setScissorTest(true);
+        r.setScissor(x, y, w, h);
+        r.setViewport(x, y, w, h);
+        try {
+            r.render(this.scene, cam);
+        } finally {
+            r.setScissorTest(false);
+            r.setViewport(0, 0, size.x, size.y);
+            r.toneMapping = tone;
+            r.toneMappingExposure = exposure;
+            r.shadowMap.autoUpdate = shadows;
+        }
+        this.pipRect = { x, y: size.y - y - h, w, h };
     }
 
     /**

@@ -139,8 +139,11 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _ => "pocabinet-ping--poor",
     };
 
+    /// <summary>The demo's timing tower rows: the top ten, a gap, and the car on screen when it is further back (broadcast.js).</summary>
+    protected const int BroadcastRows = 12;
+
     protected string Lede => Mode == GameMode.Demo
-        ? $"A hundred cars race themselves while the camera roams. {RaceLength}."
+        ? $"A hundred cars race themselves, covered like TV: the director cuts to the closest battles. {RaceLength}."
         : IsMultiplayerMode
             ? $"Everyone who joins lands in one lobby — first in hosts and picks the track. {RaceLength}."
             : $"Pick a track and take on 99 rivals from the middle of the grid. {RaceLength}; a top-{PoCabinetCatalog.CampaignPassPlace} finish moves the campaign on.";

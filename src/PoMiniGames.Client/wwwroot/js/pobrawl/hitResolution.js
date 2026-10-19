@@ -674,8 +674,8 @@ class HitResolutionMethods {
         if (this.audio) {
           this.audio.concussion(1.0);
           this.audio.crowdSwell(1.0);
-          this.audio.announce('K O!', { rate: 0.85, pitch: 0.45, duckSec: 1.5 });
         }
+        this._caption('K O!');
         this._jumboCaption('K.O.', 2.4);
         this._speedPulse = Math.max(this._speedPulse || 0, 0.6);
         this._smear(0.5, 0.78);

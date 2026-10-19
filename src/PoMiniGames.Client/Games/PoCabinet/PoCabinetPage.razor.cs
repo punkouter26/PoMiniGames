@@ -53,10 +53,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
 
     protected string _playerName = "Player";
     protected Phase _phase = Phase.Start;
-    /// <summary>The stored settings are read: the opening card may render (and, skipped, start the race).</summary>
+    /// <summary>The stored settings are read: the opening card may render.</summary>
     protected bool _loaded;
-    /// <summary>The card is back after a race or the lobby: "don't show this again" must not start another one.</summary>
-    protected bool _reopenIntro;
     protected string? _trackId = PoCabinetCatalog.DefaultTrackId;
     protected string? _livery = "Stripe";
     protected string? _color = "Indigo";
@@ -296,7 +294,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     /// <summary>The opening card's Start (or a demo card timing out): multiplayer joins the lobby; everything else races.</summary>
     protected async Task StartRaceAsync()
     {
-        _reopenIntro = true;
         // A demo shows a different track each time it starts itself.
         if (Mode == GameMode.Demo) _trackId = PoCabinetCatalog.Tracks[Random.Shared.Next(PoCabinetCatalog.Tracks.Count)].Id;
         _playerName = PlayerNameSvc.GetOrReadInitialName();

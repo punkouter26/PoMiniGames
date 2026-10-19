@@ -61,7 +61,6 @@ class AudioBus {
     this._crowdNodes = null; // live crowd oscillators/sources, for teardown
     this._crowdIntensity = 0;
     this._hitstopDepth = 0;  // 0 = normal, 1 = fully "in the vacuum"
-    this._speaking = false;
     // Showtime (audioShow.js).
     this.stingGain = null;   // leitmotif / fanfare bus
     this.rhythmGain = null;  // crowd stomp-clap + chant level (owned by setCrowdRhythm)
@@ -219,8 +218,6 @@ class AudioBus {
     else if (this.ctx) this.startCrowd();
     // A held charge riser would otherwise drone on under the mute until its release.
     if (this.muted) this.stopRisers();
-    // Speech bypasses master.gain, so mute has to stop it separately.
-    if (this.muted) this.stopAnnounce();
   }
 
   // Big hits ~1.0, blocks ~0.4, whooshes ~0.2.

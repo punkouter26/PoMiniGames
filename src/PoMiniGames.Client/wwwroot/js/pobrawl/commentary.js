@@ -1,16 +1,14 @@
 // commentary.js — ringside commentary and captions.
 //
-// Captions: every line the PA speaks (countdown, "Fight!", "K O!", super names, the press
-// conference, the commentary below) is also written into a caption bar at the foot of the
-// arena. The wrap sits on AudioBus.announce itself, so no speaking call site can forget it —
-// and it captions BEFORE the mute check, because a muted player is exactly who needs the text.
+// Captions: the ring calls ("Fight!", "K O!", super names, the ring introduction, the
+// champion) and the commentary below are written into a caption bar at the foot of the arena.
+// Text only: there is no spoken commentary.
 //
 // Commentary: template lines on fight events — a long combo, a monster hit, a perfect guard,
 // a counter, a fighter in the red, a comeback, the last ten seconds, a trip into the crates.
 // Deliberately not a model call: it fires many times a fight, and the one AI line a fight gets
-// is the pre-fight ring introduction (PoBrawlPage → /api/pobrawl/intro). Paced so it never talks
-// over itself: one line at most every MIN_GAP seconds, a cooldown per kind, and nothing while
-// the PA is mid-sentence (a "K O!" is never cut off by colour).
+// is the pre-fight ring introduction (PoBrawlPage → /api/pobrawl/intro). Paced so lines never
+// pile up: one at most every MIN_GAP seconds and a cooldown per kind.
 
 import { HEAVY_HIT_DMG } from './constants.js';
 
@@ -66,12 +64,6 @@ class CommentaryMethods {
     el.setAttribute('aria-hidden', 'true');
     this.container.appendChild(el);
     this.captionEl = el;
-    const speak = this.audio.announce.bind(this.audio);
-    this.audio.announce = (text, opts) => {
-      // A bare count ("3") is already the banner; caption words, not digits.
-      if (text && String(text).trim().length > 1) this._caption(text);
-      speak(text, opts);
-    };
   }
 
   /** Show `text` in the caption bar for a few seconds. */
@@ -92,7 +84,6 @@ class CommentaryMethods {
     if (!cc || this.training || this.phase !== 'fighting' || !a) return false;
     const now = this.atmoT;
     if (now - cc.lastAt < MIN_GAP || now - (cc.kindAt[kind] ?? -99) < KIND_COOLDOWN) return false;
-    if (this.audio?._speaking) return false;
     const pool = LINES[kind];
     if (!pool) return false;
     const name = (f) => (f?.rig?.config?.name || f?.charId || 'The fighter');
@@ -100,7 +91,7 @@ class CommentaryMethods {
       .replaceAll('{A}', name(a)).replaceAll('{B}', name(b)).replaceAll('{N}', String(n));
     cc.lastAt = now;
     cc.kindAt[kind] = now;
-    this.audio.announce(line, { rate: 1.08, pitch: 0.85, duckSec: 0.9 });
+    this._caption(line);
     return true;
   }
 

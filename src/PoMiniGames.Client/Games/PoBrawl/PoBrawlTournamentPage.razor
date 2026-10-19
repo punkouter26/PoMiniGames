@@ -1,3 +1,4 @@
+@page "/pobrawl/demo"
 @page "/pobrawl/tournament"
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Models
@@ -12,8 +13,10 @@
 @inject IJSRuntime JSRuntime
 @inject SettingsService Settings
 @inject AuthStateService Auth
+@inject KioskCoordinator Kiosk
 
-@* The CPU-only knockout bracket. Eight presidents are drawn at random, the seven bouts play out
+@* Brawl's demo (/pobrawl/demo; /pobrawl/tournament is the old address): the CPU-only
+   knockout bracket. The literal route wins over PoBrawlPage's /pobrawl/{Mode}. Eight presidents are drawn at random, the seven bouts play out
    in the same arena the other modes use (engine mode 'tournament': both corners CPU, the page
    picks every pairing through PoBrawl.matchup), and each result moves both fighters' Elo.
    This component shares PoBrawlPage's CSS scope (CssScope in the csproj), so the engine's DOM —
@@ -38,10 +41,10 @@
                        Title="@TitleContent"
                        Objective="Eight presidents, seven bouts, one belt. The CPU fights every bout — you watch the bracket play out."
                        Controls="@HowItWorks"
-                       Mode="GameIntro.IntroMode.OnePlayer"
+                       Mode="GameIntro.IntroMode.Demo"
+                       DemoDelayMs="4000"
                        Options="@DrawPreview"
-                       StartLabel="🏆 Start the tournament"
-                       DialogLabel="Brawl tournament setup"
+                       DialogLabel="Brawl demo: CPU tournament"
                        CaptureKeys="false"
                        OnStart="StartAsync" />
         </div>
@@ -288,7 +291,6 @@
     private RenderFragment DrawPreview => @<div class="pt-draw">
         <div class="pt-draw-head">
             <span class="pt-draw-title">The draw</span>
-            <button type="button" class="app-btn app-btn--sm" @onclick="Redraw" title="Draw eight new fighters into new places">🎲 Redraw</button>
         </div>
         @if (_cup is not null)
         {
@@ -578,6 +580,8 @@
         _titles = PoBrawlProgressBook.LoadTitles();
         _director = _isoCam = PoBrawlShowPrefs.IsFull;
         _cup = PoBrawlTournament.Draw(Roster, new Random(_drawSeed), _ratings);
+        // Brawl's slot on the "Watch all demos" reel.
+        Kiosk.SetCurrent("pobrawl-demo");
     }
 
     protected override async Task OnInitializedAsync()
@@ -599,13 +603,6 @@
     protected override void OnAfterRender(bool firstRender)
     {
         if (firstRender) _ref = DotNetObjectReference.Create(this);
-    }
-
-    private void Redraw()
-    {
-        if (_introDone) return;
-        _drawSeed = Random.Shared.Next();
-        _cup = PoBrawlTournament.Draw(Roster, new Random(_drawSeed), _ratings);
     }
 
     private async Task StartAsync()

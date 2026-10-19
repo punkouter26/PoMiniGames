@@ -96,8 +96,7 @@ class CeremonyMethods {
     this._placeBelt(0);
     this.excited = 1;
     this.audio?.crowdRoar(1, 4.5);
-    this.audio?.announce(`Ladies and gentlemen... your tournament champion... ${cfg.name || 'the champion'}!`,
-      { rate: 0.9, pitch: 0.6, duckSec: 4 });
+    this._caption(`Ladies and gentlemen... your tournament champion... ${cfg.name || 'the champion'}!`, 4);
   }
 
   _tickCeremony(dt) {

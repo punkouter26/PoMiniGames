@@ -35,63 +35,72 @@ else if (_failed is { } why)
 }
 else
 {
-    @* 1v1, laid out like the 2P select: your card and your opponent's over the shared fighter
-       grid. Your card is your Ready toggle (the 2P lock-in), so the shared panel shows no
-       Ready or Start button; the host's client starts the fight the moment both seats are
-       ready (AutoStartAsync). *@
+    @* 1v1, laid out like a slim 2P select: your card and your opponent's on one row, with
+       your fighter dropdown under your card. Your card is your Ready toggle (the 2P lock-in),
+       so the shared panel shows no Ready or Start button; the host's client starts the fight
+       the moment both seats are ready (AutoStartAsync). *@
     <LobbyPanel TPlayer="PoBrawlLobbyPlayer"
                 State="@_lobby.State"
                 LocalConnectionId="@_lobby.ConnectionId"
                 ConnectionState="@_lobby.ConnectionState"
-                Hint="1v1: the first two in are the fight."
+                Hint="1v1 · first two in fight"
                 MaxPlayersHint="2"
                 StartLabel="Start Fight"
                 ShowReady="false"
                 ShowStart="false"
-                PickerTitle="Fighters"
                 HowTo="@HowToPlayContent"
                 OnLeave="LeaveAsync">
         <PlayerBadges Context="p">
             <span class="app-chip">@FighterName(p.Fighter.Id)</span>
         </PlayerBadges>
         <Picker>
-            <div class="pb-lobby pb-select" data-stage="off">
-                <div class="pb-select-sides">
-                    <button type="button"
-                            class="pb-select-side pb-select-side--p1 @(MyReady ? "pb-select-side--locked" : "")"
-                            aria-pressed="@(MyReady ? "true" : "false")"
-                            aria-label="@($"You: {FighterName(MyFighterId)}, {(MyReady ? "ready — press to change your pick" : "press to ready up")}")"
-                            disabled="@(_lobby.Me is null || _readyBusy)"
-                            @onclick="ToggleReadyAsync">
-                        <span class="pb-select-who">You</span>
-                        <span class="pb-select-plate">
-                            <span class="pb-select-pick">@FighterName(MyFighterId)</span>
-                            <span class="pb-select-state">@(MyReady ? "✓ Ready" : "Ready up")</span>
-                        </span>
-                        @if (MyReady)
-                        {
-                            <span class="pb-select-seal" aria-hidden="true">@PoBrawlPage.SealSvg</span>
-                        }
-                    </button>
-                    <span class="pb-select-vs" aria-hidden="true">VS</span>
-                    <div class="pb-select-side pb-select-side--p2 pb-select-side--static @(Opponent?.IsReady == true ? "pb-select-side--locked" : "")"
-                         role="status">
-                        <span class="pb-select-who">@(Opponent is { } who ? LeaderboardNames.Pretty(who.DisplayName) : "Opponent")</span>
-                        <span class="pb-select-plate">
-                            <span class="pb-select-pick">@(Opponent is { } o ? FighterName(o.Fighter.Id) : "Waiting…")</span>
-                            <span class="pb-select-state">@(Opponent is null ? "Seat open" : Opponent.IsReady ? "✓ Ready" : "Picking")</span>
-                        </span>
-                        @if (Opponent?.IsReady == true)
-                        {
-                            <span class="pb-select-seal" aria-hidden="true">@PoBrawlPage.SealSvg</span>
-                        }
+            @* .pb-lobby only carries the --pb-* tokens; the .razor.css flattens it so the
+               Dossiers disclosure can share a row with Leave / Invite / How to play. *@
+            <div class="pb-lobby">
+                <div class="pb-select" data-stage="off">
+                    <div class="pb-select-sides">
+                        <button type="button"
+                                class="pb-select-side pb-select-side--p1 @(MyReady ? "pb-select-side--locked" : "")"
+                                aria-pressed="@(MyReady ? "true" : "false")"
+                                aria-label="@($"You: {FighterName(MyFighterId)}, {(MyReady ? "ready — press to change your pick" : "press to ready up")}")"
+                                disabled="@(_lobby.Me is null || _readyBusy)"
+                                @onclick="ToggleReadyAsync">
+                            <span class="pb-select-who">You</span>
+                            <span class="pb-select-plate">
+                                <span class="pb-select-pick">@FighterName(MyFighterId)</span>
+                                <span class="pb-select-state">@(MyReady ? "✓ Ready" : "Ready up")</span>
+                            </span>
+                            @if (MyReady)
+                            {
+                                <span class="pb-select-seal" aria-hidden="true">@PoBrawlPage.SealSvg</span>
+                            }
+                        </button>
+                        <span class="pb-select-vs" aria-hidden="true">VS</span>
+                        <div class="pb-select-side pb-select-side--p2 pb-select-side--static @(Opponent?.IsReady == true ? "pb-select-side--locked" : "")"
+                             role="status">
+                            <span class="pb-select-who">@(Opponent is { } who ? LeaderboardNames.Pretty(who.DisplayName) : "Opponent")</span>
+                            <span class="pb-select-plate">
+                                <span class="pb-select-pick">@(Opponent is { } o ? FighterName(o.Fighter.Id) : "Waiting…")</span>
+                                <span class="pb-select-state">@(Opponent is null ? "Seat open" : Opponent.IsReady ? "✓ Ready" : "Picking")</span>
+                            </span>
+                            @if (Opponent?.IsReady == true)
+                            {
+                                <span class="pb-select-seal" aria-hidden="true">@PoBrawlPage.SealSvg</span>
+                            }
+                        </div>
+                        @* Your pick, under your card. Any fighter, ready or not (the hub allows a
+                           change at any time); greyed out only until you hold a seat. *@
+                        <div class="pbl-fighter">
+                            <label for="pbl-fighter">Fighter</label>
+                            <select id="pbl-fighter" value="@MyFighterId" disabled="@(_lobby.Me is null)" @onchange="OnFighterChangedAsync">
+                                @foreach (var f in RosterForPicker)
+                                {
+                                    <option value="@f.Id">@f.Name</option>
+                                }
+                            </select>
+                        </div>
                     </div>
                 </div>
-                <p class="pb-select-prompt" role="status">@Prompt</p>
-                <PoBrawlFighterGrid Fighters="@RosterForPicker"
-                                    P1Index="@IndexOf(MyFighterId)" P2Index="@IndexOf(Opponent?.Fighter.Id)"
-                                    P1Mark="ME" P2Mark="OPP" P1Label="your pick" P2Label="your opponent's pick"
-                                    OnPick="PickAtAsync" />
                 <details class="pb-dossier-disclosure">
                     <summary>📁 Dossiers</summary>
                     <div class="pb-dossier-pair">
@@ -150,19 +159,6 @@ else
     private bool MyReady => _lobby.IsReady;
     private PoBrawlLobbyPlayer? Opponent => _lobby.State?.Players.FirstOrDefault(p => p.ConnectionId != _lobby.ConnectionId);
 
-    private string Prompt =>
-        Opponent is null ? "Pick your fighter while you wait for an opponent."
-        : !MyReady ? "Tap a fighter, then press your card to ready up."
-        : !Opponent.IsReady ? $"Ready. Waiting for {LeaderboardNames.Pretty(Opponent.DisplayName)}…"
-        : "Both ready. Here comes the fight!";
-
-    private static int IndexOf(string? fighterId)
-    {
-        if (string.IsNullOrEmpty(fighterId)) return -1;
-        for (var i = 0; i < RosterForPicker.Count; i++) if (RosterForPicker[i].Id == fighterId) return i;
-        return -1;
-    }
-
     // One hub call at a time: a double tap must not toggle Ready straight back.
     private bool _readyBusy;
 
@@ -192,7 +188,8 @@ else
         }
     }
 
-    private Task PickAtAsync(int index) => PickAsync(RosterForPicker[index].Id);
+    private Task OnFighterChangedAsync(ChangeEventArgs e) =>
+        e.Value?.ToString() is { Length: > 0 } id ? PickAsync(id) : Task.CompletedTask;
 
     private async Task ConnectAsync()
     {

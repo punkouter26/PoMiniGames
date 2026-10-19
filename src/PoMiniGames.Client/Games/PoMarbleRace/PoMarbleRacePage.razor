@@ -39,7 +39,6 @@
                    Controls="@(_demo ? DemoQuickControls : _online ? OnlineHowToPlayContent : HowToPlayContent)"
                    Options="@(_demo || _online ? null : SetupContent)"
                    StartLabel="@(_demo ? null : "Race")"
-                   ForceShow="_reopenIntro"
                    Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                    OnStart="OnIntroStartAsync" />
     }
@@ -198,9 +197,6 @@
 
     // The intro gates the engine: nothing boots (and no race clock runs) until it is dismissed.
     private bool _introDone;
-    // Set when the player reopens the card with Change track, so a "don't show again" opt-out
-    // cannot auto-dismiss the very card they asked for.
-    private bool _reopenIntro;
 
     // ── Setup (intro card, 1P) ──
     // Everything offered here comes from the engine (PoMarbleRace.menu()); see MarbleMenu.cs.
@@ -468,7 +464,6 @@
     {
         StopPickCountdown();
         await StopEngineAsync();
-        _reopenIntro = true;
         _introDone = false;
         _phase = "pick";
         _podium.Clear();

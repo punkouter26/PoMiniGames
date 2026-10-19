@@ -209,11 +209,8 @@ class PersonalityEffectsMethods {
     const rp = f.rig.root.position;
     this._shockwave(new THREE.Vector3(rp.x, rp.y + 1.2, rp.z), 0.9);
     this._pressBurst(5);
-    if (this.audio) {
-      this.audio.superStinger();
-      this.audio.announce(`${f.rig.config.name}! ${this._superMoveName(f)}!`,
-        { rate: 1.0, pitch: 0.55, duckSec: 0.8 });
-    }
+    this.audio?.superStinger();
+    this._caption(`${f.rig.config.name}! ${this._superMoveName(f)}!`);
     const accent = f.rig.baseColors?.tie || f.rig.baseColors?.suit;
     for (const u of f.inkUniforms || []) {
       if (accent) u.uInkColor.value.copy(accent).lerp(new THREE.Color(0xffffff), 0.35);

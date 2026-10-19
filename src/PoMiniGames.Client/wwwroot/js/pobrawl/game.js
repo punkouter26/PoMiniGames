@@ -1000,9 +1000,11 @@ export class BrawlGame {
     const line = this._introLine;
     this._introLine = null;
     if (!line || this.training || this.options.mode === 'demo') return SPLASH_HOLD_MS;
-    this.audio?.announce(line, { rate: 1.02, pitch: 0.7, duckSec: 4 });
+    // Held long enough to read the introduction off the caption bar.
     const words = String(line).split(/\s+/).length;
-    return Math.min(7000, Math.max(SPLASH_HOLD_MS, 600 + words * 360));
+    const hold = Math.min(7000, Math.max(SPLASH_HOLD_MS, 600 + words * 360));
+    this._caption(line, hold / 1000);
+    return hold;
   }
 
   // Compile every GPU program the current scene needs, then reset the frame
@@ -1189,14 +1191,12 @@ export class BrawlGame {
     if (this.phase === 'countdown') {
       const remaining = 3 - Math.floor(this.phaseT);
       this._setBanner(remaining > 0 ? String(remaining) : 'FIGHT!');
-      // The PA calls the count. Edge-triggered off the banner value rather
-      // than a timer of its own, so the voice can never drift out of step with
-      // the number on screen.
+      // The bell at zero. Edge-triggered off the banner value rather than a timer of
+      // its own, so it can never drift out of step with the number on screen.
       if (remaining !== this._lastCount) {
         this._lastCount = remaining;
-        if (remaining > 0) this.audio?.announce(String(remaining), { rate: 1.05, pitch: 0.6, duckSec: 0.25 });
-        else {
-          this.audio?.announce('Fight!', { rate: 1.1, pitch: 0.5, duckSec: 0.5 });
+        if (remaining <= 0) {
+          this._caption('Fight!');
           this._jumboCaption('FIGHT', 1.4);
           this.audio?.crowdSwell(0.85);
         }

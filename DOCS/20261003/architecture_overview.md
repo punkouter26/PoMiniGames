@@ -574,7 +574,7 @@ grain, thick ink edges and speed lines out of the firing fighter. Every layer ke
 pixel's brightness, per spectacle.js's flicker rule. Reduced motion gets a weaker, shorter,
 motionless version; the low tier skips the edge taps and grain. Wall clock, no match RNG.
 
-**Tournament night.** The CPU bracket (`/pobrawl/tournament`, `PoBrawlTournamentPage`) hands the
+**Tournament night.** The CPU bracket (Brawl's Demo mode, `/pobrawl/demo`; `/pobrawl/tournament` is the old address, `PoBrawlTournamentPage`) hands the
 engine each bout's round and Elo expectation (`PoBrawlTournament.ExpectedP1`, the board's
 `EloMath` curve) as `PoBrawl.matchup`'s optional fifth argument `{ round, p1Expected }` (and the
 same keys on `PoBrawl.init`). `js/pobrawl/cup.js` turns them into the night: golden-hour light

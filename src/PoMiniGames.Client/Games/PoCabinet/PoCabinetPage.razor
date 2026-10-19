@@ -21,10 +21,10 @@
     <div class="pocabinet-root">
         @if (_phase == Phase.Start)
         {
-            @* The shared opening card, like every other game. Not until the
-               stored settings are read: a player who ticked "don't show this again" starts
-               the race from inside the card's own first render. .pocabinet-intro is
-               display:contents, there so this page's scoped CSS can widen the shared card. *@
+            @* The shared opening card, like every other game. Not until the stored
+               settings are read, so the setup shows the player's own choices from the
+               first frame. .pocabinet-intro is display:contents, there so this page's
+               scoped CSS can widen the shared card. *@
             @if (_loaded)
             {
                 <div class="pocabinet-intro">
@@ -35,7 +35,6 @@
                                Options="@(Mode == GameMode.Demo ? null : SetupContent)"
                                Mode="@(Mode == GameMode.Demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                                StartLabel="@(Mode == GameMode.Demo ? null : IsMultiplayerMode ? "Join lobby" : "Start race")"
-                               ForceShow="_reopenIntro"
                                OnStart="StartRaceAsync" />
                 </div>
             }

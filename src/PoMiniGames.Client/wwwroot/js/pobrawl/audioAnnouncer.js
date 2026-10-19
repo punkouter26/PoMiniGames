@@ -1,34 +1,9 @@
-// audioAnnouncer.js — the PA announcer half of the AudioBus (audio.js): the voice, the
-// round-start intro themes and the calls (countdown, "Fight!", "K.O.", super names, the
-// press line). A prototype mixin like the BrawlGame subsystems (mixin.js): `this` is the
-// AudioBus, so these methods use its graph, gains and clock directly.
+// audioAnnouncer.js — the ring-announcer half of the AudioBus (audio.js): the round-start
+// intro themes and the stingers. No voice: the calls are captions (commentary.js). A
+// prototype mixin like the BrawlGame subsystems (mixin.js): `this` is the AudioBus, so these
+// methods use its graph, gains and clock directly.
 
 import { LOOKAHEAD_MS, SCHEDULE_AHEAD, SFX_FILTER_OPEN, clamp, autoDisconnect, noteToFreq, MOTIFS } from './audioCore.js';
-
-// Announcer voice, cached (getVoices() is slow). It wants an American, deep, LOCAL voice — network voices ("Natural", "Online") lag
-// hundreds of ms, and a late "K.O." is worse than a robotic one.
-let _announcerVoice = null;
-let _announcerVoiceResolved = false;
-function pickAnnouncerVoice() {
-  if (_announcerVoiceResolved) return _announcerVoice;
-  let voices = [];
-  try { voices = window.speechSynthesis?.getVoices() || []; } catch { return null; }
-  // Voice lists populate asynchronously on Chrome; an empty list means "not
-  // yet", not "none", so stay unresolved and try again on the next call.
-  if (!voices.length) return null;
-  const local = voices.filter((v) => v.localService !== false
-    && !/natural|online/i.test(v.name));
-  const pool = local.length ? local : voices;
-  _announcerVoice =
-    pool.find((v) => v.lang?.startsWith('en-US') && /david|mark|guy|male/i.test(v.name))
-    || pool.find((v) => v.lang?.startsWith('en') && /david|mark|guy|male/i.test(v.name))
-    || pool.find((v) => v.lang?.startsWith('en-US'))
-    || pool.find((v) => v.lang?.startsWith('en'))
-    || pool[0]
-    || null;
-  _announcerVoiceResolved = true;
-  return _announcerVoice;
-}
 
 // Round-start chiptune intros: ≤5 s two-voice riffs (melody = detuned squares,
 // bass = triangle), [note, beats]. Keys MUST match the charId in fighters.js.
@@ -198,70 +173,6 @@ const INTRO_THEMES = {
 const SUPER_DEDUPE_SEC = 0.3;
 
 class AudioAnnouncerMethods {
-  // ══ PA announcer ═════════════════════════════════════════════════════
-  // CONSTRAINT: speechSynthesis renders straight to the output device and cannot
-  // be routed into an AudioContext, so no bus processing applies. The PA feel comes
-  // from voice/pitch/rate, a mic-key click + thump through the bus, and ducking.
-  announce(text, { rate = 0.92, pitch = 0.62, volume = 1, duckSec = 1.1 } = {}) {
-    if (this.muted || !text) return;
-    this._paKey();
-    if (this._ensure()) {
-      if (this.musicDuck) this._duckParam(this.musicDuck.gain, 1.0, 0.62, duckSec, 0.5);
-      if (this.crowdDuck) this._duckParam(this.crowdDuck.gain, 1.0, 0.45, duckSec, 0.5);
-    }
-    const synth = typeof window !== 'undefined' && window.speechSynthesis;
-    if (!synth) return; // no Web Speech — the mic key + duck still land
-    try {
-      // Drop any backlog: a late "K.O." is worse than none.
-      synth.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      const v = pickAnnouncerVoice();
-      if (v) { u.voice = v; u.lang = v.lang; }
-      u.rate = rate;
-      u.pitch = pitch;
-      u.volume = volume;
-      this._speaking = true;
-      u.onend = u.onerror = () => { this._speaking = false; };
-      synth.speak(u);
-    } catch { this._speaking = false; }
-  }
-
-  /** Mic-key click + cabinet thump: the sound of a PA opening up. */
-  _paKey() {
-    if (!this._ensure() || this.muted) return;
-    const ctx = this.ctx;
-    const now = ctx.currentTime;
-    const tick = this._noiseSource(0.05);
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = 2400;
-    bp.Q.value = 2.2;
-    const tg = ctx.createGain();
-    tg.gain.setValueAtTime(0.0001, now);
-    tg.gain.linearRampToValueAtTime(0.09, now + 0.004);
-    tg.gain.exponentialRampToValueAtTime(0.0005, now + 0.05);
-    tick.connect(bp).connect(tg).connect(this.sfxGain);
-    tick.start(now, tick._offset); tick.stop(now + 0.06);
-    autoDisconnect(tick, [tick, bp, tg]);
-    // Cabinet thump.
-    const th = ctx.createOscillator();
-    th.type = 'sine';
-    th.frequency.setValueAtTime(120, now);
-    th.frequency.exponentialRampToValueAtTime(52, now + 0.14);
-    const thg = ctx.createGain();
-    thg.gain.setValueAtTime(0.0001, now);
-    thg.gain.linearRampToValueAtTime(0.11, now + 0.01);
-    thg.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-    th.connect(thg).connect(this.sfxGain);
-    th.start(now); th.stop(now + 0.22);
-    autoDisconnect(th, [th, thg]);
-  }
-
-  stopAnnounce() {
-    this._speaking = false;
-    try { window.speechSynthesis?.cancel(); } catch { /* */ }
-  }
-
   // Super stinger: tape-stop, sub drop under the freeze, then the owner's leitmotif as a
   // brass stinger (charId given — the show bus calls first, with the owner), or the old
   // detuned minor chord without one. personalityEffects.js calls again with no owner a

@@ -33,10 +33,8 @@ public partial class PoRacerPage
     // Race your best lap on this track (js/ghostTrack.js). Solo only; the switch is in the pause menu.
     private bool _ghost = true;
     // The opening card (GameIntro) gates everything: no lobby seat is taken and no race is
-    // joined until it is dismissed. _reopenIntro is the card coming back on purpose (Back to
-    // start, a failed start, leaving the lobby), where a "don't show this again" must not
-    // dismiss it the moment it opens; _routed tells the first route apart from a later one.
-    private bool _introDone, _reopenIntro, _routed;
+    // joined until it is dismissed. _routed tells the first route apart from a later one.
+    private bool _introDone, _routed;
     private string _playerName = "", _selectedTrackId = PoRacerCatalog.DefaultTrackId, _difficulty = "medium";
     private string? _error, _connectionStatus, _submitStatus;
     private string _announcement = "", _gameCode = "";
@@ -208,7 +206,6 @@ public partial class PoRacerPage
     private async Task OnIntroStartAsync()
     {
         _introDone = true;
-        _reopenIntro = false;
         StateHasChanged();
         await SyncModeAsync();
     }
@@ -216,7 +213,6 @@ public partial class PoRacerPage
     private void ReopenIntro()
     {
         _introDone = false;
-        _reopenIntro = true;
     }
 
     private void SelectTrack(string trackId)

@@ -31,10 +31,9 @@
    TwoPlayer's character select) and clicks bubble to the overlay's handler, so
    a tap meant to tick the box would start the game. The card therefore stops
    propagation in every mode. *@
-@* _skipDecision: null = the localStorage check has not landed yet (render
-   nothing for a beat rather than flash the card and yank it away); false =
-   show the card; true = the player opted out — auto-started, render nothing. *@
-@if (_skipDecision is not true)
+@* Always shown: there is no opt-out. The one exception is the demo attract loop
+   (?kiosk=N), which starts at once and renders nothing (_kiosk). *@
+@if (!_kiosk)
 {
 <div class="gps-intro-overlay" role="dialog" aria-modal="true" aria-label="@(string.IsNullOrWhiteSpace(DialogLabel) ? "Game intro" : DialogLabel)"
      @ref="_root" tabindex="0"
@@ -103,21 +102,23 @@
                     break;
 
                 default:
-                    <button class="app-btn app-btn--lg app-btn--primary"
-                            @onclick="StartAsync">
-                        @(StartLabel ?? "Start")
-                    </button>
-                    @if (_rememberSkip is not null && !_forceShow)
+                    @if (Actions != null)
                     {
-                        @* Without this box every 1P visit would re-show the same card,
-                           which repeat players read as friction. The flag is per-game
-                           localStorage, and `?intro=1` on any game URL forces the card
-                           back AND hides this box — the controls copy stays one query
-                           parameter away. *@
-                        <label class="gps-intro-skip" @onkeydown:stopPropagation="true">
-                            <input type="checkbox" checked="@_rememberSkip" @onchange="RememberSkipChanged" />
-                            Don't show this again
-                        </label>
+                        @* Keydowns stop here like the options: Space on a checkbox ticks it. *@
+                        <div class="gps-intro-actions-row" @onkeydown:stopPropagation="true">
+                            <button class="app-btn app-btn--lg app-btn--primary"
+                                    @onclick="StartAsync">
+                                @(StartLabel ?? "Start")
+                            </button>
+                            @Actions
+                        </div>
+                    }
+                    else
+                    {
+                        <button class="app-btn app-btn--lg app-btn--primary"
+                                @onclick="StartAsync">
+                            @(StartLabel ?? "Start")
+                        </button>
                     }
                     break;
             }
@@ -140,6 +141,12 @@
 
     /// <summary>Optional extra content for TwoPlayer mode (e.g. character select).</summary>
     [Parameter] public RenderFragment? Options { get; set; }
+
+    /// <summary>
+    /// OnePlayer only: small controls that sit in one row beside the Start button (PoBrawl's
+    /// "Training first" toggle and its HQ link), so the start choice and Start read together.
+    /// </summary>
+    [Parameter] public RenderFragment? Actions { get; set; }
 
     [Parameter] public IntroMode Mode { get; set; } = IntroMode.OnePlayer;
 
@@ -187,13 +194,6 @@
     /// </summary>
     [Parameter] public string? CueScope { get; set; }
 
-    /// <summary>
-    /// Show the card even when the player ticked "Don't show this again" (and hide that box),
-    /// exactly like <c>?intro=1</c>. For a page that reopens its intro on purpose — PoMarbleRace's
-    /// Change track button — where auto-skipping would dismiss it the instant it opened.
-    /// </summary>
-    [Parameter] public bool ForceShow { get; set; }
-
     [Inject] private Services.Ui.UiFeedbackService Feedback { get; set; } = null!;
 
     [Inject] private IJSRuntime JS { get; set; } = null!;
@@ -204,21 +204,8 @@
     private bool _started;
     private Timer? _demoTimer;
 
-    // ── "Don't show this again" ───────────────────────────────────────────
-    // Per-game localStorage opt-out for the OnePlayer card. null = undecided
-    // (only for skip-capable modes before the storage read lands); the card
-    // renders nothing while undecided so an opted-out player never sees a
-    // flash-then-yank. `?intro=1` forces the card and hides the box, which is
-    // the documented way back to the controls copy after opting out.
-    private bool? _skipDecision;
-    private bool? _rememberSkip;
-    private bool _forceShow;
-
-    private string SkipKey => $"poIntro:skip:{CueScope}";
-
-    /// <summary>Whether this instance can persist a skip at all: 1P only, and
-    /// only when the game handed us a stable key (CueScope) to store it under.</summary>
-    private bool SkipCapable => Mode == IntroMode.OnePlayer && !string.IsNullOrWhiteSpace(CueScope);
+    // The demo attract loop (?kiosk=N) starts at once and never shows the card.
+    private bool _kiosk;
 
     protected override async Task OnInitializedAsync()
     {
@@ -226,52 +213,13 @@
         // the intro card entirely, otherwise the same dialog would flash back at the
         // viewer on every loop iteration. Every demo page reads the same kiosk query
         // param, so the dialog stays suppressed across the whole loop.
-        // Only applies to Demo mode — OnePlayer / TwoPlayer still want the card.
+        // Only applies to Demo mode — OnePlayer / TwoPlayer always show the card.
         if (Mode == IntroMode.Demo &&
             new Uri(Navigation.Uri).Query.Contains("kiosk=", StringComparison.OrdinalIgnoreCase))
         {
-            _skipDecision = true;
+            _kiosk = true;
             await StartAsync();
-            return;
         }
-
-        if (!SkipCapable)
-        {
-            _skipDecision = false;
-            return;
-        }
-
-        try
-        {
-            _forceShow = ForceShow || new Uri(Navigation.Uri).Query.Contains("intro=1", StringComparison.OrdinalIgnoreCase);
-            var skip = await JS.InvokeAsync<string?>("localStorage.getItem", SkipKey);
-            if (!_forceShow && skip == "1")
-            {
-                _skipDecision = true;
-                await StartAsync();
-                return;
-            }
-            _rememberSkip = false;
-        }
-        catch
-        {
-            // Storage unavailable (private mode, blocked) — show the card and
-            // the box; a failed write simply never persists.
-            _rememberSkip = null;
-        }
-        _skipDecision = false;
-    }
-
-    private async Task RememberSkipChanged(ChangeEventArgs e)
-    {
-        var on = e.Value is bool b && b;
-        _rememberSkip = on;
-        try
-        {
-            if (on) await JS.InvokeVoidAsync("localStorage.setItem", SkipKey, "1");
-            else await JS.InvokeVoidAsync("localStorage.removeItem", SkipKey);
-        }
-        catch { /* best-effort persistence — the card still works without it */ }
     }
 
     private string ModeClass => Mode switch

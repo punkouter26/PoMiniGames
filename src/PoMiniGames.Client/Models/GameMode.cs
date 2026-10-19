@@ -16,11 +16,8 @@ public enum GameMode
     /// <summary>Hub-backed online play. Always requires a live server.</summary>
     Multiplayer,
 
-    /// <summary>Unattended attract-mode playback (the kiosk reel).</summary>
+    /// <summary>Unattended attract-mode playback (the kiosk reel). Brawl's is its CPU cup.</summary>
     Demo,
-
-    /// <summary>A CPU-only knockout bracket the viewer watches play out (Brawl).</summary>
-    Tournament,
 }
 
 /// <summary>
@@ -33,7 +30,6 @@ public static class GameModes
     public const string TwoPlayerSlug = "2player";
     public const string MultiplayerSlug = "multi";
     public const string DemoSlug = "demo";
-    public const string TournamentSlug = "tournament";
 
     /// <summary>
     /// Resolve the mode from the <c>{Mode}</c> route parameter. Anything unrecognised,
@@ -43,7 +39,6 @@ public static class GameModes
     public static GameMode Parse(string? routeSegment) => routeSegment?.ToLowerInvariant() switch
     {
         DemoSlug => GameMode.Demo,
-        TournamentSlug => GameMode.Tournament,
         TwoPlayerSlug => GameMode.TwoPlayer,
         MultiplayerSlug => GameMode.Multiplayer,
         _ => GameMode.OnePlayer,
@@ -55,7 +50,6 @@ public static class GameModes
         GameMode.TwoPlayer => TwoPlayerSlug,
         GameMode.Multiplayer => MultiplayerSlug,
         GameMode.Demo => DemoSlug,
-        GameMode.Tournament => TournamentSlug,
         _ => OnePlayerSlug,
     };
 
@@ -65,7 +59,6 @@ public static class GameModes
         GameMode.TwoPlayer => "2P",
         GameMode.Multiplayer => "Online",
         GameMode.Demo => "Demo",
-        GameMode.Tournament => "Cup",
         _ => "1P",
     };
 
@@ -75,7 +68,6 @@ public static class GameModes
         GameMode.TwoPlayer => "2 players, one device",
         GameMode.Multiplayer => "Online multiplayer",
         GameMode.Demo => "Watch a demo",
-        GameMode.Tournament => "Watch an 8-fighter CPU tournament",
         _ => "1 player vs CPU",
     };
 
@@ -96,7 +88,6 @@ public static class GameModes
         GameMode.TwoPlayer => "2 Players",
         GameMode.Multiplayer => "Multiplayer",
         GameMode.Demo => "Demo",
-        GameMode.Tournament => "Tournament",
         _ => "1 Player",
     };
 }

@@ -102,6 +102,8 @@ public partial class PoBrawlPage
     private bool _p2DangerAnnounced;
 
     private List<StatItem> _statItems = new();
+    // 1P win–loss for the result's facts line (UpdateStats).
+    private string _record = "0–0";
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
     private DotNetObjectReference<PoBrawlPage>? _ref;
@@ -142,9 +144,6 @@ public partial class PoBrawlPage
     // Bumped when a fight starts or training is entered, so a pending ladder roll (the
     // LadderResultHoldMs wait) can tell it has been superseded.
     private int _ladderRollGeneration;
-    // Bumped on every engine boot (a new fight, a rematch, training) and on leaving the page,
-    // so a press line still on its way out can tell its fight is gone.
-    private int _fightGeneration;
 
     // ── Online (PoBrawlNetSession; the arena predicts the server's fight and rolls back) ──
     private PoBrawlNetSession? _net;
@@ -528,7 +527,6 @@ public partial class PoBrawlPage
 
     private async Task InitEngine()
     {
-        ++_fightGeneration;
         ResetRoundHud();
         // 1P difficulty is the ladder rung (1 = pushover Trump … 15 = brutal
         // FDR); demo keeps the balanced mid-tier CPU-vs-CPU fight.
@@ -733,7 +731,6 @@ public partial class PoBrawlPage
     {
         _presser = null;
         if (_lastRecap is not { } r) return;
-        var fight = _fightGeneration;
 
         // 1P: the president at the podium (winner or loser, it is their press conference).
         // 2P: the winner, or player 1 on a draw.
@@ -758,11 +755,6 @@ public partial class PoBrawlPage
         // The shell's live region reads it.
         if (reply is not null) _announcement = $"Press conference — {reply.Speaker}: {reply.Text}";
         await InvokeAsync(StateHasChanged);
-        // A rematch or a leave during that render supersedes this fight: don't speak for it.
-        if (reply is not null && !Settings.Muted && fight == _fightGeneration)
-        {
-            try { await JSRuntime.InvokeVoidAsync("PoBrawl.say", $"{reply.Speaker}: {reply.Text}"); } catch { }
-        }
     }
 
     /// <summary>
@@ -1068,6 +1060,7 @@ public partial class PoBrawlPage
     private void UpdateStats()
     {
         var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
+        _record = $"{bucket.Wins}–{bucket.Losses}";
         _statItems = _mode == "1p"
             ? GameStatsPanel.Build(bucket, includeDraws: false, includeElo: false,
                 ("Elo", _rating.Elo.ToString()),
@@ -1131,7 +1124,6 @@ public partial class PoBrawlPage
 
     public async ValueTask DisposeAsync()
     {
-        ++_fightGeneration;
         PlayerNameService.StateChanged -= OnPlayerNameChanged;
         Auth.StateChanged -= OnAuthSettled;
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }

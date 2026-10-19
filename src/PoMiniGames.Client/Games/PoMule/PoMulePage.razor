@@ -29,7 +29,6 @@
                        Options="@(_demo ? null : SpeciesPicker)"
                        Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                        StartLabel="@(_saved is null ? "Start" : "New match")"
-                       ForceShow="true"
                        OnStart="StartNewAsync" />
         }
         else if (_stage == Stage.Failed)

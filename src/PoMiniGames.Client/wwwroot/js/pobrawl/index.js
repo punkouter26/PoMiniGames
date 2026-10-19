@@ -121,8 +121,6 @@ window.PoBrawl = {
   saveClip() { return game ? game.saveClip() : Promise.resolve(false); },
   /** Training-room controls (training.js). key: 'reset'. No-op outside a training session. */
   training(key) { if (game && key === 'reset') game.resetTraining(); },
-  /** Say a line through the PA announcer (the post-fight press conference). */
-  say(text) { if (game && text) game.audio?.announce(String(text).slice(0, 280), { rate: 1.0, pitch: 0.9, duckSec: 0.5 }); },
   destroy() {
     SelectStage.unmount();
     if (game) { game.dispose(); game = null; }

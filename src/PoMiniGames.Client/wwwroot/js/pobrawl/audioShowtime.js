@@ -736,7 +736,6 @@ class AudioShowtimeMethods {
     this.stopMusic();
     this.stopIntroTheme();
     this.stopCrowd();
-    this.stopAnnounce();
     this.stopRisers();
     this._grid = null;
     // The listener belongs to the shared app context: hand it back at the origin.

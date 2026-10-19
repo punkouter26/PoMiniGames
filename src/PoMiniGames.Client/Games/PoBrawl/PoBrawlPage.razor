@@ -26,7 +26,7 @@
            Player="@_playerName"
            Elo="@(_mode == "1p" ? _rating.Elo : (int?)null)"
            BackTo="/"
-           Stats="@_statItems"
+           Stats="@(_mode == "1p" ? null : _statItems)"
            GameOver="@(_phase == "result" && !_demo)"
            GameOverDelayMs="@LadderResultHoldMs"
            Fullscreen="true"
@@ -46,6 +46,7 @@
                        Controls="@IntroControlsContent"
                        Mode="@_introMode"
                        Options="@IntroOptions"
+                       Actions="@IntroActions"
                        StartEnabled="true"
                        ShowStart="@(_mode != "2p")"
                        StartHint="@null"
@@ -149,30 +150,23 @@
         _ => null,
     };
 
-    // 1P: the start-mode choice, where the campaign stands, and who the rung is. The rung
-    // number rides the dossier's summary (the card itself names the president).
+    // 1P: where the campaign stands (the map's head names the rung and the next stop) beside
+    // who the rung is. The compact dossier keeps the card inside one screen.
     private RenderFragment ScoutingContent => @<div class="pb-scout">
-        <label class="pb-intro-train">
-            <input type="checkbox" @bind="_training" />
-            <span><b>🥋 Training first</b> — no clock, no KO; the room's bar has the exit.</span>
-        </label>
-        <div class="pb-scout-grid">
-            <div class="pb-scout-map">
-                <PoBrawlCampaignMap Beaten="@_ladder" Variant="status" />
-                <a class="pb-hq-link" href="/pobrawl/hq">📊 Brawl HQ: your record, boards and titles</a>
-            </div>
-            @* Open on a desktop, folded on a phone, where it would push Start off the card. Two
-               copies rather than JS: CSS shows the one that fits (.pb-dossier-disclosure--wide). *@
-            <details class="pb-dossier-disclosure pb-dossier-disclosure--wide" open>
-                <summary>📁 Rung @(_ladder + 1) of @Roster.Length · Dossier</summary>
-                <PoBrawlDossierCard FighterId="@_p2Char" />
-            </details>
-            <details class="pb-dossier-disclosure pb-dossier-disclosure--narrow">
-                <summary>📁 Rung @(_ladder + 1) of @Roster.Length · Dossier</summary>
-                <PoBrawlDossierCard FighterId="@_p2Char" Compact="true" />
-            </details>
-        </div>
+        <PoBrawlCampaignMap Beaten="@_ladder" Variant="status" />
+        <PoBrawlDossierCard FighterId="@_p2Char" Compact="true" />
     </div>;
+
+    // 1P: the start choice and the way to the stats page, on Start's own row.
+    private RenderFragment? IntroActions => _mode == "1p"
+        ? @<text>
+            <label class="pb-intro-train" title="No clock, no KO; the room's bar has the exit.">
+                <input type="checkbox" @bind="_training" />
+                <span><b>🥋 Training first</b> <small>· no clock, no KO</small></span>
+            </label>
+            <a class="pb-hq-link" href="/pobrawl/hq">📊 Brawl HQ</a>
+        </text>
+        : null;
 
     // Two-player fighter select: one shared 4×4 grid with a cursor per player. Each player
     // drives their cursor with their in-game keys (see OnIntroKey) or a tap; the side cards
@@ -252,6 +246,7 @@
     // The result: one headline, the numbers that changed, then the detail behind tabs
     // (recap, the press conference, the ladder ending) so the shared modal stays short.
     // GameOverModal renders the board (1P: "pobrawlko", top 3 by fastest KO) below this.
+    // 1P passes no stats grid: its Elo and record ride the facts line, the rest is Brawl HQ.
     private RenderFragment GameSummaryContent => @<div class="pb-result">
         <div class="pb-result-line">@ResultLine()</div>
         @if (_mode == "1p")
@@ -262,6 +257,7 @@
                     <span>KO <b>@_lastKo.ToString("0.00")s</b>@(_newRecord ? " 🏆 record" : "")</span>
                 }
                 <span>Elo <b>@_rating.Elo</b> (@(_lastEloDelta >= 0 ? "+" : "")@_lastEloDelta) vs @CharName(_p2Char) @PresidentElo(LadderRungOf(_p2Char))</span>
+                <span>W–L <b>@_record</b></span>
                 @if (!_champion)
                 {
                     <span>Next: <b>@Roster[_ladder].Name</b> (@(_ladder + 1)/@Roster.Length)</span>

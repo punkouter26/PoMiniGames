@@ -29,7 +29,20 @@
         </span>
     </header>
 
-    @if (_view is { } view)
+    @if (CurrentNotice is { Length: > 0 } notice)
+    {
+        <p class="pocabinet-lobby__notice" role="status">@notice</p>
+    }
+
+    @if (_kickedReason is not null)
+    {
+        @* Our seat was freed (the host, or the rematch ready timeout): nothing rejoins on its own. *@
+        <div class="pocabinet-lobby__notice" role="alert">
+            <span>@_kickedReason</span>
+            <button type="button" class="app-btn app-btn--secondary" disabled="@_joining" @onclick="RejoinAsync">Rejoin the lobby</button>
+        </div>
+    }
+    else if (_view is { } view)
     {
         <section class="pocabinet-lobby__seats" aria-label="Grid">
             @foreach (var seat in view.Players)
@@ -42,6 +55,13 @@
                         <span class="pocabinet-seat__state @(seat.IsReady ? "pocabinet-seat__state--ready" : null)">@(seat.IsReady ? "Ready ✓" : "Not ready")</span>
                     </span>
                     @if (seat.IsHost) { <span class="pocabinet-seat__badge">Host</span> }
+                    else if (IsHost && !mine && !view.InRace)
+                    {
+                        @* Host only, between races: one AFK seat must not block every rematch. *@
+                        <button type="button" class="pocabinet-seat__kick" disabled="@_busy"
+                                aria-label="Remove @seat.DisplayName from the lobby" title="Remove from the lobby"
+                                @onclick="() => KickAsync(seat.SeatId)">✕</button>
+                    }
                 </div>
             }
             @foreach (var bot in BotSeats(view))
@@ -79,7 +99,8 @@
             else if (MySeat(view) is not null)
             {
                 <p class="pocabinet-lobby__track">Track <strong>@PoCabinetCatalog.GetTrack(view.TrackId).Name</strong> · @view.BotCount AI official@(view.BotCount == 1 ? "" : "s") · the host starts</p>
-                <button class="app-btn app-btn--primary pocabinet-lobby__ready" disabled="@(view.InRace || _busy)" @onclick="ToggleReadyAsync">
+                <button class="app-btn app-btn--primary pocabinet-lobby__ready" disabled="@(view.InRace || _busy)" @onclick="ToggleReadyAsync"
+                        title="After a race, ready up within @ReadyTimeoutSeconds seconds or the seat is freed for someone else">
                     @(MySeat(view)?.IsReady == true ? "Ready ✓ — tap to cancel" : "Ready up")
                 </button>
             }
@@ -104,7 +125,13 @@
 
     @if (!string.IsNullOrEmpty(_error))
     {
-        <p class="pocabinet-lobby__error" role="alert">@_error</p>
+        <div class="pocabinet-lobby__notice" role="alert">
+            <span class="pocabinet-lobby__error">@_error</span>
+            @if (_connectionLost)
+            {
+                <button type="button" class="app-btn app-btn--secondary" disabled="@_joining" @onclick="RejoinAsync">Reconnect</button>
+            }
+        </div>
     }
 </div>
 
@@ -117,11 +144,24 @@
     [Parameter] public EventCallback OnExit { get; set; }
     /// <summary>Car &amp; settings: the page owns the one drawer.</summary>
     [Parameter] public EventCallback OnOpenSettings { get; set; }
+    /// <summary>A line from the page, e.g. how the last race ended when its finish was missed.</summary>
+    [Parameter] public string? Notice { get; set; }
 
     private PoCabinetLobbyView? _view;
     private string? _error;
     private bool _busy;
     private bool _joining;
+    /// <summary>The lobby connection failed or closed: the error offers Reconnect.</summary>
+    private bool _connectionLost;
+    /// <summary>Our seat was freed (kicked, or the rematch ready timeout); why, until we rejoin.</summary>
+    private string? _kickedReason;
+    /// <summary>The latest LobbyNotice broadcast.</summary>
+    private string? _notice;
+
+    /// <summary>Mirrors the server's PoCabinetLobbyService.ReadyTimeout.</summary>
+    private const int ReadyTimeoutSeconds = 90;
+
+    private string? CurrentNotice => _notice ?? Notice;
 
     private bool IsHost => Session.MySeatId is not null && _view?.Players.FirstOrDefault(p => p.IsHost)?.SeatId == Session.MySeatId;
 
@@ -129,6 +169,9 @@
     {
         Session.LobbyChanged += OnLobbyChangedAsync;
         Session.RaceStarting += OnRaceStartingAsync;
+        Session.Kicked += OnKickedAsync;
+        Session.LobbyNotice += OnLobbyNoticeAsync;
+        Session.LobbyLost += OnLobbyLostAsync;
         await JoinAsync();
     }
 
@@ -140,16 +183,47 @@
         try
         {
             _view = await Session.JoinLobbyAsync(PlayerNameSvc.GetOrReadInitialName(), InitialTrackId, Color) ?? _view;
+            if (_connectionLost) _error = null;
+            _connectionLost = false;
         }
         catch (Exception ex)
         {
             _error = $"Could not reach the lobby: {ex.Message}";
+            _connectionLost = true;
         }
         finally
         {
             _joining = false;
         }
     }
+
+    /// <summary>Reconnect after a lost connection, or take a seat again after losing it.</summary>
+    private async Task RejoinAsync()
+    {
+        _kickedReason = null;
+        _notice = null;
+        await JoinAsync();
+    }
+
+    private Task OnKickedAsync(string reason) => InvokeAsync(() =>
+    {
+        _kickedReason = reason;
+        _view = null;
+        StateHasChanged();
+    });
+
+    private Task OnLobbyNoticeAsync(string text) => InvokeAsync(() =>
+    {
+        _notice = text;
+        StateHasChanged();
+    });
+
+    private Task OnLobbyLostAsync(string message) => InvokeAsync(() =>
+    {
+        _error = message;
+        _connectionLost = true;
+        StateHasChanged();
+    });
 
     private Task OnLobbyChangedAsync(PoCabinetLobbyView view)
     {
@@ -196,6 +270,11 @@
 
     private Task ToggleReadyAsync() => RunAsync(() => Session.ToggleReadyAsync());
 
+    private Task KickAsync(string seatId) => RunAsync(async () =>
+    {
+        if (!await Session.KickAsync(seatId)) _error = "Could not remove that player — a race may have just started.";
+    });
+
     private Task StartAsync() => RunAsync(async () =>
     {
         if (!await Session.TryStartAsync()) _error = "Could not start — someone may have just un-readied.";
@@ -215,6 +294,9 @@
     {
         Session.LobbyChanged -= OnLobbyChangedAsync;
         Session.RaceStarting -= OnRaceStartingAsync;
+        Session.Kicked -= OnKickedAsync;
+        Session.LobbyNotice -= OnLobbyNoticeAsync;
+        Session.LobbyLost -= OnLobbyLostAsync;
         return ValueTask.CompletedTask;
     }
 }

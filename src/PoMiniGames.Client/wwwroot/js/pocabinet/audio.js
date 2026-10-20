@@ -89,6 +89,7 @@ const pops = [];           // exhaust-pop events for the flame visuals: { id, st
 
 const VOLUME = 0.7;        // the game's mix level under the app's volume
 let suspended = false;     // pause-menu duck (distinct from browser suspend)
+let hidden = false;        // the tab is in the background
 let slowAmount = 0;
 let lastShutter = 0;
 let lastImpact = 0;
@@ -478,7 +479,7 @@ function applyMasterGain() {
     const app = window.PoAudioBus;
     const appMuted = app?.isMuted?.() === true;
     const appVolume = app?.getVolume?.() ?? 1;
-    const target = (suspended || appMuted) ? 0 : VOLUME * appVolume;
+    const target = (suspended || hidden || appMuted) ? 0 : VOLUME * appVolume;
     master.gain.setTargetAtTime(target, ctx.currentTime, 0.05);
 }
 if (typeof window !== 'undefined') {
@@ -489,7 +490,14 @@ if (typeof window !== 'undefined') {
 export function setSuspended(s) {
     suspended = !!s;
     if (ctx) applyMasterGain();
-    music?.setPaused(suspended);
+    music?.setPaused(suspended || hidden);
+}
+
+/** The tab went to the background (or came back): silent while hidden, whatever the race is doing. */
+export function setHidden(h) {
+    hidden = !!h;
+    if (ctx) applyMasterGain();
+    music?.setPaused(suspended || hidden);
 }
 
 /** The `music` setting: the adaptive score on or off (fades; no notes are booked while off). */

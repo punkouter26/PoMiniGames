@@ -140,6 +140,12 @@ public sealed class PoCabinetTrack
     /// <summary>Road half width at sample <paramref name="i"/>. Mirrors track.js <c>hwAt</c>.</summary>
     public double HalfWidthAt(int i) => _hw[i];
 
+    /// <summary>Smoothed unsigned curvature at sample <paramref name="i"/> (what the AI brakes for). Mirrors track.js <c>curv</c>.</summary>
+    public double CurvatureAt(int i) => _curv[i];
+
+    /// <summary>The racing line's lateral offset at sample <paramref name="i"/> (what the AI steers along). Mirrors track.js <c>line</c>.</summary>
+    public double LineAt(int i) => _line[i];
+
     /// <summary>Run-off kind at sample <paramref name="i"/> on <paramref name="side"/> (+1 right): 0 grass, 1 gravel, 2 tarmac.</summary>
     public int RunoffAt(int i, int side) => side > 0 ? _runoffRight[i] : _runoffLeft[i];
 

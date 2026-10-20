@@ -27,7 +27,6 @@ public sealed class PoCabinetUiSettings
     /// <summary>"off", "light" or "strong": blend the steering toward the centre line.</summary>
     public string SteeringAssist { get; set; } = "light";
     public bool AutoBrake { get; set; }
-    public bool RacingLine { get; set; }
 
     /// <summary>Parse the stored JSON; defaults for anything missing or out of range, unknown keys ignored.</summary>
     public static PoCabinetUiSettings FromJson(string? json)

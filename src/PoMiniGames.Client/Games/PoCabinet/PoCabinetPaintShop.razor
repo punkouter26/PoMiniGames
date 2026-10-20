@@ -1,37 +1,31 @@
 @*
-    PoCabinetPaintShop — 4 liveries × 4 colors = 16 swatches. The page reads the stored
-    choice (PoCabinetPitWall.PaintKey) before the first render and passes it in; this
-    component saves each pick through Blazored.LocalStorage (the framework's preference per
-    Program.cs) and raises it. It used to load the stored choice itself without telling the
-    page, so a race started in the default paint until a swatch was clicked.
+    PoCabinetPaintShop — the car's colour, four swatches. The page reads the stored choice
+    (PoCabinetPitWall.PaintKey) before the first render and passes it in; this component saves
+    each pick through Blazored.LocalStorage (the framework's preference per Program.cs) and
+    raises it. (Until 2026-10-19 it offered 4 liveries × 4 colours, but only the colour ever
+    reached the car: the patterns were swatches and nothing else.)
 *@
 
 @using Blazored.LocalStorage
 @inject ILocalStorageService LocalStorage
 
-<div class="pocabinet-paintshop" role="radiogroup" aria-label="Pick a paint job">
-    @foreach (var (name, _) in COLORS)
+<div class="pocabinet-paintshop" role="radiogroup" aria-label="Pick a colour">
+    @foreach (var (name, hex) in COLORS)
     {
-        @foreach (var livery in LIVERIES)
-        {
-            var isSelected = livery == SelectedLivery && name == SelectedColor;
-            var previewBg = PreviewFor(livery, name);
-            <button type="button"
-                    class="pocabinet-swatch @(isSelected ? "pocabinet-swatch--selected" : null)"
-                    role="radio"
-                    aria-checked="@(isSelected ? "true" : "false")"
-                    aria-label="@livery @name"
-                    title="@livery · @name"
-                    style="--swatch: @previewBg;"
-                    @onclick="() => Select(livery, name)">
-            </button>
-        }
+        var isSelected = string.Equals(name, SelectedColor, StringComparison.OrdinalIgnoreCase);
+        <button type="button"
+                class="pocabinet-swatch @(isSelected ? "pocabinet-swatch--selected" : null)"
+                role="radio"
+                aria-checked="@(isSelected ? "true" : "false")"
+                aria-label="@name"
+                title="@name"
+                style="--swatch: @hex;"
+                @onclick="() => Select(name)">
+        </button>
     }
 </div>
 
 @code {
-    private static readonly string[] LIVERIES = { "Stripe", "Block", "Split", "Solid" };
-
     private static readonly (string Name, string Hex)[] COLORS =
     {
         ("Indigo",   "#3470d8"),
@@ -50,36 +44,19 @@
         return COLORS[0].Hex;
     }
 
-    /// <summary>The CSS background that previews a paint job (swatches and the garage's car chip).</summary>
-    public static string PreviewFor(string? livery, string? color)
-    {
-        var hex = HexFor(color);
-        // Stripe livery lays the colour over a contrasting base so the
-        // pattern reads as a paint job, not a flat swatch.
-        var stripeColor = string.Equals(color, "Gold", StringComparison.OrdinalIgnoreCase) ? "#fff" : "#fff8";
-        return livery switch
-        {
-            "Solid" => hex,
-            "Block" => $"linear-gradient(135deg, {hex} 0 50%, #ffffff22 50% 100%)",
-            "Split" => $"linear-gradient(90deg, {hex} 0 50%, #ffffff22 50% 100%)",
-            _ => $"repeating-linear-gradient(45deg, {hex} 0 6px, {stripeColor} 6px 12px)",
-        };
-    }
-
-    [Parameter] public string? SelectedLivery { get; set; }
     [Parameter] public string? SelectedColor { get; set; }
-    [Parameter] public EventCallback<(string Livery, string Color)> SelectionChanged { get; set; }
+    [Parameter] public EventCallback<string> SelectionChanged { get; set; }
 
-    private async Task Select(string livery, string color)
+    private async Task Select(string color)
     {
         try
         {
-            await LocalStorage.SetItemAsStringAsync(PoCabinetPitWall.PaintKey, $"{livery}|{color}");
+            await LocalStorage.SetItemAsStringAsync(PoCabinetPitWall.PaintKey, color);
         }
         catch
         {
             // ignore — the page keeps the choice for the rest of the session
         }
-        await SelectionChanged.InvokeAsync((livery, color));
+        await SelectionChanged.InvokeAsync(color);
     }
 }

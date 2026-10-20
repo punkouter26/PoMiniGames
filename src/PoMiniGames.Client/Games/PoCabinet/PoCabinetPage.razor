@@ -6,11 +6,16 @@
 
 <PageTitle>Cabinet · PoMiniGames</PageTitle>
 
-@* The race ends on the shared end-of-game modal: the results are its summary,
-   and its one button goes back to the hub. A demo has nobody to press it, so it loops instead.
+@* The race ends on the shared end-of-game modal: the results are its summary, and its buttons
+   are the ways on: Race again (1P) or Back to lobby (online) leads, Next stage when this race
+   opened one, then Back to all games. A demo has nobody to press them, so it loops instead.
    No GameKey: the unified leaderboard has no Cabinet board, and the summary carries the podium. *@
-<GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true"
+<GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true" RequiresWebGl="true"
            GameOver="@(_phase == Phase.Finished && Mode != GameMode.Demo)"
+           Outcome="@ResultsOutcome" NewBest="@_isPersonalBest"
+           OnPrimary="ResultsPrimaryAsync" PrimaryLabel="@(IsMultiplayerMode ? "Back to lobby" : "Race again")"
+           OnSecondary="@(NextStageTrackId is null ? default : EventCallback.Factory.Create(this, ResultsNextStageAsync))"
+           SecondaryLabel="@(NextStageTrackId is { } next ? $"Next stage: {PoCabinetCatalog.GetTrack(next).Name}" : null)"
            GameSummary="@ResultsContent">
     <div class="pocabinet-root">
         @if (_phase == Phase.Start)
@@ -37,7 +42,7 @@
         {
             <PoCabinetLobby InitialTrackId="@_trackId" Color="@PlayerColorHex"
                             OnRaceStarting="OnLobbyRaceStartingAsync" OnExit="LeaveLobbyAsync"
-                            OnOpenSettings="OpenDrawerAsync" />
+                            OnOpenSettings="OpenDrawerAsync" Notice="@_lobbyNotice" />
         }
         else
         {
@@ -136,7 +141,7 @@
 
                 @if (_phase == Phase.Replay)
                 {
-                    <PoCabinetReplayBar @ref="_replayBar" OnExit="ExitReplayAsync" RecordOnOpen="@_recordOnReplay" />
+                    <PoCabinetReplayBar @ref="_replayBar" OnExit="ExitReplayAsync" HasLap="@(_laps.BestValidLap > 0)" />
                 }
                 else
                 {
@@ -167,11 +172,28 @@
                                 @(_paused ? "▶" : "⏸")
                             </button>
                         }
+                        @if (IsMultiplayerMode && _phase == Phase.Racing)
+                        {
+                            @* Online there is no pause: this is the way out for drivers, wrecks and
+                               spectators. A driver taps twice (the first tap arms it). *@
+                            <button type="button" class="pocabinet-iconbtn" @onclick="LeaveWireRaceAsync"
+                                    aria-label="@(_confirmLeave ? "Tap again to leave the race" : "Leave race")"
+                                    title="Leave the race and go back to the lobby">@(_confirmLeave ? "Leave?" : "✕")</button>
+                        }
                     </span>
                 }
                 @* Screen-reader channel: laps, places, officials' radio lines, the finish. *@
                 <p class="pocabinet-sr" role="status" aria-live="polite">@_liveAnnouncement</p>
-                @if (IsMultiplayerMode && _phase == Phase.Racing && !string.IsNullOrEmpty(_status))
+                @if (IsMultiplayerMode && _phase == Phase.Racing && _connectionLost is not null)
+                {
+                    @* The race connection is gone for good: say so and offer the ways out. *@
+                    <div class="pocabinet-reconnect pocabinet-reconnect--lost" role="alert">
+                        <span>@_connectionLost</span>
+                        <button type="button" class="app-btn app-btn--primary" @onclick="BackToLobbyAsync">Back to lobby</button>
+                        <button type="button" class="app-btn app-btn--ghost" @onclick="QuitOnlineAsync">Quit to menu</button>
+                    </div>
+                }
+                else if (IsMultiplayerMode && _phase == Phase.Racing && !string.IsNullOrEmpty(_status))
                 {
                     <div class="pocabinet-reconnect" role="alert">
                         <span class="pocabinet-reconnect__spinner" aria-hidden="true"></span>
@@ -214,7 +236,8 @@
             }
         }
         <PoCabinetDrawer @ref="_drawer" Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
-                         Livery="@_livery" Color="@_color" PaintChanged="OnPaintChanged" />
+                         Color="@_color" PaintChanged="OnPaintChanged"
+                         ShowWeather="@(!IsMultiplayerMode)" WeatherNextRace="@(_phase is Phase.Racing or Phase.Finished or Phase.Replay)" />
     </div>
 </GameShell>
 
@@ -252,11 +275,13 @@
     </span>;
 
     // The card's Options slot: the tracks, in 1P (online, the lobby host picks one; the demo
-    // picks its own). Paint and settings are in the drawer (pause card, lobby). Otherwise only
-    // a failed start says so here.
+    // picks its own), and the drawer's button: aids, touch controls and the car's colour are
+    // worth setting BEFORE the first race (they used to be reachable only from the pause card).
+    // Otherwise only a failed start says so here.
     private RenderFragment? OptionsContent => Mode == GameMode.OnePlayer
         ? @<div class="pocabinet-start">
             <PoCabinetTrackSelector SelectedTrackId="@_trackId" SelectedTrackIdChanged="OnTrackChanged" Campaign="true" />
+            <button type="button" class="app-btn app-btn--ghost pocabinet-start__settings" @onclick="OpenDrawerAsync">⚙ Car &amp; settings</button>
             @if (!string.IsNullOrEmpty(_status))
             {
                 @StatusLine
@@ -273,8 +298,7 @@
                           TrackName="@TrackName" IsSpectating="IsSpectating" IsMultiplayer="IsMultiplayerMode"
                           AwaitingFinal="_awaitingFinal" IsPersonalBest="_isPersonalBest" PreviousBest="_previousBest"
                           CampaignNote="CampaignNote" Debrief="_debrief" TelemetrySummary="@_telemetrySummary"
-                          HasReferenceLap="_hasReferenceLap" Status="@_status" NextStageTrackId="@NextStageTrackId"
-                          OnBackToLobby="BackToLobbyAsync" OnRaceAgain="RestartRaceAsync" OnRaceTrack="RaceTrackAsync"
-                          OnReplay="StartReplayAsync" OnShareCard="ShareResultAsync" OnShareClip="ShareClipAsync" />
+                          HasReferenceLap="_hasReferenceLap" Status="@_status" Dnf="_dnf"
+                          OnReplay="StartReplayAsync" />
     </section>;
 }

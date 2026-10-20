@@ -188,10 +188,12 @@ public sealed class PoCabinetSim
         }
     }
 
-    /// <summary>Finishers by finish order, then everyone else by race distance.</summary>
+    /// <summary>Finishers by finish order, then the cars still running by race distance, then
+    /// the wrecks (DNF) by how far they got.</summary>
     public List<SimCar> Standings() =>
         _cars.OrderBy(c => c.Finished ? 0 : 1)
              .ThenBy(c => c.Finished ? c.FinishOrder : 0)
+             .ThenBy(c => !c.Finished && c.Wrecked ? 1 : 0)
              .ThenByDescending(c => c.Finished ? 0 : c.Distance)
              .ThenBy(c => c.Id)
              .ToList();

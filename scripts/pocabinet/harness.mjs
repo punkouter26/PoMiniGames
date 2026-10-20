@@ -129,6 +129,7 @@ export function race(id, driver = 'clean', wet = false, opts = {}) {
         playerWrecked: player.body.wrecked, playerInvalid: player.invalidLaps,
         finished, wrecked, fieldBest: best[0] ?? -1, median: best[Math.floor(best.length / 2)] ?? -1,
         invalidLaps: cars.reduce((s, c) => s + c.invalidLaps, 0), stuckEvents, maxStuck: +maxStuck.toFixed(1),
+        meanDamage: +(cars.reduce((s, c) => s + c.body.damage, 0) / cars.length).toFixed(3),
         lapLength: Math.round(L), inputs: bytes.toString('base64'),
     };
 }
@@ -203,14 +204,14 @@ else if (cmd === 'log') {
     const log = [];
     const r = race(id, driver || 'clean', wet === '1', { log });
     console.log(log.join('\n'));
-    console.log(JSON.stringify({ playerBest: r.playerBest, median: r.median, stuck: r.stuckEvents, wrecked: r.wrecked }));
+    console.log(JSON.stringify({ playerBest: r.playerBest, median: r.median, stuck: r.stuckEvents, wrecked: r.wrecked, meanDamage: r.meanDamage }));
 }
 else if (cmd === 'profile') {
     const w = world(id);
     const steps = Math.round(w.centerXY.length / 2 / (w.knotCount || 1));
     const prof = { steps: Number(driver) || 12, knots: [] };
     const r = race(id, 'clean', false, { profile: prof });
-    console.log(JSON.stringify({ playerBest: r.playerBest, median: r.median, stuck: r.stuckEvents, wrecked: r.wrecked }));
+    console.log(JSON.stringify({ playerBest: r.playerBest, median: r.median, stuck: r.stuckEvents, wrecked: r.wrecked, meanDamage: r.meanDamage }));
     prof.knots.forEach((p, k) => p && console.log(`knot ${String(k).padStart(3)}  cars ${String(p.n).padStart(6)}  avg ${(p.v / p.n).toFixed(0).padStart(4)}  slow ${(100 * p.slow / p.n).toFixed(0).padStart(3)}%  off ${(100 * p.off / p.n).toFixed(0).padStart(3)}%`));
 }
 else if (cmd === 'race') {

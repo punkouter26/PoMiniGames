@@ -3,13 +3,19 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Features.PoCabinet;
 
 /// <summary>
-/// Picks controls for an AI official each tick: aim at a point ahead on the centerline,
+/// Picks controls for an AI official each tick: aim at a point ahead on the road,
 /// offset to the lane it wants, and hold a speed the next corner and the car ahead allow.
 /// The AI drives through the same <see cref="PoCabinetPhysics.Step"/> as a player — it gets
 /// throttle/brake/steer, never a position — so it obeys grip, grass and barriers.
 ///
 /// <para>
-/// Personality shapes the driving, not the physics: <c>LateralOffset</c> is the lane it holds,
+/// It drives the track's racing line (wide on the way in, the apex, wide on the way out), brakes
+/// where the braking curve it plans on meets the next corner, plans that corner on the grip its
+/// damage has left it, and moves over for a leader coming to lap it.
+/// </para>
+/// <para>
+/// Personality shapes the driving, not the physics: <c>LateralOffset</c> is how far off the
+/// racing line it holds,
 /// <c>LookaheadDistance</c> how early it turns in, <c>BrakingAggression</c> how late and how
 /// hard it brakes for a corner, <c>CollisionTolerance</c> how much it insists on its own line
 /// in traffic, <c>DraftingAffinity</c> how keenly it tucks in behind a car,
@@ -44,6 +50,28 @@ public static class PoCabinetAiDriver
     /// <summary>How far ahead it starts picking its side of a road divider, and how wide it keeps of it.</summary>
     private const double IslandLook = 320;
     private const double IslandClear = 14;
+    /// <summary>Braking points: the deceleration a driver plans on, from a cautious one's to (+ the
+    /// late share) a late braker's. Well under <see cref="PoCabinetPhysics.BrakeDecel"/>.</summary>
+    private const double BrakePlan = 60;
+    private const double BrakePlanLate = 40;
+    /// <summary>How much of the track's racing line a driver follows, and how far (a share of the half
+    /// width) its own <c>LateralOffset</c> sets it off that line, so a hundred cars are not all on one
+    /// line (the whole line packed the field onto the apexes and into each other).</summary>
+    private const double LineWeight = 0.6;
+    private const double LineBias = 0.5;
+    /// <summary>The share of its pace a bent car gives up at full structural damage (on top of
+    /// planning its corners on the grip it has left).</summary>
+    private const double DamagePace = 0.05;
+    /// <summary>Blue flags: how far behind it watches for a car coming to lap it, how close to its
+    /// own lane that car must be, how much quicker along the road, how far over it eases each tick
+    /// (a share of the half width) and how much it lifts to let the leader by.</summary>
+    private const double BlueLook = 80;
+    private const double BlueLane = 30;
+    private const double BlueClosing = 3;
+    private const double BlueStep = 0.1;
+    private const double BlueLift = 0.95;
+    /// <summary>Aim error (radians) past which a car rolling forward is pointing the wrong way down the road.</summary>
+    private const double WrongWay = 2;
 
     // Scratch for one Decide call: the cars ahead that are in the way, and how far ahead each is.
     [ThreadStatic] private static PoCabinetCarBody[]? _near;
@@ -60,9 +88,15 @@ public static class PoCabinetAiDriver
     {
         if (car.Wrecked) return Wrecked(track, car);
         double v = car.Speed;
-        double hw = track.HalfWidthAt(car.SegHint >= 0 ? car.SegHint : track.IndexAt(car.Along));
+        int seg = car.SegHint >= 0 ? car.SegHint : track.IndexAt(car.Along);
+        double hw = track.HalfWidthAt(seg);
         double edge = hw * 0.8;
-        double line = personality.LateralOffset * hw * 0.6;
+        // Steering aims at a point ahead, further ahead at speed; the line there is the track's
+        // racing line (wide on the way in, the apex, wide on the way out), set off it by the
+        // driver's own bias.
+        double look = personality.LookaheadDistance * 0.5 + 20 + Math.Abs(v) * 0.45;
+        double racing = track.LineAt(track.IndexAt(car.Along + look)) * LineWeight;
+        double line = Math.Min(edge, Math.Max(-edge, racing + personality.LateralOffset * hw * LineBias));
         double lateralTarget = line;
 
         // Traffic. What is in the way (the car to follow, a car alongside) is judged in this
@@ -79,8 +113,9 @@ public static class PoCabinetAiDriver
         }
         double half = track.Length * 0.5;
         double hx = PoCabinetDetMath.Cos(car.Heading), hy = PoCabinetDetMath.Sin(car.Heading);
-        PoCabinetCarBody? ahead = null, blocker = null;
-        double gap = double.MaxValue, blockGap = double.MaxValue;
+        double own = (hx * v - hy * car.Slip) * track.TangentX(seg) + (hy * v + hx * car.Slip) * track.TangentY(seg);
+        PoCabinetCarBody? ahead = null, blocker = null, blue = null;
+        double gap = double.MaxValue, blockGap = double.MaxValue, blueGap = -BlueLook;
         bool left = false, right = false;
         int count = 0;
         for (int i = 0; i < field.Length; i++)
@@ -103,6 +138,14 @@ public static class PoCabinetAiDriver
                 if (side > 12 && side < 30) right = true;
                 else if (side < -12 && side > -30) left = true;
             }
+            // Blue flag: the nearest car close behind on the road, near its lane, that is really a
+            // lap or more ahead and coming up on it.
+            if (d < 0 && d > blueGap && !other.Wrecked && other.Distance - car.Distance > half
+                && Math.Abs(other.Lateral - car.Lateral) < BlueLane && RoadSpeed(track, other) > own + BlueClosing)
+            {
+                blueGap = d;
+                blue = other;
+            }
             // In its path AND ahead of it on the road: two cars converging at an angle are each
             // in the other's path, and without the second test both wait for the other forever.
             // A wreck is never followed: it is not going anywhere, so it is a lane to avoid (below).
@@ -117,7 +160,8 @@ public static class PoCabinetAiDriver
                 gap = d;
                 ahead = other;
             }
-            if (other.Speed < v + 4)
+            // Not pulling away: slower, or quick but going nowhere along the road (spun, sideways).
+            if (other.Speed < v + 4 || RoadSpeed(track, other) < other.Speed * 0.5)
             {
                 near[count] = other;
                 nearGap[count] = d;
@@ -126,25 +170,33 @@ public static class PoCabinetAiDriver
         }
         if (ahead is not null && personality.DraftingAffinity > 0.5 && gap > 50)
         {
-            lateralTarget = ahead.Lateral; // tuck into the slipstream
+            lateralTarget = ahead.Lateral; // tuck in behind it
         }
         else if (count > 0)
         {
             // Pick a lane: its own line and seven across the tarmac, scored by the clear road
             // ahead, less how far the lane is from its line (a tolerant driver insists on its
             // line) and from where the car is now (which keeps the choice from flickering).
-            double own = 0.2 + 0.6 * personality.CollisionTolerance;
+            double insist = 0.2 + 0.6 * personality.CollisionTolerance;
             double best = ClearRun(near, nearGap, count, line) - Math.Abs(line - car.Lateral) * 0.25;
             for (int k = -3; k <= 3; k++)
             {
                 double lane = edge * k / 3;
-                double score = ClearRun(near, nearGap, count, lane) - Math.Abs(lane - line) * own - Math.Abs(lane - car.Lateral) * 0.25;
+                double score = ClearRun(near, nearGap, count, lane) - Math.Abs(lane - line) * insist - Math.Abs(lane - car.Lateral) * 0.25;
                 if (score > best)
                 {
                     best = score;
                     lateralTarget = lane;
                 }
             }
+        }
+        // Being lapped: never across the leader's bows, and easing over to the side away from it
+        // (it lifts, below). Not a dive for the edge: that put the cars behind into it.
+        if (blue is not null)
+        {
+            int away = blue.Lateral > car.Lateral ? -1 : 1;
+            if ((lateralTarget - car.Lateral) * away < 0) lateralTarget = car.Lateral;
+            lateralTarget += away * hw * BlueStep;
         }
         lateralTarget = Math.Min(edge, Math.Max(-edge, lateralTarget));
         // A lapse: off its line and out over the edge of the road.
@@ -156,8 +208,6 @@ public static class PoCabinetAiDriver
         // A divider ahead: pick a side of it (the wild and the aggressive go for the joker lane).
         if (track.Islands.Count > 0) lateralTarget = IslandLane(track, car, lateralTarget, personality.Aggression >= 0.5 || personality.Wildness >= 0.15, left, right);
 
-        // Steering: aim at a point ahead, further ahead at speed.
-        double look = personality.LookaheadDistance * 0.5 + 20 + Math.Abs(v) * 0.45;
         var p = track.PointAt(car.Along + look);
         double tx = p.X + -p.Ty * lateralTarget;
         double ty = p.Y + p.Tx * lateralTarget;
@@ -169,35 +219,40 @@ public static class PoCabinetAiDriver
         // Nose into a barrier or a divider, facing well away from its line and barely moving:
         // back out (the brake at a standstill is reverse, and reversing turns the tail the other way).
         if ((err > 1.2 || err < -1.2) && v < 6 && v > -PoCabinetPhysics.ReverseMax) return new PoCabinetControls(0, 1, steer);
+        // Spun and rolling on the wrong way: no throttle into the oncoming field; it turns round on
+        // the lock and what speed it has. (Braking it to a stop instead left cars parked across
+        // the road.)
+        if ((err > WrongWay || err < -WrongWay) && v >= 6) return new PoCabinetControls(0, 0, steer);
 
-        // Speed: the tightest corner in braking range sets the target. Capped at a turn as tight
-        // as the road is wide: the centerline has kinks sharper than that (Mar-a-Lago's last
-        // bend, a few samples long) which a car simply cuts across, and braking for them parked
-        // a 100-car field on the start line.
-        // A late braker looks 0.7 s up the road for its corner, a cautious one 1.3 s; either
-        // way a lapse has it believing in grip that is not there.
+        // Speed. A bent car has less grip than it set out with and plans its corners (and a little
+        // of its pace) on what is left; a lapse has it believing in grip that is not there.
+        double health = 1 - PoCabinetPhysics.GripLoss * car.Damage;
+        double pace = maxSpeed * (1 - DamagePace * car.Damage);
         double margin = (0.55 + corneringSkill * 0.4) * (lapsing != 0 ? Math.Abs(lapsing) : 1);
-        double kappa = Math.Min(1 / track.HalfWidth, track.MaxCurvature(car.Along + 5, car.Along + 30 + Math.Abs(v) * (1.3 - 0.6 * personality.BrakingAggression)));
-        // A car on the inside of a split runs a tighter radius than the centerline's.
         double inside = track.Islands.Count > 0 ? InsideOfIsland(track, car, lateralTarget) : 0;
-        if (inside > 0) kappa = kappa / Math.Max(0.4, 1 - kappa * inside);
-        double cornerSpeed = Math.Sqrt(PoCabinetPhysics.GripAccel * grip * margin / Math.Max(kappa, 1e-5));
-        double target = Math.Min(maxSpeed, cornerSpeed);
+        // A late braker looks 0.7 s up the road for its corner, a cautious one 1.3 s, and brakes
+        // where the braking curve it plans on (harder, the later the braker) meets the corner.
+        double cornerSpeed = CornerLimit(track, car, grip * health, margin, 1.3 - 0.6 * personality.BrakingAggression, inside,
+            BrakePlan + BrakePlanLate * personality.BrakingAggression);
+        double target = Math.Min(pace, cornerSpeed);
         // What it brakes for: the corner and the traffic. Its own pace it only lifts for, so a
         // descent can carry it on, up to RunOn over (a finished car parking, at 0, stops).
-        double limit = Math.Min(cornerSpeed, maxSpeed > 0 ? maxSpeed + RunOn : 0);
+        double limit = Math.Min(cornerSpeed, pace > 0 ? pace + RunOn : 0);
         if (blocker is not null)
         {
             // The car ahead in this lane: no faster than can still be braked down to its speed
-            // in the room there is, and a little under it once nose to tail. Never negative:
-            // brake at a standstill is the reverse gear. An aggressive driver follows closer than
-            // the cars are long, and bumps.
+            // in the room there is, and a little under it once nose to tail. Its speed is how fast
+            // it is going this car's way: a car sideways or pointing back is a car stopped. Never
+            // negative: brake at a standstill is the reverse gear. An aggressive driver follows
+            // closer than the cars are long, and bumps.
             double room = blockGap - (FollowGap - 12 * personality.Aggression);
-            double vb = Math.Max(0, blocker.Speed);
+            double vb = Math.Max(0, SpeedAlong(blocker, hx, hy));
             double follow = room > 0 ? Math.Sqrt(vb * vb + 2 * FollowDecel * room) : Math.Max(0, vb - 15);
             target = Math.Min(target, follow);
             limit = Math.Min(limit, follow);
         }
+        // Being lapped: a lift to let the leader by.
+        if (blue is not null) target = target * BlueLift;
 
         double throttle = v < target - 3 ? 1 : v < target ? 0.35 : 0;
         double brake = v > limit + 4
@@ -315,6 +370,50 @@ public static class PoCabinetAiDriver
             double over = 1.5 + ((h >> 16) & 0xff) / 255.0 * 0.9;
             return h >> 31 != 0 ? over : -over;
         }
+    }
+
+    /// <summary>
+    /// The speed limit for the corners in braking range: for each curvature sample within
+    /// <paramref name="reach"/> seconds of road, the speed it can still brake down to that sample's
+    /// corner speed from at <paramref name="decel"/> (the braking curve sqrt(vApex² + 2·decel·distance)),
+    /// and the lowest of them. A corner up the road costs nothing until its braking point comes.
+    /// Mirrors physics.js <c>cornerLimit</c>.
+    /// </summary>
+    private static double CornerLimit(PoCabinetTrack track, PoCabinetCarBody car, double grip, double margin, double reach, double inside, double decel)
+    {
+        double v = car.Speed;
+        // Capped at a turn as tight as the road is wide: the centerline has kinks sharper than
+        // that (Mar-a-Lago's last bend, a few samples long) which a car simply cuts across, and
+        // braking for them parked a 100-car field on the start line.
+        double cap = 1 / track.HalfWidth;
+        double to = car.Along + 30 + Math.Abs(v) * reach;
+        double limit = double.MaxValue;
+        for (double d = car.Along + 5; d <= to; d += PoCabinetTrack.CurvatureSampleStep)
+        {
+            double kappa = Math.Min(cap, track.CurvatureAt(track.IndexAt(d)));
+            // A car on the inside of a split runs a tighter radius than the centerline's.
+            if (inside > 0) kappa = kappa / Math.Max(0.4, 1 - kappa * inside);
+            double apex = PoCabinetPhysics.GripAccel * grip * margin / Math.Max(kappa, 1e-5);
+            double allowed = Math.Sqrt(apex + 2 * decel * (d - car.Along));
+            if (allowed < limit) limit = allowed;
+        }
+        return limit;
+    }
+
+    /// <summary>How fast <paramref name="b"/> is going along the unit direction (<paramref name="dx"/>,
+    /// <paramref name="dy"/>): its forward speed and its sideways slide both count, so a car that has
+    /// spun round is not "pulling away". Mirrors physics.js <c>speedAlong</c>.</summary>
+    private static double SpeedAlong(PoCabinetCarBody b, double dx, double dy)
+    {
+        double bx = PoCabinetDetMath.Cos(b.Heading), by = PoCabinetDetMath.Sin(b.Heading);
+        return (bx * b.Speed - by * b.Slip) * dx + (by * b.Speed + bx * b.Slip) * dy;
+    }
+
+    /// <summary><see cref="SpeedAlong"/> the road where <paramref name="b"/> is. Mirrors physics.js <c>roadSpeed</c>.</summary>
+    private static double RoadSpeed(PoCabinetTrack track, PoCabinetCarBody b)
+    {
+        int seg = b.SegHint >= 0 ? b.SegHint : track.IndexAt(b.Along);
+        return SpeedAlong(b, track.TangentX(seg), track.TangentY(seg));
     }
 
     /// <summary>Clear road ahead in lane <paramref name="lateral"/> (capped at <see cref="Range"/>).</summary>

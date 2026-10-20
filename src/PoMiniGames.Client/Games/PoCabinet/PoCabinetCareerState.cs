@@ -32,12 +32,25 @@ public sealed class PoCabinetCareerState
         try
         {
             var raw = await _storage.GetItemAsStringAsync(StorageKey);
-            if (string.IsNullOrWhiteSpace(raw)) { StorageAvailable = true; return; }
+            StorageAvailable = true;
+            if (string.IsNullOrWhiteSpace(raw)) return;
             // Source-generated serializer (PoCabinetJsonContext) is trim-safe and the
             // framework requires it (IL2026 otherwise).
             var parsed = JsonSerializer.Deserialize(raw, PoCabinetJsonContext.Default.PoCabinetCareerDto);
-            if (parsed is not null) Current = parsed;
-            StorageAvailable = true;
+            if (parsed is not null)
+            {
+                // A hand-edited or half-written entry: a null list or an out-of-range stage
+                // would crash the track list, so it is put right rather than trusted.
+                parsed.CompletedStages ??= [];
+                parsed.CurrentStageIndex = Math.Clamp(parsed.CurrentStageIndex, 0, PoCabinetCatalog.CampaignStages - 1);
+                Current = parsed;
+            }
+        }
+        catch (JsonException)
+        {
+            // A corrupt entry: start the campaign over, and let the next result overwrite it.
+            // (It used to count as "storage unavailable", so nothing was ever saved again.)
+            Current = PoCabinetCareerDto.New();
         }
         catch
         {

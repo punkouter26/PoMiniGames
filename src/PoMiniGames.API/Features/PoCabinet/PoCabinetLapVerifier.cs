@@ -120,9 +120,10 @@ public static class PoCabinetLapVerifier
                 if (running && car.Finished) car.FinishOrder = ++finishOrder;
             }
         }
+        // A wreck is a DNF, classified behind every car still running (race.js ranks the same).
         int place = 1 + cars.Count(c => c != player && (c.Finished
             ? !player.Finished || c.FinishOrder < player.FinishOrder
-            : !player.Finished && c.Distance > player.Distance));
+            : !player.Finished && (c.Wrecked != player.Wrecked ? player.Wrecked : c.Distance > player.Distance)));
         return new PoCabinetReplay(player.BestLapSeconds > 0 ? player.BestLapSeconds : -1, place);
     }
 

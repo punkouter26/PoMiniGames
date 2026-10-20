@@ -1,32 +1,39 @@
 /* PoCabinetResults — its own scoped styles (split from PoCabinetPage.razor.css). Shared
    bits (muted text, status lines, sector chips, screen-reader text) stay on the page as ::deep. */
 
-.pocabinet-actions {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    margin-top: 1rem;
-}
-
 /* ─── Results: podium, confetti, PB, laps ────────────────────────────────── */
 /* ─── Telemetry chart ─────────────────────────────────────────────────────── */
 .pocabinet-telemetry {
     margin-top: 1rem;
 }
 
+/* The chart's title with the replay beside it (the replay used to be a fourth button in a
+   row under the results, with Race again, Next stage and a share menu the modal repeats). */
+.pocabinet-telemetry__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+
 .pocabinet-telemetry h3 {
-    margin: 0 0 0.4rem 0;
+    margin: 0;
     font-size: 0.95rem;
 }
+
+.pocabinet-results__replay { flex: none; }
 
 .pocabinet-telemetry__chart {
     display: block;
     width: 100%;
-    height: 240px;
+    height: 200px;
     border-radius: var(--radius-md, 6px);
     border: 1px solid var(--color-border, transparent);
     background: var(--color-background, transparent);
 }
+
+.pocabinet-telemetry__chart--empty { display: none; }
 
 .pocabinet-telemetry__summary {
     margin: 0.5rem 0 0;
@@ -132,15 +139,6 @@
 /* The fastest lap that counted: a star, not a colour (no green on white passes AA). */
 .pocabinet-laps__best td:last-child::before { content: "★ "; }
 
-.pocabinet-actions {
-    align-items: center;
-}
-
-.pocabinet-results__more {
-    justify-content: center;
-    gap: 0.5rem;
-}
-
 /* The hero row: your place, big, then the headline and what the race earned. */
 .pocabinet-results__hero {
     display: flex;
@@ -161,6 +159,12 @@
 }
 
 .pocabinet-results__place strong { font-size: 2.2rem; }
+
+/* Did not finish: the danger tint, no "/100" (a wreck is not a place). */
+.pocabinet-results__place--dnf {
+    background: color-mix(in srgb, var(--color-error, #c0392b) 16%, transparent);
+    color: var(--color-error, #c0392b);
+}
 
 .pocabinet-results__place small { font-size: 0.85rem; color: var(--color-text-muted); }
 
@@ -204,39 +208,8 @@
     .pocabinet-telemetry { margin-top: 0; }
 }
 
-.pocabinet-share > summary.app-btn { cursor: pointer; }
-
-.pocabinet-share {
-    position: relative;
-}
-
-.pocabinet-share > summary {
-    list-style: none;
-    display: inline-flex;
-    align-items: center;
-}
-
-.pocabinet-share > summary::-webkit-details-marker { display: none; }
-
-.pocabinet-share__menu {
-    position: absolute;
-    bottom: calc(100% + 0.4rem);
-    /* Opens leftward: the button can sit at the right edge of a phone. */
-    right: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    padding: 0.5rem;
-    min-width: 13rem;
-    border-radius: var(--radius-md, 8px);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border, transparent);
-    box-shadow: var(--shadow-card, 0 8px 24px rgba(0, 0, 0, 0.25));
-    z-index: 2;
-}
-
 .pocabinet-debrief {
-    margin: 0.75rem 0 0.25rem;
+    margin: 0.6rem 0 0;
     padding: 0.6rem 0.85rem;
     border-radius: var(--radius-md, 8px);
     background: color-mix(in srgb, var(--color-primary) 10%, transparent);

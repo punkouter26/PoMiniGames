@@ -1,11 +1,11 @@
 /* PoCabinetPaintShop — its own scoped styles (split from PoCabinetPage.razor.css). Shared
    bits (muted text, status lines, sector chips, screen-reader text) stay on the page as ::deep. */
 
-/* ─── Paint shop: 16 swatches in two rows ─────────────────────────────────── */
+/* ─── Paint shop: four colour swatches in a row ───────────────────────────── */
 .pocabinet-paintshop {
     display: grid;
-    grid-template-columns: repeat(8, minmax(0, 1fr));
-    gap: 0.35rem;
+    grid-template-columns: repeat(4, minmax(0, 3rem));
+    gap: 0.5rem;
 }
 
 .pocabinet-swatch {

@@ -51,6 +51,12 @@ public class PoCabinetTests
         // No reference lap: the tip says where the time went instead.
         PoCabinetTalk.DebriefFor(new PoCabinetTalk.Facts("Senate Hill", 1, [], 80, 10, 120, 45, 0))
             .Tips.Should().ContainSingle().Which.Should().Contain("45%");
+
+        // A wreck is never "a clean race", even with no barrier hit (car contact did it).
+        var wreck = PoCabinetTalk.DebriefFor(new PoCabinetTalk.Facts("Capitol Speedway", 29, [], 90, 5, 120, -1, 0, Wrecked: true));
+        wreck.Tips[0].Should().Contain("wrecked");
+        wreck.Tips.Should().NotContain(t => t.Contains("clean race"));
+        wreck.Headline.Should().Contain("WRECK");
     }
 
     /// <summary>
@@ -265,6 +271,42 @@ public class PoCabinetTests
         reopened!.IsStarted.Should().BeFalse();
         reopened.Players.Single(p => p.PlayerId == "g1").IsReady.Should().BeFalse("guests ready up again for the rematch");
         service.View("g1")!.YourSeatId.Should().Be(PoCabinetLobbyService.SeatIdFor("g1")).And.NotContain("g1", "seat ids never expose the claim id");
+
+        // Every race has its own code, a stale race's finish cannot reopen the next one, and a
+        // race that could not be created rolls the lobby back to idle.
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var rematch = new PoCabinetLobbyService(clock);
+        rematch.Join("h", "Host", connectionId: "c-h");
+        rematch.Join("afk", "Afk", connectionId: "c-afk");
+        rematch.Join("k", "Kicked", connectionId: "c-k");
+        rematch.ToggleReady("afk");
+        rematch.ToggleReady("k");
+        var first = rematch.Start("h")!.RaceCode;
+        first.Should().MatchRegex("^[0-9a-f]{8}$");
+        rematch.View()!.Code.Should().Be(first, "Watch joins the running race by its code");
+        rematch.MarkRaceFinished("stale-code").Should().BeNull();
+        rematch.View()!.InRace.Should().BeTrue("another race's finish changes nothing");
+        rematch.MarkRaceFinished(first).Should().NotBeNull();
+        rematch.ToggleReady("afk");
+        rematch.ToggleReady("k");
+        var next = rematch.Start("h")!.RaceCode;
+        next.Should().NotBe(first);
+        rematch.AbortStart(next!);
+        rematch.View()!.InRace.Should().BeFalse("a race that failed to start leaves the lobby idle");
+
+        // The host frees an AFK seat between races (never their own, never as a guest), and a
+        // reopened lobby frees seats left not ready for the timeout.
+        rematch.Kick("afk", PoCabinetLobbyService.SeatIdFor("k")).Should().BeNull("only the host kicks");
+        rematch.Kick("h", PoCabinetLobbyService.SeatIdFor("h")).Should().BeNull("the host cannot kick themselves");
+        rematch.Kick("h", PoCabinetLobbyService.SeatIdFor("k"))!.ConnectionIds.Should().Equal("c-k");
+        rematch.View()!.Players.Should().HaveCount(2);
+        rematch.Start("h");
+        rematch.MarkRaceFinished(rematch.View()!.Code);
+        clock.Advance(PoCabinetLobbyService.ReadyTimeout - TimeSpan.FromSeconds(1));
+        rematch.SweepUnready().Should().BeEmpty();
+        clock.Advance(TimeSpan.FromSeconds(2));
+        rematch.SweepUnready().Should().ContainSingle().Which.DisplayName.Should().Be("Afk");
+        rematch.View()!.Players.Should().ContainSingle(p => p.IsHost, "the host is ready by definition and never swept");
     }
 
     /// <summary>

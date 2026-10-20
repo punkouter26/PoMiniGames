@@ -25,7 +25,6 @@
 //     following the road's height and bank
 //   • patches, the rubbered-in racing line, road dividers with their JOKER signs, braking
 //     boards and corner numbers (trackside.js)
-//   • racing-line overlay coloured by corner speed (assist)
 //   • sky dome (sky.js) and trackside scenery (scenery.js), dressed by track.theme
 //   • Playground only: the imported playground.glb (see PLAYGROUND)
 //
@@ -55,7 +54,7 @@
 //
 // API surface:
 //   const handle = await mount(canvas, world);
-//   handle.setView({ x, y, heading, mode, speed, dt }); handle.setRacingLine(bool);
+//   handle.setView({ x, y, heading, mode, speed, dt });
 //   handle.setStartLights(lit, go); handle.setWeather(rain); handle.setRubber(r, wet);
 //   handle.groundHeight(xSim, ySim) — world height of the ground there
 //   handle.setPip(pose | null)   — demo broadcast inset; handle.pipRect says where it landed
@@ -63,7 +62,7 @@
 
 import * as THREE from 'three';
 import { buildTrack } from './track.js';
-import { RUN_OFF, GRIP_ACCEL, runOffAt } from './physics.js';
+import { RUN_OFF, runOffAt } from './physics.js';
 import { computeKerbs } from './kerbs.js';
 import { Sky } from './sky.js';
 import { Scenery } from './scenery.js';
@@ -158,7 +157,6 @@ class SceneHandle {
         this.disposed = false;
         this.track = null;
         this.trackGroup = null;
-        this.racingLine = null;
         this.groundMesh = null;
         this.roadMesh = null;
         this.terrain = null;      // terrain.js (every track but the Playground)
@@ -300,7 +298,9 @@ class SceneHandle {
         const idx = Math.floor(((along % t.length) + t.length) % t.length / (t.length / 8) + 0.5) % 8;
         if (idx !== this._tvIndex || !this._tvPos) {
             this._tvIndex = idx;
-            const at = idx * (t.length / 8) + 40;
+            // Camera 0 stands level with the start gantry, not 40 past it: from there it looked
+            // back at the cars coming to the line straight through the gantry's beam.
+            const at = idx * (t.length / 8) + (idx === 0 ? 2 : 40);
             const q = t.pointAt(at);
             const side = (this.playground ? t.halfWidth + RUN_OFF : wallFace(t, t.indexAt(at), 1)) + 30;
             const gx = q.x - q.ty * side, gy = q.y + q.tx * side;
@@ -439,12 +439,10 @@ class SceneHandle {
         this.fx.sun = { x: p.x * 0.5 + 0.5, y: p.y * 0.5 + 0.5, v: vis * fade };
     }
 
-    /** Apply player view preferences (racing line; reduced motion is the platform's). */
-    applyView(opts) {
+    /** Apply player view preferences (reduced motion is the platform's). */
+    applyView() {
         if (this.disposed) return;
-        const o = opts && typeof opts === 'object' ? opts : {};
         this.fx.reduced = calm();
-        this.setRacingLine(!!o.racingLine);
     }
 
     /** Step quality down a tier after ~3 s averaging under 45 fps (see the header). */
@@ -482,11 +480,6 @@ class SceneHandle {
             this.sun.shadow.map = null;
         }
         this.buildGrass();
-    }
-
-    /** Show or hide the racing-line assist overlay. */
-    setRacingLine(visible) {
-        if (this.racingLine) this.racingLine.visible = !!visible;
     }
 
     /** Start gantry: `lit` pods red (0..5), or all green on `go`. */
@@ -746,10 +739,6 @@ class SceneHandle {
 
         group.add(startLine(t));
 
-        this.racingLine = racingLineMesh(t);
-        this.racingLine.visible = false;
-        group.add(this.racingLine);
-
         if (!this.playground) {
             try {
                 this.trackside = new Trackside(t, { theme: this.theme, terrain: this.terrain, atmosphere });
@@ -936,7 +925,6 @@ class SceneHandle {
         for (const t of this.ownedTextures) t.dispose();
         this.ownedTextures = [];
         this.trackGroup = null;
-        this.racingLine = null;
         this.roadMesh = null;
         this.scenery = null;
         this.sky = null;
@@ -1163,36 +1151,6 @@ function startLine(track) {
         }
     }
     return group;
-}
-
-/**
- * Racing-line assist: a thin line down the centre coloured by the speed the
- * curvature allows — green flat out, amber lift, red brake. Same curvature and
- * grip numbers the AI and the auto-brake use, so the colours never lie.
- */
-function racingLineMesh(track) {
-    const positions = [];
-    const colors = [];
-    const green = new THREE.Color('#2ecc71'), amber = new THREE.Color('#f1c40f'), red = new THREE.Color('#e74c3c');
-    const c = new THREE.Color();
-    for (let i = 0; i <= track.count; i++) {
-        const k = i % track.count;
-        positions.push(track.x[k] / WORLD_SCALE, 0.065 + roadPlane(track, k, 0) / WORLD_SCALE, track.y[k] / WORLD_SCALE);
-        let kappa = 0;
-        for (let j = 0; j < 8; j++) kappa = Math.max(kappa, track.curvatureAt((k + j) % track.count));
-        const vMax = Math.sqrt(GRIP_ACCEL * 0.9 / Math.max(kappa, 1e-5));
-        const t = Math.min(1, Math.max(0, (vMax - 80) / 50)); // ≤80 u/s brake … ≥130 flat out
-        if (t > 0.5) c.copy(amber).lerp(green, (t - 0.5) * 2);
-        else c.copy(red).lerp(amber, t * 2);
-        colors.push(c.r * 2, c.g * 2, c.b * 2);
-    }
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    const pairs = [];
-    for (let i = 0; i < track.count; i++) if (track.drawn(i)) pairs.push(i, i + 1);
-    geom.setIndex(pairs);
-    return new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ vertexColors: true }));
 }
 
 // ──────────────────────────────────────────────────────────────────────────

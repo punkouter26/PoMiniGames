@@ -364,6 +364,16 @@
     font-size: calc(1rem * var(--pocabinet-hud, 1));
 }
 
+/* Online, the race connection is gone for good: the message and the ways out. */
+.pocabinet-reconnect--lost {
+    flex-wrap: wrap;
+    justify-content: center;
+    text-align: center;
+    width: max-content;
+    max-width: min(92vw, 30rem);
+    z-index: 8;
+}
+
 .pocabinet-reconnect__spinner {
     width: 1em;
     height: 1em;
@@ -621,23 +631,48 @@
 }
 
 /* ─── Official's radio bubble (created by dialogue.js → ::deep) ──────────── */
+/* On the left edge under the position badge (and the ping chip online), where TV puts team
+   radio. It used to sit in the middle of the screen, a third of the way up: right over the
+   road the player was steering for. */
 ::deep .pocabinet-dialogue {
     position: absolute;
-    left: 50%;
-    bottom: 32%;
-    max-width: min(80%, 420px);
-    padding: 0.5rem 0.8rem;
+    left: 0.7rem;
+    top: calc(0.9rem + 5.4rem * var(--pocabinet-hud, 1));
+    max-width: min(55%, 340px);
+    padding: 0.45rem 0.75rem;
     border-radius: var(--radius-md, 8px);
+    border-left: 3px solid var(--color-accent);
     background: rgba(8, 12, 24, 0.78);
     color: #ffffff;
     opacity: 0;
-    transform: translate(-50%, 8px);
+    transform: translateX(-8px);
     transition: opacity 0.2s ease, transform 0.2s ease;
     pointer-events: none;
 }
 
 ::deep .pocabinet-dialogue--visible {
     opacity: 1;
+    transform: translateX(0);
+}
+
+/* A phone held upright stacks the lap card under the badge: the radio goes under both. */
+@media (max-width: 600px) and (orientation: portrait) {
+    ::deep .pocabinet-dialogue {
+        top: calc(0.9rem + 9.6rem * var(--pocabinet-hud, 1));
+        max-width: min(70%, 340px);
+    }
+}
+
+/* The demo's timing tower owns the left edge: its radio sits low in the middle, where the
+   broadcast has nothing (the battle caption is bottom-left, the rear cam bottom-right). */
+.pocabinet-race--demo ::deep .pocabinet-dialogue {
+    left: 50%;
+    top: auto;
+    bottom: 1.2rem;
+    transform: translate(-50%, 8px);
+}
+
+.pocabinet-race--demo ::deep .pocabinet-dialogue--visible {
     transform: translate(-50%, 0);
 }
 
@@ -659,12 +694,24 @@
    Everything below: layout that fills the viewport, the
    merged start card, the compact HUD strip, results with pinned actions, touch-safe
    targets, contrast, and ONE reduced-motion rule. Later rules win on purpose. */
-/* The race view fills the screen under the app's top bar (kept, like every other game's), and
-   the lap readout, replay bar and status sit on the view instead of under it. Touch controls,
-   the cluster and the broadcast graphics all key off this one variable. */
+/* The race view fills the screen under the app's top bar (kept, like every other game's, except
+   on a phone held sideways: games.css), and the lap readout, replay bar and status sit on the
+   view instead of under it. Touch controls, the cluster and the broadcast graphics all key off
+   this one variable. --pocabinet-topbar-h is the bar's MEASURED height (pocabinet/index.js): a
+   fixed 3.35rem was 10px short of the phone bar, so the race page scrolled and the Gas pedal
+   was cut off at the bottom. */
 .pocabinet-race {
-    --pocabinet-bar-h: 3.35rem;
-    --pocabinet-canvas-h: max(280px, calc(100dvh - var(--pocabinet-bar-h) - var(--safe-bottom, 0px)));
+    --pocabinet-canvas-h: max(280px, calc(100dvh - var(--pocabinet-topbar-h, 3.35rem) - var(--safe-bottom, 0px)));
+}
+
+/* The start card's settings button sits under the track list, at its right edge. */
+.pocabinet-start {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.pocabinet-start__settings {
+    justify-self: end;
 }
 
 /* Screen-reader-only text (the live region here; stage notes in the track rows). */

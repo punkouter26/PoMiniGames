@@ -110,6 +110,31 @@
     font-weight: 700;
 }
 
+/* Host-only: free a seat between races. */
+.pocabinet-seat__kick {
+    flex: none;
+    margin-left: auto;
+    min-width: 2rem;
+    min-height: 2rem;
+    padding: 0 0.4rem;
+    border: 1px solid var(--color-border, currentColor);
+    border-radius: var(--radius-md, 6px);
+    background: transparent;
+    color: var(--color-text-muted);
+    font: inherit;
+    cursor: pointer;
+}
+
+.pocabinet-seat__kick:hover:not(:disabled) {
+    color: var(--color-danger, #c0392b);
+    border-color: currentColor;
+}
+
+.pocabinet-seat__kick:focus-visible {
+    outline: 2px solid var(--color-focus, currentColor);
+    outline-offset: 2px;
+}
+
 .pocabinet-lobby__toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -153,6 +178,7 @@
     .pocabinet-lobby { padding: 0.75rem; gap: 0.7rem; }
     .pocabinet-lobby__seats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem; }
     .pocabinet-seat { min-height: 3rem; padding: 0.4rem 0.55rem; }
+    .pocabinet-seat__kick { min-width: 44px; min-height: 44px; }
     .pocabinet-lobby__header h2 { flex-basis: 100%; order: -1; }
     .pocabinet-lobby__headbtns { margin-left: auto; }
     .pocabinet-lobby__start,

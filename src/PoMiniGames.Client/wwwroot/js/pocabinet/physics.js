@@ -133,6 +133,30 @@ const FOLLOW_GAP = 44;
 const FOLLOW_DECEL = 80;
 /** How far up the road the AI looks for traffic. */
 const AI_RANGE = 170;
+/** AI braking points: the deceleration a driver plans on, from a cautious one's to (+ the late
+ *  share) a late braker's. Well under BRAKE_DECEL, which is what a stamp on the pedal gives. */
+const AI_BRAKE_PLAN = 60;
+const AI_BRAKE_PLAN_LATE = 40;
+/** The step its braking-curve scan takes up the road (the track's curvature sample step). */
+const AI_CURVE_STEP = 8;
+/** AI racing line: how much of the track's racing line a driver follows, and how far (a share of
+ *  the half width) its own lateralOffset sets it off that line, so a hundred cars are not all
+ *  on one line (the whole line packed the field onto the apexes and into each other). */
+const LINE_WEIGHT = 0.6;
+const LINE_BIAS = 0.5;
+/** AI in a bent car: the share of its pace it gives up at full structural damage (on top of
+ *  planning its corners on the grip it has left). */
+const DAMAGE_PACE = 0.05;
+/** Blue flags: how far behind it watches for a car coming to lap it, how close to its own lane
+ *  that car must be, how much quicker along the road, how far over it eases each tick (a share
+ *  of the half width) and how much it lifts to let the leader by. */
+const BLUE_LOOK = 80;
+const BLUE_LANE = 30;
+const BLUE_CLOSING = 3;
+const BLUE_STEP = 0.1;
+const BLUE_LIFT = 0.95;
+/** Aim error (radians) past which a car rolling forward is pointing the wrong way down the road. */
+const WRONG_WAY = 2;
 const GRID_COLUMN = 22;
 const GRID_ROW = 50;
 /** Solo and demo races: 99 rivals and the player. */
@@ -192,7 +216,9 @@ export function soloField() {
         const r = (q & 0xff) / 255, t = ((q >>> 8) & 0xff) / 255;
         const pace = 1 - i / (n - 1);
         field.push({
-            id: 'field', name: `${FIELD_FIRST[i % FIELD_FIRST.length]} ${FIELD_LAST[Math.floor(i / FIELD_FIRST.length)]}`,
+            // The surname rotates with the first name too: by i / 19 alone, the 19 quickest (the
+            // front of the grid, the timing tower) were all "K.". Still 95 distinct names.
+            id: 'field', name: `${FIELD_FIRST[i % FIELD_FIRST.length]} ${FIELD_LAST[(i % FIELD_FIRST.length + Math.floor(i / FIELD_FIRST.length)) % FIELD_LAST.length]}`,
             color: `hsl(${Math.round(d * 360)}, ${55 + Math.round(a * 35)}%, ${32 + Math.round(b * 30)}%)`,
             maxSpeed: MAX_SPEED * (0.7 + 0.2 * pace + 0.03 * a),
             corneringSkill: 0.25 + 0.35 * pace + 0.08 * b,
@@ -689,6 +715,45 @@ function insideOfIsland(track, car, target) {
     return 0;
 }
 
+/**
+ * The AI's speed limit for the corners in braking range: for each curvature sample within `reach`
+ * seconds of road, the speed it can still brake down to that sample's corner speed from, at
+ * `decel` (the braking curve sqrt(vApex² + 2·decel·distance)), and the lowest of them. A corner
+ * up the road costs nothing until its braking point comes. `inside` is as cornerSpeed's.
+ * Mirrors PoCabinetAiDriver.CornerLimit.
+ */
+function cornerLimit(track, car, grip, margin, reach, inside, decel) {
+    const v = car.speed;
+    // Capped at a turn as tight as the road is wide: the centerline has kinks sharper than
+    // that (Mar-a-Lago's last bend, a few samples long) which a car simply cuts across,
+    // and braking for them parked a 100-car field on the start line.
+    const cap = 1 / track.halfWidth;
+    const to = car.along + 30 + Math.abs(v) * reach;
+    let limit = Number.MAX_VALUE;
+    for (let d = car.along + 5; d <= to; d += AI_CURVE_STEP) {
+        let kappa = Math.min(cap, track.curv[track.indexAt(d)]);
+        // A car `inside` units to the inside of the bend runs a tighter radius than the centerline's.
+        if (inside > 0) kappa = kappa / Math.max(0.4, 1 - kappa * inside);
+        const apex = GRIP_ACCEL * grip * margin / Math.max(kappa, 1e-5);
+        const allowed = Math.sqrt(apex + 2 * decel * (d - car.along));
+        if (allowed < limit) limit = allowed;
+    }
+    return limit;
+}
+
+/** How fast body `b` is going along the unit direction (`dx`, `dy`): its forward speed and its
+ *  sideways slide both count, so a car that has spun round is not "pulling away". */
+function speedAlong(b, dx, dy) {
+    const bx = cos(b.heading), by = sin(b.heading);
+    return (bx * b.speed - by * b.slip) * dx + (by * b.speed + bx * b.slip) * dy;
+}
+
+/** speedAlong the road where `b` is. Mirrors PoCabinetAiDriver.RoadSpeed. */
+function roadSpeed(track, b) {
+    const seg = b.segHint >= 0 ? b.segHint : track.indexAt(b.along);
+    return speedAlong(b, track.tx[seg], track.ty[seg]);
+}
+
 // aiControls scratch: the slower cars ahead within range, and how far ahead each is.
 const NEAR = [];
 const NEAR_GAP = [];
@@ -759,13 +824,22 @@ function splitBy(track, a, b) {
     return (a.lateral < mid) !== (b.lateral < mid);
 }
 
-/** AI controls for one car. Mirrors PoCabinetAiDriver.Decide. */
-export function aiControls(track, car, persona, maxSpeed, corneringSkill, field, grip) {
+/**
+ * AI controls for one car. Mirrors PoCabinetAiDriver.Decide. `guide` (the steering assist's
+ * call, browser only) leaves the racing line out and steers for the centre as it always has.
+ */
+export function aiControls(track, car, persona, maxSpeed, corneringSkill, field, grip, guide = false) {
     if (car.wrecked) return wreckControls(track, car);
     const v = car.speed;
-    const hw = track.hwAt(car.segHint >= 0 ? car.segHint : track.indexAt(car.along));
+    const seg = car.segHint >= 0 ? car.segHint : track.indexAt(car.along);
+    const hw = track.hwAt(seg);
     const edge = hw * 0.8;
-    const line = persona.lateralOffset * hw * 0.6;
+    // Steering aims at a point ahead, further ahead at speed; the line there is the track's
+    // racing line (wide on the way in, the apex, wide on the way out), set off it by the
+    // driver's own bias.
+    const look = persona.lookahead * 0.5 + 20 + Math.abs(v) * 0.45;
+    const racing = guide ? 0 : track.line[track.indexAt(car.along + look)] * LINE_WEIGHT;
+    const line = Math.min(edge, Math.max(-edge, racing + persona.lateralOffset * hw * LINE_BIAS));
     let lateralTarget = line;
 
     // Traffic. What is in the way (the car to follow, a car alongside) is judged in this
@@ -775,8 +849,10 @@ export function aiControls(track, car, persona, maxSpeed, corneringSkill, field,
     // reads road positions: the nearest car ahead, and the ones not pulling away.
     const half = track.length * 0.5;
     const hx = cos(car.heading), hy = sin(car.heading);
+    const own = (hx * v - hy * car.slip) * track.tx[seg] + (hy * v + hx * car.slip) * track.ty[seg];
     let ahead = null, gap = Number.MAX_VALUE;
     let blocker = null, blockGap = Number.MAX_VALUE;
+    let blue = null, blueGap = -BLUE_LOOK;
     let left = false, right = false;
     let near = 0;
     for (const other of field) {
@@ -796,13 +872,18 @@ export function aiControls(track, car, persona, maxSpeed, corneringSkill, field,
             if (side > 12 && side < 30) right = true;
             else if (side < -12 && side > -30) left = true;
         }
+        // Blue flag: the nearest car close behind on the road, near its lane, that is really a
+        // lap or more ahead and coming up on it.
+        if (d < 0 && d > blueGap && !other.wrecked && other.distance - car.distance > half
+            && Math.abs(other.lateral - car.lateral) < BLUE_LANE && roadSpeed(track, other) > own + BLUE_CLOSING) { blueGap = d; blue = other; }
         // In its path AND ahead of it on the road: two cars converging at an angle are each
         // in the other's path, and without the second test both wait for the other forever.
         // A wreck is never followed: it is not going anywhere, so it is a lane to avoid (below).
         if (d > 0 && fwd > 4 && fwd < blockGap && Math.abs(side) < 20 && !other.wrecked) { blockGap = fwd; blocker = other; }
         if (d <= 4) continue;
         if (d < gap && !other.wrecked) { gap = d; ahead = other; }
-        if (other.speed < v + 4) { NEAR[near] = other; NEAR_GAP[near] = d; near++; }
+        // Not pulling away: slower, or quick but going nowhere along the road (spun, sideways).
+        if (other.speed < v + 4 || roadSpeed(track, other) < other.speed * 0.5) { NEAR[near] = other; NEAR_GAP[near] = d; near++; }
     }
     if (ahead && persona.draftingAffinity > 0.5 && gap > 50) {
         lateralTarget = ahead.lateral;
@@ -810,13 +891,20 @@ export function aiControls(track, car, persona, maxSpeed, corneringSkill, field,
         // Pick a lane: its own line and seven across the tarmac, scored by the clear road
         // ahead, less how far the lane is from its line (a tolerant driver insists on its
         // line) and from where the car is now (which keeps the choice from flickering).
-        const own = 0.2 + 0.6 * persona.collisionTolerance;
+        const insist = 0.2 + 0.6 * persona.collisionTolerance;
         let best = clearRun(near, line) - Math.abs(line - car.lateral) * 0.25;
         for (let k = -3; k <= 3; k++) {
             const lane = edge * k / 3;
-            const score = clearRun(near, lane) - Math.abs(lane - line) * own - Math.abs(lane - car.lateral) * 0.25;
+            const score = clearRun(near, lane) - Math.abs(lane - line) * insist - Math.abs(lane - car.lateral) * 0.25;
             if (score > best) { best = score; lateralTarget = lane; }
         }
+    }
+    // Being lapped: never across the leader's bows, and easing over to the side away from it
+    // (it lifts, below). Not a dive for the edge: that put the cars behind into it.
+    if (blue) {
+        const away = blue.lateral > car.lateral ? -1 : 1;
+        if ((lateralTarget - car.lateral) * away < 0) lateralTarget = car.lateral;
+        lateralTarget += away * hw * BLUE_STEP;
     }
     lateralTarget = Math.min(edge, Math.max(-edge, lateralTarget));
     // A lapse: off its line and out over the edge of the road.
@@ -828,7 +916,6 @@ export function aiControls(track, car, persona, maxSpeed, corneringSkill, field,
     // A divider ahead: pick a side of it (the wild and the aggressive go for the joker lane).
     if (track.islands.length) lateralTarget = islandLane(track, car, lateralTarget, persona.aggression >= 0.5 || persona.wildness >= 0.15, left, right);
 
-    const look = persona.lookahead * 0.5 + 20 + Math.abs(v) * 0.45;
     const p = track.pointAt(car.along + look);
     const tx = p.x + -p.ty * lateralTarget;
     const ty = p.y + p.tx * lateralTarget;
@@ -840,27 +927,39 @@ export function aiControls(track, car, persona, maxSpeed, corneringSkill, field,
     // Nose into a barrier or a divider, facing well away from its line and barely moving:
     // back out (the brake at a standstill is reverse, and reversing turns the tail the other way).
     if ((err > 1.2 || err < -1.2) && v < 6 && v > -REVERSE_MAX) return { throttle: 0, brake: 1, steer };
+    // Spun and rolling on the wrong way: no throttle into the oncoming field; it turns round on
+    // the lock and what speed it has. (Braking it to a stop instead left cars parked across
+    // the road.)
+    if ((err > WRONG_WAY || err < -WRONG_WAY) && v >= 6) return { throttle: 0, brake: 0, steer };
 
-    // A late braker looks 0.7 s up the road for its corner, a cautious one 1.3 s; either
-    // way a lapse has it believing in grip that is not there.
+    // Speed. A bent car has less grip than it set out with and plans its corners (and a little
+    // of its pace) on what is left; a lapse has it believing in grip that is not there.
+    const health = 1 - GRIP_LOSS * car.damage;
+    const pace = maxSpeed * (1 - DAMAGE_PACE * car.damage);
     const margin = (0.55 + corneringSkill * 0.4) * (lapsing !== 0 ? Math.abs(lapsing) : 1);
     const inside = track.islands.length ? insideOfIsland(track, car, lateralTarget) : 0;
-    const corner = cornerSpeed(track, car, grip, margin, 1.3 - 0.6 * persona.brakingAggression, inside);
-    let target = Math.min(maxSpeed, corner);
+    // A late braker looks 0.7 s up the road for its corner, a cautious one 1.3 s, and brakes
+    // where the braking curve it plans on (harder, the later the braker) meets the corner.
+    const corner = cornerLimit(track, car, grip * health, margin, 1.3 - 0.6 * persona.brakingAggression, inside,
+        AI_BRAKE_PLAN + AI_BRAKE_PLAN_LATE * persona.brakingAggression);
+    let target = Math.min(pace, corner);
     // What it brakes for: the corner and the traffic. Its own pace it only lifts for, so a
     // descent can carry it on, up to RUN_ON over (a finished car parking, at 0, stops).
-    let limit = Math.min(corner, maxSpeed > 0 ? maxSpeed + RUN_ON : 0);
+    let limit = Math.min(corner, pace > 0 ? pace + RUN_ON : 0);
     if (blocker) {
         // The car ahead in this lane: no faster than can still be braked down to its speed
-        // in the room there is, and a little under it once nose to tail. Never negative:
-        // brake at a standstill is the reverse gear. An aggressive driver follows closer than
-        // the cars are long, and bumps.
+        // in the room there is, and a little under it once nose to tail. Its speed is how fast
+        // it is going this car's way: a car sideways or pointing back is a car stopped. Never
+        // negative: brake at a standstill is the reverse gear. An aggressive driver follows
+        // closer than the cars are long, and bumps.
         const room = blockGap - (FOLLOW_GAP - 12 * persona.aggression);
-        const vb = Math.max(0, blocker.speed);
+        const vb = Math.max(0, speedAlong(blocker, hx, hy));
         const follow = room > 0 ? Math.sqrt(vb * vb + 2 * FOLLOW_DECEL * room) : Math.max(0, vb - 15);
         target = Math.min(target, follow);
         limit = Math.min(limit, follow);
     }
+    // Being lapped: a lift to let the leader by.
+    if (blue) target = target * BLUE_LIFT;
 
     const throttle = v < target - 3 ? 1 : v < target ? 0.35 : 0;
     const brake = v > limit + 4
@@ -880,7 +979,7 @@ export function assistControls(track, car, input, assists, grip) {
     let { throttle, brake, steer } = input;
     const weight = assists?.steering === 'strong' ? 0.6 : assists?.steering === 'light' ? 0.35 : 0;
     if (weight > 0 && car.speed > 5) {
-        const guide = aiControls(track, car, AUTOPILOT, MAX_SPEED, 0.9, [], grip);
+        const guide = aiControls(track, car, AUTOPILOT, MAX_SPEED, 0.9, [], grip, true);
         steer = Math.min(1, Math.max(-1, steer * (1 - weight * 0.5) + guide.steer * weight));
     }
     if (assists?.autoBrake && car.speed > 20) {

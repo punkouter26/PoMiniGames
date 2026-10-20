@@ -330,6 +330,10 @@ export class Broadcast {
         const shown = order.slice(0, TOWER_ROWS);
         const extra = focus && focus.position > TOWER_ROWS ? focus : null;
         const rows = d.rows;
+        // Each car is timed at its own last checkpoint, so a car that just crossed one can read
+        // closer than the car ahead that has not yet (P3 +1.700 under P2 +1.833). The tower
+        // never shows that: a gap is at least the gap of the row above.
+        let floor = 0;
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
             let car = null, gapText = '';
@@ -338,7 +342,9 @@ export class Broadcast {
             const sep = i === TOWER_ROWS && !!extra;
             setData(row.li, 'state', car ? 'car' : sep ? 'sep' : 'off');
             if (!car) { setText(row.pos, ''); setText(row.code, ''); setText(row.gap, ''); continue; }
-            gapText = this.gapText(car, leader, elapsed);
+            const gap = this.gapSeconds(car, leader, elapsed);
+            if (gap !== null) floor = Math.max(floor, gap);
+            gapText = gap !== null ? '+' + formatGap(floor) : this.gapText(car, leader, elapsed);
             setText(row.pos, String(car.position));
             setText(row.code, nameOf(car));
             setText(row.gap, gapText);
@@ -411,6 +417,15 @@ export class Broadcast {
         } else if (d.pip) {
             setData(d.pip, 'show', 'off');
         }
+    }
+
+    /** The timed gap to the leader in seconds, or null when the row shows a word instead (OUT, Leader, +N laps). */
+    gapSeconds(car, leader, elapsed) {
+        if ((car.body.wrecked && !car.finished) || elapsed < 0 || car === leader) return null;
+        if (car.finished && leader?.finished) return car.finishTime - leader.finishTime;
+        const behind = (leader?.body.distance ?? 0) - car.body.distance;
+        if (Math.floor(behind / this.L) >= 1 && !car.finished) return null;
+        return this.st.get(car)?.gap ?? 0;
     }
 
     gapText(car, leader, elapsed) {

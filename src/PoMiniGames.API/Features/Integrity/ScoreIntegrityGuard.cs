@@ -86,10 +86,7 @@ public sealed class ScoreIntegrityGuard
         if (!redemption.IsValid)
         {
             IntegrityLog.SessionRejected(_log, game.Value, redemption.Status.ToString(), enforcing);
-            return enforcing
-                ? new IntegrityVerdict(false, "play_session_required",
-                    "This score could not be verified against an active play session. Play the round again to submit it.")
-                : IntegrityVerdict.Allow;
+            return enforcing ? SessionRequired : IntegrityVerdict.Allow;
         }
 
         var rateVerdict = ScoreRules.CheckAgainstSession(game, score, redemption.Elapsed);
@@ -103,6 +100,26 @@ public sealed class ScoreIntegrityGuard
             ? new IntegrityVerdict(false, "score_implausible", ScoreRules.Describe(rateVerdict))
             : IntegrityVerdict.Allow;
     }
+
+    /// <summary>
+    /// The cheap half of <see cref="Inspect"/>, for an endpoint whose ranked value is expensive
+    /// to compute (PoCabinet re-runs a whole race): in Enforce mode, refuse up front a
+    /// submission whose play session could never pass, before that work is done. Anything else
+    /// is allowed, and nothing is logged for it — the endpoint still calls <see cref="Inspect"/>
+    /// once the value is known, so every finding is logged exactly once.
+    /// </summary>
+    public IntegrityVerdict Preflight(HttpContext http, GameKey game)
+    {
+        if (_options.CurrentValue.Mode != IntegrityMode.Enforce) return IntegrityVerdict.Allow;
+        var identityKey = ResolveIdentityKey(RequestIdentity.Resolve(http.User));
+        var redemption = _sessions.Redeem(http.Request.Headers[SessionHeader].ToString(), game, identityKey);
+        if (redemption.IsValid) return IntegrityVerdict.Allow;
+        IntegrityLog.SessionRejected(_log, game.Value, redemption.Status.ToString(), true);
+        return SessionRequired;
+    }
+
+    private static readonly IntegrityVerdict SessionRequired = new(false, "play_session_required",
+        "This score could not be verified against an active play session. Play the round again to submit it.");
 
     /// <summary>
     /// Cleans a client-supplied display name for a public board. Returns the name to store —

@@ -7,9 +7,11 @@ namespace PoMiniGames.Features.PoCabinet;
 /// <summary>
 /// SignalR hub for the PoCabinet multiplayer lobby, at <c>/pocabinet/lobby-hub</c>. There is
 /// one lobby and no codes: <see cref="Join"/> seats the caller (the first arrival hosts), the
-/// host picks the track and how many AI officials fill free seats, and <see cref="TryStart"/>
-/// builds the grid and hands off to <see cref="PoCabinetRaceHub"/>. Every change is broadcast
-/// to the lobby group as <c>LobbyState</c>.
+/// host picks the track and how many AI officials fill free seats, can <see cref="Kick"/> a seat
+/// between races, and <see cref="TryStart"/> builds the grid and hands off to
+/// <see cref="PoCabinetRaceHub"/> under a fresh race code. Every change is broadcast to the
+/// lobby group as <c>LobbyState</c>; a freed seat's player gets <c>Kicked(reason)</c>, and a
+/// rematch seat freed for not readying up in time is announced as <c>LobbyNotice(text)</c>.
 ///
 /// <para>
 /// Identity comes from the claims (<see cref="RequestIdentity"/>), never from the client: seats
@@ -18,7 +20,7 @@ namespace PoMiniGames.Features.PoCabinet;
 /// <c>EndpointRouteExtensions</c>.
 /// </para>
 /// </summary>
-public sealed class PoCabinetLobbyHub(PoCabinetLobbyService lobbies, PoCabinetRaceRegistry races) : Hub
+public sealed class PoCabinetLobbyHub(PoCabinetLobbyService lobbies, PoCabinetRaceRegistry races, ILogger<PoCabinetLobbyHub> logger) : Hub
 {
     /// <summary>
     /// Take a seat (the first arrival hosts, on <paramref name="trackId"/>). A caller who gets
@@ -41,14 +43,42 @@ public sealed class PoCabinetLobbyHub(PoCabinetLobbyService lobbies, PoCabinetRa
 
     public Task<bool> SetBots(int count) => MutateAsync(id => lobbies.SetBots(id, count));
 
+    /// <summary>
+    /// Host-only: start the race under the fresh code <see cref="PoCabinetLobbyService.Start"/>
+    /// minted, and send everyone <c>RaceStarting(code, trackId)</c>. If the race cannot be
+    /// created the lobby goes back to idle, so it is not stuck "in race" with no race.
+    /// </summary>
     public async Task<bool> TryStart()
     {
         var me = Caller(null);
         var lobby = lobbies.Start(me.Id);
-        if (lobby is null) return false;
-        races.Create(PoCabinetLobbyService.RaceId, lobby.TrackId, lobbies.BuildGrid());
+        if (lobby?.RaceCode is not { } code) return false;
+        var trackId = lobby.TrackId;
+        try
+        {
+            races.Create(code, trackId, lobbies.BuildGrid());
+        }
+        catch (Exception ex)
+        {
+            lobbies.AbortStart(code);
+            await BroadcastAsync();
+            logger.LogError(ex, "PoCabinet race {Code} could not be created", code);
+            throw new HubException("The race could not be started. Try again.");
+        }
         await BroadcastAsync();
-        await Clients.Group(PoCabinetRaceRegistry.LobbyGroup).SendAsync("RaceStarting", PoCabinetLobbyService.RaceId, lobby.TrackId);
+        await Clients.Group(PoCabinetRaceRegistry.LobbyGroup).SendAsync("RaceStarting", code, trackId);
+        return true;
+    }
+
+    /// <summary>
+    /// Host-only, between races: free another player's seat. They are told with <c>Kicked</c>
+    /// and leave the lobby group; everyone else gets the new <c>LobbyState</c>.
+    /// </summary>
+    public async Task<bool> Kick(string seatId)
+    {
+        var me = Caller(null);
+        if (string.IsNullOrEmpty(seatId) || lobbies.Kick(me.Id, seatId) is not { } gone) return false;
+        await races.AnnounceUnseatedAsync([gone], "The host removed you from the lobby.", notice: null);
         return true;
     }
 

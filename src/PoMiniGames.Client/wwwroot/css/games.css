@@ -227,6 +227,16 @@
   padding: 0;
 }
 
+/* Cabinet on a phone held sideways: the app's top bar would take a sixth of a 390px-tall view,
+   so it steps aside while a race (not the demo, which has no pause card) is on screen. Pause →
+   Quit, Leave race online, and the results' Back to all games are the ways out. Pure CSS on the
+   page's own class, so the bar is back on the start card, the lobby and every other page. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .gl-page:has(.pocabinet-race:not(.pocabinet-race--demo)) .gl-top-bar {
+    display: none;
+  }
+}
+
 /* Marble Race's canvas is appended by scene.js, so it carries no razor scope
    attribute and a scoped `.mr-canvas-host canvas { width/height: 100% }` rule
    in PoMarbleRacePage.razor.css cannot match it — the element would render at

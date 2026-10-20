@@ -197,6 +197,20 @@ class Race {
         this.damageHud = null;
         this.dragPoints = [];
 
+        // A solo race pauses when the tab is hidden (the frame loop stops with it anyway, and the
+        // player comes back to the pause card rather than mid-corner). The page owns the pause.
+        // Online the race cannot pause: the car is told to coast instead (the server also coasts
+        // a car whose inputs stop, after half a second).
+        this.onVisibility = () => {
+            if (document.hidden && this.mode === 'net' && this.local) {
+                try { this.dotnet.invokeMethodAsync('OnNetHiddenAsync'); } catch { /* disposed */ }
+                return;
+            }
+            if (!document.hidden || this.mode !== 'solo' || this.paused || this.replay || this.simDone || this.local?.finished) return;
+            try { this.dotnet.invokeMethodAsync('OnTogglePause'); } catch { /* disposed */ }
+        };
+        document.addEventListener('visibilitychange', this.onVisibility);
+
         this.input = attachInput({
             touchRoot: 'pocabinetTouch',
             onPause: () => { try { this.dotnet.invokeMethodAsync('OnTogglePause'); } catch { /* disposed */ } },
@@ -374,7 +388,6 @@ class Race {
     applySettings(settings) {
         this.settings = { ...this.settings, ...(settings || {}) };
         this.input.setOptions(this.settings);
-        this.scene.setRacingLine?.(!!this.settings.racingLine && !this.replay);
     }
 
     setPaused(p) {
@@ -537,13 +550,16 @@ class Race {
         const order = [...this.cars].sort((a, b) => {
             if (a.finished !== b.finished) return a.finished ? -1 : 1;
             if (a.finished) return a.finishOrder - b.finishOrder;
+            // A wreck is a DNF: classified behind every car still running, by how far it got.
+            if (!!a.body.wrecked !== !!b.body.wrecked) return a.body.wrecked ? 1 : -1;
             return b.body.distance - a.body.distance;
         });
         order.forEach((c, i) => { c.position = i + 1; });
         this.banterEvents(order, elapsed);
         const everyone = this.cars.every(c => c.finished || c.body.wrecked);
         const grace = this.firstFinishAt >= 0 && elapsed - this.firstFinishAt > FINISH_GRACE;
-        const wreckedOut = this.wreckAt >= 0 && this.clock - this.wreckAt > WRECK_HOLD + 3;
+        // The demo's autopilot car wrecking ends nothing: the broadcast follows the race, not it.
+        const wreckedOut = this.mode !== 'demo' && this.wreckAt >= 0 && this.clock - this.wreckAt > WRECK_HOLD + 3;
         if (!this.simDone && (everyone || grace || wreckedOut || (this.local?.finished && elapsed - this.local.finishTime > 6))) {
             this.simDone = true;
         }
@@ -716,7 +732,8 @@ class Race {
      */
     checkPhotoFinish() {
         const p = this.photo, me = this.local;
-        if (!me || this.mode === 'net' || p.state === 'done') return;
+        // Solo only: the demo's autopilot car is nobody's, so its finish slows nothing.
+        if (!me || this.mode !== 'solo' || p.state === 'done') return;
         const L = this.track.lapLength;
         if (p.state === 'idle') {
             if (me.finished || me.lapsDone !== this.totalLaps - 1) return;
@@ -1275,7 +1292,10 @@ class Race {
         if (this.hudFinishedSent) return;
         const local = this.local;
         // A wrecked player's race is over too, once they have watched it happen.
-        const finished = !!local?.finished || (this.wreckAt >= 0 && this.clock - this.wreckAt > WRECK_HOLD);
+        // (Not in the demo: there the race runs to the flag whatever its autopilot car does.)
+        const finished = this.mode === 'demo'
+            ? this.simDone
+            : !!local?.finished || (this.wreckAt >= 0 && this.clock - this.wreckAt > WRECK_HOLD);
         // The page needs the whole field twice: once to count it, and at the finish for the
         // standings. In between it only reads the local car, and marshalling a hundred rows
         // into .NET thirty times a second costs more than the race does.
@@ -1402,7 +1422,6 @@ class Race {
             t: Number.isFinite(fromT) ? Math.max(t0, Math.min(t1, fromT)) : t0,
             t0, t1, playing: true, speed: 1, camera: 'chase', pushedAt: 0, endAt: null,
         };
-        this.scene.setRacingLine?.(false);
         this.photo.state = 'done';
         this.timeScale = 1;
         audio.silenceRace();
@@ -1413,9 +1432,11 @@ class Race {
     }
 
     stopReplay() {
+        // A clip being recorded ends with the replay (its promise must settle, and nothing is shared).
+        const rp = this.replay;
+        if (rp?.onEnd) { rp.cancelled = true; rp.onEnd(); }
         this.replay = null;
         for (const car of this.cars) if (car.mesh) car.mesh.group.visible = !car.isLocal;
-        this.scene.setRacingLine?.(!!this.settings.racingLine);
     }
 
     replayCommand(cmd, value) {
@@ -1491,9 +1512,10 @@ class Race {
     async recordClip() {
         const canvas = this.scene.canvas;
         if (!canvas || typeof canvas.captureStream !== 'function' || typeof MediaRecorder === 'undefined') return 'unavailable';
-        const lap = [...(this.rec?.laps || [])].sort((a, b) => a.time - b.time)[0];
-        const from = lap ? lap.startT : this.rec?.t[0];
-        const to = lap ? lap.endT : this.rec?.t[this.rec.t.length - 1];
+        // The best lap that counted: a lap deleted for track limits is nobody's best.
+        const lap = [...(this.rec?.laps || [])].filter(l => l.valid !== false).sort((a, b) => a.time - b.time)[0];
+        if (!lap) return 'nolap';
+        const from = lap.startT, to = lap.endT;
         if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return 'unavailable';
 
         const mime = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4']
@@ -1516,6 +1538,7 @@ class Race {
         recorder.start(250);
         this.pushReplayState(true);
         await stopped;
+        if (rp.cancelled) return 'cancelled';
 
         const type = recorder.mimeType || mime || 'video/webm';
         const ext = type.includes('mp4') ? 'mp4' : 'webm';
@@ -1526,6 +1549,7 @@ class Race {
         if (this.disposed) return;
         this.disposed = true;
         this.scene.offFrame?.(this.frameCb);
+        document.removeEventListener('visibilitychange', this.onVisibility);
         this.input.detach();
         for (const car of this.cars) if (car.mesh) unmountCar(car.mesh);
         if (this.mode !== 'net') ph.reportHits(null);

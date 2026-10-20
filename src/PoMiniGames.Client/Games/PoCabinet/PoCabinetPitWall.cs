@@ -36,11 +36,14 @@ public static class PoCabinetPitWall
         return bests;
     }
 
-    /// <summary>The paint shop's stored "&lt;livery&gt;|&lt;color&gt;", or null when unset or malformed.</summary>
-    public static (string Livery, string Color)? ParsePaint(string? raw)
+    /// <summary>
+    /// The paint shop's stored colour name, or null when unset. A store from before 2026-10-19
+    /// holds "&lt;livery&gt;|&lt;color&gt;"; its colour is kept and the pattern dropped.
+    /// </summary>
+    public static string? ParsePaint(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
-        var parts = raw.Split('|', 2);
-        return parts.Length == 2 && parts[0].Length > 0 && parts[1].Length > 0 ? (parts[0], parts[1]) : null;
+        var color = raw[(raw.LastIndexOf('|') + 1)..].Trim();
+        return color.Length > 0 ? color : null;
     }
 }

@@ -18,21 +18,35 @@ namespace PoMiniGames.Features.PoCabinet;
 /// </para>
 /// <para>
 /// All state sits behind one lock: hub calls arrive on arbitrary threads and the race
-/// registry's timer calls <see cref="MarkRaceFinished"/> from its own.
+/// registry's timer calls <see cref="MarkRaceFinished"/> and <see cref="SweepUnready"/> from its own.
+/// </para>
+/// <para>
+/// Every race gets its own code (<see cref="Lobby.RaceCode"/>, minted by <see cref="Start"/>):
+/// a screen still showing the last race's results must not pick up the next race's snapshots,
+/// and a reconnect must not rejoin a different race than the one it left.
+/// </para>
+/// <para>
+/// One AFK player cannot hold up the rematch: the host can <see cref="Kick"/> a seat, and once
+/// the lobby has reopened after a race, a player who stays not ready for
+/// <see cref="ReadyTimeout"/> loses their seat (<see cref="SweepUnready"/>).
 /// </para>
 /// </summary>
-public sealed class PoCabinetLobbyService
+public sealed class PoCabinetLobbyService(TimeProvider? time = null)
 {
     public const int MaxPlayers = PoCabinetCatalog.CarCount;
     public const int DefaultBots = 3;
 
+    /// <summary>How long a player may stay not ready in a reopened (rematch) lobby before the seat is freed.</summary>
+    public static readonly TimeSpan ReadyTimeout = TimeSpan.FromSeconds(90);
+
     /// <summary>
-    /// Internal id of the lobby's race and its SignalR groups. Never shown to players: one
-    /// lobby means at most one race at a time, so a fixed id is enough.
+    /// Internal id of the lobby's SignalR group and of the seat-id hash. Never shown to players.
+    /// The races themselves are keyed by a fresh <see cref="Lobby.RaceCode"/> each.
     /// </summary>
     public const string RaceId = "cabinet";
 
     private readonly object _gate = new();
+    private readonly TimeProvider _time = time ?? TimeProvider.System;
     private Lobby? _lobby;
 
     /// <summary>
@@ -59,7 +73,11 @@ public sealed class PoCabinetLobbyService
             if (lobby.Players.Count >= MaxPlayers) return null;
 
             // The host is ready by definition; everyone else readies up.
-            var player = new LobbyPlayer(playerId, displayName, isReady: lobby.HostId == playerId) { Color = SanitizeColor(color) };
+            var player = new LobbyPlayer(playerId, displayName, isReady: lobby.HostId == playerId)
+            {
+                Color = SanitizeColor(color),
+                UnreadySince = _time.GetUtcNow(),
+            };
             if (connectionId is not null) player.Connections.Add(connectionId);
             lobby.Players.Add(player);
             return lobby;
@@ -74,6 +92,7 @@ public sealed class PoCabinetLobbyService
             var player = _lobby is { IsStarted: false } lobby ? lobby.Players.FirstOrDefault(p => p.PlayerId == playerId) : null;
             if (player is null) return false;
             player.IsReady = !player.IsReady;
+            if (!player.IsReady) player.UnreadySince = _time.GetUtcNow();
             return true;
         }
     }
@@ -100,7 +119,10 @@ public sealed class PoCabinetLobbyService
         }
     }
 
-    /// <summary>Mark the lobby started and return it (the caller builds the grid from it).</summary>
+    /// <summary>
+    /// Mark the lobby started under a fresh <see cref="Lobby.RaceCode"/> and return it (the
+    /// caller builds the grid from it and creates the race under that code).
+    /// </summary>
     public Lobby? Start(string hostId)
     {
         lock (_gate)
@@ -108,20 +130,38 @@ public sealed class PoCabinetLobbyService
             // Startable refuses a started lobby, so a second Start is a no-op.
             if (_lobby is not { } lobby || lobby.HostId != hostId || !Startable(lobby)) return null;
             lobby.IsStarted = true;
+            lobby.RaceCode = Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
             return lobby;
+        }
+    }
+
+    /// <summary>The race for <paramref name="raceCode"/> could not be created: back to the idle lobby, roster and ready flags kept.</summary>
+    public void AbortStart(string raceCode)
+    {
+        lock (_gate)
+        {
+            if (_lobby is not { } lobby || lobby.RaceCode != raceCode) return;
+            lobby.IsStarted = false;
+            lobby.RaceCode = null;
+            foreach (var gone in lobby.Players.Where(p => p.Disconnected).ToList()) RemoveLocked(lobby, gone.PlayerId);
+            if (lobby.Players.Count == 0) _lobby = null;
         }
     }
 
     /// <summary>
     /// The race ended: reopen the lobby for a rematch. Players who dropped during the race are
-    /// removed now; everyone but the host has to ready up again.
+    /// removed now; everyone but the host has to ready up again, within <see cref="ReadyTimeout"/>.
+    /// A <paramref name="raceCode"/> that is not the lobby's current race changes nothing.
     /// </summary>
-    public Lobby? MarkRaceFinished()
+    public Lobby? MarkRaceFinished(string? raceCode = null)
     {
         lock (_gate)
         {
             if (_lobby is not { } lobby) return null;
+            if (raceCode is not null && lobby.RaceCode != raceCode) return null;
             lobby.IsStarted = false;
+            lobby.RaceCode = null;
+            lobby.HasRaced = true;
             foreach (var gone in lobby.Players.Where(p => p.Disconnected).ToList())
             {
                 RemoveLocked(lobby, gone.PlayerId);
@@ -131,8 +171,48 @@ public sealed class PoCabinetLobbyService
                 _lobby = null;
                 return null;
             }
-            foreach (var p in lobby.Players) p.IsReady = p.PlayerId == lobby.HostId;
+            var now = _time.GetUtcNow();
+            foreach (var p in lobby.Players)
+            {
+                p.IsReady = p.PlayerId == lobby.HostId;
+                p.UnreadySince = now;
+            }
             return lobby;
+        }
+    }
+
+    /// <summary>
+    /// Host-only, idle lobby: free the seat <paramref name="seatId"/> (never the host's own).
+    /// Returns who was removed, so the hub can tell their connections; null when refused.
+    /// </summary>
+    public Unseated? Kick(string hostId, string seatId)
+    {
+        lock (_gate)
+        {
+            if (HostedIdle(hostId) is not { } lobby) return null;
+            var target = lobby.Players.FirstOrDefault(p => p.PlayerId != hostId && SeatIdFor(p.PlayerId) == seatId);
+            if (target is null) return null;
+            RemoveLocked(lobby, target.PlayerId);
+            return new Unseated(target.DisplayName, [.. target.Connections]);
+        }
+    }
+
+    /// <summary>
+    /// A reopened (rematch) lobby frees the seats of players who have not readied up for
+    /// <see cref="ReadyTimeout"/>. Called about once a second by the race registry's timer;
+    /// a lobby that has not raced yet, or is racing, is left alone.
+    /// </summary>
+    public IReadOnlyList<Unseated> SweepUnready()
+    {
+        lock (_gate)
+        {
+            if (_lobby is not { IsStarted: false, HasRaced: true } lobby) return [];
+            var cutoff = _time.GetUtcNow() - ReadyTimeout;
+            var idle = lobby.Players
+                .Where(p => !p.IsReady && p.PlayerId != lobby.HostId && p.UnreadySince <= cutoff)
+                .ToList();
+            foreach (var p in idle) RemoveLocked(lobby, p.PlayerId);
+            return [.. idle.Select(p => new Unseated(p.DisplayName, [.. p.Connections]))];
         }
     }
 
@@ -172,7 +252,7 @@ public sealed class PoCabinetLobbyService
             if (_lobby is not { } lobby) return null;
             return new PoCabinetLobbyView
             {
-                Code = RaceId,
+                Code = lobby.RaceCode ?? "",
                 TrackId = lobby.TrackId,
                 BotCount = lobby.BotCount,
                 BotSeats = EffectiveBots(lobby),
@@ -242,7 +322,7 @@ public sealed class PoCabinetLobbyService
         if (lobby.Players.Count == 0)
         {
             // A running race keeps its (empty) lobby until MarkRaceFinished, so a newcomer
-            // cannot start a second race under the same RaceId while the first still ticks.
+            // cannot start a second race while the first still ticks.
             if (!lobby.IsStarted) _lobby = null;
             return;
         }
@@ -268,8 +348,15 @@ public sealed class PoCabinetLobbyService
         public string TrackId { get; set; } = trackId;
         public int BotCount { get; set; } = DefaultBots;
         public bool IsStarted { get; set; }
+        /// <summary>The running race's code (what <c>JoinRace</c> takes); null while idle.</summary>
+        public string? RaceCode { get; set; }
+        /// <summary>At least one race has finished here: the ready timeout applies from now on.</summary>
+        public bool HasRaced { get; set; }
         public List<LobbyPlayer> Players { get; } = new();
     }
+
+    /// <summary>A player whose seat was freed (kicked or timed out), and the connections to tell.</summary>
+    public sealed record Unseated(string DisplayName, IReadOnlyList<string> ConnectionIds);
 
     public sealed class LobbyPlayer
     {
@@ -284,6 +371,8 @@ public sealed class PoCabinetLobbyService
         public string PlayerId { get; }
         public string DisplayName { get; }
         public bool IsReady { get; set; }
+        /// <summary>When the player last became not ready (joined, un-readied, or the lobby reopened).</summary>
+        public DateTimeOffset UnreadySince { get; set; }
         public string Color { get; set; } = "";
         /// <summary>Live SignalR connections for this player (tabs, reconnects).</summary>
         public HashSet<string> Connections { get; } = new(StringComparer.Ordinal);

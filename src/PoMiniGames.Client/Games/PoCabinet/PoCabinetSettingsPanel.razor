@@ -13,7 +13,8 @@
 
    It lives in one place, PoCabinetDrawer, which the start card, the pause card and the
    lobby all open (it used to be a fold-out on the start card and a second, "compact"
-   copy with a fold-out inside it in the pause card). *@
+   copy with a fold-out inside it in the pause card). The racing-line overlay was removed
+   2026-10-19: it was the centre line coloured by curvature, not a line to follow. *@
 @inject SettingsService AppSettings
 
 <div class="pocabinet-settings" role="group" aria-label="Cabinet settings">
@@ -32,7 +33,12 @@
     <fieldset class="pocabinet-settings__group">
         <legend>Display</legend>
         @Pills("hud", "HUD size", HudOptions, Format(Value.HudScale), v => RaiseAsync(s => s.HudScale = ParseDouble(v, s.HudScale)))
-        @Pills("weather", "Weather", WeatherOptions, Value.Weather, v => RaiseAsync(s => s.Weather = v))
+        @if (ShowWeather)
+        {
+            @* The race holds its weather from the lights (the lap proof carries one wet flag),
+               so a change mid-race is for the next one and says so. *@
+            @Pills("weather", WeatherNextRace ? "Weather (next race)" : "Weather", WeatherOptions, Value.Weather, v => RaiseAsync(s => s.Weather = v))
+        }
     </fieldset>
 
     <fieldset class="pocabinet-settings__group">
@@ -41,10 +47,6 @@
         <label class="pocabinet-settings__row">
             <span>Auto-brake for corners</span>
             <input type="checkbox" role="switch" class="pocabinet-switch" checked="@Value.AutoBrake" @onchange="e => RaiseAsync(s => s.AutoBrake = e.Value is bool b && b)" />
-        </label>
-        <label class="pocabinet-settings__row">
-            <span>Racing line <small>green = flat out, red = brake</small></span>
-            <input type="checkbox" role="switch" class="pocabinet-switch" checked="@Value.RacingLine" @onchange="e => RaiseAsync(s => s.RacingLine = e.Value is bool b && b)" />
         </label>
     </fieldset>
 
@@ -64,6 +66,10 @@
 @code {
     [Parameter] public PoCabinetUiSettings Value { get; set; } = new();
     [Parameter] public EventCallback<PoCabinetUiSettings> ValueChanged { get; set; }
+    /// <summary>False online: the server races dry, so rain would only be paint on the screen.</summary>
+    [Parameter] public bool ShowWeather { get; set; } = true;
+    /// <summary>A race is on screen: a weather change applies from the next one.</summary>
+    [Parameter] public bool WeatherNextRace { get; set; }
 
     private static readonly (string Value, string Text)[] HudOptions = [("0.85", "Small"), ("1", "Normal"), ("1.15", "Large")];
     private static readonly (string Value, string Text)[] WeatherOptions = [("clear", "Clear"), ("rain", "Rain")];

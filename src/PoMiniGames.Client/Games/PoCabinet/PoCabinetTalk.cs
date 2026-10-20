@@ -31,11 +31,11 @@ public static class PoCabinetTalk
     /// What the debrief is written from. <see cref="SectorDeltas"/> is seconds against the
     /// personal-best lap per third of the lap (+ = slower), empty without a reference lap;
     /// percentages are 0–100, and <see cref="WorstPointPct"/> is where on the lap the most time
-    /// went (-1 = unknown).
+    /// went (-1 = unknown). <see cref="Wrecked"/>: the player's car did not make the flag.
     /// </summary>
     public sealed record Facts(
         string TrackName, int Position, double[] SectorDeltas,
-        int FullThrottlePct, int BrakePct, int SlowestKmh, int WorstPointPct, int WallHits);
+        int FullThrottlePct, int BrakePct, int SlowestKmh, int WorstPointPct, int WallHits, bool Wrecked = false);
 
     /// <summary>The race engineer's read: a satirical headline and up to three concrete tips.</summary>
     public sealed record Debrief(string Headline, IReadOnlyList<string> Tips);
@@ -44,6 +44,10 @@ public static class PoCabinetTalk
     {
         var inv = CultureInfo.InvariantCulture;
         var tips = new List<string>();
+        // A wreck comes first: no lap tip matters more than getting the car home. Most wrecks in
+        // a hundred-car field are contact with other cars, which WallHits does not count.
+        if (f.Wrecked)
+            tips.Add("The car was wrecked: every hit adds up. Leave a car's width in the pack and lift when the cars ahead bunch up.");
         if (f.SectorDeltas is { Length: 3 } sectors)
         {
             var worst = Array.IndexOf(sectors, sectors.Max());
@@ -67,9 +71,11 @@ public static class PoCabinetTalk
             tips.Add(string.Format(inv, "Your slowest corner dropped to {0} km/h — carry more speed through it.", f.SlowestKmh));
         if (tips.Count == 0) tips.Add("A clean race. Next step: move each braking point a car length later.");
 
-        var headline = f.Position == 1
-            ? $"OFFICIALS STUNNED AS CHALLENGER TAKES {f.TrackName.ToUpperInvariant()}"
-            : $"P{f.Position} AT {f.TrackName.ToUpperInvariant()}: CABINET DEMANDS A RECOUNT";
+        var headline = f.Wrecked
+            ? $"WRECK AT {f.TrackName.ToUpperInvariant()}: CABINET ORDERS AN INQUIRY"
+            : f.Position == 1
+                ? $"OFFICIALS STUNNED AS CHALLENGER TAKES {f.TrackName.ToUpperInvariant()}"
+                : $"P{f.Position} AT {f.TrackName.ToUpperInvariant()}: CABINET DEMANDS A RECOUNT";
         return new Debrief(headline, tips.Take(3).ToList());
     }
 }
